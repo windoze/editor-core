@@ -126,6 +126,7 @@ enum AttoMainMenuBuilder {
         goMenu.addItem(commandItem(title: "Show Symbols Panel", commandID: "lsp.show_symbols_panel", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Document Colors...", commandID: "lsp.document_colors", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Pick Document Color...", commandID: "lsp.pick_document_color", appDelegate: appDelegate))
+        goMenu.addItem(commandItem(title: "Show Document Colors Panel", commandID: "lsp.show_document_colors_panel", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Completion", commandID: "lsp.completion", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Signature Help", commandID: "lsp.signature_help", appDelegate: appDelegate))
         goMenu.addItem(.separator())

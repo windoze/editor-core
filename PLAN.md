@@ -1196,6 +1196,15 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap`
     - `git diff --check`
+- 中间提交：`feat(app): add document colors workbench panel`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量；把 Document Colors 从 transient command palette / color picker 结果推进到可保持打开、可过滤、可键盘请求 color presentations 的持久 panel。
+  - 提交边界：新增 `AttoDocumentColorPanelController` 展示 swatch、稳定 AppKit identifiers、filter/search、row selection、Enter 请求 color presentations 和关闭行为；AttoEditor 新增 `lsp.show_document_colors_panel` command、Go 菜单入口、VC 测试钩子，并让已有 document color 结果在持久 panel 打开时同步更新。该提交不改变 LSP documentColor / colorPresentation 请求协议、不改变既有 `lsp.document_colors` quick palette 和 `lsp.pick_document_color` picker 语义，也不实现跨 tab/project Colors history 或统一 dock/workbench 容器。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoAccessibilityIdentifierTests.testDocumentColorPanelExposesStableIdentifiersAndFiltersRows`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testDocumentColorPanelUsesDocumentColorResults`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap`
+    - `git diff --check`
 
 ## 阶段 8: Command、menu、keymap、palette 与 Sublime 行为矩阵
 

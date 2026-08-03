@@ -521,6 +521,76 @@ final class AttoAccessibilityIdentifierTests: XCTestCase {
         XCTAssertTrue(controller.isVisible)
     }
 
+    func testDocumentColorPanelExposesStableIdentifiersAndFiltersRows() throws {
+        let items = [
+            AttoLspDocumentColorParser.Item(
+                range: EcuSelectionRange(start: 0, end: 7),
+                startLine: 0,
+                startUTF16Character: 12,
+                color: AttoLspDocumentColorParser.Color(red: 1, green: 0, blue: 0, alpha: 1)
+            ),
+            AttoLspDocumentColorParser.Item(
+                range: EcuSelectionRange(start: 8, end: 15),
+                startLine: 1,
+                startUTF16Character: 4,
+                color: AttoLspDocumentColorParser.Color(red: 0, green: 0.4, blue: 1, alpha: 1)
+            ),
+        ]
+
+        var openedItems: [AttoLspDocumentColorParser.Item] = []
+        let controller = AttoDocumentColorPanelController(
+            titleForItem: { AttoLspDocumentColorParser.displayTitle(for: $0) },
+            colorForItem: { _ in NSColor.red },
+            onOpen: { openedItems.append($0) }
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 860, height: 540),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        defer {
+            controller.hide()
+            window.close()
+        }
+
+        window.contentView = NSView(frame: NSRect(x: 0, y: 0, width: 860, height: 540))
+        window.makeKeyAndOrderFront(nil)
+
+        XCTAssertTrue(controller.show(relativeTo: window, items: items))
+        let panel = try XCTUnwrap(window.childWindows?.first)
+        XCTAssertEqual(panel.identifier?.rawValue, AttoAccessibilityID.documentColorPanel)
+        XCTAssertEqual(panel.title, "Document Colors (2)")
+
+        let root = try XCTUnwrap(panel.contentView)
+        XCTAssertNotNil(findView(identifier: AttoAccessibilityID.documentColorPanelRoot, in: root))
+        let searchField = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.documentColorPanelSearchField, in: root) as? NSSearchField
+        )
+        let metadataLabel = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.documentColorPanelMetadataLabel, in: root) as? NSTextField
+        )
+        let table = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.documentColorPanelTable, in: root) as? NSTableView
+        )
+        XCTAssertNotNil(findView(identifier: AttoAccessibilityID.documentColorPanelScrollView, in: root))
+        XCTAssertEqual(searchField.placeholderString, "Filter document colors...")
+        XCTAssertEqual(metadataLabel.stringValue, "Active Tab | 2 colors")
+        XCTAssertEqual(table.numberOfRows, 2)
+
+        let row = try XCTUnwrap(table.view(atColumn: 0, row: 0, makeIfNecessary: true))
+        XCTAssertNotNil(findView(identifier: AttoAccessibilityID.documentColorPanelSwatch, in: row))
+        XCTAssertNotNil(findView(identifier: AttoAccessibilityID.documentColorPanelRowTitle, in: row))
+
+        searchField.stringValue = "#0066FF"
+        controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: searchField))
+        XCTAssertEqual(table.numberOfRows, 1)
+
+        XCTAssertTrue(controller.control(searchField, textView: NSTextView(), doCommandBy: #selector(NSResponder.insertNewline(_:))))
+        XCTAssertEqual(openedItems, [items[1]])
+        XCTAssertTrue(controller.isVisible)
+    }
+
     func testProblemsPanelExposesStableIdentifiersAndFiltersRows() throws {
         let diagnostics = [
             EcuDiagnostic(

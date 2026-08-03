@@ -103,6 +103,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.restart_project_servers"))
         XCTAssertTrue(ids.contains("lsp.document_colors"))
         XCTAssertTrue(ids.contains("lsp.pick_document_color"))
+        XCTAssertTrue(ids.contains("lsp.show_document_colors_panel"))
         XCTAssertTrue(ids.contains("lsp.refresh_folding_ranges"))
         XCTAssertTrue(ids.contains("lsp.selection_range"))
         XCTAssertTrue(ids.contains("lsp.linked_editing"))
@@ -1656,6 +1657,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "lsp.restart_project_servers", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.document_colors", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.pick_document_color", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.show_document_colors_panel", in: menu))
     }
 
     func testWorkspaceDiagnosticsResultNavigatesWithoutPanelWindow() throws {
@@ -3680,6 +3682,65 @@ final class AttoEditorCommandTests: XCTestCase {
 
         XCTAssertTrue(vc.performCursorMovementCommand(.moveLeft))
         XCTAssertFalse(vc._linkedEditingSessionIsActiveForTesting())
+    }
+
+    func testDocumentColorPanelUsesDocumentColorResults() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("colors-panel.txt")
+        let text = """
+        let red = "#ff0000"
+        let blue = "#0066ff"
+        """
+        try text.write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let window = attachToWindow(vc)
+        defer { window.close() }
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        XCTAssertTrue(vc.showDocumentColorPanelResultJSONInActiveTab("""
+        [
+          {
+            "range": {
+              "start": { "line": 0, "character": 11 },
+              "end": { "line": 0, "character": 18 }
+            },
+            "color": { "red": 1, "green": 0, "blue": 0, "alpha": 1 }
+          },
+          {
+            "range": {
+              "start": { "line": 1, "character": 12 },
+              "end": { "line": 1, "character": 19 }
+            },
+            "color": { "red": 0, "green": 0.4, "blue": 1, "alpha": 1 }
+          }
+        ]
+        """))
+
+        let panel = try XCTUnwrap(window.childWindows?.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.documentColorPanel
+        })
+        XCTAssertEqual(panel.title, "Document Colors (2)")
+
+        let root = try XCTUnwrap(panel.contentView)
+        let searchField = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.documentColorPanelSearchField, in: root) as? NSSearchField
+        )
+        let table = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.documentColorPanelTable, in: root) as? NSTableView
+        )
+        XCTAssertEqual(searchField.placeholderString, "Filter document colors...")
+        XCTAssertEqual(table.numberOfRows, 2)
+        XCTAssertEqual(vc._documentColorPanelRowCountForTesting(), 2)
+        XCTAssertEqual(vc._documentColorPanelItemsForTesting().map { AttoLspDocumentColorParser.hexString(for: $0.color) }, [
+            "#FF0000",
+            "#0066FF",
+        ])
+        XCTAssertTrue(vc._documentColorPanelIsVisibleForTesting())
     }
 
     func testApplyColorPresentationMutatesActiveDocument() throws {

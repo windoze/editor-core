@@ -239,6 +239,18 @@ final class AttoEditorAreaViewController: NSViewController {
         documentLinkPanelController?.isVisible == true
     }
 
+    func _documentColorPanelItemsForTesting() -> [AttoLspDocumentColorParser.Item] {
+        documentColorPanelController?.currentItems ?? []
+    }
+
+    func _documentColorPanelRowCountForTesting() -> Int {
+        documentColorPanelController?.rowCount ?? 0
+    }
+
+    func _documentColorPanelIsVisibleForTesting() -> Bool {
+        documentColorPanelController?.isVisible == true
+    }
+
     func _workspaceOutlineSnapshotForTesting() -> AttoWorkspaceOutlineSnapshot {
         workspaceOutlineStore.snapshot
     }
@@ -903,6 +915,7 @@ final class AttoEditorAreaViewController: NSViewController {
     enum DocumentColorResultMode {
         case presentations
         case picker
+        case panel
 
         var lifecycleMode: String {
             switch self {
@@ -910,6 +923,8 @@ final class AttoEditorAreaViewController: NSViewController {
                 return "presentations"
             case .picker:
                 return "picker"
+            case .panel:
+                return "panel"
             }
         }
     }
@@ -1071,6 +1086,7 @@ final class AttoEditorAreaViewController: NSViewController {
     var colorPresentationContext: ColorPresentationRequestContext?
     var colorPresentationPollTimer: DispatchSourceTimer?
     var documentColorPanelContext: DocumentColorPanelContext?
+    var documentColorPanelController: AttoDocumentColorPanelController?
     var documentColorPickerForTesting: ((NSColor) -> NSColor?)?
     var lspEnvironmentProvider: () -> [String: String] = {
         ProcessInfo.processInfo.environment

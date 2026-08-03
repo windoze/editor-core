@@ -1030,6 +1030,11 @@ extension AttoEditorAreaViewController {
     }
 
     @discardableResult
+    func showDocumentColorsPanelInActiveTab(showFeedback: Bool = true) -> Bool {
+        requestDocumentColorsInActiveTab(mode: .panel, showFeedback: showFeedback)
+    }
+
+    @discardableResult
     func requestDocumentColorsInActiveTab(
         mode: DocumentColorResultMode,
         showFeedback: Bool
@@ -1093,6 +1098,11 @@ extension AttoEditorAreaViewController {
     }
 
     @discardableResult
+    func showDocumentColorPanelResultJSONInActiveTab(_ json: String, showFeedback: Bool = false) -> Bool {
+        handleDocumentColorResultJSON(json, mode: .panel, showFeedback: showFeedback)
+    }
+
+    @discardableResult
     func handleDocumentColorResultJSON(
         _ json: String,
         mode: DocumentColorResultMode,
@@ -1148,9 +1158,13 @@ extension AttoEditorAreaViewController {
         recordDocumentColorResultLifecycle(items: items, mode: mode)
         switch mode {
         case .presentations:
+            updateVisibleDocumentColorPanel(items: items)
             showDocumentColorResults(items, tabID: tab.id)
         case .picker:
+            updateVisibleDocumentColorPanel(items: items)
             showDocumentColorPickerResults(items, tabID: tab.id)
+        case .panel:
+            showDocumentColorPanel(items, tabID: tab.id)
         }
         return true
     }
@@ -1190,6 +1204,42 @@ extension AttoEditorAreaViewController {
         )
         documentColorResultsController = controller
         controller.show(relativeTo: window, placeholder: "Filter document colors...")
+    }
+
+    func showDocumentColorPanel(_ items: [AttoLspDocumentColorParser.Item], tabID: UUID) {
+        guard let window = view.window else {
+            if let first = items.first {
+                _ = selectDocumentColor(first, tabID: tabID, requestPresentations: false)
+            }
+            return
+        }
+
+        let controller = documentColorPanelController ?? makeDocumentColorPanelController()
+        documentColorPanelController = controller
+        controller.show(relativeTo: window, items: items)
+    }
+
+    func updateVisibleDocumentColorPanel(items: [AttoLspDocumentColorParser.Item]) {
+        guard let controller = documentColorPanelController, controller.isVisible else { return }
+        controller.update(items: items)
+    }
+
+    func makeDocumentColorPanelController() -> AttoDocumentColorPanelController {
+        AttoDocumentColorPanelController(
+            titleForItem: { item in
+                AttoLspDocumentColorParser.displayTitle(for: item)
+            },
+            colorForItem: { [weak self] item in
+                self?.nsColor(for: item.color) ?? .clear
+            },
+            onOpen: { [weak self] item in
+                guard let self, let tab = self.activeTab else {
+                    NSSound.beep()
+                    return
+                }
+                _ = self.selectDocumentColor(item, tabID: tab.id, requestPresentations: true)
+            }
+        )
     }
 
     func showDocumentColorPickerResults(_ items: [AttoLspDocumentColorParser.Item], tabID: UUID) {
