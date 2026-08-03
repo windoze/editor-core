@@ -892,6 +892,34 @@ final class AttoEditorAreaViewController: NSViewController {
                 return "links"
             }
         }
+
+        var resultEventFamily: String {
+            switch self {
+            case .inlayHints:
+                return "inlay_hints"
+            case .documentLinks:
+                return "document_links"
+            }
+        }
+
+        func resultEventTitle(count: Int) -> String {
+            let noun = count == 1 ? singularNoun : pluralNoun
+            switch self {
+            case .inlayHints:
+                return "Inlay Hints: \(count) \(noun)"
+            case .documentLinks:
+                return "Document Links: \(count) \(noun)"
+            }
+        }
+
+        func resultEventPayload(count: Int) -> AttoLspResultLifecycleEvent.Payload {
+            switch self {
+            case .inlayHints:
+                return .inlayHints(itemCount: count)
+            case .documentLinks:
+                return .documentLinks(itemCount: count)
+            }
+        }
     }
 
     struct AuxiliaryRefreshContext {

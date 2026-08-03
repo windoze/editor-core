@@ -265,6 +265,7 @@ extension AttoEditorAreaViewController {
                 return
             }
 
+            self.recordAuxiliaryResultEvent(kind: kind, itemCount: summary.count)
             tab.editCore.layoutSubtreeIfNeeded()
             tab.editCore.editorView.needsDisplay = true
             tab.editCore.needsDisplay = true
@@ -602,6 +603,58 @@ extension AttoEditorAreaViewController {
             }
         }()
         return AttoLspInlayHintParser.displayTitle(for: item, location: location)
+    }
+
+    func _applyInlayHintsResultJSONForTesting(_ json: String) -> Bool {
+        applyAuxiliaryResultJSONForTesting(json, kind: .inlayHints)
+    }
+
+    func _applyDocumentLinksResultJSONForTesting(_ json: String) -> Bool {
+        applyAuxiliaryResultJSONForTesting(json, kind: .documentLinks)
+    }
+
+    private func applyAuxiliaryResultJSONForTesting(
+        _ json: String,
+        kind: AuxiliaryRefreshKind
+    ) -> Bool {
+        guard let tab = activeTab else { return false }
+        do {
+            switch kind {
+            case .inlayHints:
+                try tab.editCore.editor.lspApplyInlayHintsJSON(json)
+            case .documentLinks:
+                try tab.editCore.editor.lspApplyDocumentLinksJSON(json)
+            }
+        } catch {
+            return false
+        }
+
+        tab.editCore.layoutSubtreeIfNeeded()
+        tab.editCore.editorView.needsDisplay = true
+        tab.editCore.needsDisplay = true
+        derivedStateStore.refreshActive(editor: tab.editCore.editor)
+
+        let count: Int
+        switch kind {
+        case .inlayHints:
+            count = currentInlayHintItems(in: tab).count
+            recordAuxiliaryResultEvent(kind: kind, itemCount: count)
+            updateVisibleInlayHintPanel(for: tab)
+        case .documentLinks:
+            count = currentDocumentLinkItems(in: tab).count
+            recordAuxiliaryResultEvent(kind: kind, itemCount: count)
+            updateVisibleDocumentLinkPanel(for: tab)
+        }
+        updateStatusBar()
+        return true
+    }
+
+    private func recordAuxiliaryResultEvent(kind: AuxiliaryRefreshKind, itemCount: Int) {
+        lspResultEventStream.record(
+            family: kind.resultEventFamily,
+            title: kind.resultEventTitle(count: itemCount),
+            payload: kind.resultEventPayload(count: itemCount)
+        )
     }
 
     private func resolveInlayHintPanelItem(_ item: AttoLspInlayHintParser.Item) -> Bool {

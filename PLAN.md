@@ -1261,6 +1261,16 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testLspWorkbenchPanelSummarizesResultFamilies`
     - `swift test --package-path swift --filter AttoLspResultLifecycleStoreTests`
     - `git diff --check`
+- 中间提交：`feat(app): show workbench auxiliary lifecycle`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量；让 Code Lens、Inlay Hints 和 Document Links 的成功结果写入已有 App 层 result event stream，并让统一 LSP Workbench 对应行消费该 event metadata。
+  - 提交边界：新增 `AttoLspResultLifecycleEvent.Payload.codeLens` / `inlayHints` / `documentLinks`，在 Code Lens refresh 和 auxiliary refresh 成功消费结果时记录 `code_lens`、`inlay_hints`、`document_links` family event；Workbench 三行在已有 event 时展示数量、Fresh、Result sequence、family 和 title，旧的 decorations count fallback 保留。该提交不改变 code lens / inlay hints / document links 的 LSP request/resolve 协议，不改变 decorations schema，不新增统一 pin/history 数据模型或真正内嵌 dock。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testCodeLensPanelUsesDerivedDecorations`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testInlayHintPanelUsesDerivedDecorations`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testDocumentLinkPanelUsesDerivedDecorations`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testLspWorkbenchPanelSummarizesResultFamilies`
+    - `swift test --package-path swift --filter AttoLspResultLifecycleStoreTests`
+    - `git diff --check`
 
 ## 阶段 8: Command、menu、keymap、palette 与 Sublime 行为矩阵
 

@@ -76,6 +76,18 @@ extension AttoEditorAreaViewController {
         let codeLensCount = decorations.map { AttoLspCodeLensParser.items(fromDecorationsSnapshot: $0).count } ?? 0
         let inlayHintCount = decorations.map { AttoLspInlayHintParser.items(fromDecorationsSnapshot: $0).count } ?? 0
         let documentLinkCount = decorations.map { AttoLspDocumentLinkParser.items(fromDecorationsSnapshot: $0).count } ?? 0
+        let codeLensStatus = lspWorkbenchResultEventStatus(
+            countText: codeLensCount == 1 ? "1 action" : "\(codeLensCount) actions",
+            family: "code_lens"
+        ) ?? (codeLensCount == 1 ? "1 action" : "\(codeLensCount) actions")
+        let inlayHintStatus = lspWorkbenchResultEventStatus(
+            countText: inlayHintCount == 1 ? "1 hint" : "\(inlayHintCount) hints",
+            family: "inlay_hints"
+        ) ?? (inlayHintCount == 1 ? "1 hint" : "\(inlayHintCount) hints")
+        let documentLinkStatus = lspWorkbenchResultEventStatus(
+            countText: documentLinkCount == 1 ? "1 link" : "\(documentLinkCount) links",
+            family: "document_links"
+        ) ?? (documentLinkCount == 1 ? "1 link" : "\(documentLinkCount) links")
         let documentColorCount = lastDocumentColorItems.count
         let documentColorStatus = lspWorkbenchDocumentColorStatus(count: documentColorCount)
         let hierarchyCount = hierarchyPanelSnapshot?.entries.count ?? 0
@@ -124,21 +136,21 @@ extension AttoEditorAreaViewController {
                 id: LspWorkbenchItemID.codeLens,
                 title: "Code Lens",
                 detail: "Active document code lens actions from derived decorations",
-                status: codeLensCount == 1 ? "1 action" : "\(codeLensCount) actions",
+                status: codeLensStatus,
                 isEnabled: codeLensCount > 0
             ),
             .init(
                 id: LspWorkbenchItemID.inlayHints,
                 title: "Inlay Hints",
                 detail: "Active document inlay hints from derived decorations",
-                status: inlayHintCount == 1 ? "1 hint" : "\(inlayHintCount) hints",
+                status: inlayHintStatus,
                 isEnabled: inlayHintCount > 0
             ),
             .init(
                 id: LspWorkbenchItemID.documentLinks,
                 title: "Document Links",
                 detail: "Active document links from derived decorations",
-                status: documentLinkCount == 1 ? "1 link" : "\(documentLinkCount) links",
+                status: documentLinkStatus,
                 isEnabled: documentLinkCount > 0
             ),
             .init(

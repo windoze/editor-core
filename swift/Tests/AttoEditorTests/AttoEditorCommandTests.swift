@@ -503,9 +503,9 @@ final class AttoEditorCommandTests: XCTestCase {
         let window = attachToWindow(vc)
         defer { window.close() }
         vc.openFile(url: fileURL, mode: .pinned)
+        let resultEventCursor = vc._latestLspResultLifecycleEventSequenceForTesting()
 
-        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
-        try editorView.editor.lspApplyDocumentLinksJSON("""
+        XCTAssertTrue(vc._applyDocumentLinksResultJSONForTesting("""
         [
           {
             "range": {
@@ -524,7 +524,7 @@ final class AttoEditorCommandTests: XCTestCase {
             "data": { "id": 7 }
           }
         ]
-        """)
+        """))
 
         XCTAssertTrue(vc.showDocumentLinksPanelInActiveTab())
         let panel = try XCTUnwrap(window.childWindows?.first {
@@ -551,6 +551,19 @@ final class AttoEditorCommandTests: XCTestCase {
             nil,
         ])
         XCTAssertTrue(vc._documentLinkPanelIsVisibleForTesting())
+
+        let events = vc._lspResultLifecycleEventsForTesting(after: resultEventCursor)
+            .filter { $0.family == "document_links" }
+        XCTAssertEqual(events.map(\.payload), [.documentLinks(itemCount: 2)])
+
+        XCTAssertTrue(vc.showLspWorkbenchPanel())
+        let statuses = Dictionary(uniqueKeysWithValues: vc._lspWorkbenchPanelItemsForTesting().map {
+            ($0.title, $0.status)
+        })
+        XCTAssertTrue(statuses["Document Links"]?.hasPrefix("2 links | Fresh | Result #") == true)
+        XCTAssertTrue(
+            statuses["Document Links"]?.contains(" | document_links | Document Links: 2 links") == true
+        )
     }
 
     func testLspWorkbenchPanelSummarizesResultFamilies() throws {
@@ -909,9 +922,9 @@ final class AttoEditorCommandTests: XCTestCase {
         let window = attachToWindow(vc)
         defer { window.close() }
         vc.openFile(url: fileURL, mode: .pinned)
+        let resultEventCursor = vc._latestLspResultLifecycleEventSequenceForTesting()
 
-        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
-        try editorView.editor.lspApplyInlayHintsJSON("""
+        XCTAssertTrue(vc._applyInlayHintsResultJSONForTesting("""
         [
           {
             "position": { "line": 0, "character": 9 },
@@ -924,7 +937,7 @@ final class AttoEditorCommandTests: XCTestCase {
             "kind": 2
           }
         ]
-        """)
+        """))
 
         XCTAssertTrue(vc.showInlayHintsPanelInActiveTab())
         let panel = try XCTUnwrap(window.childWindows?.first {
@@ -945,6 +958,19 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(vc._inlayHintPanelItemsForTesting().map(\.title), [": Int", "argument:"])
         XCTAssertEqual(vc._inlayHintPanelItemsForTesting().compactMap(\.kindLabel), ["Type", "Parameter"])
         XCTAssertTrue(vc._inlayHintPanelIsVisibleForTesting())
+
+        let events = vc._lspResultLifecycleEventsForTesting(after: resultEventCursor)
+            .filter { $0.family == "inlay_hints" }
+        XCTAssertEqual(events.map(\.payload), [.inlayHints(itemCount: 2)])
+
+        XCTAssertTrue(vc.showLspWorkbenchPanel())
+        let statuses = Dictionary(uniqueKeysWithValues: vc._lspWorkbenchPanelItemsForTesting().map {
+            ($0.title, $0.status)
+        })
+        XCTAssertTrue(statuses["Inlay Hints"]?.hasPrefix("2 hints | Fresh | Result #") == true)
+        XCTAssertTrue(
+            statuses["Inlay Hints"]?.contains(" | inlay_hints | Inlay Hints: 2 hints") == true
+        )
     }
 
     func testCodeLensAtCursorFiltersActionsToCurrentLine() throws {
@@ -1031,9 +1057,9 @@ final class AttoEditorCommandTests: XCTestCase {
         let vc = makeEditorArea(workspaceRootURL: tempDir)
         let window = attachToWindow(vc)
         vc.openFile(url: fileURL, mode: .pinned)
+        let resultEventCursor = vc._latestLspResultLifecycleEventSequenceForTesting()
 
-        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
-        try editorView.editor.lspApplyCodeLensJSON("""
+        XCTAssertTrue(vc._applyCodeLensResultJSONForTesting("""
         [
           {
             "range": {
@@ -1050,7 +1076,7 @@ final class AttoEditorCommandTests: XCTestCase {
             "command": { "title": "Run Two", "command": "test.runTwo" }
           }
         ]
-        """)
+        """))
 
         XCTAssertTrue(vc.showCodeLensPanelInActiveTab())
         let panel = try XCTUnwrap(window.childWindows?.first {
@@ -1070,6 +1096,19 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(vc._codeLensPanelRowCountForTesting(), 2)
         XCTAssertEqual(vc._codeLensPanelItemsForTesting().map(\.title), ["Run One", "Run Two"])
         XCTAssertTrue(vc._codeLensPanelIsVisibleForTesting())
+
+        let events = vc._lspResultLifecycleEventsForTesting(after: resultEventCursor)
+            .filter { $0.family == "code_lens" }
+        XCTAssertEqual(events.map(\.payload), [.codeLens(itemCount: 2)])
+
+        XCTAssertTrue(vc.showLspWorkbenchPanel())
+        let statuses = Dictionary(uniqueKeysWithValues: vc._lspWorkbenchPanelItemsForTesting().map {
+            ($0.title, $0.status)
+        })
+        XCTAssertTrue(statuses["Code Lens"]?.hasPrefix("2 actions | Fresh | Result #") == true)
+        XCTAssertTrue(
+            statuses["Code Lens"]?.contains(" | code_lens | Code Lens: 2 actions") == true
+        )
     }
 
     func testCodeLensActionTitlesUseCoreDocumentURIProjection() throws {
