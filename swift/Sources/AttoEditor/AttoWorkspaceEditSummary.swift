@@ -7,6 +7,8 @@ enum AttoWorkspaceEditPreviewDecision: Equatable {
     case openConflict(String)
     case saveConflict(String)
     case discardConflict(String)
+    case saveAndRetry(String)
+    case discardAndRetry(String)
 }
 
 struct AttoWorkspaceEditPreview: Equatable {

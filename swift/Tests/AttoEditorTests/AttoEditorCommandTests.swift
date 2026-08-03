@@ -6766,6 +6766,150 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(vc.activeTab).editCore.editor.text(), "updated main\n")
     }
 
+    func testWorkspaceEditPreviewSaveAndRetryDecisionAppliesAfterSavingTargetTab() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let dirtyURL = tempDir.appendingPathComponent("save-retry-conflict-dirty.txt")
+        let mainURL = tempDir.appendingPathComponent("save-retry-conflict-main.txt")
+        try "dirty\n".write(to: dirtyURL, atomically: true, encoding: .utf8)
+        try "main\n".write(to: mainURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: dirtyURL, mode: .pinned)
+        XCTAssertTrue(vc.executeActiveEditorCommandJSON(#"{"kind":"edit","op":"insert_text","text":"!"}"#))
+        vc.openFile(url: mainURL, mode: .pinned)
+
+        var previews: [AttoWorkspaceEditPreview] = []
+        var decisions: [AttoWorkspaceEditPreviewDecision] = [
+            .saveAndRetry(dirtyURL.absoluteString),
+            .apply,
+        ]
+        vc._setWorkspaceEditPreviewDecisionProviderForTesting { preview in
+            previews.append(preview)
+            return decisions.removeFirst()
+        }
+        let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
+
+        let workspaceEdit = """
+        {
+          "applyMode": "atomic",
+          "workspaceEdit": {
+            "documentChanges": [
+              {
+                "textDocument": {
+                  "uri": "\(mainURL.absoluteString)"
+                },
+                "edits": [
+                  {
+                    "range": {
+                      "start": { "line": 0, "character": 0 },
+                      "end": { "line": 0, "character": 0 }
+                    },
+                    "newText": "updated "
+                  }
+                ]
+              },
+              {
+                "kind": "delete",
+                "uri": "\(dirtyURL.absoluteString)"
+              }
+            ]
+          }
+        }
+        """
+
+        XCTAssertTrue(vc.applyWorkspaceEditJSONToActiveTab(workspaceEdit))
+        XCTAssertEqual(decisions.count, 0)
+        XCTAssertEqual(previews.count, 2)
+        XCTAssertFalse(previews[0].canApply)
+        XCTAssertEqual(previews[0].firstSaveableConflictTargetURI, dirtyURL.absoluteString)
+        XCTAssertTrue(previews[1].canApply)
+        XCTAssertTrue(previews[1].conflicts.isEmpty)
+        XCTAssertEqual(
+            try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting()),
+            coreTransactionCursor + 1
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dirtyURL.path))
+        XCTAssertEqual(try XCTUnwrap(vc.activeTab).fileURL.standardizedFileURL, mainURL.standardizedFileURL)
+        XCTAssertEqual(try XCTUnwrap(vc.activeTab).editCore.editor.text(), "updated main\n")
+    }
+
+    func testWorkspaceEditPreviewDiscardAndRetryDecisionAppliesAfterReloadingTargetTab() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let dirtyURL = tempDir.appendingPathComponent("discard-retry-conflict-dirty.txt")
+        let mainURL = tempDir.appendingPathComponent("discard-retry-conflict-main.txt")
+        try "dirty\n".write(to: dirtyURL, atomically: true, encoding: .utf8)
+        try "main\n".write(to: mainURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: dirtyURL, mode: .pinned)
+        XCTAssertTrue(vc.executeActiveEditorCommandJSON(#"{"kind":"edit","op":"insert_text","text":"!"}"#))
+        vc.openFile(url: mainURL, mode: .pinned)
+
+        var previews: [AttoWorkspaceEditPreview] = []
+        var decisions: [AttoWorkspaceEditPreviewDecision] = [
+            .discardAndRetry(dirtyURL.absoluteString),
+            .apply,
+        ]
+        vc._setWorkspaceEditPreviewDecisionProviderForTesting { preview in
+            previews.append(preview)
+            return decisions.removeFirst()
+        }
+        let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
+
+        let workspaceEdit = """
+        {
+          "applyMode": "atomic",
+          "workspaceEdit": {
+            "documentChanges": [
+              {
+                "textDocument": {
+                  "uri": "\(mainURL.absoluteString)"
+                },
+                "edits": [
+                  {
+                    "range": {
+                      "start": { "line": 0, "character": 0 },
+                      "end": { "line": 0, "character": 0 }
+                    },
+                    "newText": "updated "
+                  }
+                ]
+              },
+              {
+                "kind": "delete",
+                "uri": "\(dirtyURL.absoluteString)"
+              }
+            ]
+          }
+        }
+        """
+
+        XCTAssertTrue(vc.applyWorkspaceEditJSONToActiveTab(workspaceEdit))
+        XCTAssertEqual(decisions.count, 0)
+        XCTAssertEqual(previews.count, 2)
+        XCTAssertFalse(previews[0].canApply)
+        XCTAssertEqual(previews[0].firstDiscardableConflictTargetURI, dirtyURL.absoluteString)
+        XCTAssertTrue(previews[1].canApply)
+        XCTAssertTrue(previews[1].conflicts.isEmpty)
+        XCTAssertEqual(
+            try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting()),
+            coreTransactionCursor + 1
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dirtyURL.path))
+        XCTAssertEqual(try XCTUnwrap(vc.activeTab).fileURL.standardizedFileURL, mainURL.standardizedFileURL)
+        XCTAssertEqual(try XCTUnwrap(vc.activeTab).editCore.editor.text(), "updated main\n")
+    }
+
     func testWorkspaceEditPreviewTextUsesCoreDocumentURIProjection() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

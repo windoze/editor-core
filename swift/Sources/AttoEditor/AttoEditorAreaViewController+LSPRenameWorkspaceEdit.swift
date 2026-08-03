@@ -4,6 +4,14 @@ import EditorCoreUI
 import EditorCoreUIFFI
 import Foundation
 
+enum AttoWorkspaceEditPreviewResolution {
+    case apply
+    case stop
+    case retry
+}
+
+private let attoWorkspaceEditPreviewRetryLimit = 8
+
 extension AttoEditorAreaViewController {
     // MARK: - LSP rename
 
@@ -192,7 +200,8 @@ extension AttoEditorAreaViewController {
         _ workspaceEdit: AttoWorkspaceEditParser.ParseResult,
         workspaceEditJSON: String,
         documentURI: String?,
-        initialActiveTab: AttoEditorTab
+        initialActiveTab: AttoEditorTab,
+        previewRetryDepth: Int = 0
     ) -> Bool {
         guard let coreDocuments else { return false }
         let feedbackEditorView = activeTab?.editCore.editorView ?? initialActiveTab.editCore.editorView
@@ -200,17 +209,35 @@ extension AttoEditorAreaViewController {
         do {
             try syncOpenTabsToCoreBeforeWorkspaceEditApply(coreDocuments)
             let transientStatusBeforeConfirmation = transientStatusText
-            guard try confirmCoreWorkspaceEditPreviewIfNeeded(
+            let previewResolution = try confirmCoreWorkspaceEditPreviewIfNeeded(
                 coreDocuments,
                 workspaceEdit: workspaceEdit,
                 workspaceEditJSON: workspaceEditJSON,
                 editorView: feedbackEditorView
-            ) else {
+            )
+            switch previewResolution {
+            case .apply:
+                break
+            case .stop:
                 if transientStatusText == transientStatusBeforeConfirmation {
                     setTransientStatusText("Workspace edit cancelled")
                 }
                 return false
+            case .retry:
+                guard previewRetryDepth < attoWorkspaceEditPreviewRetryLimit else {
+                    setTransientStatusText("WorkspaceEdit retry limit reached")
+                    NSSound.beep()
+                    return false
+                }
+                return applyWorkspaceEditWithCoreTransaction(
+                    workspaceEdit,
+                    workspaceEditJSON: workspaceEditJSON,
+                    documentURI: documentURI,
+                    initialActiveTab: initialActiveTab,
+                    previewRetryDepth: previewRetryDepth + 1
+                )
             }
+
             let projectedURLsBeforeApply = projectedFileURLsByTabID()
             let coreResult = try coreDocuments.applyWorkspaceEditTransaction(workspaceEditJSON)
             try syncAppTabsFromCoreWorkspaceEditTransaction(
@@ -275,7 +302,7 @@ extension AttoEditorAreaViewController {
         workspaceEdit: AttoWorkspaceEditParser.ParseResult,
         workspaceEditJSON: String,
         editorView: EditorCoreSkiaView
-    ) throws -> Bool {
+    ) throws -> AttoWorkspaceEditPreviewResolution {
         let result = try coreDocuments.previewWorkspaceEditTransaction(workspaceEditJSON)
         var preview = AttoWorkspaceEditPreview(
             result: result,
@@ -286,14 +313,14 @@ extension AttoEditorAreaViewController {
             workspaceEdit: workspaceEdit,
             textForURI: workspaceEditPreviewText(for:)
         )
-        guard preview.requiresConfirmation else { return true }
+        guard preview.requiresConfirmation else { return .apply }
         return confirmWorkspaceEditPreview(preview, editorView: editorView)
     }
 
     func confirmWorkspaceEditPreview(
         _ preview: AttoWorkspaceEditPreview,
         editorView: EditorCoreSkiaView
-    ) -> Bool {
+    ) -> AttoWorkspaceEditPreviewResolution {
         if let decisionProvider = workspaceEditPreviewDecisionProviderForTesting {
             return handleWorkspaceEditPreviewDecision(
                 decisionProvider(preview),
@@ -327,26 +354,30 @@ extension AttoEditorAreaViewController {
         _ decision: AttoWorkspaceEditPreviewDecision,
         preview: AttoWorkspaceEditPreview,
         editorView: EditorCoreSkiaView
-    ) -> Bool {
+    ) -> AttoWorkspaceEditPreviewResolution {
         switch decision {
         case .apply:
             guard preview.canApply else {
                 setTransientStatusText("Resolve WorkspaceEdit conflicts before applying")
                 NSSound.beep()
-                return false
+                return .stop
             }
-            return true
+            return .apply
         case .cancel:
-            return false
+            return .stop
         case .openConflict(let uri):
             openWorkspaceEditConflictTarget(uri, editorView: editorView)
-            return false
+            return .stop
         case .saveConflict(let uri):
             saveWorkspaceEditConflictTarget(uri, editorView: editorView)
-            return false
+            return .stop
         case .discardConflict(let uri):
             discardWorkspaceEditConflictTarget(uri, editorView: editorView)
-            return false
+            return .stop
+        case .saveAndRetry(let uri):
+            return saveWorkspaceEditConflictTarget(uri, editorView: editorView) ? .retry : .stop
+        case .discardAndRetry(let uri):
+            return discardWorkspaceEditConflictTarget(uri, editorView: editorView) ? .retry : .stop
         }
     }
 

@@ -511,6 +511,13 @@
     - `swift test --package-path swift --filter 'AttoWorkspaceEditSummaryTests.testWorkspaceEditPreviewListsTypedConflicts|AttoEditorCommandTests.testWorkspaceEditPreviewDiscardConflictDecisionReloadsTargetTabBeforeRetry|AttoEditorCommandTests.testWorkspaceEditPreviewSaveConflictDecisionSavesTargetTabBeforeRetry|AttoEditorCommandTests.testWorkspaceEditPreviewOpenConflictDecisionSelectsTargetTab|AttoEditorCommandTests.testWorkspaceEditPreviewBlocksAtomicConflictEvenWhenDecisionProviderApplies'`
     - `git diff --check`
 
+- 中间提交：`feat(app): retry workspace edits after resolving conflicts`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；把 `dirty_document` / `save_or_discard` conflict 的手动 save/discard 动作推进到可显式保存/丢弃后重试同一 WorkspaceEdit transaction，使用户可以在 preview 中完成解决并继续应用。
+  - 提交边界：新增 preview decision `saveAndRetry(uri)` / `discardAndRetry(uri)`、AppKit preview panel 的 `Save & Retry` / `Discard & Retry` 按钮和稳定 accessibility identifier；App 层把 confirmation 结果改为 `apply/stop/retry` 三态，retry 会重新同步打开 tab、重新 preview 同一 WorkspaceEdit JSON，并在用户确认后继续 core transaction apply，带有限 retry guard。本提交不自动重跑 LSP request、不生成新的 WorkspaceEdit payload、不新增 Rust/FFI ABI，也不改变 core conflict schema、transaction apply/preview/undo/redo 语义。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testWorkspaceEditPreviewSaveAndRetryDecisionAppliesAfterSavingTargetTab|AttoEditorCommandTests.testWorkspaceEditPreviewDiscardAndRetryDecisionAppliesAfterReloadingTargetTab|AttoEditorCommandTests.testWorkspaceEditPreviewSaveConflictDecisionSavesTargetTabBeforeRetry|AttoEditorCommandTests.testWorkspaceEditPreviewDiscardConflictDecisionReloadsTargetTabBeforeRetry|AttoWorkspaceEditSummaryTests.testWorkspaceEditPreviewListsTypedConflicts'`
+    - `git diff --check`
+
 ## 阶段 5: 多文档、tab、split、project、session 完整迁移
 
 ### 目标
