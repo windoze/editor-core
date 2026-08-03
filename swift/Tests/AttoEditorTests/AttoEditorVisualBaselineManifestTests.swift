@@ -29,6 +29,18 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
             XCTAssertLessThanOrEqual(visualCase.maxDifferentPixelRatio, 1)
             XCTAssertTrue(visualCase.baseline.hasSuffix(".png"))
             XCTAssertTrue(visualCase.showReplaceBar == false || visualCase.showFindBar)
+            if let fontSizePoints = visualCase.fontSizePoints {
+                XCTAssertGreaterThan(fontSizePoints, 0, visualCase.id)
+            }
+            if visualCase.selectionRanges.isEmpty == false {
+                XCTAssertLessThan(Int(visualCase.primarySelectionIndex), visualCase.selectionRanges.count, visualCase.id)
+            }
+            for range in visualCase.selectionRanges {
+                XCTAssertLessThanOrEqual(range.start, range.end, visualCase.id)
+            }
+            for range in visualCase.collapsedFolds {
+                XCTAssertLessThanOrEqual(range.startLine, range.endLine, visualCase.id)
+            }
 
             for fixture in visualCase.allFixturePaths {
                 let fixtureURL = try visualCase.fixtureURL(path: fixture)
@@ -55,10 +67,16 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
         let documentURLs = try materializeFixtures(for: visualCase, in: tempDir)
         let primaryDocumentURL = try XCTUnwrap(documentURLs[visualCase.fixture])
 
+        let preferences = try makeVisualPreferences(caseID: visualCase.id)
+        var configurationSnapshot = preferences.effectiveConfigurationSnapshot(workspaceRootURL: tempDir)
+        visualCase.applyConfigurationOverrides(to: &configurationSnapshot)
+
         let vc = AttoEditorAreaViewController(
             library: EditorCoreUIFFILibrary(),
             theme: try visualCase.makeTheme(),
-            workspaceRootURL: tempDir
+            workspaceRootURL: tempDir,
+            configurationSnapshot: configurationSnapshot,
+            preferences: preferences
         )
         let window = attachToWindow(vc, size: visualCase.window.nsSize)
         defer { window.close() }
@@ -83,6 +101,7 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
         } else if visualCase.showFindBar {
             vc.showFindBar()
         }
+        try applyScenarioActions(visualCase, to: vc)
         vc.view.layoutSubtreeIfNeeded()
 
         let snapshot = try AttoVisualSnapshot.capture(view: vc.view, scale: CGFloat(visualCase.scale))
@@ -143,6 +162,59 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
             documentURLs[fixture] = documentURL
         }
         return documentURLs
+    }
+
+    private func makeVisualPreferences(caseID: String) throws -> AttoPreferences {
+        let suiteName = "atto_visual_baseline_\(caseID)_\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        addTeardownBlock {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+        return AttoPreferences(defaults: defaults, env: [:])
+    }
+
+    private func applyScenarioActions(
+        _ visualCase: AttoVisualBaselineCase,
+        to vc: AttoEditorAreaViewController
+    ) throws {
+        if let foldingRanges = visualCase.foldingRanges {
+            XCTAssertTrue(vc.applyFoldingRangesResultToActiveTab(foldingRanges), visualCase.id)
+        }
+        for fold in visualCase.collapsedFolds {
+            XCTAssertTrue(
+                vc.executeActiveEditorCommandJSON(
+                    """
+                    {"kind":"style","op":"fold","start_line":\(fold.startLine),"end_line":\(fold.endLine)}
+                    """,
+                    treatsAsTextMutation: false
+                ),
+                visualCase.id
+            )
+        }
+        if let semanticTokens = visualCase.semanticTokens {
+            XCTAssertTrue(vc.applySemanticTokensResultToActiveTab(semanticTokens), visualCase.id)
+        }
+        if visualCase.diagnosticMarkers.isEmpty == false {
+            let tab = try XCTUnwrap(vc.activeTab, visualCase.id)
+            vc.updateDiagnosticMarkers(
+                for: tab,
+                projections: visualCase.diagnosticMarkers.map(\.projection)
+            )
+        }
+        if visualCase.selectionRanges.isEmpty == false {
+            let tab = try XCTUnwrap(vc.activeTab, visualCase.id)
+            try tab.editCore.editor.setSelections(
+                visualCase.selectionRanges.map(\.range),
+                primaryIndex: visualCase.primarySelectionIndex
+            )
+            tab.editCore.layoutSubtreeIfNeeded()
+            tab.editCore.editorView.kickProcessingPoll()
+            tab.editCore.editorView.needsDisplay = true
+            tab.editCore.needsDisplay = true
+            vc.updateStatusBar()
+            vc.view.window?.makeFirstResponder(tab.editCore.editorView)
+        }
     }
 
     private func makeTemporaryDirectory(caseID: String) throws -> URL {
@@ -263,6 +335,14 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
     let showFindBar: Bool
     let showReplaceBar: Bool
     let splitActiveTabRight: Bool
+    let fontFamilies: [String]?
+    let fontSizePoints: Double?
+    let selectionRanges: [AttoVisualSelectionRange]
+    let primarySelectionIndex: UInt32
+    let foldingRanges: EcuLspFoldingRangeResult?
+    let collapsedFolds: [AttoVisualFoldRange]
+    let semanticTokens: EcuLspSemanticTokensResult?
+    let diagnosticMarkers: [AttoVisualDiagnosticMarker]
     let perChannelTolerance: UInt8
     let maxDifferentPixelRatio: Double
 
@@ -288,6 +368,14 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
         case showFindBar
         case showReplaceBar
         case splitActiveTabRight
+        case fontFamilies
+        case fontSizePoints
+        case selectionRanges
+        case primarySelectionIndex
+        case foldingRanges
+        case collapsedFolds
+        case semanticTokens
+        case diagnosticMarkers
         case perChannelTolerance
         case maxDifferentPixelRatio
     }
@@ -307,8 +395,31 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
         showFindBar = try container.decodeIfPresent(Bool.self, forKey: .showFindBar) ?? false
         showReplaceBar = try container.decodeIfPresent(Bool.self, forKey: .showReplaceBar) ?? false
         splitActiveTabRight = try container.decodeIfPresent(Bool.self, forKey: .splitActiveTabRight) ?? false
+        fontFamilies = try container.decodeIfPresent([String].self, forKey: .fontFamilies)
+        fontSizePoints = try container.decodeIfPresent(Double.self, forKey: .fontSizePoints)
+        selectionRanges = try container.decodeIfPresent(
+            [AttoVisualSelectionRange].self,
+            forKey: .selectionRanges
+        ) ?? []
+        primarySelectionIndex = try container.decodeIfPresent(UInt32.self, forKey: .primarySelectionIndex) ?? 0
+        foldingRanges = try container.decodeIfPresent(EcuLspFoldingRangeResult.self, forKey: .foldingRanges)
+        collapsedFolds = try container.decodeIfPresent([AttoVisualFoldRange].self, forKey: .collapsedFolds) ?? []
+        semanticTokens = try container.decodeIfPresent(EcuLspSemanticTokensResult.self, forKey: .semanticTokens)
+        diagnosticMarkers = try container.decodeIfPresent(
+            [AttoVisualDiagnosticMarker].self,
+            forKey: .diagnosticMarkers
+        ) ?? []
         perChannelTolerance = try container.decode(UInt8.self, forKey: .perChannelTolerance)
         maxDifferentPixelRatio = try container.decode(Double.self, forKey: .maxDifferentPixelRatio)
+    }
+
+    func applyConfigurationOverrides(to snapshot: inout AttoConfigurationSnapshot) {
+        if let fontFamilies {
+            snapshot.editor.fontFamilies = fontFamilies
+        }
+        if let fontSizePoints {
+            snapshot.editor.fontSizePoints = fontSizePoints
+        }
     }
 
     func makeTheme() throws -> EditorCoreSkiaTheme {
@@ -320,6 +431,43 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
         default:
             throw AttoVisualBaselineError.invalidManifest("unsupported visual baseline theme: \(themeName)")
         }
+    }
+}
+
+private struct AttoVisualSelectionRange: Decodable, Equatable {
+    let start: UInt32
+    let end: UInt32
+
+    var range: EcuSelectionRange {
+        EcuSelectionRange(start: start, end: end)
+    }
+}
+
+private struct AttoVisualFoldRange: Decodable, Equatable {
+    let startLine: UInt32
+    let endLine: UInt32
+}
+
+private struct AttoVisualDiagnosticMarker: Decodable, Equatable {
+    let logicalLine: UInt32
+    let charOffset: UInt32
+    let severity: EcuDiagnosticSeverity?
+    let sourceName: String?
+
+    var projection: AttoDiagnosticMarkerProjection {
+        AttoDiagnosticMarkerProjection(
+            logicalLine: logicalLine,
+            charOffset: charOffset,
+            severity: severity,
+            source: AttoDiagnosticMarkerProjection.Source(rawValue: sourceName ?? "") ?? .active
+        )
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case logicalLine
+        case charOffset
+        case severity
+        case sourceName = "source"
     }
 }
 

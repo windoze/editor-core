@@ -1616,8 +1616,9 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 已完成：阶段 13 已新增 visual baseline fixture manifest 起点，`AttoEditorTests` 可通过 SwiftPM resource bundle 加载 `VisualBaselines/manifest.json` 和首个 light theme + Unicode editor chrome fixture；默认生成/校验 review PNG artifact，设置 `ATTO_VISUAL_BASELINE_DIR` 时可读取外部 PNG baseline 严格比较并输出 diff artifacts，设置 `ATTO_VISUAL_ARTIFACT_DIR` 时可固定 artifact 输出目录。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): add visual baseline fixture manifest` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
 - 已完成：阶段 13 已新增 visual baseline record/update workflow，`ATTO_VISUAL_RECORD_BASELINE_DIR` 可让 manifest XCTest 把当前 snapshot 写入对应 baseline 路径，`swift/scripts/update-visual-baselines.sh` 通过 `.build/atto-visual-baseline-record.json` 临时配置提供本地更新入口，并支持 `--baseline-root` / `--artifact-dir` 固定输出目录。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): add visual baseline update workflow` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
 - 已完成：阶段 13 已扩展 visual baseline fixture matrix，manifest 现在覆盖 light Unicode find bar、light replace bar、dark theme 多 tab/active tab、light split pane + minimap/long line 场景，并由同一 XCTest 遍历所有 cases 捕获 artifact/record/compare。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): expand visual baseline fixture matrix` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
+- 已完成：阶段 13 已扩展 visual overlay/multicursor fixture matrix，manifest 现在可声明测试侧 font families/font size、selection ranges、folding ranges、collapsed folds、semantic tokens 和 diagnostic marker projections，并新增 dark semantic/diagnostics/folding overlay case 与 light font/multicursor case。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): cover visual overlays and multicursor fixtures` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
 - 仍缺提交机器稳定的 PNG golden baselines 和 CI baseline 审核策略。
-- 继续扩展 fixtures，覆盖字体矩阵、多光标、折叠、diagnostics marker、semantic highlighting 和更完整 minimap/overlay 组合。
+- 继续扩展 fixtures，覆盖更完整 minimap/overlay 组合、panel/popup 组合和更多跨 theme/window-size 的真实 baseline 审核场景。
 - 补 `XCUIApplication` smoke tests。
 - 在 CI 上固定 macOS runner、字体、scale factor 和渲染后端。
 

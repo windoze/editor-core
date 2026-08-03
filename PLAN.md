@@ -2106,6 +2106,16 @@
     - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`（通过临时 `swift/.build/atto-visual-baseline-record.json` 指向 `/tmp/atto-visual-baselines-matrix-check` 和 `/tmp/atto-visual-artifacts-matrix-check` 验证 record mode 写出全部 manifest baselines）
     - `bash -n swift/scripts/update-visual-baselines.sh`
     - `git diff --check`
+- 中间提交：`test(app): cover visual overlays and multicursor fixtures`
+  - 所属任务：阶段 13 的 macOS UI 自动化与视觉回归测试体系增量；继续扩展 visual baseline manifest，让同一截图 harness 覆盖字体矩阵、多 selection/多光标视觉状态、folding range、collapsed fold placeholder、semantic tokens、gutter diagnostics 和 minimap diagnostic markers。
+  - 提交边界：`AttoEditorVisualBaselineManifestTests` 新增测试侧 scenario action 字段，支持 manifest 配置 font families/font size、selection ranges、folding ranges、collapsed folds、semantic tokens 和 diagnostic marker projections；manifest 新增 dark semantic/diagnostics/folding overlay case 和 light font/multicursor case 及对应 fixtures。该提交不提交机器相关 PNG golden baseline、不新增 `XCUIApplication` 黑盒 target、不接 CI runner 固定字体/DPI/scale、不改变产品 UI/渲染行为，也不把 scenario action schema 暴露为产品 API。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures`
+    - `swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests.testVisualBaselineFixturesCaptureReviewArtifactsAndCanCompareExternalBaselines`
+    - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests|AttoEditorVisualSnapshotHarnessTests'`
+    - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`（通过临时 `swift/.build/atto-visual-baseline-record.json` 指向 `/tmp/atto-visual-baselines-overlay-check-20260803` 和 `/tmp/atto-visual-artifacts-overlay-check-20260803` 验证 record mode 写出 6 个 baseline PNG 与 6 个 artifact PNG）
+    - `bash -n swift/scripts/update-visual-baselines.sh`
+    - `git diff --check`
 
 ## 阶段 14: 外观、布局与 Sublime-like 操作打磨
 

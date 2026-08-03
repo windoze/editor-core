@@ -1,0 +1,6 @@
+repeat_target();
+repeat_target();
+repeat_target();
+
+The selected ranges above exercise multiple editor selections with a fixed
+font family fallback chain and a larger point size.

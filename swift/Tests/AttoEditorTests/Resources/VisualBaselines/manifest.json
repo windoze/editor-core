@@ -70,6 +70,117 @@
       "splitActiveTabRight": true,
       "perChannelTolerance": 2,
       "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "editor-chrome-dark-semantic-diagnostics-folding",
+      "description": "Dark editor chrome with semantic tokens, a collapsed folding range, gutter diagnostics, and minimap markers.",
+      "fixture": "VisualFixtures/semantic-diagnostics-folding.rs",
+      "baseline": "VisualBaselines/editor-chrome-dark-semantic-diagnostics-folding.png",
+      "artifactName": "editor-chrome-dark-semantic-diagnostics-folding",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 820,
+        "height": 520
+      },
+      "scale": 1.0,
+      "foldingRanges": [
+        {
+          "startLine": 0,
+          "endLine": 6,
+          "kind": "region"
+        },
+        {
+          "startLine": 2,
+          "endLine": 4,
+          "kind": "region",
+          "collapsedText": "if status ... "
+        }
+      ],
+      "collapsedFolds": [
+        {
+          "startLine": 2,
+          "endLine": 4
+        }
+      ],
+      "semanticTokens": {
+        "resultId": "visual-semantic-1",
+        "data": [
+          0, 0, 2, 15, 0,
+          0, 3, 13, 12, 0,
+          0, 14, 5, 7, 0,
+          0, 7, 3, 1, 0,
+          0, 8, 6, 1, 0,
+          1, 4, 3, 15, 0,
+          0, 4, 6, 8, 0,
+          0, 9, 14, 12, 0,
+          0, 15, 5, 7, 0,
+          1, 4, 2, 15, 0,
+          0, 3, 6, 8, 0,
+          0, 7, 8, 13, 0,
+          1, 8, 6, 15, 0,
+          0, 7, 7, 18, 0,
+          2, 4, 6, 8, 0
+        ]
+      },
+      "diagnosticMarkers": [
+        {
+          "logicalLine": 1,
+          "charOffset": 8,
+          "severity": "warning",
+          "source": "active"
+        },
+        {
+          "logicalLine": 2,
+          "charOffset": 7,
+          "severity": "error",
+          "source": "active"
+        },
+        {
+          "logicalLine": 5,
+          "charOffset": 4,
+          "severity": "hint",
+          "source": "workspace"
+        }
+      ],
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "editor-chrome-light-font-multicursor",
+      "description": "Light editor chrome with a fixed font matrix and multiple selected occurrences.",
+      "fixture": "VisualFixtures/font-multicursor.txt",
+      "baseline": "VisualBaselines/editor-chrome-light-font-multicursor.png",
+      "artifactName": "editor-chrome-light-font-multicursor",
+      "theme": "defaultLight",
+      "window": {
+        "width": 760,
+        "height": 460
+      },
+      "scale": 1.0,
+      "fontFamilies": [
+        "Menlo",
+        "SF Mono",
+        "Monaco"
+      ],
+      "fontSizePoints": 16,
+      "selectionRanges": [
+        {
+          "start": 0,
+          "end": 13
+        },
+        {
+          "start": 17,
+          "end": 30
+        },
+        {
+          "start": 34,
+          "end": 47
+        }
+      ],
+      "primarySelectionIndex": 2,
+      "showFindBar": true,
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
     }
   ]
 }
