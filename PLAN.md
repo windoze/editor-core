@@ -1661,6 +1661,12 @@
     - `swift test --package-path swift --filter 'EditorStateJSONCommandBridgeTests/testCommandEnvelopeDecodesFutureFieldsAndUnknownStatus'`
     - `swift test --package-path swift --filter 'EditorCoreUIFFITests/testExecuteCommandEnvelopeDecodesFutureFieldsAndUnknownStatus'`
     - `git diff --check`
+- 中间提交：`feat(ffi): add headless runtime compatibility report`
+  - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；在 Swift headless `EditorCoreFFI` 中补齐 runtime mismatch / missing feature diagnostic 起点，让 Swift 和第三方 host 能复用同一 compatibility report 评估 ABI version、required features 和 optional features。
+  - 提交边界：新增 `EditorCoreFFIRuntimeFeature`、`EditorCoreFFIRuntimeCompatibilityReport` 和 `EditorCoreFFIRuntimeCompatibility`，提供默认 full-surface required feature 列表、可传入自定义 required/optional feature 集合的 evaluate API、load error/older ABI/missing required/missing optional diagnostic message。该提交不改变 C ABI，不新增 feature bit，不接入 AttoEditor App 启动逻辑，不替代 UI FFI 的 `AttoRuntimeCompatibility`。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'EditorCoreFFIRuntimeCompatibilityTests'`
+    - `git diff --check`
 
 ## 阶段 11: Tree-sitter 与 LSP 主路线产品化
 
