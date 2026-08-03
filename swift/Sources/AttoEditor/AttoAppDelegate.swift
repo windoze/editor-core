@@ -177,7 +177,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     private let macroStore: AttoMacroStore?
     private var macroImportSelectionProvider: (() -> (url: URL, name: String)?)?
     private var macroExportSelectionProvider: (([String]) -> (name: String, url: URL)?)?
-    private var macroDeleteConfirmationProvider: ((String) -> Bool)?
+    private var macroDeleteConfirmationProvider: (([String]) -> Bool)?
     private var isRecordingMacro = false
     private var isReplayingMacro = false
     private var currentMacroCommands: [AttoRecordedCommand] = []
@@ -394,6 +394,21 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
                     isRequired: true,
                     allowsEmptyString: false,
                     help: "New .sublime-macro file name."
+                ),
+            ],
+            macroPolicy: .notRecordable
+        )
+    }
+
+    private static func macroDeleteBatchCommandSchema() -> AttoCommandSchema {
+        AttoCommandSchema(
+            parameters: [
+                AttoCommandParameterSchema(
+                    name: "names",
+                    title: "Macro Names",
+                    kind: .json,
+                    isRequired: true,
+                    help: "JSON array of named macros to delete, for example [\"Build\", \"Format\"]."
                 ),
             ],
             macroPolicy: .notRecordable
@@ -991,6 +1006,13 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
                 self?.deleteNamedMacro(arguments: arguments)
             },
             .init(
+                id: "macro.delete_named_batch",
+                title: "Macro: Delete Named Macros…",
+                schema: Self.macroDeleteBatchCommandSchema()
+            ) { [weak self] arguments in
+                self?.deleteNamedMacros(arguments: arguments)
+            },
+            .init(
                 id: "macro.import_file",
                 title: "Macro: Import Macro File…",
                 schema: Self.macroImportCommandSchema()
@@ -1294,6 +1316,12 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     }
 
     func _setMacroDeleteConfirmationProviderForTesting(_ provider: ((String) -> Bool)?) {
+        macroDeleteConfirmationProvider = provider.map { stringProvider in
+            { names in stringProvider(names.joined(separator: "\n")) }
+        }
+    }
+
+    func _setMacroDeleteBatchConfirmationProviderForTesting(_ provider: (([String]) -> Bool)?) {
         macroDeleteConfirmationProvider = provider
     }
 
@@ -1547,6 +1575,16 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         _ = deleteNamedMacro(named: name)
     }
 
+    private func deleteNamedMacros(arguments: AttoCommandArguments) {
+        let effectiveArguments = arguments.isEmpty
+            ? (promptMacroArguments(commandID: "macro.delete_named_batch", title: "Macro: Delete Named Macros…") ?? [:])
+            : arguments
+        guard let names = macroNamesArgument(effectiveArguments, parameter: "names") else {
+            return
+        }
+        _ = deleteNamedMacros(named: names)
+    }
+
     private func importNamedMacro(arguments: AttoCommandArguments) {
         if arguments.isEmpty {
             guard let selection = macroImportSelectionProvider?() ?? promptImportMacroFile() else {
@@ -1652,18 +1690,78 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         }
     }
 
+    private func deleteNamedMacros(named rawNames: [String]) -> Bool {
+        guard isRecordingMacro == false, let macroStore else {
+            NSSound.beep()
+            return false
+        }
+
+        let names: [String]
+        do {
+            names = try macroStore.normalizedNamedMacroNames(rawNames)
+        } catch {
+            NSSound.beep()
+            NSLog("AttoEditor: invalid macro names for batch delete: %@", String(describing: error))
+            return false
+        }
+        let existingNames = Set(macroStore.namedMacroNames())
+        if let missingName = names.first(where: { existingNames.contains($0) == false }) {
+            NSSound.beep()
+            NSLog("AttoEditor: failed to delete macros, missing macro %@", missingName)
+            return false
+        }
+        guard confirmDeleteNamedMacros(names) else {
+            return false
+        }
+
+        do {
+            try macroStore.deleteNamedMacros(names)
+            return true
+        } catch {
+            NSSound.beep()
+            NSLog("AttoEditor: failed to delete macros %@: %@", names.joined(separator: ", "), String(describing: error))
+            return false
+        }
+    }
+
     private func confirmDeleteNamedMacro(_ name: String) -> Bool {
+        confirmDeleteNamedMacros([name])
+    }
+
+    private func confirmDeleteNamedMacros(_ names: [String]) -> Bool {
         if let macroDeleteConfirmationProvider {
-            return macroDeleteConfirmationProvider(name)
+            return macroDeleteConfirmationProvider(names)
         }
 
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "Delete Macro?"
-        alert.informativeText = "Delete the named macro \"\(name)\" from AttoEditor's macro directory. This cannot be undone."
+        alert.messageText = names.count == 1 ? "Delete Macro?" : "Delete Macros?"
+        if names.count == 1, let name = names.first {
+            alert.informativeText = "Delete the named macro \"\(name)\" from AttoEditor's macro directory. This cannot be undone."
+        } else {
+            let preview = names.prefix(8).map { "- \($0)" }.joined(separator: "\n")
+            let overflow = names.count > 8 ? "\n...and \(names.count - 8) more." : ""
+            alert.informativeText = "Delete \(names.count) named macros from AttoEditor's macro directory?\n\n\(preview)\(overflow)\n\nThis cannot be undone."
+        }
         alert.addButton(withTitle: "Delete")
         alert.addButton(withTitle: "Cancel")
         return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    private func macroNamesArgument(_ arguments: AttoCommandArguments, parameter: String) -> [String]? {
+        guard case .json(let rawJSON)? = arguments[parameter],
+              let data = rawJSON.data(using: .utf8),
+              let names = try? JSONDecoder().decode([String].self, from: data)
+        else {
+            NSSound.beep()
+            NSLog("AttoEditor: macro batch delete expects '%@' to be a JSON string array", parameter)
+            return nil
+        }
+        guard names.isEmpty == false else {
+            NSSound.beep()
+            return nil
+        }
+        return names
     }
 
     private func importNamedMacro(fromPath path: String, named name: String) -> Bool {
@@ -1837,7 +1935,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             return isRecordingMacro == false && lastMacroCommands.isEmpty == false
         case "macro.save_named":
             return isRecordingMacro == false && lastMacroCommands.isEmpty == false && macroStore != nil
-        case "macro.replay_named", "macro.rename_named", "macro.delete_named":
+        case "macro.replay_named", "macro.rename_named", "macro.delete_named", "macro.delete_named_batch":
             return isRecordingMacro == false && (macroStore?.namedMacroNames().isEmpty == false)
         case "macro.import_file":
             return isRecordingMacro == false && macroStore != nil
@@ -1977,6 +2075,8 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             return Self.macroRenameCommandSchema(choices: macroStore?.namedMacroNames() ?? [])
         case "macro.delete_named":
             return Self.macroNameCommandSchema(choices: macroStore?.namedMacroNames() ?? [])
+        case "macro.delete_named_batch":
+            return Self.macroDeleteBatchCommandSchema()
         case "macro.import_file":
             return Self.macroImportCommandSchema()
         case "macro.export_named":

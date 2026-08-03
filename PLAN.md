@@ -1430,6 +1430,13 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testCommandMacroRenamesAndDeletesNamedSublimeMacroFiles`
     - `swift test --package-path swift --filter 'AttoEditorCommandTests.test(CommandMacroImportExportUsesNativeFileSelectionProviders|CommandMacroImportsAndExportsSublimeMacroFiles|DefaultCommandPaletteIncludesCoreEditorCommandIDs|CommandRegistryCarriesParameterSchemasAndMacroPolicies|MainMenuItemsUseCommandIDsAndResolvedKeymap)'`
     - `git diff --check`
+- 中间提交：`feat(app): batch delete command macros`
+  - 所属任务：阶段 8 的 Command、menu、keymap、palette 与 Sublime 行为矩阵增量；为命名 `.sublime-macro` 补齐批量删除 command/menu 起点，让多宏清理不需要逐个执行单宏删除。
+  - 提交边界：新增 `macro.delete_named_batch` 参数化命令和 Tools 菜单入口，参数 `names` 使用 JSON string array；App 侧会去重并验证命名宏存在，复用删除确认 UI 一次确认后批量删除；`AttoMacroStore` 新增批量删除和名称归一化 helper。该提交不实现独立宏管理面板、回收站/undo、完整 Sublime package/plugin command runtime、完整 `.sublime-macro` 扩展语义，也不捕获命令内部 modal prompt 产生的参数。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testCommandMacroBatchDeletesNamedSublimeMacroFiles`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.test(CommandMacroRenamesAndDeletesNamedSublimeMacroFiles|CommandMacroImportExportUsesNativeFileSelectionProviders|CommandMacroImportsAndExportsSublimeMacroFiles|DefaultCommandPaletteIncludesCoreEditorCommandIDs|CommandRegistryCarriesParameterSchemasAndMacroPolicies|MainMenuItemsUseCommandIDsAndResolvedKeymap)'`
+    - `git diff --check`
 
 ## 阶段 9: 配置、偏好与 capability DTO 完整性
 

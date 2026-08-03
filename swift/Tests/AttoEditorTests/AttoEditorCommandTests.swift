@@ -49,6 +49,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("macro.replay_named"))
         XCTAssertTrue(ids.contains("macro.rename_named"))
         XCTAssertTrue(ids.contains("macro.delete_named"))
+        XCTAssertTrue(ids.contains("macro.delete_named_batch"))
         XCTAssertTrue(ids.contains("macro.import_file"))
         XCTAssertTrue(ids.contains("macro.export_named"))
         for command in AttoEditorAreaViewController.CursorMovementCommand.allCases {
@@ -234,6 +235,10 @@ final class AttoEditorCommandTests: XCTestCase {
         let deleteNamedMacro = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "macro.delete_named"))
         XCTAssertEqual(deleteNamedMacro.macroPolicy, .notRecordable)
         XCTAssertEqual(deleteNamedMacro.parameters.map(\.name), ["name"])
+        let deleteNamedMacros = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "macro.delete_named_batch"))
+        XCTAssertEqual(deleteNamedMacros.macroPolicy, .notRecordable)
+        XCTAssertEqual(deleteNamedMacros.parameters.map(\.name), ["names"])
+        XCTAssertEqual(deleteNamedMacros.parameters.first?.kind, .json)
         let importMacro = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "macro.import_file"))
         XCTAssertEqual(importMacro.macroPolicy, .notRecordable)
         XCTAssertEqual(importMacro.parameters.map(\.name), ["path", "name"])
@@ -2079,6 +2084,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "macro.replay_named", in: toolsMenu))
         XCTAssertNotNil(findMenuItem(commandID: "macro.rename_named", in: toolsMenu))
         XCTAssertNotNil(findMenuItem(commandID: "macro.delete_named", in: toolsMenu))
+        XCTAssertNotNil(findMenuItem(commandID: "macro.delete_named_batch", in: toolsMenu))
         XCTAssertNotNil(findMenuItem(commandID: "macro.import_file", in: toolsMenu))
         XCTAssertNotNil(findMenuItem(commandID: "macro.export_named", in: toolsMenu))
 
@@ -5144,6 +5150,59 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "macro.replay_named"))
         XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "macro.rename_named"))
         XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "macro.delete_named"))
+    }
+
+    func testCommandMacroBatchDeletesNamedSublimeMacroFiles() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let macroURL = tempDir.appendingPathComponent("Last Macro.sublime-macro")
+        let macroStore = AttoMacroStore(macroFileURL: macroURL)
+        let delegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
+        let commands = [AttoRecordedCommand(commandID: "editor.duplicate_lines", arguments: [:])]
+        try macroStore.save(commands, named: "One", maxCount: 20)
+        try macroStore.save(commands, named: "Two", maxCount: 20)
+        try macroStore.save(commands, named: "Three", maxCount: 20)
+
+        let oneURL = tempDir.appendingPathComponent("One.sublime-macro")
+        let twoURL = tempDir.appendingPathComponent("Two.sublime-macro")
+        let threeURL = tempDir.appendingPathComponent("Three.sublime-macro")
+        XCTAssertEqual(macroStore.namedMacroNames(), ["One", "Three", "Two"])
+        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "macro.delete_named_batch"))
+
+        delegate._setMacroDeleteBatchConfirmationProviderForTesting { names in
+            XCTAssertEqual(names, ["One", "Two"])
+            return false
+        }
+        XCTAssertTrue(delegate.executeCommand(
+            id: "macro.delete_named_batch",
+            arguments: ["names": .json("[\"One\", \"Two\", \"One.sublime-macro\"]")]
+        ))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: oneURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: twoURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: threeURL.path))
+        XCTAssertEqual(macroStore.namedMacroNames(), ["One", "Three", "Two"])
+
+        delegate._setMacroDeleteBatchConfirmationProviderForTesting { names in
+            XCTAssertEqual(names, ["One", "Two"])
+            return true
+        }
+        XCTAssertTrue(delegate.executeCommand(
+            id: "macro.delete_named_batch",
+            arguments: ["names": .json("[\"One\", \"Two\"]")]
+        ))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: oneURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: twoURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: threeURL.path))
+        XCTAssertEqual(macroStore.namedMacroNames(), ["Three"])
+
+        XCTAssertTrue(delegate.executeCommand(
+            id: "macro.delete_named_batch",
+            arguments: ["names": .json("[\"Missing\"]")]
+        ))
+        XCTAssertEqual(macroStore.namedMacroNames(), ["Three"])
     }
 
     func testCommandMacroImportsAndExportsSublimeMacroFiles() throws {

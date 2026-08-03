@@ -92,6 +92,39 @@ struct AttoMacroStore {
         try FileManager.default.removeItem(at: fileURL)
     }
 
+    func normalizedNamedMacroNames(_ rawNames: [String]) throws -> [String] {
+        var names: [String] = []
+        var seen = Set<String>()
+        for rawName in rawNames {
+            guard let name = normalizedNamedMacroName(rawName) else {
+                throw AttoMacroStoreError.invalidMacroName(rawName)
+            }
+            if seen.insert(name).inserted {
+                names.append(name)
+            }
+        }
+        guard names.isEmpty == false else {
+            throw AttoMacroStoreError.invalidMacroName("")
+        }
+        return names
+    }
+
+    func deleteNamedMacros(_ rawNames: [String]) throws {
+        let names = try normalizedNamedMacroNames(rawNames)
+        let fileURLs = try names.map { name in
+            guard let fileURL = namedMacroFileURL(name) else {
+                throw AttoMacroStoreError.invalidMacroName(name)
+            }
+            guard FileManager.default.fileExists(atPath: fileURL.path) else {
+                throw AttoMacroStoreError.macroNotFound(name)
+            }
+            return fileURL
+        }
+        for fileURL in fileURLs {
+            try FileManager.default.removeItem(at: fileURL)
+        }
+    }
+
     func renameNamedMacro(_ oldName: String, to newName: String) throws {
         guard let oldFileURL = namedMacroFileURL(oldName) else {
             throw AttoMacroStoreError.invalidMacroName(oldName)
@@ -143,6 +176,10 @@ struct AttoMacroStore {
             .standardizedFileURL
         guard fileURL != macroFileURL.standardizedFileURL else { return nil }
         return fileURL
+    }
+
+    private func normalizedNamedMacroName(_ rawName: String) -> String? {
+        namedMacroFileURL(rawName)?.deletingPathExtension().lastPathComponent
     }
 
     private func externalMacroFileURL(_ url: URL) -> URL? {
