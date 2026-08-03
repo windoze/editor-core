@@ -138,6 +138,7 @@ void editor_core_ffi_string_free(char* ptr);
 #define ECF_FEATURE_TREESITTER_PROCESSOR       (1ull << 7)
 #define ECF_FEATURE_JSON_COMMAND_ENVELOPE      (1ull << 8)
 #define ECF_FEATURE_RENDERING_SNAPSHOT_ENVELOPE (1ull << 9)
+#define ECF_FEATURE_EDITOR_STATE_DERIVED_SNAPSHOT_ENVELOPE (1ull << 10)
 uint64_t editor_core_ffi_feature_flags(void);
 char* editor_core_ffi_runtime_info_json(void);
 
@@ -152,6 +153,7 @@ char* editor_core_ffi_editor_state_text_for_saving(const EcfEditorState* state);
 char* editor_core_ffi_editor_state_document_symbols_json(const EcfEditorState* state);
 char* editor_core_ffi_editor_state_diagnostics_json(const EcfEditorState* state);
 char* editor_core_ffi_editor_state_decorations_json(const EcfEditorState* state);
+char* editor_core_ffi_editor_state_derived_snapshot_envelope_json(const EcfEditorState* state, const char* snapshot_utf8);
 bool editor_core_ffi_editor_state_set_line_ending(EcfEditorState* state, const char* line_ending);
 char* editor_core_ffi_editor_state_get_line_ending(const EcfEditorState* state);
 char* editor_core_ffi_editor_state_viewport_styled_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);

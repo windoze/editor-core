@@ -86,6 +86,7 @@ public struct EditorCoreFFIFeatures: OptionSet, Equatable, Sendable {
     public static let treeSitterProcessor = Self(rawValue: 1 << 7)
     public static let jsonCommandEnvelope = Self(rawValue: 1 << 8)
     public static let renderingSnapshotEnvelope = Self(rawValue: 1 << 9)
+    public static let editorStateDerivedSnapshotEnvelope = Self(rawValue: 1 << 10)
 }
 
 public struct EditorCoreFFIRuntimeInfo: Equatable, Sendable {

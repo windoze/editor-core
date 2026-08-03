@@ -1889,6 +1889,17 @@
     - `swift test --package-path swift --filter 'WorkspaceTests/testWorkspaceViewportEnvelope'`
     - `cargo fmt --check`
     - `git diff --check`
+- 中间提交：`feat(ffi): envelope headless derived snapshots`
+  - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；把 headless `EditorState` derived-state query 的 raw JSON result 面纳入统一结构化 envelope。
+  - 提交边界：新增 `editor_core_ffi_editor_state_derived_snapshot_envelope_json(EditorState*, snapshot)` 和 `ECF_FEATURE_EDITOR_STATE_DERIVED_SNAPSHOT_ENVELOPE` feature bit；`snapshot` 覆盖 `document_symbols`、`diagnostics`、`decorations`；legacy `document_symbols_json` / `diagnostics_json` / `decorations_json` 保持 raw JSON/null+last_error 语义；Swift `EditorState` 新增 raw/typed envelope accessor 与 `EcfDerivedSnapshotEnvelope`。该提交不切换 App/UI derived-state 主路径，不替换 full-state/text/line-ending/text-delta query，不改变 derived snapshot JSON schema，也不完成完整外部 capability negotiation protocol。
+  - 验证记录：
+    - `cargo test -p editor-core-ffi --test abi_v1`
+    - `cargo build -p editor-core-ffi --release`
+    - `swift test --package-path swift --filter 'EditorStateCoreTests/testDerivedSnapshotEnvelope'`
+    - `swift test --package-path swift --filter 'FFILibrarySmokeTests/testLoadsLibraryAndVersion'`
+    - `swift test --package-path swift --filter 'EditorCoreFFIRuntimeCompatibilityTests/testReportsMissingRequiredFeatures'`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 11: Tree-sitter 与 LSP 主路线产品化
 

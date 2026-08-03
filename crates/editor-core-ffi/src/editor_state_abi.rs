@@ -232,6 +232,20 @@ pub extern "C" fn editor_core_ffi_editor_state_decorations_json(
     })
 }
 
+/// Export one editor-state derived snapshot through a stable JSON result envelope.
+///
+/// `snapshot_utf8` accepts:
+/// - `document_symbols`
+/// - `diagnostics`
+/// - `decorations`
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_editor_state_derived_snapshot_envelope_json(
+    state: *const EcfEditorState,
+    snapshot_utf8: *const c_char,
+) -> *mut c_char {
+    editor_state_derived_snapshot_envelope_json_ptr(state, snapshot_utf8)
+}
+
 /// Set preferred line ending (`"lf"` or `"crlf"`).
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ffi_editor_state_set_line_ending(

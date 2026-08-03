@@ -1,17 +1,18 @@
 use editor_core_ffi::{
-    ECF_ABI_VERSION, ECF_FEATURE_JSON_COMMAND_DISPATCH, ECF_FEATURE_JSON_COMMAND_ENVELOPE,
-    ECF_FEATURE_LSP_HELPERS, ECF_FEATURE_PROCESSING_EDIT_JSON,
-    ECF_FEATURE_RENDERING_SNAPSHOT_ENVELOPE, ECF_FEATURE_SUBLIME_PROCESSOR,
-    ECF_FEATURE_TREESITTER_PROCESSOR, ECF_FEATURE_TYPED_HOT_PATH, ECF_FEATURE_VIEWPORT_BLOB,
-    ECF_FEATURE_WORKSPACE_TYPED_API, EcfCreateViewResult, EcfDocumentStats, EcfEditorState,
-    EcfOpenBufferResult, EcfStatus, EcfWorkspace, EcfWorkspaceInfo, EcfWorkspaceViewportState,
-    ecf_abi_version, ecf_editor_backspace, ecf_editor_get_viewport_blob,
-    ecf_editor_insert_text_utf8, ecf_editor_move_to, ecf_feature_flags,
-    editor_core_ffi_editor_get_document_stats, editor_core_ffi_editor_get_viewport_blob,
-    editor_core_ffi_editor_insert_text_utf8, editor_core_ffi_editor_state_execute_envelope_json,
-    editor_core_ffi_editor_state_free, editor_core_ffi_editor_state_minimap_envelope_json,
-    editor_core_ffi_editor_state_minimap_json, editor_core_ffi_editor_state_new,
-    editor_core_ffi_editor_state_viewport_composed_envelope_json,
+    ECF_ABI_VERSION, ECF_FEATURE_EDITOR_STATE_DERIVED_SNAPSHOT_ENVELOPE,
+    ECF_FEATURE_JSON_COMMAND_DISPATCH, ECF_FEATURE_JSON_COMMAND_ENVELOPE, ECF_FEATURE_LSP_HELPERS,
+    ECF_FEATURE_PROCESSING_EDIT_JSON, ECF_FEATURE_RENDERING_SNAPSHOT_ENVELOPE,
+    ECF_FEATURE_SUBLIME_PROCESSOR, ECF_FEATURE_TREESITTER_PROCESSOR, ECF_FEATURE_TYPED_HOT_PATH,
+    ECF_FEATURE_VIEWPORT_BLOB, ECF_FEATURE_WORKSPACE_TYPED_API, EcfCreateViewResult,
+    EcfDocumentStats, EcfEditorState, EcfOpenBufferResult, EcfStatus, EcfWorkspace,
+    EcfWorkspaceInfo, EcfWorkspaceViewportState, ecf_abi_version, ecf_editor_backspace,
+    ecf_editor_get_viewport_blob, ecf_editor_insert_text_utf8, ecf_editor_move_to,
+    ecf_feature_flags, editor_core_ffi_editor_get_document_stats,
+    editor_core_ffi_editor_get_viewport_blob, editor_core_ffi_editor_insert_text_utf8,
+    editor_core_ffi_editor_state_derived_snapshot_envelope_json,
+    editor_core_ffi_editor_state_execute_envelope_json, editor_core_ffi_editor_state_free,
+    editor_core_ffi_editor_state_minimap_envelope_json, editor_core_ffi_editor_state_minimap_json,
+    editor_core_ffi_editor_state_new, editor_core_ffi_editor_state_viewport_composed_envelope_json,
     editor_core_ffi_editor_state_viewport_composed_json,
     editor_core_ffi_editor_state_viewport_styled_envelope_json,
     editor_core_ffi_editor_state_viewport_styled_json, editor_core_ffi_feature_flags,
@@ -71,6 +72,10 @@ fn feature_flags_and_alias_work() {
     assert_ne!(flags & ECF_FEATURE_TREESITTER_PROCESSOR, 0);
     assert_ne!(flags & ECF_FEATURE_JSON_COMMAND_ENVELOPE, 0);
     assert_ne!(flags & ECF_FEATURE_RENDERING_SNAPSHOT_ENVELOPE, 0);
+    assert_ne!(
+        flags & ECF_FEATURE_EDITOR_STATE_DERIVED_SNAPSHOT_ENVELOPE,
+        0
+    );
 }
 
 #[test]
@@ -93,6 +98,11 @@ fn runtime_info_json_reports_version_and_feature_descriptors() {
         feature["name"] == "rendering_snapshot_envelope"
             && feature["bit"] == 9
             && feature["flag"] == ECF_FEATURE_RENDERING_SNAPSHOT_ENVELOPE
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "editor_state_derived_snapshot_envelope"
+            && feature["bit"] == 10
+            && feature["flag"] == ECF_FEATURE_EDITOR_STATE_DERIVED_SNAPSHOT_ENVELOPE
     }));
     assert!(features.iter().any(|feature| {
         feature["name"] == "lsp_helpers"
@@ -122,6 +132,8 @@ fn public_abi_scalar_signatures_are_fixed_width() {
         editor_core_ffi_editor_state_viewport_composed_envelope_json;
     let _: extern "C" fn(*mut EcfEditorState, *const std::ffi::c_char) -> *mut std::ffi::c_char =
         editor_core_ffi_editor_state_execute_envelope_json;
+    let _: extern "C" fn(*const EcfEditorState, *const std::ffi::c_char) -> *mut std::ffi::c_char =
+        editor_core_ffi_editor_state_derived_snapshot_envelope_json;
 
     let _: unsafe extern "C" fn(
         *mut EcfWorkspace,
@@ -351,6 +363,67 @@ fn editor_state_viewport_envelope_json_reports_success_and_errors() {
         );
         assert_eq!(failed["error"]["message"], "state is null");
     }
+
+    unsafe { editor_core_ffi_editor_state_free(state) };
+}
+
+#[test]
+fn editor_state_derived_snapshot_envelope_json_reports_success_and_errors() {
+    let initial = CString::new("abc\nsecond\nthird\n").expect("cstring");
+    let state = editor_core_ffi_editor_state_new(initial.as_ptr(), 80);
+    assert!(!state.is_null());
+
+    for (snapshot, expected_key) in [
+        ("document_symbols", "symbols"),
+        ("diagnostics", "diagnostics"),
+        ("decorations", "layers"),
+    ] {
+        let snapshot_c = CString::new(snapshot).unwrap();
+        let ok_json = take_string(editor_core_ffi_editor_state_derived_snapshot_envelope_json(
+            state,
+            snapshot_c.as_ptr(),
+        ));
+        let ok: serde_json::Value = serde_json::from_str(&ok_json).unwrap();
+        assert_eq!(ok["ok"], true);
+        assert_eq!(ok["status"], "success");
+        assert_eq!(ok["snapshot"], snapshot);
+        assert!(ok["value"][expected_key].is_array());
+        assert!(ok["error"].is_null());
+        assert_eq!(ok["version"], ECF_ABI_VERSION);
+    }
+
+    let unknown = CString::new("unknown").unwrap();
+    let failed_json = take_string(editor_core_ffi_editor_state_derived_snapshot_envelope_json(
+        state,
+        unknown.as_ptr(),
+    ));
+    let failed: serde_json::Value = serde_json::from_str(&failed_json).unwrap();
+    assert_eq!(failed["ok"], false);
+    assert_eq!(failed["status"], "error");
+    assert_eq!(failed["snapshot"], "unknown");
+    assert_eq!(failed["value"], serde_json::Value::Null);
+    assert_eq!(failed["error"]["code"], "invalid_argument");
+    assert_eq!(
+        failed["error"]["status"],
+        status(EcfStatus::InvalidArgument)
+    );
+    assert!(
+        failed["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("unknown editor state derived snapshot")
+    );
+
+    let null_arg_json = take_string(editor_core_ffi_editor_state_derived_snapshot_envelope_json(
+        state,
+        std::ptr::null(),
+    ));
+    let null_arg: serde_json::Value = serde_json::from_str(&null_arg_json).unwrap();
+    assert_eq!(null_arg["ok"], false);
+    assert_eq!(null_arg["status"], "error");
+    assert!(null_arg["snapshot"].is_null());
+    assert_eq!(null_arg["error"]["code"], "invalid_argument");
+    assert_eq!(null_arg["error"]["message"], "snapshot_utf8 is null");
 
     unsafe { editor_core_ffi_editor_state_free(state) };
 }

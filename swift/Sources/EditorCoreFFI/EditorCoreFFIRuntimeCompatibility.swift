@@ -126,7 +126,12 @@ public enum EditorCoreFFIRuntimeCompatibility {
         EditorCoreFFIRuntimeFeature(
             feature: .renderingSnapshotEnvelope,
             name: "rendering snapshot envelope",
-            reason: "Swift rendering snapshot envelope APIs require structured minimap query results and errors."
+            reason: "Swift rendering snapshot envelope APIs require structured styled viewport, minimap, and composed viewport query results and errors."
+        ),
+        EditorCoreFFIRuntimeFeature(
+            feature: .editorStateDerivedSnapshotEnvelope,
+            name: "editor-state derived snapshot envelope",
+            reason: "Swift editor-state derived snapshot envelope APIs require structured diagnostics, decorations, and symbol snapshot results."
         ),
     ]
 

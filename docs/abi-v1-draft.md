@@ -294,7 +294,9 @@ Guidelines:
   `feature_flags`, and append-only feature descriptors.
 - Headless and UI FFI feature flags are append-only within the pre-v1 line. As of the current
   draft, `ECF_FEATURE_JSON_COMMAND_ENVELOPE`,
-  `ECF_FEATURE_RENDERING_SNAPSHOT_ENVELOPE`, `ECU_FEATURE_JSON_COMMAND_ENVELOPE`, and
+  `ECF_FEATURE_RENDERING_SNAPSHOT_ENVELOPE`,
+  `ECF_FEATURE_EDITOR_STATE_DERIVED_SNAPSHOT_ENVELOPE`,
+  `ECU_FEATURE_JSON_COMMAND_ENVELOPE`, and
   `ECU_FEATURE_LSP_RESULT_ENVELOPE` / `ECU_FEATURE_EVENT_STREAM_ENVELOPE` /
   `ECU_FEATURE_MULTI_DOCUMENT_SPECIAL_EVENT_STREAM_ENVELOPE` /
   `ECU_FEATURE_WORKSPACE_EDIT_TRANSACTION_ENVELOPE` /
@@ -365,6 +367,7 @@ char* editor_core_ffi_editor_state_minimap_json(const EcfEditorState* state, uin
 char* editor_core_ffi_editor_state_minimap_envelope_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
 char* editor_core_ffi_editor_state_viewport_composed_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
 char* editor_core_ffi_editor_state_viewport_composed_envelope_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
+char* editor_core_ffi_editor_state_derived_snapshot_envelope_json(const EcfEditorState* state, const char* snapshot_utf8);
 char* editor_core_ffi_editor_state_execute_envelope_json(EcfEditorState* state, const char* command_json);
 
 int32_t editor_core_ffi_workspace_open_buffer_typed(EcfWorkspace* workspace, const char* uri, const char* text, uint32_t viewport_width, EcfOpenBufferResult* out_result);

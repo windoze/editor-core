@@ -100,6 +100,21 @@ public final class EditorState {
         try ffi.takeOwnedCString(editor_core_ffi_editor_state_decorations_json(handle), context: "editor_state_decorations_json")
     }
 
+    public func derivedSnapshotEnvelopeJSON(_ snapshot: String) throws -> String {
+        let ptr: UnsafeMutablePointer<CChar>? = snapshot.withCString { snapshotPtr in
+            editor_core_ffi_editor_state_derived_snapshot_envelope_json(handle, snapshotPtr)
+        }
+        return try ffi.takeOwnedCString(ptr, context: "editor_state_derived_snapshot_envelope_json")
+    }
+
+    public func derivedSnapshotEnvelope(_ snapshot: String) throws -> EcfDerivedSnapshotEnvelope {
+        try JSON.decode(
+            EcfDerivedSnapshotEnvelope.self,
+            from: derivedSnapshotEnvelopeJSON(snapshot),
+            context: "editor_state_derived_snapshot_envelope"
+        )
+    }
+
     public func setLineEnding(_ lineEnding: String) throws {
         let ok = lineEnding.withCString { ptr in
             editor_core_ffi_editor_state_set_line_ending(handle, ptr)

@@ -64,6 +64,7 @@ include:
 - `ECF_FEATURE_TREESITTER_PROCESSOR`
 - `ECF_FEATURE_JSON_COMMAND_ENVELOPE`
 - `ECF_FEATURE_RENDERING_SNAPSHOT_ENVELOPE`
+- `ECF_FEATURE_EDITOR_STATE_DERIVED_SNAPSHOT_ENVELOPE`
 
 `editor_core_ffi_runtime_info_json()` returns a caller-owned one-call capability snapshot for
 C/non-Swift hosts:
@@ -73,7 +74,7 @@ C/non-Swift hosts:
   "kind": "editor-core-ffi",
   "abi_version": 1,
   "version": "0.5.0",
-  "feature_flags": 1023,
+  "feature_flags": 2047,
   "features": [
     { "bit": 0, "flag": 1, "name": "json_command_dispatch", "description": "..." }
   ]
@@ -201,6 +202,54 @@ char* editor_core_ffi_workspace_execute_envelope_json(EcfWorkspace* workspace, u
     "code": "command_failed",
     "status": 6,
     "message": "command execution failed: ..."
+  },
+  "version": 1
+}
+```
+
+## Editor-State Derived Snapshot Envelopes
+
+Legacy headless editor-state derived snapshot helpers keep returning raw JSON on success and
+`NULL` on failure. Hosts that need non-null structured success/error results can use the envelope
+variant guarded by `ECF_FEATURE_EDITOR_STATE_DERIVED_SNAPSHOT_ENVELOPE`:
+
+```c
+char* editor_core_ffi_editor_state_derived_snapshot_envelope_json(
+    const EcfEditorState* state,
+    const char* snapshot_utf8);
+```
+
+`snapshot_utf8` accepts:
+
+- `document_symbols`
+- `diagnostics`
+- `decorations`
+
+Success envelopes preserve the legacy payload under `value` and include the selected snapshot name:
+
+```json
+{
+  "ok": true,
+  "status": "success",
+  "snapshot": "diagnostics",
+  "value": { "diagnostics": [] },
+  "error": null,
+  "version": 1
+}
+```
+
+Failure envelopes report a structured `EcfStatus` and keep the requested snapshot when it is known:
+
+```json
+{
+  "ok": false,
+  "status": "error",
+  "snapshot": "unknown",
+  "value": null,
+  "error": {
+    "code": "invalid_argument",
+    "status": 1,
+    "message": "unknown editor state derived snapshot \"unknown\""
   },
   "version": 1
 }

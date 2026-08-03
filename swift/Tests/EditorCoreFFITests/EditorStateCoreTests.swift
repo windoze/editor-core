@@ -110,6 +110,42 @@ final class EditorStateCoreTests: XCTestCase {
         XCTAssertNotNil(composedValue["lines"])
     }
 
+    func testDerivedSnapshotEnvelope() throws {
+        let library = try EditorCoreFFITestSupport.shared.loadLibrary()
+        let state = try EditorState(library: library, initialText: "hello\nworld\n", viewportWidth: 80)
+
+        for (snapshot, expectedKey) in [
+            ("document_symbols", "symbols"),
+            ("diagnostics", "diagnostics"),
+            ("decorations", "layers"),
+        ] {
+            let envelope = try state.derivedSnapshotEnvelope(snapshot)
+            XCTAssertTrue(envelope.ok)
+            XCTAssertEqual(envelope.statusKind, .success)
+            XCTAssertEqual(envelope.snapshot, snapshot)
+            XCTAssertNil(envelope.error)
+            XCTAssertEqual(envelope.version, library.abiVersion)
+            guard case let .object(value)? = envelope.value else {
+                return XCTFail("expected object derived snapshot value")
+            }
+            XCTAssertNotNil(value[expectedKey])
+        }
+
+        let failure = try state.derivedSnapshotEnvelope("unknown")
+        XCTAssertFalse(failure.ok)
+        XCTAssertEqual(failure.statusKind, .error)
+        XCTAssertEqual(failure.snapshot, "unknown")
+        XCTAssertEqual(failure.value, .null)
+        XCTAssertEqual(failure.error?.code, "invalid_argument")
+        XCTAssertEqual(failure.error?.status, .invalidArgument)
+        XCTAssertTrue(failure.error?.message.contains("unknown editor state derived snapshot") ?? false)
+
+        let rawJSON = try state.derivedSnapshotEnvelopeJSON("diagnostics")
+        let direct = try JSONDecoder().decode(EcfDerivedSnapshotEnvelope.self, from: Data(rawJSON.utf8))
+        XCTAssertEqual(direct.snapshot, "diagnostics")
+        XCTAssertEqual(direct.statusKind, .success)
+    }
+
     func testApplyProcessingEditsAffectsStylesFoldsDecorationsDiagnostics() throws {
         let library = try EditorCoreFFITestSupport.shared.loadLibrary()
         let state = try EditorState(library: library, initialText: "let value = 1\nsecond line\n", viewportWidth: 80)
