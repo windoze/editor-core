@@ -138,6 +138,11 @@ public enum EditorCoreFFIRuntimeCompatibility {
             name: "workspace result envelope",
             reason: "Swift workspace search and text-edit result envelope APIs require structured workspace results and errors."
         ),
+        EditorCoreFFIRuntimeFeature(
+            feature: .workspaceQueryEnvelope,
+            name: "workspace query envelope",
+            reason: "Swift workspace info, buffer text, and viewport state envelope APIs require structured workspace query results and errors."
+        ),
     ]
 
     public static let requiredFeatures: [EditorCoreFFIRuntimeFeature] = knownFeatures

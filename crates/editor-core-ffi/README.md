@@ -66,6 +66,7 @@ include:
 - `ECF_FEATURE_RENDERING_SNAPSHOT_ENVELOPE`
 - `ECF_FEATURE_EDITOR_STATE_DERIVED_SNAPSHOT_ENVELOPE`
 - `ECF_FEATURE_WORKSPACE_RESULT_ENVELOPE`
+- `ECF_FEATURE_WORKSPACE_QUERY_ENVELOPE`
 
 `editor_core_ffi_runtime_info_json()` returns a caller-owned one-call capability snapshot for
 C/non-Swift hosts:
@@ -75,7 +76,7 @@ C/non-Swift hosts:
   "kind": "editor-core-ffi",
   "abi_version": 1,
   "version": "0.5.0",
-  "feature_flags": 4095,
+  "feature_flags": 8191,
   "features": [
     { "bit": 0, "flag": 1, "name": "json_command_dispatch", "description": "..." }
   ]
@@ -384,6 +385,61 @@ legacy `NULL` sentinel:
     "code": "parse",
     "status": 5,
     "message": "invalid workspace text edits JSON: ..."
+  },
+  "version": 1
+}
+```
+
+## Workspace Query Envelopes
+
+Legacy workspace query helpers keep returning raw JSON on success and `NULL` on failure. Hosts
+that need non-null structured success/error results can use the envelope variants guarded by
+`ECF_FEATURE_WORKSPACE_QUERY_ENVELOPE`:
+
+```c
+char* editor_core_ffi_workspace_info_envelope_json(
+    const EcfWorkspace* workspace);
+
+char* editor_core_ffi_workspace_buffer_text_envelope_json(
+    const EcfWorkspace* workspace,
+    uint64_t buffer_id);
+
+char* editor_core_ffi_workspace_viewport_state_envelope_json(
+    EcfWorkspace* workspace,
+    uint64_t view_id);
+```
+
+Success envelopes preserve the legacy query payload under `value`:
+
+```json
+{
+  "ok": true,
+  "status": "success",
+  "operation": "info",
+  "value": {
+    "buffer_count": 1,
+    "view_count": 1,
+    "is_empty": false,
+    "active_view_id": 1,
+    "active_buffer_id": 1
+  },
+  "error": null,
+  "version": 1
+}
+```
+
+Query failures use structured status codes. Unknown buffer/view ids are reported as `not_found`:
+
+```json
+{
+  "ok": false,
+  "status": "error",
+  "operation": "buffer_text",
+  "value": null,
+  "error": {
+    "code": "not_found",
+    "status": 3,
+    "message": "buffer_text failed: BufferNotFound(BufferId(...))"
   },
   "version": 1
 }

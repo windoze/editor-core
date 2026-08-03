@@ -88,6 +88,7 @@ public struct EditorCoreFFIFeatures: OptionSet, Equatable, Sendable {
     public static let renderingSnapshotEnvelope = Self(rawValue: 1 << 9)
     public static let editorStateDerivedSnapshotEnvelope = Self(rawValue: 1 << 10)
     public static let workspaceResultEnvelope = Self(rawValue: 1 << 11)
+    public static let workspaceQueryEnvelope = Self(rawValue: 1 << 12)
 }
 
 public struct EditorCoreFFIRuntimeInfo: Equatable, Sendable {

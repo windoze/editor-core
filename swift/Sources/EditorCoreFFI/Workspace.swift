@@ -118,6 +118,21 @@ public final class Workspace {
         try ffi.takeOwnedCString(editor_core_ffi_workspace_info_json(handle), context: "workspace_info_json")
     }
 
+    public func infoEnvelopeJSON() throws -> String {
+        try ffi.takeOwnedCString(
+            editor_core_ffi_workspace_info_envelope_json(handle),
+            context: "workspace_info_envelope_json"
+        )
+    }
+
+    public func infoEnvelope() throws -> EcfWorkspaceResultEnvelope {
+        try JSON.decode(
+            EcfWorkspaceResultEnvelope.self,
+            from: infoEnvelopeJSON(),
+            context: "workspace_info_envelope"
+        )
+    }
+
     public func applyProcessingEditsJSON(bufferId: UInt64, editsJSON: String) throws {
         let ok = editsJSON.withCString { editsPtr in
             editor_core_ffi_workspace_apply_processing_edits_json(handle, bufferId, editsPtr)
@@ -132,8 +147,38 @@ public final class Workspace {
         try ffi.takeOwnedCString(editor_core_ffi_workspace_buffer_text_json(handle, bufferId), context: "workspace_buffer_text_json")
     }
 
+    public func bufferTextEnvelopeJSON(bufferId: UInt64) throws -> String {
+        try ffi.takeOwnedCString(
+            editor_core_ffi_workspace_buffer_text_envelope_json(handle, bufferId),
+            context: "workspace_buffer_text_envelope_json"
+        )
+    }
+
+    public func bufferTextEnvelope(bufferId: UInt64) throws -> EcfWorkspaceResultEnvelope {
+        try JSON.decode(
+            EcfWorkspaceResultEnvelope.self,
+            from: bufferTextEnvelopeJSON(bufferId: bufferId),
+            context: "workspace_buffer_text_envelope"
+        )
+    }
+
     public func viewportStateJSON(viewId: UInt64) throws -> String {
         try ffi.takeOwnedCString(editor_core_ffi_workspace_viewport_state_json(handle, viewId), context: "workspace_viewport_state_json")
+    }
+
+    public func viewportStateEnvelopeJSON(viewId: UInt64) throws -> String {
+        try ffi.takeOwnedCString(
+            editor_core_ffi_workspace_viewport_state_envelope_json(handle, viewId),
+            context: "workspace_viewport_state_envelope_json"
+        )
+    }
+
+    public func viewportStateEnvelope(viewId: UInt64) throws -> EcfWorkspaceResultEnvelope {
+        try JSON.decode(
+            EcfWorkspaceResultEnvelope.self,
+            from: viewportStateEnvelopeJSON(viewId: viewId),
+            context: "workspace_viewport_state_envelope"
+        )
     }
 
     public func viewportState(viewId: UInt64) throws -> WorkspaceViewportState {

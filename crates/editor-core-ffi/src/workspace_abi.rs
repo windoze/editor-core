@@ -207,15 +207,44 @@ pub extern "C" fn editor_core_ffi_workspace_info_json(
     workspace: *const EcfWorkspace,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
-        let workspace = require_ref(workspace, "workspace")?;
-        Ok(json!({
-            "buffer_count": workspace.inner.len(),
-            "view_count": workspace.inner.view_count(),
-            "is_empty": workspace.inner.is_empty(),
-            "active_view_id": workspace.inner.active_view_id().map(|id| id.get()),
-            "active_buffer_id": workspace.inner.active_buffer_id().map(|id| id.get()),
-        }))
+        workspace_info_value(workspace).map_err(|(_, message)| message)
     })
+}
+
+/// Return workspace basic stats and active ids as a stable result envelope.
+///
+/// Caller owns returned string and must free it with `editor_core_ffi_string_free`.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_workspace_info_envelope_json(
+    workspace: *const EcfWorkspace,
+) -> *mut c_char {
+    workspace_result_envelope_json_ptr("info", || workspace_info_value(workspace))
+}
+
+fn workspace_info_value(workspace: *const EcfWorkspace) -> Result<Value, (EcfStatus, String)> {
+    let workspace = require_ref(workspace, "workspace")
+        .map_err(|message| (EcfStatus::InvalidArgument, message))?;
+    Ok(json!({
+        "buffer_count": workspace.inner.len(),
+        "view_count": workspace.inner.view_count(),
+        "is_empty": workspace.inner.is_empty(),
+        "active_view_id": workspace.inner.active_view_id().map(|id| id.get()),
+        "active_buffer_id": workspace.inner.active_buffer_id().map(|id| id.get()),
+    }))
+}
+
+fn workspace_error_status(err: &WorkspaceError) -> EcfStatus {
+    match err {
+        WorkspaceError::BufferNotFound(_) | WorkspaceError::ViewNotFound(_) => EcfStatus::NotFound,
+        WorkspaceError::UriAlreadyOpen(_) => EcfStatus::InvalidArgument,
+        WorkspaceError::CommandFailed { .. } => EcfStatus::CommandFailed,
+        WorkspaceError::ApplyEditsFailed { .. } => EcfStatus::Internal,
+    }
+}
+
+fn workspace_error_result(err: WorkspaceError, prefix: &str) -> (EcfStatus, String) {
+    let status = workspace_error_status(&err);
+    (status, format!("{prefix} failed: {err:?}"))
 }
 
 /// Typed ABI variant: return workspace basic stats and active ids.
@@ -334,13 +363,34 @@ pub extern "C" fn editor_core_ffi_workspace_buffer_text_json(
     buffer_id: u64,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
-        let workspace = require_ref(workspace, "workspace")?;
-        let text = workspace
-            .inner
-            .buffer_text(BufferId::from_raw(buffer_id))
-            .map_err(|err| format!("buffer_text failed: {err:?}"))?;
-        Ok(json!({ "text": text }))
+        workspace_buffer_text_value(workspace, buffer_id).map_err(|(_, message)| message)
     })
+}
+
+/// Get buffer text as a stable result envelope.
+///
+/// Caller owns returned string and must free it with `editor_core_ffi_string_free`.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_workspace_buffer_text_envelope_json(
+    workspace: *const EcfWorkspace,
+    buffer_id: u64,
+) -> *mut c_char {
+    workspace_result_envelope_json_ptr("buffer_text", || {
+        workspace_buffer_text_value(workspace, buffer_id)
+    })
+}
+
+fn workspace_buffer_text_value(
+    workspace: *const EcfWorkspace,
+    buffer_id: u64,
+) -> Result<Value, (EcfStatus, String)> {
+    let workspace = require_ref(workspace, "workspace")
+        .map_err(|message| (EcfStatus::InvalidArgument, message))?;
+    let text = workspace
+        .inner
+        .buffer_text(BufferId::from_raw(buffer_id))
+        .map_err(|err| workspace_error_result(err, "buffer_text"))?;
+    Ok(json!({ "text": text }))
 }
 
 /// Get viewport state for a view as JSON.
@@ -350,13 +400,34 @@ pub extern "C" fn editor_core_ffi_workspace_viewport_state_json(
     view_id: u64,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
-        let workspace = require_mut(workspace, "workspace")?;
-        let state = workspace
-            .inner
-            .viewport_state_for_view(ViewId::from_raw(view_id))
-            .map_err(|err| format!("viewport_state_for_view failed: {err:?}"))?;
-        Ok(value_workspace_viewport_state(&state))
+        workspace_viewport_state_value(workspace, view_id).map_err(|(_, message)| message)
     })
+}
+
+/// Get viewport state for a view as a stable result envelope.
+///
+/// Caller owns returned string and must free it with `editor_core_ffi_string_free`.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_workspace_viewport_state_envelope_json(
+    workspace: *mut EcfWorkspace,
+    view_id: u64,
+) -> *mut c_char {
+    workspace_result_envelope_json_ptr("viewport_state", || {
+        workspace_viewport_state_value(workspace, view_id)
+    })
+}
+
+fn workspace_viewport_state_value(
+    workspace: *mut EcfWorkspace,
+    view_id: u64,
+) -> Result<Value, (EcfStatus, String)> {
+    let workspace = require_mut(workspace, "workspace")
+        .map_err(|message| (EcfStatus::InvalidArgument, message))?;
+    let state = workspace
+        .inner
+        .viewport_state_for_view(ViewId::from_raw(view_id))
+        .map_err(|err| workspace_error_result(err, "viewport_state_for_view"))?;
+    Ok(value_workspace_viewport_state(&state))
 }
 
 /// Typed ABI variant: return workspace viewport state for a view.

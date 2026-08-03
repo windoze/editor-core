@@ -2136,6 +2136,21 @@
     - `swift test --package-path swift --filter 'EditorCoreFFIRuntimeCompatibilityTests'`
     - `cargo fmt --check`
     - `git diff --check`
+- 中间提交：`feat(ffi): envelope headless workspace queries`
+  - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；把 headless `Workspace` info、buffer-text 和 viewport-state JSON query 面纳入统一结构化 envelope。
+  - 提交边界：新增 `editor_core_ffi_workspace_info_envelope_json(...)`、`editor_core_ffi_workspace_buffer_text_envelope_json(...)`、`editor_core_ffi_workspace_viewport_state_envelope_json(...)` 和 `ECF_FEATURE_WORKSPACE_QUERY_ENVELOPE` feature bit；legacy `workspace_info_json` / `workspace_buffer_text_json` / `workspace_viewport_state_json` 保持 raw JSON/null+last_error 语义；Swift `Workspace` 新增 raw/typed envelope accessor 并复用 `EcfWorkspaceResultEnvelope`。该提交不切换现有 typed `info()` / `viewportState()` 主路径，不覆盖 open/create legacy JSON API、processing edits bool API、workspace search/apply result envelope、LSP helper JSON 或完整外部 capability negotiation protocol。
+  - 验证记录：
+    - `cargo test -p editor-core-ffi --test abi_v1`
+    - `cargo test -p editor-core-ffi --test abi_v1 workspace_query_envelope_json_reports_success_and_errors`
+    - `cargo test -p editor-core-ffi --test abi_v1 feature_flags_and_alias_work`
+    - `cargo test -p editor-core-ffi --test abi_v1 runtime_info_json_reports_version_and_feature_descriptors`
+    - `cargo test -p editor-core-ffi --test abi_v1 public_abi_scalar_signatures_are_fixed_width`
+    - `cargo build -p editor-core-ffi --release`
+    - `swift test --package-path swift --filter 'WorkspaceTests/testWorkspaceQueryEnvelopes'`
+    - `swift test --package-path swift --filter 'FFILibrarySmokeTests'`
+    - `swift test --package-path swift --filter 'EditorCoreFFIRuntimeCompatibilityTests'`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 11: Tree-sitter 与 LSP 主路线产品化
 

@@ -140,6 +140,7 @@ void editor_core_ffi_string_free(char* ptr);
 #define ECF_FEATURE_RENDERING_SNAPSHOT_ENVELOPE (1ull << 9)
 #define ECF_FEATURE_EDITOR_STATE_DERIVED_SNAPSHOT_ENVELOPE (1ull << 10)
 #define ECF_FEATURE_WORKSPACE_RESULT_ENVELOPE  (1ull << 11)
+#define ECF_FEATURE_WORKSPACE_QUERY_ENVELOPE   (1ull << 12)
 uint64_t editor_core_ffi_feature_flags(void);
 char* editor_core_ffi_runtime_info_json(void);
 
@@ -208,12 +209,15 @@ int32_t editor_core_ffi_workspace_create_view_typed(
     EcfCreateViewResult* out_result);
 bool editor_core_ffi_workspace_set_active_view(EcfWorkspace* workspace, uint64_t view_id);
 char* editor_core_ffi_workspace_info_json(const EcfWorkspace* workspace);
+char* editor_core_ffi_workspace_info_envelope_json(const EcfWorkspace* workspace);
 int32_t editor_core_ffi_workspace_get_info(const EcfWorkspace* workspace, EcfWorkspaceInfo* out_info);
 char* editor_core_ffi_workspace_execute_json(EcfWorkspace* workspace, uint64_t view_id, const char* command_json);
 char* editor_core_ffi_workspace_execute_envelope_json(EcfWorkspace* workspace, uint64_t view_id, const char* command_json);
 bool editor_core_ffi_workspace_apply_processing_edits_json(EcfWorkspace* workspace, uint64_t buffer_id, const char* edits_json);
 char* editor_core_ffi_workspace_buffer_text_json(const EcfWorkspace* workspace, uint64_t buffer_id);
+char* editor_core_ffi_workspace_buffer_text_envelope_json(const EcfWorkspace* workspace, uint64_t buffer_id);
 char* editor_core_ffi_workspace_viewport_state_json(EcfWorkspace* workspace, uint64_t view_id);
+char* editor_core_ffi_workspace_viewport_state_envelope_json(EcfWorkspace* workspace, uint64_t view_id);
 int32_t editor_core_ffi_workspace_get_viewport_state(
     EcfWorkspace* workspace,
     uint64_t view_id,

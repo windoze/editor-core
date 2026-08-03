@@ -181,4 +181,76 @@ final class WorkspaceTests: XCTestCase {
         XCTAssertTrue(failure.error?.message.contains("get_viewport_content_styled failed") ?? false)
         XCTAssertEqual(failure.value, .null)
     }
+
+    func testWorkspaceQueryEnvelopes() throws {
+        let library = try EditorCoreFFITestSupport.shared.loadLibrary()
+        let ws = try Workspace(library: library)
+
+        let emptyInfo = try ws.infoEnvelope()
+        XCTAssertTrue(emptyInfo.ok)
+        XCTAssertEqual(emptyInfo.statusKind, .success)
+        XCTAssertEqual(emptyInfo.operation, "info")
+        XCTAssertEqual(emptyInfo.version, library.abiVersion)
+        XCTAssertNil(emptyInfo.error)
+        guard case .object(let emptyInfoValue)? = emptyInfo.value else {
+            return XCTFail("expected workspace info object")
+        }
+        XCTAssertEqual(emptyInfoValue["buffer_count"], .number(0))
+        XCTAssertEqual(emptyInfoValue["view_count"], .number(0))
+        XCTAssertEqual(emptyInfoValue["is_empty"], .bool(true))
+
+        let opened = try ws.openBuffer(uri: "file:///query-envelope.txt", text: "hello\nworld\n", viewportWidth: 80)
+
+        let info = try ws.infoEnvelope()
+        XCTAssertTrue(info.ok)
+        XCTAssertEqual(info.statusKind, .success)
+        XCTAssertEqual(info.operation, "info")
+        guard case .object(let infoValue)? = info.value else {
+            return XCTFail("expected workspace info object after open")
+        }
+        XCTAssertEqual(infoValue["buffer_count"], .number(1))
+        XCTAssertEqual(infoValue["view_count"], .number(1))
+        XCTAssertEqual(infoValue["is_empty"], .bool(false))
+        XCTAssertEqual(infoValue["active_buffer_id"], .number(Double(opened.bufferId)))
+        XCTAssertEqual(infoValue["active_view_id"], .number(Double(opened.viewId)))
+
+        let bufferText = try ws.bufferTextEnvelope(bufferId: opened.bufferId)
+        XCTAssertTrue(bufferText.ok)
+        XCTAssertEqual(bufferText.statusKind, .success)
+        XCTAssertEqual(bufferText.operation, "buffer_text")
+        XCTAssertNil(bufferText.error)
+        guard case .object(let bufferTextValue)? = bufferText.value else {
+            return XCTFail("expected buffer text object")
+        }
+        XCTAssertEqual(bufferTextValue["text"], .string("hello\nworld\n"))
+
+        let viewport = try ws.viewportStateEnvelope(viewId: opened.viewId)
+        XCTAssertTrue(viewport.ok)
+        XCTAssertEqual(viewport.statusKind, .success)
+        XCTAssertEqual(viewport.operation, "viewport_state")
+        XCTAssertNil(viewport.error)
+        guard case .object(let viewportValue)? = viewport.value else {
+            return XCTFail("expected viewport state object")
+        }
+        XCTAssertEqual(viewportValue["width"], .number(80))
+        XCTAssertNotNil(viewportValue["total_visual_lines"])
+
+        let missingText = try ws.bufferTextEnvelope(bufferId: 999_999)
+        XCTAssertFalse(missingText.ok)
+        XCTAssertEqual(missingText.statusKind, .error)
+        XCTAssertEqual(missingText.operation, "buffer_text")
+        XCTAssertEqual(missingText.value, .null)
+        XCTAssertEqual(missingText.error?.code, "not_found")
+        XCTAssertEqual(missingText.error?.status, .notFound)
+        XCTAssertTrue(missingText.error?.message.contains("buffer_text failed") ?? false)
+
+        let missingViewport = try ws.viewportStateEnvelope(viewId: 999_999)
+        XCTAssertFalse(missingViewport.ok)
+        XCTAssertEqual(missingViewport.statusKind, .error)
+        XCTAssertEqual(missingViewport.operation, "viewport_state")
+        XCTAssertEqual(missingViewport.value, .null)
+        XCTAssertEqual(missingViewport.error?.code, "not_found")
+        XCTAssertEqual(missingViewport.error?.status, .notFound)
+        XCTAssertTrue(missingViewport.error?.message.contains("viewport_state_for_view failed") ?? false)
+    }
 }

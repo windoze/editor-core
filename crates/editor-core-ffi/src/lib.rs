@@ -26,8 +26,8 @@ use editor_core::symbols::{
     Utf16Range, WorkspaceSymbol,
 };
 use editor_core::workspace::{
-    BufferId, OpenBufferResult, ViewId, ViewSmoothScrollState, Workspace, WorkspaceSearchResult,
-    WorkspaceViewportState,
+    BufferId, OpenBufferResult, ViewId, ViewSmoothScrollState, Workspace, WorkspaceError,
+    WorkspaceSearchResult, WorkspaceViewportState,
 };
 use editor_core::{
     AutoPair, AutoPairsConfig, FoldRegion, IndentStyle, IndentationConfig, Interval, LineEnding,
