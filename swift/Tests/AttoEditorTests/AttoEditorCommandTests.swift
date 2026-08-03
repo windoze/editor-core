@@ -573,6 +573,15 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(
             staleStatuses["Document Links"]?.contains(" | document_links | Document Links: 2 links") == true
         )
+
+        XCTAssertFalse(vc.refreshDocumentLinksInActiveTab(showFeedback: false))
+        let errorStatuses = Dictionary(uniqueKeysWithValues: vc._lspWorkbenchPanelItemsForTesting().map {
+            ($0.title, $0.status)
+        })
+        XCTAssertTrue(errorStatuses["Document Links"]?.hasPrefix("2 links | Error: Document links: unavailable | Result #") == true)
+        XCTAssertTrue(
+            errorStatuses["Document Links"]?.contains(" | document_links | Document Links: 2 links") == true
+        )
     }
 
     func testLspWorkbenchPanelSummarizesResultFamilies() throws {
@@ -893,6 +902,18 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(
             staleStatuses["Document Colors"]?.contains(" | document_colors | Document Colors: 1 color") == true
         )
+
+        XCTAssertTrue(vc.markCurrentLspEventResultError(
+            family: "document_colors",
+            message: AttoLspResultFeedback.failed(.documentColors, errorDescription: "server busy")
+        ))
+        let errorStatuses = Dictionary(uniqueKeysWithValues: vc._lspWorkbenchPanelItemsForTesting().map {
+            ($0.title, $0.status)
+        })
+        XCTAssertTrue(errorStatuses["Document Colors"]?.hasPrefix("1 color | Error: Document colors: failed | Result #") == true)
+        XCTAssertTrue(
+            errorStatuses["Document Colors"]?.contains(" | document_colors | Document Colors: 1 color") == true
+        )
         XCTAssertEqual(vc._lspWorkbenchPanelRowCountForTesting(), 10)
         XCTAssertTrue(vc._lspWorkbenchPanelIsVisibleForTesting())
     }
@@ -997,6 +1018,15 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(staleStatuses["Inlay Hints"]?.hasPrefix("2 hints | Stale: document edited | Result #") == true)
         XCTAssertTrue(
             staleStatuses["Inlay Hints"]?.contains(" | inlay_hints | Inlay Hints: 2 hints") == true
+        )
+
+        XCTAssertFalse(vc.refreshInlayHintsInActiveTab(showFeedback: false))
+        let errorStatuses = Dictionary(uniqueKeysWithValues: vc._lspWorkbenchPanelItemsForTesting().map {
+            ($0.title, $0.status)
+        })
+        XCTAssertTrue(errorStatuses["Inlay Hints"]?.hasPrefix("2 hints | Error: Inlay hints: unavailable | Result #") == true)
+        XCTAssertTrue(
+            errorStatuses["Inlay Hints"]?.contains(" | inlay_hints | Inlay Hints: 2 hints") == true
         )
     }
 
@@ -1144,6 +1174,15 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(staleStatuses["Code Lens"]?.hasPrefix("2 actions | Stale: document edited | Result #") == true)
         XCTAssertTrue(
             staleStatuses["Code Lens"]?.contains(" | code_lens | Code Lens: 2 actions") == true
+        )
+
+        XCTAssertFalse(vc.refreshCodeLensInActiveTab(showFeedback: false))
+        let errorStatuses = Dictionary(uniqueKeysWithValues: vc._lspWorkbenchPanelItemsForTesting().map {
+            ($0.title, $0.status)
+        })
+        XCTAssertTrue(errorStatuses["Code Lens"]?.hasPrefix("2 actions | Error: Code lens: unavailable | Result #") == true)
+        XCTAssertTrue(
+            errorStatuses["Code Lens"]?.contains(" | code_lens | Code Lens: 2 actions") == true
         )
     }
 
@@ -4347,6 +4386,16 @@ final class AttoEditorCommandTests: XCTestCase {
         })
         XCTAssertTrue(staleStatuses["Hierarchy"]?.hasPrefix("2 results | Stale: document edited | Result #") == true)
         XCTAssertTrue(staleStatuses["Hierarchy"]?.contains(" | hierarchy | Incoming Calls") == true)
+
+        XCTAssertTrue(vc.markCurrentLspEventResultError(
+            family: "hierarchy",
+            message: AttoLspResultFeedback.failed(.callHierarchy, errorDescription: "server busy")
+        ))
+        let errorStatuses = Dictionary(uniqueKeysWithValues: vc._lspWorkbenchPanelItemsForTesting().map {
+            ($0.title, $0.status)
+        })
+        XCTAssertTrue(errorStatuses["Hierarchy"]?.hasPrefix("2 results | Error: Call hierarchy: failed | Result #") == true)
+        XCTAssertTrue(errorStatuses["Hierarchy"]?.contains(" | hierarchy | Incoming Calls") == true)
     }
 
     func testFormattingResultsUseUnifiedFeedbackStatus() throws {

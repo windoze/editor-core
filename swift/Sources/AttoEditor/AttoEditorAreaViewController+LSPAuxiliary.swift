@@ -98,9 +98,11 @@ extension AttoEditorAreaViewController {
         }
 
         guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
+            let message = AttoLspResultFeedback.unavailable(kind.feedbackFeature)
+            markCurrentLspEventResultError(family: kind.resultEventFamily, message: message)
             if showFeedback {
                 presentLspResultFeedback(
-                    AttoLspResultFeedback.unavailable(kind.feedbackFeature),
+                    message,
                     in: tab.editCore.editorView
                 )
             }
@@ -143,12 +145,14 @@ extension AttoEditorAreaViewController {
                 _ = try tab.editCore.editor.lspRequestDocumentLinks()
             }
         } catch {
+            let message = AttoLspResultFeedback.requestFailed(
+                kind.feedbackFeature,
+                errorDescription: error.localizedDescription
+            )
+            markCurrentLspEventResultError(family: kind.resultEventFamily, message: message)
             if showFeedback {
                 presentLspResultFeedback(
-                    AttoLspResultFeedback.requestFailed(
-                        kind.feedbackFeature,
-                        errorDescription: error.localizedDescription
-                    ),
+                    message,
                     in: tab.editCore.editorView
                 )
             }
@@ -183,9 +187,11 @@ extension AttoEditorAreaViewController {
             if remainingTicks <= 0 {
                 let showFeedback = ctx.showFeedback
                 let feature = ctx.kind.feedbackFeature
+                let message = AttoLspResultFeedback.timeout(feature)
                 self.cancelAuxiliaryRefreshUI()
+                self.markCurrentLspEventResultError(family: ctx.kind.resultEventFamily, message: message)
                 if showFeedback {
-                    self.presentLspResultFeedback(AttoLspResultFeedback.timeout(feature), in: editorView)
+                    self.presentLspResultFeedback(message, in: editorView)
                 }
                 NSSound.beep()
                 return
@@ -202,12 +208,14 @@ extension AttoEditorAreaViewController {
             } catch {
                 let showFeedback = ctx.showFeedback
                 let feature = ctx.kind.feedbackFeature
+                let message = AttoLspResultFeedback.failed(
+                    feature,
+                    errorDescription: error.localizedDescription
+                )
                 self.cancelAuxiliaryRefreshUI()
+                self.markCurrentLspEventResultError(family: ctx.kind.resultEventFamily, message: message)
                 if showFeedback {
-                    self.presentLspResultFeedback(
-                        AttoLspResultFeedback.failed(feature, errorDescription: error.localizedDescription),
-                        in: editorView
-                    )
+                    self.presentLspResultFeedback(message, in: editorView)
                 }
                 NSSound.beep()
                 return
@@ -238,12 +246,14 @@ extension AttoEditorAreaViewController {
             } catch {
                 let showFeedback = ctx.showFeedback
                 let feature = ctx.kind.feedbackFeature
+                let message = AttoLspResultFeedback.failed(
+                    feature,
+                    errorDescription: error.localizedDescription
+                )
                 self.cancelAuxiliaryRefreshUI()
+                self.markCurrentLspEventResultError(family: ctx.kind.resultEventFamily, message: message)
                 if showFeedback {
-                    self.presentLspResultFeedback(
-                        AttoLspResultFeedback.failed(feature, errorDescription: error.localizedDescription),
-                        in: editorView
-                    )
+                    self.presentLspResultFeedback(message, in: editorView)
                 }
                 NSSound.beep()
                 return
@@ -255,9 +265,11 @@ extension AttoEditorAreaViewController {
             self.cancelAuxiliaryRefreshUI()
 
             if let errorMessage = summary.errorMessage {
+                let message = AttoLspResultFeedback.failed(kind.feedbackFeature, errorDescription: errorMessage)
+                self.markCurrentLspEventResultError(family: kind.resultEventFamily, message: message)
                 if showFeedback {
                     self.presentLspResultFeedback(
-                        AttoLspResultFeedback.failed(kind.feedbackFeature, errorDescription: errorMessage),
+                        message,
                         in: editorView
                     )
                 }

@@ -368,6 +368,20 @@ extension AttoEditorAreaViewController {
         }
     }
 
+    @discardableResult
+    func markCurrentLspEventResultError(
+        family: String,
+        message: AttoLspResultFeedback.Message
+    ) -> Bool {
+        let updated = lspResultEventStream.updateLatestStates(
+            families: [family],
+            state: .error(message: message.statusText)
+        )
+        guard updated.isEmpty == false else { return false }
+        updateVisibleLspWorkbenchPanel()
+        return true
+    }
+
     func drainProjectLspPanelLifecycleEvents() {
         guard let coreDocuments else { return }
 

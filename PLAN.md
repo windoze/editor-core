@@ -1281,6 +1281,18 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testLspWorkbenchPanelSummarizesResultFamilies`
     - `swift test --package-path swift --filter AttoLspResultLifecycleStoreTests`
     - `git diff --check`
+- 中间提交：`feat(app): show workbench event result errors`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量；把统一 LSP Workbench 中 event-backed result family 的 lifecycle state 从 Fresh/Stale 推进到可显示 Error 的起点。
+  - 提交边界：新增 `markCurrentLspEventResultError(...)`，按 family 将最近 result event 状态更新为 `.error(...)`；Code Lens refresh 和 Auxiliary refresh 的 unavailable/request failed/timeout/failed/result-error 分支会把 `code_lens`、`inlay_hints`、`document_links` 的最近 event 标为 Error；Document Colors 与 Hierarchy 先通过同一通用方法具备 Workbench error state 展示能力。该提交不改变 LSP request/resolve 协议，不新增 error event payload，不实现全部 document color/hierarchy 请求流的自动 error propagation，不新增 pin/history 模型或真正内嵌 dock。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testCodeLensPanelUsesDerivedDecorations`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testInlayHintPanelUsesDerivedDecorations`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testDocumentLinkPanelUsesDerivedDecorations`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testLspWorkbenchPanelShowsDocumentColorLifecycleEvent`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testHierarchyPanelUsesLastHierarchyResults`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testLspWorkbenchPanelSummarizesResultFamilies`
+    - `swift test --package-path swift --filter AttoLspResultLifecycleStoreTests`
+    - `git diff --check`
 
 ## 阶段 8: Command、menu、keymap、palette 与 Sublime 行为矩阵
 

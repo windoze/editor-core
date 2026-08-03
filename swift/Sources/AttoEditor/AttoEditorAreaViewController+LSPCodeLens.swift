@@ -15,8 +15,10 @@ extension AttoEditorAreaViewController {
         }
 
         guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
+            let message = AttoLspResultFeedback.unavailable(.codeLensRefresh)
+            markCurrentLspEventResultError(family: "code_lens", message: message)
             if showFeedback {
-                presentLspResultFeedback(AttoLspResultFeedback.unavailable(.codeLensRefresh), in: tab.editCore.editorView)
+                presentLspResultFeedback(message, in: tab.editCore.editorView)
             }
             NSSound.beep()
             return false
@@ -39,11 +41,13 @@ extension AttoEditorAreaViewController {
         do {
             _ = try tab.editCore.editor.lspRequestCodeLens()
         } catch {
+            let message = AttoLspResultFeedback.failed(
+                .codeLensRefresh,
+                errorDescription: error.localizedDescription
+            )
+            markCurrentLspEventResultError(family: "code_lens", message: message)
             if showFeedback {
-                presentLspResultFeedback(
-                    AttoLspResultFeedback.failed(.codeLensRefresh, errorDescription: error.localizedDescription),
-                    in: tab.editCore.editorView
-                )
+                presentLspResultFeedback(message, in: tab.editCore.editorView)
             }
             NSSound.beep()
             return false
@@ -309,9 +313,11 @@ extension AttoEditorAreaViewController {
 
             if remainingTicks <= 0 {
                 let showFeedback = ctx.showFeedback
+                let message = AttoLspResultFeedback.timeout(.codeLensRefresh)
                 self.cancelCodeLensUI()
+                self.markCurrentLspEventResultError(family: "code_lens", message: message)
                 if showFeedback {
-                    self.presentLspResultFeedback(AttoLspResultFeedback.timeout(.codeLensRefresh), in: editorView)
+                    self.presentLspResultFeedback(message, in: editorView)
                 }
                 NSSound.beep()
                 return
@@ -327,12 +333,14 @@ extension AttoEditorAreaViewController {
                 _ = try tab.editCore.editor.pollProcessing()
             } catch {
                 let showFeedback = ctx.showFeedback
+                let message = AttoLspResultFeedback.failed(
+                    .codeLensRefresh,
+                    errorDescription: error.localizedDescription
+                )
                 self.cancelCodeLensUI()
+                self.markCurrentLspEventResultError(family: "code_lens", message: message)
                 if showFeedback {
-                    self.presentLspResultFeedback(
-                        AttoLspResultFeedback.failed(.codeLensRefresh, errorDescription: error.localizedDescription),
-                        in: editorView
-                    )
+                    self.presentLspResultFeedback(message, in: editorView)
                 }
                 NSSound.beep()
                 return
@@ -343,12 +351,14 @@ extension AttoEditorAreaViewController {
                 result = try tab.editCore.editor.lspTakeLastCodeLensResult()
             } catch {
                 let showFeedback = ctx.showFeedback
+                let message = AttoLspResultFeedback.failed(
+                    .codeLensRefresh,
+                    errorDescription: error.localizedDescription
+                )
                 self.cancelCodeLensUI()
+                self.markCurrentLspEventResultError(family: "code_lens", message: message)
                 if showFeedback {
-                    self.presentLspResultFeedback(
-                        AttoLspResultFeedback.failed(.codeLensRefresh, errorDescription: error.localizedDescription),
-                        in: editorView
-                    )
+                    self.presentLspResultFeedback(message, in: editorView)
                 }
                 NSSound.beep()
                 return
@@ -369,15 +379,18 @@ extension AttoEditorAreaViewController {
             self.updateVisibleCodeLensPanel(for: tab)
             self.updateStatusBar()
 
-            guard showFeedback else { return }
             if let errorMessage {
+                let message = AttoLspResultFeedback.failed(.codeLensRefresh, errorDescription: errorMessage)
+                self.markCurrentLspEventResultError(family: "code_lens", message: message)
+                guard showFeedback else { return }
                 self.presentLspResultFeedback(
-                    AttoLspResultFeedback.failed(.codeLensRefresh, errorDescription: errorMessage),
+                    message,
                     in: editorView
                 )
                 NSSound.beep()
                 return
             }
+            guard showFeedback else { return }
             if count == 0 {
                 self.presentLspResultFeedback(AttoLspResultFeedback.empty(.codeLensRefresh), in: editorView)
             } else {
