@@ -771,6 +771,12 @@
   - 验证记录：
     - `swift test --package-path swift --filter 'AttoEditorCommandTests.testTabDragReordersCoreTabProjection|AttoEditorCommandTests.testMoveTabCommandUsesCoreActiveTabProjection|AttoEditorCommandTests.testMoveTabCommandsReorderAppKitProjectionAndCoreMirror'`
     - `git diff --check`
+- 中间提交：`feat(app): project dirty close prompts from core uris`
+  - 所属任务：阶段 5 的多文档/tab/split/project/session 迁移增量；让 dirty tab close confirmation 使用 core tab snapshot 的 `document_uri` 投影作为用户可见文件名，而不是只读取 Swift 本地 `tab.fileURL`。
+  - 提交边界：只迁移 `confirmCloseDirtyTab(_:)` 的 document URL 来源，并增加测试用 confirmation provider 以验证 projected URL；不改变 dirty 判断、保存/丢弃/取消语义、真实保存路径、close callback URL、session schema 或 Rust/FFI ABI。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testDirtyCloseConfirmationUsesCoreDocumentURIProjection|AttoEditorCommandTests.testCloseTabCallbackUsesCoreDocumentURIProjection'`
+    - `git diff --check`
 
 ## 阶段 6: LSP workspace lifecycle 与 project-level 语言能力
 

@@ -846,7 +846,12 @@ extension AttoEditorAreaViewController {
     }
 
     func confirmCloseDirtyTab(_ tab: AttoEditorTab) -> DirtyCloseDecision {
-        let name = tab.fileURL.lastPathComponent
+        let documentURL = projectedFileURL(for: tab)
+        if let dirtyCloseDecisionProviderForTesting {
+            return dirtyCloseDecisionProviderForTesting(documentURL)
+        }
+
+        let name = documentURL.lastPathComponent
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "Do you want to save changes to \"\(name)\" before closing?"

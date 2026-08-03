@@ -53,6 +53,7 @@ final class AttoEditorAreaViewController: NSViewController {
     var onDidSaveFile: ((URL, Bool) -> Void)?
     var onOpenFilesChanged: (([OpenFileItem], UUID?) -> Void)?
     var onSessionStateChanged: (() -> Void)?
+    var dirtyCloseDecisionProviderForTesting: ((URL) -> DirtyCloseDecision)?
 
     var isRestoringSession: Bool = false
 
@@ -539,6 +540,10 @@ final class AttoEditorAreaViewController: NSViewController {
         _ provider: ((AttoWorkspaceEditPreview) -> AttoWorkspaceEditPreviewDecision)?
     ) {
         workspaceEditPreviewDecisionProviderForTesting = provider
+    }
+
+    func _setDirtyCloseDecisionProviderForTesting(_ provider: ((URL) -> DirtyCloseDecision)?) {
+        dirtyCloseDecisionProviderForTesting = provider
     }
 
     func _coreMultiDocumentSearchForTesting(query: String) throws -> [EcuTabSearchResult]? {

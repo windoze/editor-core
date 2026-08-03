@@ -10089,6 +10089,43 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(closedURLs, [projectedURL.standardizedFileURL])
     }
 
+    func testDirtyCloseConfirmationUsesCoreDocumentURIProjection() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("dirty-close-local.txt")
+        let projectedURL = tempDir.appendingPathComponent("dirty-close-projected.txt")
+        try "local".write(to: fileURL, atomically: true, encoding: .utf8)
+        try "projected".write(to: projectedURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let tab = try XCTUnwrap(vc.tabs.first)
+        let coreDocuments = try XCTUnwrap(vc.coreDocuments)
+        try coreDocuments.setTabDocumentURI(
+            projectedURL.standardizedFileURL.absoluteString,
+            tabId: try XCTUnwrap(tab.coreTabID)
+        )
+        XCTAssertEqual(tab.fileURL.standardizedFileURL, fileURL.standardizedFileURL)
+        try tab.editCore.editor.insertText(" dirty")
+        XCTAssertTrue(vc.isTabDirtyForDataLossDecision(tab))
+
+        var confirmationURL: URL?
+        vc._setDirtyCloseDecisionProviderForTesting { url in
+            confirmationURL = url.standardizedFileURL
+            return .dontSave
+        }
+
+        vc.closeTab(id: tab.id)
+
+        XCTAssertEqual(confirmationURL, projectedURL.standardizedFileURL)
+        XCTAssertTrue(vc.tabs.isEmpty)
+    }
+
     func testSessionSnapshotUsesCoreTabProjectionWhenAvailable() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
