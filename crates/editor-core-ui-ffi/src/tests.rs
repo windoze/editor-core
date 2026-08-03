@@ -105,6 +105,30 @@ fn ffi_feature_flags_include_semantic_tokens_requests() {
 }
 
 #[test]
+fn ffi_runtime_info_json_reports_version_and_feature_descriptors() {
+    let runtime_json = take_owned_string(editor_core_ui_ffi_runtime_info_json());
+    let runtime: serde_json::Value = serde_json::from_str(&runtime_json).unwrap();
+
+    assert_eq!(runtime["kind"], "editor-core-ui-ffi");
+    assert_eq!(runtime["abi_version"], ECU_ABI_VERSION);
+    assert_eq!(runtime["version"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(runtime["feature_flags"], editor_core_ui_ffi_feature_flags());
+
+    let features = runtime["features"].as_array().expect("features array");
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "json_command_envelope"
+            && feature["bit"] == 25
+            && feature["flag"] == ECU_FEATURE_JSON_COMMAND_ENVELOPE
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "multi_document_workspace_edit_transaction"
+            && feature["flag"].as_u64().unwrap()
+                & ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION
+                != 0
+    }));
+}
+
+#[test]
 fn ffi_editor_ui_execute_command_envelope_json_reports_success_and_errors() {
     let initial = CString::new("abc").unwrap();
     let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);

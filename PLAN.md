@@ -1667,6 +1667,16 @@
   - 验证记录：
     - `swift test --package-path swift --filter 'EditorCoreFFIRuntimeCompatibilityTests'`
     - `git diff --check`
+- 中间提交：`feat(ffi): expose runtime info json snapshots`
+  - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；为 headless/UI C ABI 增加给第三方 C/非 Swift host 使用的一次性 runtime/capability snapshot。
+  - 提交边界：新增 `editor_core_ffi_runtime_info_json()` 和 `editor_core_ui_ffi_runtime_info_json()`，返回包含 `kind`、`abi_version`、`version`、`feature_flags` 和 append-only `features[]` descriptors 的 JSON；Swift `EditorCoreFFILibrary` / `EditorCoreUIFFILibrary` 新增 raw `runtimeInfoJSON()` accessor；更新 C headers、ABI draft 和 crate README。该提交不改变既有 scalar `abi_version` / `feature_flags` API，不新增 feature bit，不替换 Swift typed `runtimeInfo()`，不定义完整外部 capability negotiation protocol。
+  - 验证记录：
+    - `cargo test -p editor-core-ffi --test abi_v1 runtime_info_json_reports_version_and_feature_descriptors`
+    - `cargo test -p editor-core-ui-ffi --release ffi_runtime_info_json_reports_version_and_feature_descriptors`
+    - `swift test --package-path swift --filter 'FFILibrarySmokeTests/testLoadsLibraryAndVersion'`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFITests/testLoadsLibraryAndVersion'`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 11: Tree-sitter 与 LSP 主路线产品化
 

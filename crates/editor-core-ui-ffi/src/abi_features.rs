@@ -1,4 +1,5 @@
 use crate::make_c_string_ptr;
+use serde_json::{Value, json};
 
 /// ABI version for the UI C contract exposed by this crate.
 pub const ECU_ABI_VERSION: u32 = 1;
@@ -83,6 +84,172 @@ pub const ECU_FEATURE_FLAGS: u64 = ECU_FEATURE_JSON_COMMAND_DISPATCH
     | ECU_FEATURE_MULTI_DOCUMENT_TAB_LANGUAGE_ID
     | ECU_FEATURE_JSON_COMMAND_ENVELOPE;
 
+struct FeatureDescriptor {
+    bit: u8,
+    flag: u64,
+    name: &'static str,
+    description: &'static str,
+}
+
+const FEATURE_DESCRIPTORS: &[FeatureDescriptor] = &[
+    FeatureDescriptor {
+        bit: 0,
+        flag: ECU_FEATURE_JSON_COMMAND_DISPATCH,
+        name: "json_command_dispatch",
+        description: "Generic JSON editor command dispatcher.",
+    },
+    FeatureDescriptor {
+        bit: 1,
+        flag: ECU_FEATURE_TYPED_DERIVED_SNAPSHOTS,
+        name: "typed_derived_snapshots",
+        description: "Typed derived-state snapshot JSON exports.",
+    },
+    FeatureDescriptor {
+        bit: 2,
+        flag: ECU_FEATURE_LSP_INTERACTIVE_REQUESTS,
+        name: "lsp_interactive_requests",
+        description: "LSP interactive request/take APIs.",
+    },
+    FeatureDescriptor {
+        bit: 3,
+        flag: ECU_FEATURE_LSP_STATUS_SNAPSHOT,
+        name: "lsp_status_snapshot",
+        description: "LSP status/capability snapshot.",
+    },
+    FeatureDescriptor {
+        bit: 4,
+        flag: ECU_FEATURE_WORKSPACE_EDIT_APPLICATION,
+        name: "workspace_edit_application",
+        description: "LSP WorkspaceEdit application helpers.",
+    },
+    FeatureDescriptor {
+        bit: 5,
+        flag: ECU_FEATURE_MULTI_DOCUMENT_UI,
+        name: "multi_document_ui",
+        description: "Multi-document UI orchestrator ABI.",
+    },
+    FeatureDescriptor {
+        bit: 6,
+        flag: ECU_FEATURE_WORKSPACE_DIAGNOSTICS_STORE,
+        name: "workspace_diagnostics_store",
+        description: "Multi-document workspace diagnostics store.",
+    },
+    FeatureDescriptor {
+        bit: 7,
+        flag: ECU_FEATURE_WORKSPACE_DIAGNOSTICS_EVENTS,
+        name: "workspace_diagnostics_events",
+        description: "Multi-document workspace diagnostics event stream.",
+    },
+    FeatureDescriptor {
+        bit: 8,
+        flag: ECU_FEATURE_LSP_RESULT_EVENTS,
+        name: "lsp_result_events",
+        description: "Per-EditorUi LSP result slot event stream.",
+    },
+    FeatureDescriptor {
+        bit: 9,
+        flag: ECU_FEATURE_MULTI_DOCUMENT_LSP_RESULT_EVENTS,
+        name: "multi_document_lsp_result_events",
+        description: "Multi-document/project LSP result event aggregation.",
+    },
+    FeatureDescriptor {
+        bit: 10,
+        flag: ECU_FEATURE_LSP_REQUEST_EVENTS,
+        name: "lsp_request_events",
+        description: "Per-EditorUi LSP request lifecycle event stream.",
+    },
+    FeatureDescriptor {
+        bit: 11,
+        flag: ECU_FEATURE_MULTI_DOCUMENT_LSP_REQUEST_EVENTS,
+        name: "multi_document_lsp_request_events",
+        description: "Multi-document/project LSP request event aggregation.",
+    },
+    FeatureDescriptor {
+        bit: 12,
+        flag: ECU_FEATURE_LSP_REQUEST_CANCEL_TIMEOUT_EVENTS,
+        name: "lsp_request_cancel_timeout_events",
+        description: "Explicit LSP request cancel/timeout lifecycle markers.",
+    },
+    FeatureDescriptor {
+        bit: 13,
+        flag: ECU_FEATURE_LSP_SEMANTIC_TOKENS_REQUESTS,
+        name: "lsp_semantic_tokens_requests",
+        description: "LSP semantic tokens full/delta/range request APIs.",
+    },
+    FeatureDescriptor {
+        bit: 14,
+        flag: ECU_FEATURE_LSP_AUXILIARY_REQUESTS,
+        name: "lsp_auxiliary_requests",
+        description: "LSP auxiliary inlay hint / document link request APIs.",
+    },
+    FeatureDescriptor {
+        bit: 15,
+        flag: ECU_FEATURE_LSP_AUXILIARY_RESOLVE_REQUESTS,
+        name: "lsp_auxiliary_resolve_requests",
+        description: "LSP auxiliary inlay hint / document link resolve request APIs.",
+    },
+    FeatureDescriptor {
+        bit: 16,
+        flag: ECU_FEATURE_EDITOR_UI_STATE_EVENTS,
+        name: "editor_ui_state_events",
+        description: "Per-EditorUi unified state event stream.",
+    },
+    FeatureDescriptor {
+        bit: 17,
+        flag: ECU_FEATURE_MULTI_DOCUMENT_STATE_EVENTS,
+        name: "multi_document_state_events",
+        description: "Multi-document/project unified state event aggregation.",
+    },
+    FeatureDescriptor {
+        bit: 18,
+        flag: ECU_FEATURE_WORKSPACE_OUTLINE_SNAPSHOT,
+        name: "workspace_outline_snapshot",
+        description: "Multi-document/project workspace outline snapshot.",
+    },
+    FeatureDescriptor {
+        bit: 19,
+        flag: ECU_FEATURE_MULTI_DOCUMENT_TAB_DOCUMENT_URI,
+        name: "multi_document_tab_document_uri",
+        description: "Multi-document tab document URI metadata.",
+    },
+    FeatureDescriptor {
+        bit: 20,
+        flag: ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION,
+        name: "multi_document_workspace_edit_transaction",
+        description: "Multi-document WorkspaceEdit transaction preview/apply.",
+    },
+    FeatureDescriptor {
+        bit: 21,
+        flag: ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_EVENTS,
+        name: "multi_document_workspace_edit_transaction_events",
+        description: "Multi-document WorkspaceEdit transaction event stream.",
+    },
+    FeatureDescriptor {
+        bit: 22,
+        flag: ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_ROOTS,
+        name: "multi_document_workspace_roots",
+        description: "Multi-document workspace root URI metadata.",
+    },
+    FeatureDescriptor {
+        bit: 23,
+        flag: ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_UNDO,
+        name: "multi_document_workspace_edit_transaction_undo",
+        description: "Multi-document WorkspaceEdit transaction undo.",
+    },
+    FeatureDescriptor {
+        bit: 24,
+        flag: ECU_FEATURE_MULTI_DOCUMENT_TAB_LANGUAGE_ID,
+        name: "multi_document_tab_language_id",
+        description: "Multi-document tab language id metadata.",
+    },
+    FeatureDescriptor {
+        bit: 25,
+        flag: ECU_FEATURE_JSON_COMMAND_ENVELOPE,
+        name: "json_command_envelope",
+        description: "JSON command dispatcher can return structured result envelopes.",
+    },
+];
+
 /// Return the UI FFI crate version as string.
 ///
 /// Returns an allocated C string. Caller must free with [`editor_core_ui_ffi_string_free`].
@@ -101,4 +268,32 @@ pub extern "C" fn editor_core_ui_ffi_abi_version() -> u32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_feature_flags() -> u64 {
     ECU_FEATURE_FLAGS
+}
+
+/// Return structured runtime/capability information as JSON.
+///
+/// Caller owns returned string and must free it with `editor_core_ui_ffi_string_free`.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_runtime_info_json() -> *mut libc::c_char {
+    let features: Vec<Value> = FEATURE_DESCRIPTORS
+        .iter()
+        .map(|feature| {
+            json!({
+                "bit": feature.bit,
+                "flag": feature.flag,
+                "name": feature.name,
+                "description": feature.description,
+            })
+        })
+        .collect();
+    make_c_string_ptr(
+        json!({
+            "kind": "editor-core-ui-ffi",
+            "abi_version": ECU_ABI_VERSION,
+            "version": env!("CARGO_PKG_VERSION"),
+            "feature_flags": ECU_FEATURE_FLAGS,
+            "features": features,
+        })
+        .to_string(),
+    )
 }

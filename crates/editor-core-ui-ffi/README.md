@@ -7,6 +7,33 @@ header through `swift/Sources/CEditorCoreUIFFI/include/editor_core_ui_ffi.h`, so
 functions must be added to the Rust `extern "C"` implementation and to the header in the same
 change.
 
+## Runtime Capabilities
+
+Hosts can either probe scalar ABI values directly:
+
+```c
+uint32_t editor_core_ui_ffi_abi_version(void);
+uint64_t editor_core_ui_ffi_feature_flags(void);
+```
+
+or fetch a caller-owned one-call capability snapshot:
+
+```c
+char* editor_core_ui_ffi_runtime_info_json(void);
+```
+
+```json
+{
+  "kind": "editor-core-ui-ffi",
+  "abi_version": 1,
+  "version": "0.5.0",
+  "feature_flags": 67108863,
+  "features": [
+    { "bit": 0, "flag": 1, "name": "json_command_dispatch", "description": "..." }
+  ]
+}
+```
+
 ## JSON Command Envelope
 
 The legacy JSON command dispatcher remains available:

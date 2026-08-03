@@ -163,6 +163,7 @@ uint32_t editor_core_ui_ffi_abi_version(void);
 #define ECU_FEATURE_MULTI_DOCUMENT_TAB_LANGUAGE_ID (1ull << 24)
 #define ECU_FEATURE_JSON_COMMAND_ENVELOPE    (1ull << 25)
 uint64_t editor_core_ui_ffi_feature_flags(void);
+char* editor_core_ui_ffi_runtime_info_json(void);
 
 MultiDocumentEditorUi* editor_core_ui_ffi_multi_document_new(void);
 void editor_core_ui_ffi_multi_document_free(MultiDocumentEditorUi* multi);

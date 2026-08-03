@@ -48,6 +48,7 @@ Version:
 ```c
 uint32_t editor_core_ffi_abi_version(void); /* currently 1 */
 uint64_t editor_core_ffi_feature_flags(void);
+char* editor_core_ffi_runtime_info_json(void);
 ```
 
 The feature bitmask is append-only for the current pre-v1 ABI line. Important coarse-grained bits
@@ -62,6 +63,21 @@ include:
 - `ECF_FEATURE_SUBLIME_PROCESSOR`
 - `ECF_FEATURE_TREESITTER_PROCESSOR`
 - `ECF_FEATURE_JSON_COMMAND_ENVELOPE`
+
+`editor_core_ffi_runtime_info_json()` returns a caller-owned one-call capability snapshot for
+C/non-Swift hosts:
+
+```json
+{
+  "kind": "editor-core-ffi",
+  "abi_version": 1,
+  "version": "0.5.0",
+  "feature_flags": 511,
+  "features": [
+    { "bit": 0, "flag": 1, "name": "json_command_dispatch", "description": "..." }
+  ]
+}
+```
 
 Core hot-path examples:
 

@@ -19,6 +19,17 @@ final class FFILibrarySmokeTests: XCTestCase {
         XCTAssertTrue(info.supports(.sublimeProcessor))
         XCTAssertTrue(info.supports(.treeSitterProcessor))
         XCTAssertTrue(info.supports(.jsonCommandEnvelope))
+
+        let runtimeJSON = try JSONTestHelpers.object(try library.runtimeInfoJSON())
+        XCTAssertEqual(runtimeJSON["kind"] as? String, "editor-core-ffi")
+        XCTAssertEqual((runtimeJSON["abi_version"] as? NSNumber)?.uint32Value, library.abiVersion)
+        XCTAssertEqual((runtimeJSON["feature_flags"] as? NSNumber)?.uint64Value, library.featureFlags.rawValue)
+        let features = try XCTUnwrap(runtimeJSON["features"] as? [[String: Any]])
+        XCTAssertTrue(features.contains { feature in
+            feature["name"] as? String == "json_command_envelope"
+                && (feature["bit"] as? NSNumber)?.uint8Value == 8
+                && (feature["flag"] as? NSNumber)?.uint64Value == EditorCoreFFIFeatures.jsonCommandEnvelope.rawValue
+        })
     }
 
     func testPathInitializerIsIgnoredInStaticLinkMode() throws {

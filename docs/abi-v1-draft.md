@@ -289,6 +289,9 @@ Guidelines:
 - The UI FFI exports `editor_core_ui_ffi_abi_version()` and
   `editor_core_ui_ffi_feature_flags()` so Swift/App hosts can probe the loaded UI ABI and gate
   optional feature paths before calling newer symbols.
+- Both FFI layers also expose `*_runtime_info_json()` as a one-call capability snapshot for
+  third-party C/non-Swift hosts. The JSON contains `kind`, `abi_version`, `version`,
+  `feature_flags`, and append-only feature descriptors.
 - Headless and UI FFI feature flags are append-only within the pre-v1 line. As of the current
   draft, `ECF_FEATURE_JSON_COMMAND_ENVELOPE` and `ECU_FEATURE_JSON_COMMAND_ENVELOPE` mark
   availability of the corresponding command JSON envelope symbols.
@@ -341,6 +344,7 @@ The C headers are authoritative. The examples below are representative surfaces 
 EcfEditorState* editor_core_ffi_editor_state_new(const char* initial_text, uint32_t viewport_width);
 uint32_t editor_core_ffi_abi_version(void);
 uint64_t editor_core_ffi_feature_flags(void);
+char* editor_core_ffi_runtime_info_json(void);
 char* editor_core_ffi_editor_state_viewport_styled_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
 char* editor_core_ffi_editor_state_minimap_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
 char* editor_core_ffi_editor_state_viewport_composed_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
@@ -362,6 +366,7 @@ The UI FFI (`editor-core-ui-ffi`) follows the same fixed-width boundary discipli
 ```c
 uint32_t editor_core_ui_ffi_abi_version(void);
 uint64_t editor_core_ui_ffi_feature_flags(void);
+char* editor_core_ui_ffi_runtime_info_json(void);
 EditorUi* editor_core_ui_ffi_editor_ui_new(const char* initial_text_utf8, uint32_t viewport_width_cells);
 EditorUi* editor_core_ui_ffi_editor_ui_clone_view(EditorUi* ui, uint32_t viewport_width_cells);
 char* editor_core_ui_ffi_editor_ui_execute_command_envelope_json(EditorUi* ui, const char* command_json_utf8);

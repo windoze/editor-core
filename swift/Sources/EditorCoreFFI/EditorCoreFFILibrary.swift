@@ -31,6 +31,10 @@ public final class EditorCoreFFILibrary {
         )
     }
 
+    public func runtimeInfoJSON() throws -> String {
+        try takeOwnedCString(editor_core_ffi_runtime_info_json(), context: "editor_core_ffi_runtime_info_json")
+    }
+
     public func lastErrorMessage() -> String {
         // 注意：Rust 侧返回的是“需释放”的字符串。
         guard let ptr = editor_core_ffi_last_error_message() else {

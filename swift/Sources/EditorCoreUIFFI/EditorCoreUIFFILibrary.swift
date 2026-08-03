@@ -35,6 +35,18 @@ public final class EditorCoreUIFFILibrary {
         )
     }
 
+    public func runtimeInfoJSON() throws -> String {
+        guard let ptr = editor_core_ui_ffi_runtime_info_json() else {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .internal,
+                context: "editor_core_ui_ffi_runtime_info_json",
+                message: lastErrorMessageString()
+            )
+        }
+        defer { editor_core_ui_ffi_string_free(ptr) }
+        return String(cString: ptr)
+    }
+
     func lastErrorMessageString() -> String {
         guard let ptr = editor_core_ui_ffi_last_error_message() else {
             return ""

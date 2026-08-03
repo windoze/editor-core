@@ -14,13 +14,14 @@ use editor_core_ffi::{
     editor_core_ffi_last_error_message, editor_core_ffi_lsp_char_offset_to_utf16,
     editor_core_ffi_lsp_completion_item_to_text_edits_json,
     editor_core_ffi_lsp_formatting_options_json, editor_core_ffi_lsp_utf16_to_char_offset,
-    editor_core_ffi_string_free, editor_core_ffi_workspace_backspace,
-    editor_core_ffi_workspace_create_view_typed, editor_core_ffi_workspace_execute_envelope_json,
-    editor_core_ffi_workspace_free, editor_core_ffi_workspace_get_info,
-    editor_core_ffi_workspace_get_viewport_blob, editor_core_ffi_workspace_get_viewport_state,
-    editor_core_ffi_workspace_insert_text_utf8, editor_core_ffi_workspace_minimap_json,
-    editor_core_ffi_workspace_move_to, editor_core_ffi_workspace_new,
-    editor_core_ffi_workspace_open_buffer_typed, editor_core_ffi_workspace_set_smooth_scroll_state,
+    editor_core_ffi_runtime_info_json, editor_core_ffi_string_free,
+    editor_core_ffi_workspace_backspace, editor_core_ffi_workspace_create_view_typed,
+    editor_core_ffi_workspace_execute_envelope_json, editor_core_ffi_workspace_free,
+    editor_core_ffi_workspace_get_info, editor_core_ffi_workspace_get_viewport_blob,
+    editor_core_ffi_workspace_get_viewport_state, editor_core_ffi_workspace_insert_text_utf8,
+    editor_core_ffi_workspace_minimap_json, editor_core_ffi_workspace_move_to,
+    editor_core_ffi_workspace_new, editor_core_ffi_workspace_open_buffer_typed,
+    editor_core_ffi_workspace_set_smooth_scroll_state,
     editor_core_ffi_workspace_set_viewport_height,
     editor_core_ffi_workspace_viewport_composed_json,
     editor_core_ffi_workspace_viewport_styled_json,
@@ -66,9 +67,32 @@ fn feature_flags_and_alias_work() {
 }
 
 #[test]
+fn runtime_info_json_reports_version_and_feature_descriptors() {
+    let runtime_json = take_string(editor_core_ffi_runtime_info_json());
+    let runtime: serde_json::Value = serde_json::from_str(&runtime_json).unwrap();
+
+    assert_eq!(runtime["kind"], "editor-core-ffi");
+    assert_eq!(runtime["abi_version"], ECF_ABI_VERSION);
+    assert_eq!(runtime["version"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(runtime["feature_flags"], editor_core_ffi_feature_flags());
+
+    let features = runtime["features"].as_array().expect("features array");
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "json_command_envelope"
+            && feature["bit"] == 8
+            && feature["flag"] == ECF_FEATURE_JSON_COMMAND_ENVELOPE
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "lsp_helpers"
+            && feature["flag"].as_u64().unwrap() & ECF_FEATURE_LSP_HELPERS != 0
+    }));
+}
+
+#[test]
 fn public_abi_scalar_signatures_are_fixed_width() {
     let _: extern "C" fn() -> u64 = editor_core_ffi_feature_flags;
     let _: extern "C" fn() -> u64 = ecf_feature_flags;
+    let _: extern "C" fn() -> *mut std::ffi::c_char = editor_core_ffi_runtime_info_json;
 
     let _: extern "C" fn(*const std::ffi::c_char, u32) -> *mut EcfEditorState =
         editor_core_ffi_editor_state_new;

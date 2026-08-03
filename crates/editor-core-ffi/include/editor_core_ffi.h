@@ -138,6 +138,7 @@ void editor_core_ffi_string_free(char* ptr);
 #define ECF_FEATURE_TREESITTER_PROCESSOR       (1ull << 7)
 #define ECF_FEATURE_JSON_COMMAND_ENVELOPE      (1ull << 8)
 uint64_t editor_core_ffi_feature_flags(void);
+char* editor_core_ffi_runtime_info_json(void);
 
 EcfEditorState* editor_core_ffi_editor_state_new(const char* initial_text, uint32_t viewport_width);
 void editor_core_ffi_editor_state_free(EcfEditorState* state);

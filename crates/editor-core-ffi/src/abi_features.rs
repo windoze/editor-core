@@ -1,3 +1,6 @@
+use crate::{ECF_ABI_VERSION, json_ptr};
+use serde_json::{Value, json};
+
 /// Feature bit: generic headless JSON editor command dispatcher is available.
 pub const ECF_FEATURE_JSON_COMMAND_DISPATCH: u64 = 1 << 0;
 /// Feature bit: typed hot-path editing and movement APIs are available.
@@ -27,6 +30,70 @@ pub const ECF_FEATURE_FLAGS: u64 = ECF_FEATURE_JSON_COMMAND_DISPATCH
     | ECF_FEATURE_TREESITTER_PROCESSOR
     | ECF_FEATURE_JSON_COMMAND_ENVELOPE;
 
+struct FeatureDescriptor {
+    bit: u8,
+    flag: u64,
+    name: &'static str,
+    description: &'static str,
+}
+
+const FEATURE_DESCRIPTORS: &[FeatureDescriptor] = &[
+    FeatureDescriptor {
+        bit: 0,
+        flag: ECF_FEATURE_JSON_COMMAND_DISPATCH,
+        name: "json_command_dispatch",
+        description: "Generic headless JSON editor command dispatcher.",
+    },
+    FeatureDescriptor {
+        bit: 1,
+        flag: ECF_FEATURE_TYPED_HOT_PATH,
+        name: "typed_hot_path",
+        description: "Typed hot-path editing and movement APIs.",
+    },
+    FeatureDescriptor {
+        bit: 2,
+        flag: ECF_FEATURE_WORKSPACE_TYPED_API,
+        name: "workspace_typed_api",
+        description: "Typed workspace open/create/info/viewport APIs.",
+    },
+    FeatureDescriptor {
+        bit: 3,
+        flag: ECF_FEATURE_VIEWPORT_BLOB,
+        name: "viewport_blob",
+        description: "Binary viewport blob APIs.",
+    },
+    FeatureDescriptor {
+        bit: 4,
+        flag: ECF_FEATURE_PROCESSING_EDIT_JSON,
+        name: "processing_edit_json",
+        description: "Processing edit JSON APIs.",
+    },
+    FeatureDescriptor {
+        bit: 5,
+        flag: ECF_FEATURE_LSP_HELPERS,
+        name: "lsp_helpers",
+        description: "LSP conversion/helper JSON APIs.",
+    },
+    FeatureDescriptor {
+        bit: 6,
+        flag: ECF_FEATURE_SUBLIME_PROCESSOR,
+        name: "sublime_processor",
+        description: "Sublime processor lifecycle and process/apply APIs.",
+    },
+    FeatureDescriptor {
+        bit: 7,
+        flag: ECF_FEATURE_TREESITTER_PROCESSOR,
+        name: "treesitter_processor",
+        description: "Tree-sitter processor and indenter APIs.",
+    },
+    FeatureDescriptor {
+        bit: 8,
+        flag: ECF_FEATURE_JSON_COMMAND_ENVELOPE,
+        name: "json_command_envelope",
+        description: "JSON command dispatcher can return structured result envelopes.",
+    },
+];
+
 /// Return a bitmask of optional headless FFI features supported by this build.
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ffi_feature_flags() -> u64 {
@@ -37,4 +104,29 @@ pub extern "C" fn editor_core_ffi_feature_flags() -> u64 {
 #[unsafe(no_mangle)]
 pub extern "C" fn ecf_feature_flags() -> u64 {
     editor_core_ffi_feature_flags()
+}
+
+/// Return structured runtime/capability information as JSON.
+///
+/// Caller owns returned string and must free it with `editor_core_ffi_string_free`.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_runtime_info_json() -> *mut std::ffi::c_char {
+    let features: Vec<Value> = FEATURE_DESCRIPTORS
+        .iter()
+        .map(|feature| {
+            json!({
+                "bit": feature.bit,
+                "flag": feature.flag,
+                "name": feature.name,
+                "description": feature.description,
+            })
+        })
+        .collect();
+    json_ptr(json!({
+        "kind": "editor-core-ffi",
+        "abi_version": ECF_ABI_VERSION,
+        "version": env!("CARGO_PKG_VERSION"),
+        "feature_flags": ECF_FEATURE_FLAGS,
+        "features": features,
+    }))
 }
