@@ -1677,6 +1677,12 @@
     - `swift test --package-path swift --filter 'EditorCoreUIFFITests/testLoadsLibraryAndVersion'`
     - `cargo fmt --check`
     - `git diff --check`
+- 中间提交：`feat(swift): add ui ffi runtime compatibility report`
+  - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；把 UI FFI runtime mismatch / missing feature diagnostic 从 AttoEditor app 内部下沉出一个 Swift wrapper 层可复用版本。
+  - 提交边界：新增 public `EditorCoreUIFFIRuntimeFeature`、`EditorCoreUIFFIRuntimeCompatibilityReport` 和 `EditorCoreUIFFIRuntimeCompatibility`，覆盖 UI FFI 已知 feature、默认 full-surface required feature 列表、可传入自定义 required/optional feature 集合的 evaluate API、load error/older ABI/missing required/missing optional diagnostic message。该提交不改变 C ABI，不新增 feature bit，不接入或替换 AttoEditor `AttoRuntimeCompatibility` 启动路径，不完成完整外部 capability negotiation protocol。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'EditorCoreUIFFIRuntimeCompatibilityTests'`
+    - `git diff --check`
 
 ## 阶段 11: Tree-sitter 与 LSP 主路线产品化
 
