@@ -696,6 +696,89 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(vc._lspWorkbenchPanelIsVisibleForTesting())
     }
 
+    func testLspWorkbenchPanelShowsDiagnosticsLifecycleState() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("workbench-problems.swift")
+        try "abc\ndef\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let window = attachToWindow(vc)
+        defer { window.close() }
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        try editorView.editor.lspApplyDiagnosticsJSON("""
+        {
+          "uri": "\(fileURL.absoluteString)",
+          "diagnostics": [
+            {
+              "range": {
+                "start": { "line": 0, "character": 0 },
+                "end": { "line": 0, "character": 3 }
+              },
+              "severity": 1,
+              "source": "unit-test",
+              "message": "active problem"
+            }
+          ],
+          "version": 1
+        }
+        """)
+        vc._updateStatusBarForTesting()
+
+        XCTAssertTrue(vc.showLspWorkbenchPanel())
+
+        func statuses() -> [String: String] {
+            Dictionary(uniqueKeysWithValues: vc._lspWorkbenchPanelItemsForTesting().map {
+                ($0.title, $0.status)
+            })
+        }
+
+        var current = statuses()
+        XCTAssertTrue(current["Problems"]?.hasPrefix("1 problem | Fresh | Result #") == true)
+        XCTAssertTrue(current["Problems"]?.contains(" | diagnostics.active | workbench-problems.swift") == true)
+
+        try editorView.editor.insertText("!")
+        vc._updateStatusBarForTesting()
+
+        current = statuses()
+        XCTAssertTrue(current["Problems"]?.hasPrefix("1 problem | Stale: document edited | Result #") == true)
+        XCTAssertTrue(current["Problems"]?.contains(" | diagnostics.active | workbench-problems.swift") == true)
+
+        XCTAssertTrue(vc.showWorkspaceDiagnosticsResultJSONInActiveTab("""
+        {
+          "items": [
+            {
+              "uri": "\(fileURL.absoluteString)",
+              "kind": "full",
+              "resultId": "workspace-1",
+              "items": [
+                {
+                  "range": {
+                    "start": { "line": 1, "character": 0 },
+                    "end": { "line": 1, "character": 3 }
+                  },
+                  "severity": 2,
+                  "source": "unit-test",
+                  "message": "workspace warning"
+                }
+              ]
+            }
+          ]
+        }
+        """))
+
+        current = statuses()
+        XCTAssertTrue(current["Workspace Problems"]?.hasPrefix("1 problem | Fresh | Result #") == true)
+        XCTAssertTrue(current["Workspace Problems"]?.contains(" | diagnostics.workspace | Workspace Problems") == true)
+        XCTAssertEqual(vc._lspWorkbenchPanelRowCountForTesting(), 10)
+        XCTAssertTrue(vc._lspWorkbenchPanelIsVisibleForTesting())
+    }
+
     func testInlayHintClickUsesResolveFeedbackWhenLspDisabled() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

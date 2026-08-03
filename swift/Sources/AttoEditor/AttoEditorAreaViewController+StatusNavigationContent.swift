@@ -148,6 +148,7 @@ extension AttoEditorAreaViewController {
         )
         recordActiveDiagnosticsLifecycle(diagnosticsSnapshot, for: tab)
         updateProblemsPanelIfVisible(snapshot: diagnosticsSnapshot)
+        updateVisibleLspWorkbenchPanel()
         updateDiagnosticMarkers(for: tab, projections: diagnosticsSnapshot.markerProjections)
 
         let (line1, col1): (UInt32, UInt32) = {

@@ -41,6 +41,16 @@ extension AttoEditorAreaViewController {
             return unifiedDiagnosticsSnapshot(for: tab, includeActiveDiagnostics: true).problems.count
         } ?? 0
         let workspaceProblemsCount = hasActiveTab ? workspaceDiagnosticProblems().count : 0
+        let activeDiagnosticsEntry = lspWorkbenchDiagnosticsEntry(family: "diagnostics.active")
+        let workspaceDiagnosticsEntry = lspWorkbenchDiagnosticsEntry(family: "diagnostics.workspace")
+        let activeProblemsStatus = lspWorkbenchDiagnosticsStatus(
+            countText: activeProblemsCount == 1 ? "1 problem" : "\(activeProblemsCount) problems",
+            entry: activeDiagnosticsEntry
+        )
+        let workspaceProblemsStatus = lspWorkbenchDiagnosticsStatus(
+            countText: workspaceProblemsCount == 1 ? "1 problem" : "\(workspaceProblemsCount) problems",
+            entry: workspaceDiagnosticsEntry
+        )
         let locationEntry = lspLocationResultStore.currentEntry
         let symbolEntry = lspSymbolResultStore.currentEntry
         let locationCount = locationEntry?.snapshot.items.count ?? 0
@@ -69,14 +79,14 @@ extension AttoEditorAreaViewController {
                 id: LspWorkbenchItemID.activeProblems,
                 title: "Problems",
                 detail: "Active document diagnostics and workspace markers for the selected tab",
-                status: activeProblemsCount == 1 ? "1 problem" : "\(activeProblemsCount) problems",
+                status: activeProblemsStatus,
                 isEnabled: hasActiveTab
             ),
             .init(
                 id: LspWorkbenchItemID.workspaceProblems,
                 title: "Workspace Problems",
                 detail: "Workspace diagnostics projected across open and indexed documents",
-                status: workspaceProblemsCount == 1 ? "1 problem" : "\(workspaceProblemsCount) problems",
+                status: workspaceProblemsStatus,
                 isEnabled: hasActiveTab
             ),
             .init(
@@ -153,6 +163,39 @@ extension AttoEditorAreaViewController {
             parts.append(entry.title)
         }
         return parts.joined(separator: " | ")
+    }
+
+    private func lspWorkbenchDiagnosticsEntry(
+        family: String
+    ) -> AttoLspResultLifecycleEntry<AttoDiagnosticsLifecycleSnapshot>? {
+        diagnosticsLifecycleStore.historyEntries.reversed().first { $0.family == family }
+    }
+
+    private func lspWorkbenchDiagnosticsStatus(
+        countText: String,
+        entry: AttoLspResultLifecycleEntry<AttoDiagnosticsLifecycleSnapshot>?
+    ) -> String {
+        guard let entry else { return countText }
+        let stateText = entry.snapshot.staleReason.map(lspWorkbenchDiagnosticsStaleText) ?? entry.state.displayText
+        var parts = [
+            countText,
+            stateText,
+            "Result #\(entry.sequence)",
+            entry.family,
+        ]
+        if entry.title.isEmpty == false {
+            parts.append(entry.title)
+        }
+        return parts.joined(separator: " | ")
+    }
+
+    private func lspWorkbenchDiagnosticsStaleText(_ reason: AttoDiagnosticsStaleReason) -> String {
+        switch reason {
+        case .documentEdited:
+            return "Stale: document edited"
+        case .workspaceRefreshRequested:
+            return "Stale: workspace refresh requested"
+        }
     }
 
     private func makeLspWorkbenchPanelController() -> AttoLspWorkbenchPanelController {

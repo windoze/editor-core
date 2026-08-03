@@ -1230,6 +1230,14 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testLspWorkbenchPanelShowsLifecycleStateForLocationsAndSymbols`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testLspWorkbenchPanelSummarizesResultFamilies`
     - `git diff --check`
+- 中间提交：`feat(app): show workbench diagnostics lifecycle`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量；把 Workbench 的 Problems / Workspace Problems 行接到已有 diagnostics lifecycle entry，继续把 stale metadata 从独立 Problems/status 路径推进到统一 result family 目录层。
+  - 提交边界：只更新 Workbench 的 Problems / Workspace Problems 行状态文本，在已有 diagnostics lifecycle entry 存在时展示结果数量、Fresh/Stale、Result sequence、family 和 title，并让 visible Workbench 在 status update 记录新 diagnostics lifecycle 后同步刷新。该提交不改变 diagnostics store schema，不新增统一 pin/history 数据模型，不实现所有 result family 的统一 stale/error schema，也不迁移到真正内嵌 dock。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testLspWorkbenchPanelShowsDiagnosticsLifecycleState`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testLspWorkbenchPanelShowsLifecycleStateForLocationsAndSymbols`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testLspWorkbenchPanelSummarizesResultFamilies`
+    - `git diff --check`
 
 ## 阶段 8: Command、menu、keymap、palette 与 Sublime 行为矩阵
 
