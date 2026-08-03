@@ -181,6 +181,133 @@
       "showFindBar": true,
       "perChannelTolerance": 2,
       "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "editor-chrome-dark-narrow-minimap-overlays",
+      "description": "Dark narrow editor chrome with find bar, collapsed fold, selections, diagnostics, and minimap markers.",
+      "fixture": "VisualFixtures/overlay-narrow-diagnostics.rs",
+      "baseline": "VisualBaselines/editor-chrome-dark-narrow-minimap-overlays.png",
+      "artifactName": "editor-chrome-dark-narrow-minimap-overlays",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 603,
+        "height": 380
+      },
+      "scale": 1.0,
+      "showFindBar": true,
+      "foldingRanges": [
+        {
+          "startLine": 2,
+          "endLine": 11,
+          "kind": "region"
+        },
+        {
+          "startLine": 5,
+          "endLine": 8,
+          "kind": "region",
+          "collapsedText": "if index ... "
+        }
+      ],
+      "collapsedFolds": [
+        {
+          "startLine": 5,
+          "endLine": 8
+        }
+      ],
+      "selectionRanges": [
+        {
+          "start": 0,
+          "end": 5
+        },
+        {
+          "start": 21,
+          "end": 26
+        }
+      ],
+      "primarySelectionIndex": 1,
+      "diagnosticMarkers": [
+        {
+          "logicalLine": 0,
+          "charOffset": 0,
+          "severity": "warning",
+          "source": "active"
+        },
+        {
+          "logicalLine": 5,
+          "charOffset": 148,
+          "severity": "error",
+          "source": "active"
+        },
+        {
+          "logicalLine": 14,
+          "charOffset": 305,
+          "severity": "information",
+          "source": "workspace"
+        }
+      ],
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "editor-chrome-light-wide-split-overlays",
+      "description": "Light wide editor chrome with split panes, long-line minimap density, multi-selections, and diagnostics.",
+      "fixture": "VisualFixtures/wide-split-overlay-primary.txt",
+      "additionalFixtures": [
+        "VisualFixtures/wide-split-overlay-secondary.txt"
+      ],
+      "activeFixture": "VisualFixtures/wide-split-overlay-secondary.txt",
+      "baseline": "VisualBaselines/editor-chrome-light-wide-split-overlays.png",
+      "artifactName": "editor-chrome-light-wide-split-overlays",
+      "theme": "defaultLight",
+      "window": {
+        "width": 980,
+        "height": 540
+      },
+      "scale": 1.0,
+      "splitActiveTabRight": true,
+      "fontFamilies": [
+        "Menlo",
+        "SF Mono",
+        "Monaco"
+      ],
+      "fontSizePoints": 15,
+      "selectionRanges": [
+        {
+          "start": 0,
+          "end": 5
+        },
+        {
+          "start": 19,
+          "end": 24
+        },
+        {
+          "start": 38,
+          "end": 43
+        }
+      ],
+      "primarySelectionIndex": 2,
+      "diagnosticMarkers": [
+        {
+          "logicalLine": 0,
+          "charOffset": 0,
+          "severity": "hint",
+          "source": "active"
+        },
+        {
+          "logicalLine": 5,
+          "charOffset": 290,
+          "severity": "warning",
+          "source": "workspace"
+        },
+        {
+          "logicalLine": 7,
+          "charOffset": 492,
+          "severity": "error",
+          "source": "active"
+        }
+      ],
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
     }
   ]
 }

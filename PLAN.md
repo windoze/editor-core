@@ -2167,6 +2167,13 @@
     - `bash -n swift/scripts/write-visual-ci-environment.sh`
     - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
     - `git diff --check`
+- 中间提交：`test(app): expand visual overlay window fixtures`
+  - 所属任务：阶段 13 的 macOS UI 自动化与视觉回归测试体系增量；继续扩展 visual baseline manifest，覆盖更多 overlay/minimap 组合和跨窗口尺寸场景。
+  - 提交边界：只新增 SwiftPM test resources 与 manifest cases；增加 dark narrow editor chrome + find bar + collapsed fold + selection + diagnostics/minimap markers 场景，以及 light wide split-pane + long-line minimap density + multi-selection + diagnostics 场景。该提交不提交 golden PNG、不新增 manifest schema、不覆盖 floating panel/popup screenshot，也不改变产品代码。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures`
+    - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
+    - `git diff --check`
 
 ## 阶段 14: 外观、布局与 Sublime-like 操作打磨
 
