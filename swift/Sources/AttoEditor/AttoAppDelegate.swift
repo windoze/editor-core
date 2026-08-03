@@ -25,6 +25,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     private let keySequencePrefixTimeoutSeconds: TimeInterval
     private var keySequenceStatusHandler: ((String?) -> Void)?
     private var keyEventMonitor: Any?
+    private var recentCommandIDs: [String] = []
+
+    private static let maxRecentCommandCount = 12
 
     var ipcServer: AttoIpcServer?
     var createDefaultWindowOnLaunch: Bool = true
@@ -906,7 +909,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
 
         commands.append(contentsOf: cursorMovementCommands())
         commands.append(contentsOf: editorCommandPaletteCommands())
-        return commands.map(commandWithCurrentContext(_:))
+        return commandsOrderedForCommandPalette(commands.map(commandWithCurrentContext(_:)))
     }
 
     func _defaultCommandsForTesting() -> [AttoCommandPaletteCommand] {
@@ -952,6 +955,10 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
 
     func _commandConflictsForTesting() -> [String] {
         Self.duplicateCommandIDs(in: defaultCommands())
+    }
+
+    func _recentCommandIDsForTesting() -> [String] {
+        recentCommandIDs
     }
 
     func _validateRuntimeCompatibilityForTesting() -> Bool {
@@ -1073,8 +1080,36 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             isEnabled: commandIsEnabled(requirement: metadata.requirement, schema: metadata.schema),
             requiresEditor: metadata.requirement.requiresEditor,
             schema: metadata.schema,
-            runWithArguments: command.runWithArguments
+            runWithArguments: { [weak self] arguments in
+                command.runWithArguments(arguments)
+                self?.rememberRecentCommand(command.id)
+            }
         )
+    }
+
+    private func commandsOrderedForCommandPalette(
+        _ commands: [AttoCommandPaletteCommand]
+    ) -> [AttoCommandPaletteCommand] {
+        guard recentCommandIDs.isEmpty == false else { return commands }
+
+        var commandsByID: [String: AttoCommandPaletteCommand] = [:]
+        for command in commands where commandsByID[command.id] == nil {
+            commandsByID[command.id] = command
+        }
+        let recentCommands = recentCommandIDs.compactMap { commandsByID[$0] }
+        let recentSet = Set(recentCommands.map(\.id))
+        let remainingCommands = commands.filter { recentSet.contains($0.id) == false }
+        return recentCommands + remainingCommands
+    }
+
+    private func rememberRecentCommand(_ commandID: String) {
+        guard commandID != "workbench.command_palette" else { return }
+
+        recentCommandIDs.removeAll { $0 == commandID }
+        recentCommandIDs.insert(commandID, at: 0)
+        if recentCommandIDs.count > Self.maxRecentCommandCount {
+            recentCommandIDs.removeLast(recentCommandIDs.count - Self.maxRecentCommandCount)
+        }
     }
 
     private func commandIsEnabled(commandID: String) -> Bool {

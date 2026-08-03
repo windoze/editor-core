@@ -1349,6 +1349,16 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testCommandRegistryCarriesMetadataAndAvailability`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs`
     - `git diff --check`
+- 中间提交：`feat(app): order recent palette commands`
+  - 所属任务：阶段 8 的 Command、menu、keymap、palette 与 Sublime 行为矩阵增量；为主命令 palette 增加 bounded in-memory recent command ordering，让统一 command id 路径触发的命令能在下一次打开 command palette 时排在前面。
+  - 提交边界：`AttoAppDelegate` 维护最近 command id 列表，命令通过统一 `executeCommand` / palette command wrapper 成功触发后会移动到最近列表顶部；主命令 palette 的 `defaultCommands()` 会把最近命令排在静态命令之前，重复触发会去重并移动到顶部，无效参数或未知/禁用命令不污染历史。本提交不做跨启动持久化、不改变 Quick Open/LSP result palette、不实现命令参数 prompt/replay、不实现宏录制/回放或插件命令入口。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testCommandPaletteOrdersRecentCommandsFirst`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testExecuteCommandUsesRegisteredCommandIDs`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testExecuteCommandAcceptsTypedArgumentsForParameterizedCommands`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testCommandRegistryCarriesMetadataAndAvailability`
+    - `swift test --package-path swift --filter AttoAccessibilityIdentifierTests.testCommandPaletteShowsCommandGroupsAndFiltersByMetadata`
+    - `git diff --check`
 
 ## 阶段 9: 配置、偏好与 capability DTO 完整性
 
