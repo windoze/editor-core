@@ -1045,8 +1045,10 @@ extension AttoEditorAreaViewController {
         }
 
         guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
+            let message = AttoLspResultFeedback.unavailable(.documentColors)
+            markCurrentLspEventResultError(family: "document_colors", message: message)
             if showFeedback {
-                presentLspResultFeedback(AttoLspResultFeedback.unavailable(.documentColors), in: tab.editCore.editorView)
+                presentLspResultFeedback(message, in: tab.editCore.editorView)
             }
             NSSound.beep()
             return false
@@ -1068,11 +1070,13 @@ extension AttoEditorAreaViewController {
         do {
             _ = try tab.editCore.editor.lspRequestDocumentColor()
         } catch {
+            let message = AttoLspResultFeedback.requestFailed(
+                .documentColors,
+                errorDescription: error.localizedDescription
+            )
+            markCurrentLspEventResultError(family: "document_colors", message: message)
             if showFeedback {
-                presentLspResultFeedback(
-                    AttoLspResultFeedback.requestFailed(.documentColors, errorDescription: error.localizedDescription),
-                    in: tab.editCore.editorView
-                )
+                presentLspResultFeedback(message, in: tab.editCore.editorView)
             }
             NSSound.beep()
             return false
@@ -1432,9 +1436,11 @@ extension AttoEditorAreaViewController {
 
             if remainingTicks <= 0 {
                 let showFeedback = ctx.showFeedback
+                let message = AttoLspResultFeedback.timeout(.documentColors)
                 self.cancelDocumentColorUI()
+                self.markCurrentLspEventResultError(family: "document_colors", message: message)
                 if showFeedback {
-                    self.presentLspResultFeedback(AttoLspResultFeedback.timeout(.documentColors), in: editorView)
+                    self.presentLspResultFeedback(message, in: editorView)
                 }
                 NSSound.beep()
                 return
@@ -1451,15 +1457,14 @@ extension AttoEditorAreaViewController {
                 result = try tab.editCore.editor.lspTakeLastDocumentColorResult()
             } catch {
                 let showFeedback = ctx.showFeedback
+                let message = AttoLspResultFeedback.failed(
+                    .documentColors,
+                    errorDescription: error.localizedDescription
+                )
                 self.cancelDocumentColorUI()
+                self.markCurrentLspEventResultError(family: "document_colors", message: message)
                 if showFeedback {
-                    self.presentLspResultFeedback(
-                        AttoLspResultFeedback.failed(
-                            .documentColors,
-                            errorDescription: error.localizedDescription
-                        ),
-                        in: editorView
-                    )
+                    self.presentLspResultFeedback(message, in: editorView)
                 }
                 NSSound.beep()
                 return

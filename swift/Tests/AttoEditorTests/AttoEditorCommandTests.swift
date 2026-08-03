@@ -903,14 +903,13 @@ final class AttoEditorCommandTests: XCTestCase {
             staleStatuses["Document Colors"]?.contains(" | document_colors | Document Colors: 1 color") == true
         )
 
-        XCTAssertTrue(vc.markCurrentLspEventResultError(
-            family: "document_colors",
-            message: AttoLspResultFeedback.failed(.documentColors, errorDescription: "server busy")
-        ))
+        XCTAssertFalse(vc.showDocumentColorsInActiveTab(showFeedback: false))
         let errorStatuses = Dictionary(uniqueKeysWithValues: vc._lspWorkbenchPanelItemsForTesting().map {
             ($0.title, $0.status)
         })
-        XCTAssertTrue(errorStatuses["Document Colors"]?.hasPrefix("1 color | Error: Document colors: failed | Result #") == true)
+        XCTAssertTrue(
+            errorStatuses["Document Colors"]?.hasPrefix("1 color | Error: Document colors: unavailable | Result #") == true
+        )
         XCTAssertTrue(
             errorStatuses["Document Colors"]?.contains(" | document_colors | Document Colors: 1 color") == true
         )
@@ -4387,14 +4386,11 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(staleStatuses["Hierarchy"]?.hasPrefix("2 results | Stale: document edited | Result #") == true)
         XCTAssertTrue(staleStatuses["Hierarchy"]?.contains(" | hierarchy | Incoming Calls") == true)
 
-        XCTAssertTrue(vc.markCurrentLspEventResultError(
-            family: "hierarchy",
-            message: AttoLspResultFeedback.failed(.callHierarchy, errorDescription: "server busy")
-        ))
+        XCTAssertFalse(vc.requestLspHierarchyAtPrimaryCaret(kind: .callIncoming, showFeedback: false))
         let errorStatuses = Dictionary(uniqueKeysWithValues: vc._lspWorkbenchPanelItemsForTesting().map {
             ($0.title, $0.status)
         })
-        XCTAssertTrue(errorStatuses["Hierarchy"]?.hasPrefix("2 results | Error: Call hierarchy: failed | Result #") == true)
+        XCTAssertTrue(errorStatuses["Hierarchy"]?.hasPrefix("2 results | Error: Call hierarchy: unavailable | Result #") == true)
         XCTAssertTrue(errorStatuses["Hierarchy"]?.contains(" | hierarchy | Incoming Calls") == true)
     }
 

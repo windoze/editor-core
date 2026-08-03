@@ -1293,6 +1293,14 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testLspWorkbenchPanelSummarizesResultFamilies`
     - `swift test --package-path swift --filter AttoLspResultLifecycleStoreTests`
     - `git diff --check`
+- 中间提交：`feat(app): route color hierarchy workbench errors`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量；补齐 Document Colors 与 Hierarchy 真实请求链路到统一 LSP Workbench event-backed Error 状态的自动传播。
+  - 提交边界：Document Colors 的 unavailable、request failed、timeout 和 take failed 分支会把最近 `document_colors` event 标为 Error；Hierarchy 的 unavailable、position failed、prepare request failed、prepare timeout/take failed、children request failed 和 children timeout/take failed 分支会把最近 `hierarchy` event 标为 Error；对应测试从直接调用通用 helper 改为已有结果后走真实 disabled request 路径。该提交不改变 LSP request/resolve 协议，不新增 result payload 或 error event payload，不把 empty/no results 视为 Error，不消费 color presentation event，不新增 pin/history 模型或真正内嵌 dock。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.test(LspWorkbenchPanelShowsDocumentColorLifecycleEvent|HierarchyPanelUsesLastHierarchyResults|CodeLensPanelUsesDerivedDecorations|InlayHintPanelUsesDerivedDecorations|DocumentLinkPanelUsesDerivedDecorations|LspWorkbenchPanelSummarizesResultFamilies)'`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.test(LspWorkbenchPanelShowsLifecycleStateForLocationsAndSymbols|LspWorkbenchPanelShowsDiagnosticsLifecycleState)'`
+    - `swift test --package-path swift --filter AttoLspResultLifecycleStoreTests`
+    - `git diff --check`
 
 ## 阶段 8: Command、menu、keymap、palette 与 Sublime 行为矩阵
 

@@ -66,11 +66,10 @@ extension AttoEditorAreaViewController {
             return false
         }
         guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
+            let message = AttoLspResultFeedback.unavailable(kind.feedbackFeature)
+            markCurrentLspEventResultError(family: "hierarchy", message: message)
             if showFeedback {
-                presentLspResultFeedback(
-                    AttoLspResultFeedback.unavailable(kind.feedbackFeature),
-                    in: tab.editCore.editorView
-                )
+                presentLspResultFeedback(message, in: tab.editCore.editorView)
             }
             NSSound.beep()
             return false
@@ -81,14 +80,13 @@ extension AttoEditorAreaViewController {
             let offsets = try tab.editCore.editor.selectionOffsets()
             position = try tab.editCore.editor.charOffsetToLogicalPosition(offset: offsets.end)
         } catch {
+            let message = AttoLspResultFeedback.failed(
+                kind.feedbackFeature,
+                errorDescription: "Hierarchy position could not be computed.\n\(error.localizedDescription)"
+            )
+            markCurrentLspEventResultError(family: "hierarchy", message: message)
             if showFeedback {
-                presentLspResultFeedback(
-                    AttoLspResultFeedback.failed(
-                        kind.feedbackFeature,
-                        errorDescription: "Hierarchy position could not be computed.\n\(error.localizedDescription)"
-                    ),
-                    in: tab.editCore.editorView
-                )
+                presentLspResultFeedback(message, in: tab.editCore.editorView)
             }
             NSSound.beep()
             return false
@@ -121,14 +119,13 @@ extension AttoEditorAreaViewController {
             }
         } catch {
             cancelHierarchyUI()
+            let message = AttoLspResultFeedback.requestFailed(
+                kind.feedbackFeature,
+                errorDescription: error.localizedDescription
+            )
+            markCurrentLspEventResultError(family: "hierarchy", message: message)
             if showFeedback {
-                presentLspResultFeedback(
-                    AttoLspResultFeedback.requestFailed(
-                        kind.feedbackFeature,
-                        errorDescription: error.localizedDescription
-                    ),
-                    in: tab.editCore.editorView
-                )
+                presentLspResultFeedback(message, in: tab.editCore.editorView)
             }
             NSSound.beep()
             return false
@@ -158,9 +155,11 @@ extension AttoEditorAreaViewController {
 
             if remainingTicks <= 0 {
                 let showFeedback = ctx.showFeedback
+                let message = AttoLspResultFeedback.timeout(ctx.kind.feedbackFeature)
                 self.cancelHierarchyUI()
+                self.markCurrentLspEventResultError(family: "hierarchy", message: message)
                 if showFeedback {
-                    self.presentLspResultFeedback(AttoLspResultFeedback.timeout(ctx.kind.feedbackFeature), in: editorView)
+                    self.presentLspResultFeedback(message, in: editorView)
                 }
                 NSSound.beep()
                 return
@@ -187,15 +186,14 @@ extension AttoEditorAreaViewController {
                 }
             } catch {
                 let showFeedback = ctx.showFeedback
+                let message = AttoLspResultFeedback.failed(
+                    ctx.kind.feedbackFeature,
+                    errorDescription: error.localizedDescription
+                )
                 self.cancelHierarchyUI()
+                self.markCurrentLspEventResultError(family: "hierarchy", message: message)
                 if showFeedback {
-                    self.presentLspResultFeedback(
-                        AttoLspResultFeedback.failed(
-                            ctx.kind.feedbackFeature,
-                            errorDescription: error.localizedDescription
-                        ),
-                        in: editorView
-                    )
+                    self.presentLspResultFeedback(message, in: editorView)
                 }
                 NSSound.beep()
                 return
@@ -294,14 +292,13 @@ extension AttoEditorAreaViewController {
             }
         } catch {
             cancelHierarchyUI()
+            let message = AttoLspResultFeedback.requestFailed(
+                kind.feedbackFeature,
+                errorDescription: error.localizedDescription
+            )
+            markCurrentLspEventResultError(family: "hierarchy", message: message)
             if showFeedback {
-                presentLspResultFeedback(
-                    AttoLspResultFeedback.requestFailed(
-                        kind.feedbackFeature,
-                        errorDescription: error.localizedDescription
-                    ),
-                    in: tab.editCore.editorView
-                )
+                presentLspResultFeedback(message, in: tab.editCore.editorView)
             }
             NSSound.beep()
             return false
@@ -331,9 +328,11 @@ extension AttoEditorAreaViewController {
 
             if remainingTicks <= 0 {
                 let showFeedback = ctx.showFeedback
+                let message = AttoLspResultFeedback.timeout(ctx.kind.feedbackFeature)
                 self.cancelHierarchyUI()
+                self.markCurrentLspEventResultError(family: "hierarchy", message: message)
                 if showFeedback {
-                    self.presentLspResultFeedback(AttoLspResultFeedback.timeout(ctx.kind.feedbackFeature), in: editorView)
+                    self.presentLspResultFeedback(message, in: editorView)
                 }
                 NSSound.beep()
                 return
@@ -371,15 +370,14 @@ extension AttoEditorAreaViewController {
                 }
             } catch {
                 let showFeedback = ctx.showFeedback
+                let message = AttoLspResultFeedback.failed(
+                    ctx.kind.feedbackFeature,
+                    errorDescription: error.localizedDescription
+                )
                 self.cancelHierarchyUI()
+                self.markCurrentLspEventResultError(family: "hierarchy", message: message)
                 if showFeedback {
-                    self.presentLspResultFeedback(
-                        AttoLspResultFeedback.failed(
-                            ctx.kind.feedbackFeature,
-                            errorDescription: error.localizedDescription
-                        ),
-                        in: editorView
-                    )
+                    self.presentLspResultFeedback(message, in: editorView)
                 }
                 NSSound.beep()
                 return
