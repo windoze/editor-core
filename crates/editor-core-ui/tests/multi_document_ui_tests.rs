@@ -2005,6 +2005,9 @@ fn multi_document_ui_reports_workspace_edit_transaction_skipped_details() {
                 conflict.operation.as_deref(),
                 conflict.reason.as_str(),
                 conflict.kind.as_str(),
+                conflict.severity.as_str(),
+                conflict.apply_impact.as_str(),
+                conflict.resolution.as_str(),
             )
         })
         .collect::<Vec<_>>();
@@ -2013,24 +2016,36 @@ fn multi_document_ui_reports_workspace_edit_transaction_skipped_details() {
         Some("delete"),
         "resource_operation_dirty_target",
         "dirty_document",
+        "warning",
+        "skips_change",
+        "save_or_discard",
     )));
     assert!(conflict_kinds.contains(&(
         "file:///tmp/project/Missing.swift",
         Some("text_edit"),
         "document_not_open",
         "missing_resource",
+        "warning",
+        "skips_change",
+        "restore_resource",
     )));
     assert!(conflict_kinds.contains(&(
         "file:///tmp/project/Overlap.swift",
         Some("text_edit"),
         "overlapping_text_edits",
         "overlap",
+        "warning",
+        "skips_change",
+        "recompute_edit",
     )));
     assert!(conflict_kinds.contains(&(
         "file:///tmp/project/Versioned.swift",
         Some("text_edit"),
         "version_mismatch",
         "version",
+        "warning",
+        "skips_change",
+        "refresh_request",
     )));
 
     let applied = ui.apply_workspace_edit_transaction(edit).unwrap();
@@ -2040,7 +2055,11 @@ fn multi_document_ui_reports_workspace_edit_transaction_skipped_details() {
         vec!["file:///tmp/project/Dirty.swift"]
     );
     assert!(applied.conflicts.iter().any(|conflict| {
-        conflict.uri == "file:///tmp/project/Dirty.swift" && conflict.kind == "dirty_document"
+        conflict.uri == "file:///tmp/project/Dirty.swift"
+            && conflict.kind == "dirty_document"
+            && conflict.severity == "warning"
+            && conflict.apply_impact == "skips_change"
+            && conflict.resolution == "save_or_discard"
     }));
     assert_eq!(ui.tab_text(versioned).unwrap(), "versioned\n");
 }

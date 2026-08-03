@@ -1922,6 +1922,9 @@ final class EditorCoreUIFFITests: XCTestCase {
                 && $0.reason == "resource_operation_dirty_target"
         })
         XCTAssertEqual(dirtyConflict.kind, "dirty_document")
+        XCTAssertEqual(dirtyConflict.severity, "error")
+        XCTAssertEqual(dirtyConflict.applyImpact, "blocks_atomic_apply")
+        XCTAssertEqual(dirtyConflict.resolution, "save_or_discard")
         XCTAssertEqual(dirtyConflict.message, "delete targets a modified open tab")
         XCTAssertEqual(try multi.tabText(tabId: app), "alpha\n")
         XCTAssertEqual(try multi.tabText(tabId: dirty), "dirty changed\n")

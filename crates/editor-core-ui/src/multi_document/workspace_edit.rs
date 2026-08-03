@@ -38,6 +38,9 @@ pub struct WorkspaceEditTransactionSkippedDetail {
 pub struct WorkspaceEditTransactionConflict {
     pub uri: String,
     pub kind: String,
+    pub severity: String,
+    pub apply_impact: String,
+    pub resolution: String,
     pub reason: String,
     pub operation: Option<String>,
     pub message: String,
@@ -1673,7 +1676,7 @@ fn result_from_plan(
         conflicts: plan
             .skipped_details
             .iter()
-            .map(workspace_edit_transaction_conflict)
+            .map(|detail| workspace_edit_transaction_conflict(detail, apply_mode))
             .collect(),
         skipped_uris: plan.skipped_uris.into_iter().collect(),
         skipped_details: plan.skipped_details.into_iter().collect(),
@@ -1706,10 +1709,15 @@ fn workspace_edit_transaction_resource_operation(
 
 fn workspace_edit_transaction_conflict(
     detail: &WorkspaceEditTransactionSkippedDetail,
+    apply_mode: WorkspaceEditApplyMode,
 ) -> WorkspaceEditTransactionConflict {
+    let kind = conflict_kind_for_skipped_reason(detail.reason.as_str());
     WorkspaceEditTransactionConflict {
         uri: detail.uri.clone(),
-        kind: conflict_kind_for_skipped_reason(detail.reason.as_str()).to_string(),
+        kind: kind.to_string(),
+        severity: conflict_severity(kind, apply_mode).to_string(),
+        apply_impact: conflict_apply_impact(apply_mode).to_string(),
+        resolution: conflict_resolution_for_kind(kind).to_string(),
         reason: detail.reason.clone(),
         operation: detail.operation.clone(),
         message: detail.message.clone(),
@@ -1747,6 +1755,37 @@ fn conflict_kind_for_skipped_reason(reason: &str) -> &'static str {
         | "file_text_edit_rollback_failed"
         | "file_text_edit_write_failed" => "apply_failure",
         _ => "other",
+    }
+}
+
+fn conflict_severity(kind: &str, apply_mode: WorkspaceEditApplyMode) -> &'static str {
+    if apply_mode == WorkspaceEditApplyMode::Atomic || kind == "apply_failure" {
+        "error"
+    } else {
+        "warning"
+    }
+}
+
+fn conflict_apply_impact(apply_mode: WorkspaceEditApplyMode) -> &'static str {
+    match apply_mode {
+        WorkspaceEditApplyMode::Atomic => "blocks_atomic_apply",
+        WorkspaceEditApplyMode::Partial => "skips_change",
+    }
+}
+
+fn conflict_resolution_for_kind(kind: &str) -> &'static str {
+    match kind {
+        "dirty_document" => "save_or_discard",
+        "version" => "refresh_request",
+        "overlap" => "recompute_edit",
+        "resource_dependency" => "resolve_dependency",
+        "resource_target" => "adjust_target",
+        "missing_resource" => "restore_resource",
+        "workspace_boundary" => "move_inside_workspace",
+        "unsupported_uri" => "unsupported",
+        "resource_options" => "adjust_options",
+        "apply_failure" => "retry_after_io",
+        _ => "inspect",
     }
 }
 

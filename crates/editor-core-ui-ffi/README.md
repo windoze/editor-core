@@ -549,6 +549,13 @@ char* editor_core_ui_ffi_multi_document_workspace_edit_transaction_envelope_json
 `operation_utf8` accepts `preview`, `apply`, `undo`, or `redo`. `preview` and `apply` require
 `workspace_edit_json_utf8`; `undo` and `redo` ignore it and may be called with null.
 
+WorkspaceEdit transaction results may include `conflicts[]`. Each conflict keeps the stable
+`uri`/`kind`/`reason`/`operation`/`message` fields and also includes compatibility-extensible
+machine-readable impact fields: `severity`, `apply_impact`, and `resolution`. `apply_impact` is
+`skips_change` for partial conflict skips and `blocks_atomic_apply` when atomic apply cannot proceed
+until the conflict is resolved. Hosts should ignore unknown conflict fields and tolerate unknown
+future enum strings.
+
 Success:
 
 ```json

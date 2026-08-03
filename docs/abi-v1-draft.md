@@ -462,6 +462,14 @@ available. The returned JSON uses the same result shape as WorkspaceEdit transac
 `mode` set to `redo`; unavailable redo returns `applied: false`. Redo goes through the normal core
 WorkspaceEdit transaction path, so existing version/dirty/root-gated conflict checks still apply.
 
+WorkspaceEdit transaction `conflicts[]` entries are compatibility-extensible JSON objects. Current
+entries include `uri`, `kind`, `severity`, `apply_impact`, `resolution`, `reason`, `operation`, and
+`message`. `severity` is currently `warning` for partial skipped changes and `error` for atomic
+blocking conflicts or runtime apply failures. `apply_impact` distinguishes `skips_change` from
+`blocks_atomic_apply`; `resolution` is a machine-readable hint such as `save_or_discard`,
+`refresh_request`, `restore_resource`, `adjust_target`, `unsupported`, or `inspect`. Hosts must
+ignore unknown conflict fields and tolerate unknown enum strings.
+
 All public array counts (`style_count`, `font_count`, `decoration_count`, `range_count`, `data_len`, `out_cap`) are `uint32_t`; Rust checks conversion to internal `usize` and validates Rust slice length limits before constructing slices.
 
 ## Suggested Initial Typed Command Set (v1)

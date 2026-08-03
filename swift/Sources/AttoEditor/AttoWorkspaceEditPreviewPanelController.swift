@@ -186,6 +186,7 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
         cancelButton.translatesAutoresizingMaskIntoConstraints = false
 
         applyButton.title = preview?.applyButtonTitle ?? "Apply"
+        applyButton.isEnabled = preview?.canApply ?? true
         applyButton.target = self
         applyButton.action = #selector(applyClicked(_:))
         applyButton.bezelStyle = .rounded

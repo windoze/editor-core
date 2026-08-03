@@ -256,6 +256,9 @@ final class AttoWorkspaceEditSummaryTests: XCTestCase {
             {
               "uri": "file:///project/dirty.swift",
               "kind": "dirty_document",
+              "severity": "warning",
+              "apply_impact": "skips_change",
+              "resolution": "save_or_discard",
               "reason": "resource_operation_dirty_target",
               "operation": "delete",
               "message": "delete targets a modified open tab"
@@ -335,9 +338,10 @@ final class AttoWorkspaceEditSummaryTests: XCTestCase {
         XCTAssertEqual(sections[1].title, "dirty.swift")
         XCTAssertEqual(sections[1].subtitle, "Dirty document: delete: resource_operation_dirty_target")
         XCTAssertTrue(sections[1].detailText.contains("Category: Dirty document"))
+        XCTAssertTrue(sections[1].detailText.contains("Severity: warning"))
+        XCTAssertTrue(sections[1].detailText.contains("Apply impact: Skipped change"))
         XCTAssertTrue(sections[1].detailText.contains("Kind: dirty_document"))
         XCTAssertTrue(sections[1].detailText.contains("Message: delete targets a modified open tab"))
-        XCTAssertTrue(sections[1].detailText.contains("Impact: This change will be skipped before apply."))
         XCTAssertTrue(sections[1].detailText.contains("Suggested action: Save or discard the open tab changes"))
     }
 
@@ -354,6 +358,9 @@ final class AttoWorkspaceEditSummaryTests: XCTestCase {
             {
               "uri": "file:///project/second.swift",
               "kind": "version",
+              "severity": "warning",
+              "apply_impact": "skips_change",
+              "resolution": "refresh_request",
               "reason": "version_mismatch",
               "operation": "text_edit",
               "message": "document version changed"
@@ -361,6 +368,9 @@ final class AttoWorkspaceEditSummaryTests: XCTestCase {
             {
               "uri": "file:///project/dirty.swift",
               "kind": "dirty_document",
+              "severity": "warning",
+              "apply_impact": "skips_change",
+              "resolution": "save_or_discard",
               "reason": "resource_operation_dirty_target",
               "operation": "delete",
               "message": "delete targets a modified open tab"
@@ -368,6 +378,9 @@ final class AttoWorkspaceEditSummaryTests: XCTestCase {
             {
               "uri": "file:///project/third.swift",
               "kind": "version",
+              "severity": "warning",
+              "apply_impact": "skips_change",
+              "resolution": "refresh_request",
               "reason": "version_mismatch",
               "operation": "text_edit",
               "message": "document version changed"
@@ -404,6 +417,84 @@ final class AttoWorkspaceEditSummaryTests: XCTestCase {
         XCTAssertTrue(preview.displayText.contains("- Version mismatch text edit: 2 conflicts"))
         XCTAssertTrue(preview.displayText.contains("  - second.swift [version_mismatch]"))
         XCTAssertTrue(preview.displayText.contains("  - third.swift [version_mismatch]"))
+    }
+
+    func testWorkspaceEditPreviewBlocksAtomicApplyForBlockingConflicts() throws {
+        let result = try decodeTransactionResult("""
+        {
+          "mode": "preview",
+          "apply_mode": "atomic",
+          "applied": false,
+          "applied_uris": [],
+          "applied_edit_count": 0,
+          "applied_resource_operation_count": 0,
+          "conflicts": [
+            {
+              "uri": "file:///project/dirty.swift",
+              "kind": "dirty_document",
+              "severity": "error",
+              "apply_impact": "blocks_atomic_apply",
+              "resolution": "save_or_discard",
+              "reason": "resource_operation_dirty_target",
+              "operation": "delete",
+              "message": "delete targets a modified open tab"
+            }
+          ],
+          "skipped_uris": ["file:///project/dirty.swift"],
+          "documents": [
+            {
+              "uri": "file:///project/dirty.swift",
+              "edit_count": 0,
+              "is_open": true,
+              "is_dirty": true
+            }
+          ]
+        }
+        """)
+
+        let preview = AttoWorkspaceEditPreview(result: result)
+
+        XCTAssertFalse(preview.canApply)
+        XCTAssertEqual(preview.applyButtonTitle, "Resolve Conflicts First")
+        XCTAssertTrue(preview.displayText.contains("1 conflict will block atomic apply until resolved."))
+        let sections = AttoWorkspaceEditPreviewDetailBuilder.sections(
+            preview: preview,
+            workspaceEdit: try XCTUnwrap(AttoWorkspaceEditParser.parse(#"{ "documentChanges": [] }"#))
+        ) { _ in nil }
+        let conflictSection = try XCTUnwrap(sections.first)
+        XCTAssertTrue(conflictSection.detailText.contains("Severity: error"))
+        XCTAssertTrue(conflictSection.detailText.contains("Apply impact: Blocks atomic apply"))
+    }
+
+    func testWorkspaceEditPreviewDefaultsLegacyConflictFields() throws {
+        let result = try decodeTransactionResult("""
+        {
+          "mode": "preview",
+          "applied": true,
+          "applied_uris": [],
+          "applied_edit_count": 0,
+          "applied_resource_operation_count": 0,
+          "conflicts": [
+            {
+              "uri": "file:///project/legacy.swift",
+              "kind": "version",
+              "reason": "version_mismatch",
+              "operation": "text_edit",
+              "message": "document version changed"
+            }
+          ],
+          "skipped_uris": ["file:///project/legacy.swift"],
+          "documents": []
+        }
+        """)
+
+        let conflict = try XCTUnwrap(result.conflicts.first)
+        XCTAssertEqual(conflict.severity, "warning")
+        XCTAssertEqual(conflict.applyImpact, "skips_change")
+        XCTAssertEqual(conflict.resolution, "inspect")
+        let preview = AttoWorkspaceEditPreview(result: result)
+        XCTAssertTrue(preview.canApply)
+        XCTAssertEqual(preview.applyButtonTitle, "Apply Non-Conflicting Changes")
     }
 
     func testWorkspaceEditPreviewDetailBuilderBuildsTextDiffSections() throws {

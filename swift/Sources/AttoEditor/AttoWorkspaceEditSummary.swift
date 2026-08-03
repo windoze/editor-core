@@ -33,6 +33,9 @@ struct AttoWorkspaceEditPreview: Equatable {
     struct Conflict: Equatable {
         let uri: String
         let kind: String
+        let severity: String
+        let applyImpact: String
+        let resolution: String
         let reason: String
         let operation: String?
         let message: String
@@ -112,6 +115,9 @@ struct AttoWorkspaceEditPreview: Equatable {
             Conflict(
                 uri: $0.uri,
                 kind: $0.kind,
+                severity: $0.severity,
+                applyImpact: $0.applyImpact,
+                resolution: $0.resolution,
                 reason: $0.reason,
                 operation: $0.operation,
                 message: $0.message
@@ -151,10 +157,14 @@ struct AttoWorkspaceEditPreview: Equatable {
 
     var applyButtonTitle: String {
         guard conflicts.isEmpty == false else { return "Apply" }
-        if applyMode == "atomic" {
-            return "Apply Atomically"
+        if canApply == false {
+            return "Resolve Conflicts First"
         }
         return "Apply Non-Conflicting Changes"
+    }
+
+    var canApply: Bool {
+        hasBlockingConflicts == false
     }
 
     var conflictGroups: [ConflictGroup] {
@@ -239,10 +249,17 @@ struct AttoWorkspaceEditPreview: Equatable {
     private var conflictSummaryLine: String? {
         guard conflicts.isEmpty == false else { return nil }
         let countText = Self.conflictCountText(conflicts.count)
-        if applyMode == "atomic" {
+        if hasBlockingConflicts {
             return "\(countText) will block atomic apply until resolved."
         }
         return "\(countText) will be skipped; non-conflicting changes remain applicable."
+    }
+
+    private var hasBlockingConflicts: Bool {
+        if conflicts.contains(where: { $0.applyImpact == "blocks_atomic_apply" }) {
+            return true
+        }
+        return applyMode == "atomic" && conflicts.isEmpty == false
     }
 
     private func previewRows() -> [String] {
@@ -407,7 +424,47 @@ struct AttoWorkspaceEditPreview: Equatable {
         operation.replacingOccurrences(of: "_", with: " ")
     }
 
-    fileprivate static func conflictResolutionHint(kind: String) -> String {
+    fileprivate static func conflictApplyImpactDisplayName(_ applyImpact: String) -> String {
+        switch applyImpact {
+        case "blocks_atomic_apply":
+            return "Blocks atomic apply"
+        case "skips_change":
+            return "Skipped change"
+        case "":
+            return "Skipped change"
+        default:
+            return conflictTokenDisplayName(applyImpact)
+        }
+    }
+
+    fileprivate static func conflictResolutionHint(_ conflict: Conflict) -> String {
+        switch conflict.resolution {
+        case "save_or_discard":
+            return "Save or discard the open tab changes, then run the action again."
+        case "refresh_request":
+            return "Refresh the language-server result or re-run the action against the current document version."
+        case "recompute_edit":
+            return "Request a new edit or apply smaller non-overlapping changes."
+        case "resolve_dependency":
+            return "Resolve the earlier resource operation conflict before applying dependent text edits."
+        case "adjust_target":
+            return "Rename, close, or remove the target file before retrying."
+        case "restore_resource":
+            return "Restore or open the target resource, then re-run the action."
+        case "move_inside_workspace":
+            return "Keep the operation inside the configured workspace root."
+        case "unsupported":
+            return "Only local file:// WorkspaceEdit resources are supported by this App path."
+        case "adjust_options":
+            return "Adjust the resource operation options before retrying."
+        case "retry_after_io":
+            return "Review the failure and retry after the file can be read or written."
+        default:
+            return conflictResolutionHintForKind(conflict.kind)
+        }
+    }
+
+    private static func conflictResolutionHintForKind(_ kind: String) -> String {
         switch kind {
         case "dirty_document":
             return "Save or discard the open tab changes, then run the action again."
@@ -676,12 +733,13 @@ enum AttoWorkspaceEditPreviewDetailBuilder {
             .joined(separator: ": ")
         let detailLines = detailHeader(title: title, uri: conflict.uri, subtitle: "conflict") + [
             "Category: \(AttoWorkspaceEditPreview.conflictKindDisplayName(conflict.kind))",
+            "Severity: \(conflict.severity.isEmpty ? "warning" : conflict.severity)",
+            "Apply impact: \(AttoWorkspaceEditPreview.conflictApplyImpactDisplayName(conflict.applyImpact))",
             "Kind: \(conflict.kind.isEmpty ? "other" : conflict.kind)",
             "Operation: \(conflict.operation ?? "unknown")",
             "Reason: \(conflict.reason.isEmpty ? "unknown" : conflict.reason)",
             "Message: \(conflict.message.isEmpty ? "No detail." : conflict.message)",
-            "Impact: This change will be skipped before apply.",
-            "Suggested action: \(AttoWorkspaceEditPreview.conflictResolutionHint(kind: conflict.kind))",
+            "Suggested action: \(AttoWorkspaceEditPreview.conflictResolutionHint(conflict))",
         ]
         return AttoWorkspaceEditPreview.Section(
             uri: conflict.uri,

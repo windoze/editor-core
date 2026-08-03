@@ -1926,6 +1926,13 @@ fn ffi_multi_document_atomic_workspace_edit_preflight_skips_without_mutating() {
         apply_value["skipped_details"][0]["reason"],
         "resource_operation_dirty_target"
     );
+    assert_eq!(apply_value["conflicts"][0]["kind"], "dirty_document");
+    assert_eq!(apply_value["conflicts"][0]["severity"], "error");
+    assert_eq!(
+        apply_value["conflicts"][0]["apply_impact"],
+        "blocks_atomic_apply"
+    );
+    assert_eq!(apply_value["conflicts"][0]["resolution"], "save_or_discard");
 
     let app_text_ptr = editor_core_ui_ffi_multi_document_tab_text(multi, app_id);
     assert!(!app_text_ptr.is_null());

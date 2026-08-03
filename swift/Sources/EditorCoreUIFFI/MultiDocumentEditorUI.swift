@@ -522,6 +522,9 @@ public struct EcuWorkspaceEditTransactionSkippedDetail: Decodable, Equatable, Se
 public struct EcuWorkspaceEditTransactionConflict: Decodable, Equatable, Sendable {
     public let uri: String
     public let kind: String
+    public let severity: String
+    public let applyImpact: String
+    public let resolution: String
     public let reason: String
     public let operation: String?
     public let message: String
@@ -529,6 +532,9 @@ public struct EcuWorkspaceEditTransactionConflict: Decodable, Equatable, Sendabl
     private enum CodingKeys: String, CodingKey {
         case uri
         case kind
+        case severity
+        case applyImpact = "apply_impact"
+        case resolution
         case reason
         case operation
         case message
@@ -538,6 +544,9 @@ public struct EcuWorkspaceEditTransactionConflict: Decodable, Equatable, Sendabl
         let container = try decoder.container(keyedBy: CodingKeys.self)
         uri = try container.decodeIfPresent(String.self, forKey: .uri) ?? ""
         kind = try container.decodeIfPresent(String.self, forKey: .kind) ?? ""
+        severity = try container.decodeIfPresent(String.self, forKey: .severity) ?? "warning"
+        applyImpact = try container.decodeIfPresent(String.self, forKey: .applyImpact) ?? "skips_change"
+        resolution = try container.decodeIfPresent(String.self, forKey: .resolution) ?? "inspect"
         reason = try container.decodeIfPresent(String.self, forKey: .reason) ?? ""
         operation = try container.decodeIfPresent(String.self, forKey: .operation)
         message = try container.decodeIfPresent(String.self, forKey: .message) ?? ""
