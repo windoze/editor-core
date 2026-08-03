@@ -218,6 +218,11 @@ public enum EditorCoreUIFFIRuntimeCompatibility {
             name: "event stream envelope",
             reason: "Swift hosts can drain EditorUi and multi-document event streams through structured `{ ok, value, error, version }` envelopes."
         ),
+        EditorCoreUIFFIRuntimeFeature(
+            feature: .multiDocumentSpecialEventStreamEnvelope,
+            name: "multi-document special event stream envelope",
+            reason: "Swift hosts can drain workspace diagnostics and WorkspaceEdit transaction event streams through structured envelopes."
+        ),
     ]
 
     public static let requiredFeatures: [EditorCoreUIFFIRuntimeFeature] = knownFeatures

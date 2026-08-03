@@ -110,6 +110,11 @@ fn ffi_feature_flags_include_semantic_tokens_requests() {
         editor_core_ui_ffi_feature_flags() & ECU_FEATURE_EVENT_STREAM_ENVELOPE,
         0
     );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags()
+            & ECU_FEATURE_MULTI_DOCUMENT_SPECIAL_EVENT_STREAM_ENVELOPE,
+        0
+    );
 }
 
 #[test]
@@ -137,6 +142,11 @@ fn ffi_runtime_info_json_reports_version_and_feature_descriptors() {
         feature["name"] == "event_stream_envelope"
             && feature["bit"] == 27
             && feature["flag"] == ECU_FEATURE_EVENT_STREAM_ENVELOPE
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "multi_document_special_event_stream_envelope"
+            && feature["bit"] == 28
+            && feature["flag"] == ECU_FEATURE_MULTI_DOCUMENT_SPECIAL_EVENT_STREAM_ENVELOPE
     }));
     assert!(features.iter().any(|feature| {
         feature["name"] == "multi_document_workspace_edit_transaction"
@@ -313,6 +323,55 @@ fn ffi_event_stream_envelope_json_reports_snapshots_and_errors() {
     assert_eq!(multi_envelope["value"]["latest_sequence"], 0);
     assert_eq!(
         multi_envelope["value"]["events"].as_array().unwrap().len(),
+        0
+    );
+
+    let diagnostics_stream = CString::new("workspace_diagnostics_events").unwrap();
+    let diagnostics_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_event_stream_envelope_json(
+            multi,
+            diagnostics_stream.as_ptr(),
+            0,
+        ),
+    );
+    let diagnostics_envelope: serde_json::Value = serde_json::from_str(&diagnostics_json).unwrap();
+    assert_eq!(diagnostics_envelope["ok"], true);
+    assert_eq!(diagnostics_envelope["owner"], "multi_document");
+    assert_eq!(
+        diagnostics_envelope["stream"],
+        "workspace_diagnostics_events"
+    );
+    assert_eq!(diagnostics_envelope["value"]["latest_sequence"], 0);
+    assert_eq!(
+        diagnostics_envelope["value"]["events"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+
+    let workspace_edit_stream = CString::new("workspace_edit_transaction_events").unwrap();
+    let workspace_edit_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_event_stream_envelope_json(
+            multi,
+            workspace_edit_stream.as_ptr(),
+            0,
+        ),
+    );
+    let workspace_edit_envelope: serde_json::Value =
+        serde_json::from_str(&workspace_edit_json).unwrap();
+    assert_eq!(workspace_edit_envelope["ok"], true);
+    assert_eq!(workspace_edit_envelope["owner"], "multi_document");
+    assert_eq!(
+        workspace_edit_envelope["stream"],
+        "workspace_edit_transaction_events"
+    );
+    assert_eq!(workspace_edit_envelope["value"]["latest_sequence"], 0);
+    assert_eq!(
+        workspace_edit_envelope["value"]["events"]
+            .as_array()
+            .unwrap()
+            .len(),
         0
     );
 

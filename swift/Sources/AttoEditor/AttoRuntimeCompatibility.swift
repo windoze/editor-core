@@ -148,6 +148,11 @@ struct AttoRuntimeCompatibility {
             reason: "Host UI can drain editor and project event streams through structured envelopes; Swift falls back to legacy raw event stream JSON when unavailable."
         ),
         RuntimeFeature(
+            feature: .multiDocumentSpecialEventStreamEnvelope,
+            name: "multi-document special event stream envelope",
+            reason: "Project-level diagnostics and WorkspaceEdit event streams can use structured envelopes; Swift falls back to their legacy raw JSON APIs when unavailable."
+        ),
+        RuntimeFeature(
             feature: .workspaceOutlineSnapshot,
             name: "workspace outline snapshot",
             reason: "Workspace Outline can consume the core-owned MultiDocumentEditorUI symbol snapshot; Swift falls back to opened-document App projection when unavailable."

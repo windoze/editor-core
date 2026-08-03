@@ -164,6 +164,7 @@ uint32_t editor_core_ui_ffi_abi_version(void);
 #define ECU_FEATURE_JSON_COMMAND_ENVELOPE    (1ull << 25)
 #define ECU_FEATURE_LSP_RESULT_ENVELOPE      (1ull << 26)
 #define ECU_FEATURE_EVENT_STREAM_ENVELOPE    (1ull << 27)
+#define ECU_FEATURE_MULTI_DOCUMENT_SPECIAL_EVENT_STREAM_ENVELOPE (1ull << 28)
 uint64_t editor_core_ui_ffi_feature_flags(void);
 char* editor_core_ui_ffi_runtime_info_json(void);
 

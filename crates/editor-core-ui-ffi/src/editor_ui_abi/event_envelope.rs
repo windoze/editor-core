@@ -111,6 +111,12 @@ fn multi_document_event_stream_json(
         "lsp_request_events" => multi
             .lsp_request_events_json(after_sequence)
             .map_err(map_ui_error),
+        "workspace_diagnostics_events" => multi
+            .workspace_diagnostics_events_json(after_sequence)
+            .map_err(map_ui_error),
+        "workspace_edit_transaction_events" => multi
+            .workspace_edit_transaction_events_json(after_sequence)
+            .map_err(map_ui_error),
         _ => Err(invalid_argument(format!(
             "unknown multi_document event stream {stream:?}"
         ))),

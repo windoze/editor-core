@@ -100,6 +100,7 @@ public struct EditorCoreUIFFIFeatures: OptionSet, Equatable, Sendable {
     public static let jsonCommandEnvelope = Self(rawValue: 1 << 25)
     public static let lspResultEnvelope = Self(rawValue: 1 << 26)
     public static let eventStreamEnvelope = Self(rawValue: 1 << 27)
+    public static let multiDocumentSpecialEventStreamEnvelope = Self(rawValue: 1 << 28)
 }
 
 public struct EditorCoreUIFFIRuntimeInfo: Equatable, Sendable {

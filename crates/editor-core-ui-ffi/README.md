@@ -27,7 +27,7 @@ char* editor_core_ui_ffi_runtime_info_json(void);
   "kind": "editor-core-ui-ffi",
   "abi_version": 1,
   "version": "0.5.0",
-  "feature_flags": 268435455,
+  "feature_flags": 536870911,
   "features": [
     { "bit": 0, "flag": 1, "name": "json_command_dispatch", "description": "..." }
   ]
@@ -146,7 +146,9 @@ char* editor_core_ui_ffi_multi_document_event_stream_envelope_json(
 );
 ```
 
-`stream_utf8` currently accepts `state_events`, `lsp_result_events`, and `lsp_request_events`.
+`stream_utf8` currently accepts `state_events`, `lsp_result_events`, and `lsp_request_events` for
+both `EditorUi` and `MultiDocumentEditorUi`. The multi-document variant also accepts
+`workspace_diagnostics_events` and `workspace_edit_transaction_events`.
 
 Success:
 
@@ -180,7 +182,9 @@ Error:
 
 The returned string is owned by the caller and must be freed with
 `editor_core_ui_ffi_string_free`. Availability is advertised by
-`ECU_FEATURE_EVENT_STREAM_ENVELOPE`.
+`ECU_FEATURE_EVENT_STREAM_ENVELOPE`. The multi-document-only
+`workspace_diagnostics_events` and `workspace_edit_transaction_events` streams are additionally
+advertised by `ECU_FEATURE_MULTI_DOCUMENT_SPECIAL_EVENT_STREAM_ENVELOPE`.
 
 ## LSP Workspace Lifecycle
 

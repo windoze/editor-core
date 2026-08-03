@@ -1704,6 +1704,18 @@
     - `swift test --package-path swift --filter 'AttoRuntimeCompatibilityTests/test(MissingOptionalFeaturesDoNotBlockLaunchCompatibility|ReportsMissingRequiredFeatures)'`
     - `cargo fmt --check`
     - `git diff --check`
+- 中间提交：`feat(ffi): envelope multi-document special event streams`
+  - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；把上一提交的 multi-document event stream envelope 覆盖扩展到 workspace diagnostics 和 WorkspaceEdit transaction 专用事件流。
+  - 提交边界：`editor_core_ui_ffi_multi_document_event_stream_envelope_json(...)` 新增 `workspace_diagnostics_events` 与 `workspace_edit_transaction_events` stream 名称，新增 `ECU_FEATURE_MULTI_DOCUMENT_SPECIAL_EVENT_STREAM_ENVELOPE` feature bit；legacy `editor_core_ui_ffi_multi_document_workspace_diagnostics_events_json(...)` 与 `editor_core_ui_ffi_multi_document_workspace_edit_transaction_events_json(...)` 保持 raw JSON/null+last_error 语义；Swift `EcuEventStreamName`、runtime compatibility 和 Atto optional capability report 同步新增该能力。该提交不新增新的 C 函数，不切换 App 主路径，不替换 workspace diagnostics / WorkspaceEdit transaction typed wrappers，不统一 snapshot/apply/preview 等 remaining JSON helper，也不完成完整外部 capability negotiation protocol。
+  - 验证记录：
+    - `cargo test -p editor-core-ui-ffi --release ffi_event_stream_envelope_json_reports_snapshots_and_errors`
+    - `cargo test -p editor-core-ui-ffi --release ffi_runtime_info_json_reports_version_and_feature_descriptors`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFITests/testEventStreamEnvelope'`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFITests/testLoadsLibraryAndVersion'`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFIRuntimeCompatibilityTests/testReportsMissingRequiredFeatures'`
+    - `swift test --package-path swift --filter 'AttoRuntimeCompatibilityTests/test(MissingOptionalFeaturesDoNotBlockLaunchCompatibility|ReportsMissingRequiredFeatures)'`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 11: Tree-sitter 与 LSP 主路线产品化
 

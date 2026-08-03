@@ -469,6 +469,8 @@ public enum EcuEventStreamName: Hashable, Sendable {
     case stateEvents
     case lspResultEvents
     case lspRequestEvents
+    case workspaceDiagnosticsEvents
+    case workspaceEditTransactionEvents
     case unknown(String)
 
     public init(rawValue: String) {
@@ -479,6 +481,10 @@ public enum EcuEventStreamName: Hashable, Sendable {
             self = .lspResultEvents
         case "lsp_request_events":
             self = .lspRequestEvents
+        case "workspace_diagnostics_events":
+            self = .workspaceDiagnosticsEvents
+        case "workspace_edit_transaction_events":
+            self = .workspaceEditTransactionEvents
         default:
             self = .unknown(rawValue)
         }
@@ -492,6 +498,10 @@ public enum EcuEventStreamName: Hashable, Sendable {
             return "lsp_result_events"
         case .lspRequestEvents:
             return "lsp_request_events"
+        case .workspaceDiagnosticsEvents:
+            return "workspace_diagnostics_events"
+        case .workspaceEditTransactionEvents:
+            return "workspace_edit_transaction_events"
         case let .unknown(rawValue):
             return rawValue
         }

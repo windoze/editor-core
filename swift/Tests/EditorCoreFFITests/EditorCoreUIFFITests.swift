@@ -103,6 +103,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(info.supports(.jsonCommandEnvelope))
         XCTAssertTrue(info.supports(.lspResultEnvelope))
         XCTAssertTrue(info.supports(.eventStreamEnvelope))
+        XCTAssertTrue(info.supports(.multiDocumentSpecialEventStreamEnvelope))
 
         let runtimeJSON = try JSONTestHelpers.object(try lib.runtimeInfoJSON())
         XCTAssertEqual(runtimeJSON["kind"] as? String, "editor-core-ui-ffi")
@@ -123,6 +124,11 @@ final class EditorCoreUIFFITests: XCTestCase {
             feature["name"] as? String == "event_stream_envelope"
                 && (feature["bit"] as? NSNumber)?.uint8Value == 27
                 && (feature["flag"] as? NSNumber)?.uint64Value == EditorCoreUIFFIFeatures.eventStreamEnvelope.rawValue
+        })
+        XCTAssertTrue(features.contains { feature in
+            feature["name"] as? String == "multi_document_special_event_stream_envelope"
+                && (feature["bit"] as? NSNumber)?.uint8Value == 28
+                && (feature["flag"] as? NSNumber)?.uint64Value == EditorCoreUIFFIFeatures.multiDocumentSpecialEventStreamEnvelope.rawValue
         })
     }
 
@@ -334,6 +340,28 @@ final class EditorCoreUIFFITests: XCTestCase {
         }
         XCTAssertEqual(requestValue["latest_sequence"], .number(0))
         XCTAssertEqual(requestValue["events"], .array([]))
+
+        let diagnosticsEvents = try multi.eventStreamEnvelope(stream: .workspaceDiagnosticsEvents)
+        XCTAssertTrue(diagnosticsEvents.ok)
+        XCTAssertEqual(diagnosticsEvents.ownerKind, .multiDocument)
+        XCTAssertEqual(diagnosticsEvents.streamKind, .workspaceDiagnosticsEvents)
+        guard case .object(let diagnosticsValue)? = diagnosticsEvents.value else {
+            XCTFail("expected workspace diagnostics event snapshot object")
+            return
+        }
+        XCTAssertEqual(diagnosticsValue["latest_sequence"], .number(0))
+        XCTAssertEqual(diagnosticsValue["events"], .array([]))
+
+        let workspaceEditEvents = try multi.eventStreamEnvelope(stream: .workspaceEditTransactionEvents)
+        XCTAssertTrue(workspaceEditEvents.ok)
+        XCTAssertEqual(workspaceEditEvents.ownerKind, .multiDocument)
+        XCTAssertEqual(workspaceEditEvents.streamKind, .workspaceEditTransactionEvents)
+        guard case .object(let workspaceEditValue)? = workspaceEditEvents.value else {
+            XCTFail("expected workspace edit transaction event snapshot object")
+            return
+        }
+        XCTAssertEqual(workspaceEditValue["latest_sequence"], .number(0))
+        XCTAssertEqual(workspaceEditValue["events"], .array([]))
     }
 
     func testEventStreamEnvelopeDecodesFutureFieldsAndUnknownStatus() throws {

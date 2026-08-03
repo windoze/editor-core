@@ -294,8 +294,9 @@ Guidelines:
   `feature_flags`, and append-only feature descriptors.
 - Headless and UI FFI feature flags are append-only within the pre-v1 line. As of the current
   draft, `ECF_FEATURE_JSON_COMMAND_ENVELOPE`, `ECU_FEATURE_JSON_COMMAND_ENVELOPE`, and
-  `ECU_FEATURE_LSP_RESULT_ENVELOPE` / `ECU_FEATURE_EVENT_STREAM_ENVELOPE` mark availability of
-  the corresponding JSON envelope symbols.
+  `ECU_FEATURE_LSP_RESULT_ENVELOPE` / `ECU_FEATURE_EVENT_STREAM_ENVELOPE` /
+  `ECU_FEATURE_MULTI_DOCUMENT_SPECIAL_EVENT_STREAM_ENVELOPE` mark availability of the
+  corresponding JSON envelope symbols and stream coverage.
 - The current cycle is still pre-v1; breaking fixed-width cleanup is allowed before tagging v1, and `editor_core_ffi.h` is the authoritative declaration of the current C surface.
 - Compatible additions:
   - new functions
