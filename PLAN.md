@@ -1553,6 +1553,13 @@
   - 验证记录：
     - `swift test --package-path swift --filter 'Atto(ConfigurationSettings|EditorPreferencesApplication|Preferences)Tests'`
     - `git diff --check`
+- 中间提交：`feat(app): migrate legacy editor settings`
+  - 所属任务：阶段 9 的配置、偏好与 capability DTO 完整性增量；补齐 settings store 的 schema migration 起点，让旧的未标注 schema version 的 settings 文件可以自动升级。
+  - 提交边界：`AttoConfigurationSettings` decode 会把缺失 `schema_version` 的文件视为 legacy v0；`AttoConfigurationSettingsStore.load(from:)` 在读取到低于当前版本的 settings 时，先把原文件备份到 `*.v0.backup` 系列路径，再写回 current schema version 的 JSON，并返回迁移后的 typed settings。该提交只覆盖 v0 → current 的无字段重命名迁移，不实现跨 schema 字段语义转换、不实现用户可见恢复 UI、不实现 Sublime settings scope selector 规则、不接 Preferences UI、不新增 Rust/FFI ABI，也不完成 core/headless capability negotiation。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoConfigurationSettingsTests'`
+    - `swift test --package-path swift --filter 'Atto(ConfigurationSettings|EditorPreferencesApplication|Preferences)Tests'`
+    - `git diff --check`
 
 ## 阶段 10: ABI 版本、错误模型与兼容性门禁
 

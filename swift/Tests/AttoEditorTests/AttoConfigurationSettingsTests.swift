@@ -148,6 +148,48 @@ final class AttoConfigurationSettingsTests: XCTestCase {
         XCTAssertEqual(try store.loadUserSettings(), replacement)
     }
 
+    func testSettingsStoreMigratesLegacySettingsAndPreservesOriginalBackup() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoConfigurationSettingsMigrationTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let userSettingsURL = tempDir.appendingPathComponent("settings.json")
+        let existingBackupURL = userSettingsURL
+            .appendingPathExtension("v0")
+            .appendingPathExtension("backup")
+        let numberedBackupURL = URL(fileURLWithPath: "\(existingBackupURL.path).1", isDirectory: false)
+        try "previous migration backup".write(to: existingBackupURL, atomically: true, encoding: .utf8)
+
+        let legacyJSON = """
+        {
+          "editor": {
+            "font_size_points": 18,
+            "wrap_mode": "none"
+          },
+          "rendering": {
+            "theme_name": "Atto Light"
+          }
+        }
+        """
+        try legacyJSON.write(to: userSettingsURL, atomically: true, encoding: .utf8)
+
+        let store = AttoConfigurationSettingsStore(userSettingsURL: userSettingsURL)
+        let settings = try XCTUnwrap(try store.loadUserSettings())
+
+        XCTAssertEqual(settings.schemaVersion, AttoConfigurationSettings.currentSchemaVersion)
+        XCTAssertEqual(settings.editor?.fontSizePoints, 18)
+        XCTAssertEqual(settings.editor?.wrapMode, "none")
+        XCTAssertEqual(settings.rendering?.themeName, "Atto Light")
+        XCTAssertEqual(try String(contentsOf: existingBackupURL, encoding: .utf8), "previous migration backup")
+        XCTAssertEqual(try String(contentsOf: numberedBackupURL, encoding: .utf8), legacyJSON)
+
+        let migratedData = try Data(contentsOf: userSettingsURL)
+        let migratedOnDisk = try JSONDecoder().decode(AttoConfigurationSettings.self, from: migratedData)
+        XCTAssertEqual(migratedOnDisk.schemaVersion, AttoConfigurationSettings.currentSchemaVersion)
+        XCTAssertEqual(migratedOnDisk.editor?.fontSizePoints, 18)
+    }
+
     func testSettingsDecodeIgnoresUnknownFutureFields() throws {
         let json = """
         {

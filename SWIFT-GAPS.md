@@ -172,6 +172,7 @@ Swift 侧已经具备以下基础能力：
 - 阶段 337 继续推进阶段 9 的 App settings 接线：AttoEditor App 创建窗口和偏好重应用路径现在会按 workspace root 读取 user settings 与 workspace `.attoeditor/settings.json`，生成 resolved `AttoConfigurationSnapshot` 并应用 theme、font、ligatures、wrap 和 auto-pairs 到新建/已打开 editor。仍缺 Sublime settings scope selector 规则、Preferences UI、runtime override UI/持久化、迁移/损坏文件备份和完整 capability negotiation。
 - 阶段 338 继续推进阶段 9 的 runtime override 接线：AttoEditor App 的配置解析路径现在会消费 process-local runtime `AttoConfigurationSettings`，按 base → user → workspace → runtime 顺序生成 resolved snapshot，并可把 runtime override 变更重应用到已打开 editor。仍缺 runtime override 的用户 UI/持久化、Sublime settings scope selector 规则、Preferences UI、迁移/损坏文件备份和完整 capability negotiation。
 - 阶段 339 继续推进阶段 9 的 settings 迁移/恢复起点：`AttoConfigurationSettingsStore` 现在会在 settings 文件可读但 JSON/DTO decode 失败时，把原文件移动到同目录 `*.invalid` 备份路径，已有备份时使用递增后缀，并返回 `nil` 让 App 继续用下层配置启动。仍缺 schema migration、用户可见恢复 UI、Sublime settings scope selector 规则、Preferences UI、runtime override UI/持久化和完整 capability negotiation。
+- 阶段 340 继续推进阶段 9 的 settings schema migration 起点：缺失 `schema_version` 的 settings 文件现在按 legacy v0 解码，读取时会备份原文件到 `*.v0.backup` 系列路径并写回 current schema JSON。仍缺跨 schema 字段语义转换、用户可见恢复 UI、Sublime settings scope selector 规则、Preferences UI、runtime override UI/持久化和完整 capability negotiation。
 - 2026-08-01 阶段 6 第一部分已完成：Swift UI binding 新增一组 LSP interactive request/take raw result API，覆盖 declaration、type definition、implementation、references、completion、signature help、document symbols、workspace symbols。
 - 阶段 6 第一部分在 Rust UI 内部把 hover/definition 的专用 result cache 泛化为按 LSP result slot 管理；document symbols response 会同步写入 core outline，供 `documentSymbolsJSON()` 读取。
 - 2026-08-01 阶段 6 第二部分已完成：AttoEditor command palette 和 Go 菜单新增 LSP location commands，覆盖 go to definition/declaration/type definition/implementation/find references；cmd-click definition 也复用同一套 location request/poll/navigate 路径。
@@ -1489,7 +1490,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - Swift `EditorUI` typed API 覆盖主路径，但不是完整 command API。
 - LSP interactive request 已覆盖一批 raw JSON result API；LSP status/capabilities 已有 typed snapshot，`EditorUi` request lifecycle event stream 起点、Swift event metadata typed accessor、completion result/resolve item typed payload wrapper、location family result typed payload wrapper、rename/WorkspaceEdit typed payload wrapper、code action result/resolve typed payload wrapper、symbols/color/hierarchy/diagnostics/selection range/linked editing/code lens/folding ranges/semantic tokens typed payload wrapper 已补齐。
 - 长任务、异步请求、取消、错误、诊断日志没有统一 Swift 事件流。
-- 配置 DTO 已有 `AttoConfigurationSnapshot` / `AttoCapabilitySnapshot` 起点，覆盖当前有效 editor/rendering/language/workspace 偏好、UI FFI ABI/features、LSP capability 摘要和 platform/App capability；`AttoConfigurationSettings` 已提供 user/workspace/runtime partial overlay 合并和 settings JSON store 起点；AttoEditor App 创建窗口和偏好重应用路径已消费 user/workspace/runtime settings 的 resolved snapshot；损坏 settings 文件会备份为 `*.invalid` 后被忽略。但 Sublime settings scope selector、Preferences UI、runtime override UI/持久化、schema migration、word boundary/search options 等仍不完整。
+- 配置 DTO 已有 `AttoConfigurationSnapshot` / `AttoCapabilitySnapshot` 起点，覆盖当前有效 editor/rendering/language/workspace 偏好、UI FFI ABI/features、LSP capability 摘要和 platform/App capability；`AttoConfigurationSettings` 已提供 user/workspace/runtime partial overlay 合并和 settings JSON store 起点；AttoEditor App 创建窗口和偏好重应用路径已消费 user/workspace/runtime settings 的 resolved snapshot；损坏 settings 文件会备份为 `*.invalid` 后被忽略；legacy v0 settings 会备份并写回 current schema。但 Sublime settings scope selector、Preferences UI、runtime override UI/持久化、跨 schema 字段语义迁移、word boundary/search options 等仍不完整。
 - headless Swift FFI 已有 ABI version；阶段 69 已补齐 UI FFI 的 ABI version / feature flags C ABI 和 Swift `runtimeInfo()` typed facade，阶段 80 已新增 multi-document UI feature flag，阶段 81 已把该 feature 纳入 AttoEditor 启动期必需能力；阶段 70 已补 AttoEditor 启动期最低 ABI/必需 feature compatibility gate，阶段 105 已补基础逐命令可选 feature 降级。后续仍缺更细粒度的逐面板降级策略和面向第三方 host 的 ABI capability negotiation。
 
 建议演进方向：
@@ -1526,6 +1527,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 已完成：AttoEditor App 创建窗口和偏好重应用路径已按 workspace root 读取 user/workspace settings，并把 resolved `AttoConfigurationSnapshot` 应用到 theme、font、ligatures、wrap 和 auto-pairs。
 - 已完成：AttoEditor App 配置解析路径已支持 process-local runtime settings override，并能把 runtime override 变更重应用到已打开 editor。
 - 已完成：AttoEditor settings store 已有损坏 JSON/DTO 文件备份起点，会把无法 decode 的 settings 文件移动到 `*.invalid` 备份路径并继续使用下层配置。
+- 已完成：AttoEditor settings store 已有 legacy v0 schema migration 起点，会把缺失 `schema_version` 的 settings 备份到 `*.v0.backup` 并写回 current schema JSON。
 - 已完成：AttoEditor 主命令 palette 已开始展示 command registry 分组，并能按命令 title、group 和 command id 搜索；LSP/Project/Quick Open 等结果 palette 仍保持原有简洁标题。
 - 已完成：AttoEditor 主命令 palette 已有 bounded in-memory recent command ordering，统一 command id 路径成功触发的命令会在下一次打开 palette 时排到前面。
 - 已完成：AttoEditor 主命令 palette 的 recent command ordering 已通过 `AttoRecentCommandStore` 跨启动持久化，默认 App 启动可恢复最近命令顺序。

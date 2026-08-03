@@ -12,6 +12,7 @@ struct AttoConfigurationResolution: Equatable {
 }
 
 struct AttoConfigurationSettings: Codable, Equatable {
+    static let legacySchemaVersion = 0
     static let currentSchemaVersion = 1
 
     var schemaVersion: Int
@@ -44,6 +45,23 @@ struct AttoConfigurationSettings: Codable, Equatable {
         case rendering
         case language
         case workspace
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion)
+            ?? Self.legacySchemaVersion
+        self.editor = try container.decodeIfPresent(AttoEditorPreferenceSettings.self, forKey: .editor)
+        self.rendering = try container.decodeIfPresent(AttoRenderingPreferenceSettings.self, forKey: .rendering)
+        self.language = try container.decodeIfPresent(AttoLanguagePreferenceSettings.self, forKey: .language)
+        self.workspace = try container.decodeIfPresent(AttoWorkspacePreferenceSettings.self, forKey: .workspace)
+    }
+
+    func migratedToCurrentSchema() -> Self {
+        guard schemaVersion < Self.currentSchemaVersion else { return self }
+        var migrated = self
+        migrated.schemaVersion = Self.currentSchemaVersion
+        return migrated
     }
 }
 
@@ -216,12 +234,22 @@ struct AttoConfigurationSettingsStore {
     func load(from url: URL) throws -> AttoConfigurationSettings? {
         guard fileManager.fileExists(atPath: url.path) else { return nil }
         let data = try Data(contentsOf: url)
+        let settings: AttoConfigurationSettings
         do {
-            return try JSONDecoder().decode(AttoConfigurationSettings.self, from: data)
+            settings = try JSONDecoder().decode(AttoConfigurationSettings.self, from: data)
         } catch {
             _ = try backupCorruptSettingsFile(at: url)
             return nil
         }
+
+        guard settings.schemaVersion < AttoConfigurationSettings.currentSchemaVersion else {
+            return settings
+        }
+
+        let migrated = settings.migratedToCurrentSchema()
+        _ = try backupMigratedSettingsFile(at: url, schemaVersion: settings.schemaVersion)
+        try save(migrated, to: url)
+        return migrated
     }
 
     func save(_ settings: AttoConfigurationSettings, to url: URL) throws {
@@ -244,6 +272,25 @@ struct AttoConfigurationSettingsStore {
 
     func nextCorruptSettingsBackupURL(for url: URL) -> URL {
         let base = url.appendingPathExtension("invalid")
+        return nextAvailableBackupURL(base: base)
+    }
+
+    @discardableResult
+    func backupMigratedSettingsFile(at url: URL, schemaVersion: Int) throws -> URL {
+        let backupURL = nextMigratedSettingsBackupURL(for: url, schemaVersion: schemaVersion)
+        try fileManager.moveItem(at: url, to: backupURL)
+        return backupURL
+    }
+
+    func nextMigratedSettingsBackupURL(for url: URL, schemaVersion: Int) -> URL {
+        let normalizedSchemaVersion = max(AttoConfigurationSettings.legacySchemaVersion, schemaVersion)
+        let base = url
+            .appendingPathExtension("v\(normalizedSchemaVersion)")
+            .appendingPathExtension("backup")
+        return nextAvailableBackupURL(base: base)
+    }
+
+    private func nextAvailableBackupURL(base: URL) -> URL {
         if fileManager.fileExists(atPath: base.path) == false {
             return base
         }
