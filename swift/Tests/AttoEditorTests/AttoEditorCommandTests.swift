@@ -779,6 +779,55 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(vc._lspWorkbenchPanelIsVisibleForTesting())
     }
 
+    func testLspWorkbenchPanelKeepsSymbolsAndWorkspaceOutlineEntriesSeparate() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("workbench-outline.swift")
+        try "struct Project {}\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let window = attachToWindow(vc)
+        defer { window.close() }
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        XCTAssertTrue(vc.showDocumentSymbolResultJSONInActiveTab("""
+        [
+          {
+            "name": "Project",
+            "kind": 5,
+            "range": {
+              "start": { "line": 0, "character": 0 },
+              "end": { "line": 0, "character": 17 }
+            },
+            "selectionRange": {
+              "start": { "line": 0, "character": 7 },
+              "end": { "line": 0, "character": 14 }
+            }
+          }
+        ]
+        """))
+
+        XCTAssertTrue(vc.showWorkspaceOutlinePanel())
+        XCTAssertTrue(vc.showLspWorkbenchPanel())
+
+        let statuses = Dictionary(uniqueKeysWithValues: vc._lspWorkbenchPanelItemsForTesting().map {
+            ($0.title, $0.status)
+        })
+        XCTAssertEqual(
+            statuses["Symbols"],
+            "1 symbol | Fresh | Result #1 | symbols | Document Symbols: 1 results"
+        )
+        XCTAssertEqual(
+            statuses["Workspace Outline"],
+            "1 symbol | Fresh | Result #2 | symbols | Workspace Outline: 1 file, 1 symbol"
+        )
+        XCTAssertEqual(vc._lspWorkbenchPanelRowCountForTesting(), 10)
+        XCTAssertTrue(vc._lspWorkbenchPanelIsVisibleForTesting())
+    }
+
     func testInlayHintClickUsesResolveFeedbackWhenLspDisabled() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

@@ -1238,6 +1238,14 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testLspWorkbenchPanelShowsLifecycleStateForLocationsAndSymbols`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testLspWorkbenchPanelSummarizesResultFamilies`
     - `git diff --check`
+- 中间提交：`feat(app): split workbench symbols outline entries`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量；修正统一 LSP Workbench 中 Symbols 与 Workspace Outline 共用 `lspSymbolResultStore` 带来的入口污染，让两个 result family 在 Workbench 层按 lifecycle entry 明确分流。
+  - 提交边界：Workbench 的 Symbols 行只消费最近的非 Workspace Outline symbol lifecycle entry；Workspace Outline 行消费 Outline entry 并显示结果数量、Fresh/Stale/Error、Result sequence、family 和 title；从 Workbench 打开 Symbols 时也会打开该非 Outline entry。该提交不改变 `lsp.show_symbols_panel` 的直接命令语义，不新增独立 Outline store lifecycle schema，不实现统一 pin/history 数据模型或真正内嵌 dock。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testLspWorkbenchPanelKeepsSymbolsAndWorkspaceOutlineEntriesSeparate`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testLspWorkbenchPanelShowsLifecycleStateForLocationsAndSymbols`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testLspWorkbenchPanelSummarizesResultFamilies`
+    - `git diff --check`
 
 ## 阶段 8: Command、menu、keymap、palette 与 Sublime 行为矩阵
 

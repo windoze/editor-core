@@ -52,7 +52,7 @@ extension AttoEditorAreaViewController {
             entry: workspaceDiagnosticsEntry
         )
         let locationEntry = lspLocationResultStore.currentEntry
-        let symbolEntry = lspSymbolResultStore.currentEntry
+        let symbolEntry = lspWorkbenchSymbolEntry()
         let locationCount = locationEntry?.snapshot.items.count ?? 0
         let symbolCount = symbolEntry?.snapshot.symbols.count ?? 0
         let locationStatus = lspWorkbenchLifecycleStatus(
@@ -63,7 +63,12 @@ extension AttoEditorAreaViewController {
             countText: symbolCount == 1 ? "1 symbol" : "\(symbolCount) symbols",
             entry: symbolEntry
         )
+        let outlineEntry = lspWorkbenchWorkspaceOutlineEntry()
         let outlineCount = workspaceOutlineSymbolSnapshot().symbols.count
+        let outlineStatus = lspWorkbenchLifecycleStatus(
+            countText: outlineCount == 1 ? "1 symbol" : "\(outlineCount) symbols",
+            entry: outlineEntry
+        )
         let decorations = activeTab.map { tab -> EcuDecorationsSnapshot in
             derivedStateStore.refreshActive(editor: tab.editCore.editor)
             return derivedStateStore.active.decorations
@@ -107,7 +112,7 @@ extension AttoEditorAreaViewController {
                 id: LspWorkbenchItemID.workspaceOutline,
                 title: "Workspace Outline",
                 detail: "Opened-document outline projected through the core workspace model",
-                status: outlineCount == 1 ? "1 symbol" : "\(outlineCount) symbols",
+                status: outlineStatus,
                 isEnabled: outlineCount > 0
             ),
             .init(
@@ -165,6 +170,30 @@ extension AttoEditorAreaViewController {
         return parts.joined(separator: " | ")
     }
 
+    private func lspWorkbenchSymbolEntry() -> AttoLspResultLifecycleEntry<LspSymbolResultSnapshot>? {
+        if let currentEntry = lspSymbolResultStore.currentEntry,
+           isWorkspaceOutlineEntry(currentEntry) == false {
+            return currentEntry
+        }
+        return lspSymbolResultStore.historyEntries.reversed().first {
+            isWorkspaceOutlineEntry($0) == false
+        }
+    }
+
+    private func lspWorkbenchWorkspaceOutlineEntry() -> AttoLspResultLifecycleEntry<LspSymbolResultSnapshot>? {
+        if let currentEntry = lspSymbolResultStore.currentEntry,
+           isWorkspaceOutlineEntry(currentEntry) {
+            return currentEntry
+        }
+        return lspSymbolResultStore.historyEntries.reversed().first(where: isWorkspaceOutlineEntry)
+    }
+
+    private func isWorkspaceOutlineEntry(
+        _ entry: AttoLspResultLifecycleEntry<LspSymbolResultSnapshot>
+    ) -> Bool {
+        entry.snapshot.title == "Workspace Outline" || entry.title.hasPrefix("Workspace Outline")
+    }
+
     private func lspWorkbenchDiagnosticsEntry(
         family: String
     ) -> AttoLspResultLifecycleEntry<AttoDiagnosticsLifecycleSnapshot>? {
@@ -213,7 +242,11 @@ extension AttoEditorAreaViewController {
         case LspWorkbenchItemID.locations:
             _ = showLspLocationPanel()
         case LspWorkbenchItemID.symbols:
-            _ = showLspSymbolPanel()
+            if let entry = lspWorkbenchSymbolEntry() {
+                _ = openLspSymbolEntry(entry)
+            } else {
+                NSSound.beep()
+            }
         case LspWorkbenchItemID.workspaceOutline:
             _ = showWorkspaceOutlinePanel()
         case LspWorkbenchItemID.codeLens:
