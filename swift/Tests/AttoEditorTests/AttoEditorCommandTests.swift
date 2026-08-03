@@ -4811,6 +4811,66 @@ final class AttoEditorCommandTests: XCTestCase {
         )
     }
 
+    func testCommandPalettePersistsRecentCommandArgumentsAcrossDelegates() throws {
+        let suiteName = "AttoEditorCommandTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = AttoRecentCommandStore(userDefaults: defaults)
+        let firstDelegate = AttoAppDelegate(keyBindings: [:], recentCommandStore: store)
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("recent-args.txt")
+        try "abc\ndef\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let ctx = firstDelegate._createWindowForTesting(workspaceRootURL: tempDir)
+        defer { ctx.window.close() }
+        ctx.editorAreaController.openFile(url: fileURL, mode: .pinned)
+
+        let arguments: AttoCommandArguments = ["line": .integer(2), "column": .integer(3)]
+        XCTAssertTrue(firstDelegate.executeCommand(id: "go.line", arguments: arguments))
+        XCTAssertEqual(firstDelegate._recentCommandIDsForTesting().first, "go.line")
+        XCTAssertEqual(firstDelegate._recentCommandArgumentsForTesting(commandID: "go.line"), arguments)
+
+        let secondDelegate = AttoAppDelegate(keyBindings: [:], recentCommandStore: store)
+        XCTAssertEqual(secondDelegate._recentCommandIDsForTesting().first, "go.line")
+        XCTAssertEqual(secondDelegate._recentCommandArgumentsForTesting(commandID: "go.line"), arguments)
+    }
+
+    func testCommandPaletteReplaysRecentCommandArguments() throws {
+        let delegate = AttoAppDelegate(keyBindings: [:])
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("recent-replay.txt")
+        try "abc\ndef\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let ctx = delegate._createWindowForTesting(workspaceRootURL: tempDir)
+        defer { ctx.window.close() }
+        ctx.editorAreaController.openFile(url: fileURL, mode: .pinned)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: ctx.editorAreaController.view))
+        XCTAssertTrue(delegate.executeCommand(
+            id: "go.line",
+            arguments: ["line": .integer(2), "column": .integer(3)]
+        ))
+        XCTAssertEqual(try editorView.editor.selectionOffsets().start, 6)
+
+        try editorView.editor.setSelections([EcuSelectionRange(start: 0, end: 0)], primaryIndex: 0)
+        XCTAssertEqual(try editorView.editor.selectionOffsets().start, 0)
+
+        let recentCommand = try XCTUnwrap(delegate._defaultCommandsForTesting().first)
+        XCTAssertEqual(recentCommand.id, "go.line")
+        recentCommand.run()
+        XCTAssertEqual(try editorView.editor.selectionOffsets().start, 6)
+    }
+
     func testExecuteCommandAcceptsTypedArgumentsForParameterizedCommands() throws {
         let delegate = AttoAppDelegate(keyBindings: [:])
         let tempDir = FileManager.default.temporaryDirectory

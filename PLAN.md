@@ -1368,6 +1368,12 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testExecuteCommandUsesRegisteredCommandIDs`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testExecuteCommandAcceptsTypedArgumentsForParameterizedCommands`
     - `git diff --check`
+- 中间提交：`feat(app): replay recent palette arguments`
+  - 所属任务：阶段 8 的 Command、menu、keymap、palette 与 Sublime 行为矩阵增量；把主命令 palette recent command 从仅恢复 command id 推进到可恢复最近一次 typed arguments，并让最近的参数化命令可从 palette 直接 replay。
+  - 提交边界：`AttoRecentCommandStore` 持久化 recent command record，保留旧 command id defaults key 的读取兼容；统一 command wrapper 在成功执行后记录 normalized typed arguments；主 command palette 排序 recent commands 时会包装有参数的命令，palette 无显式参数触发时 replay 最近参数，直接 `executeCommand(id:)`、菜单和 keymap 无参数路径仍使用未 replay 的命令表，避免静默套用历史参数。本提交不实现通用参数 prompt UI、不实现宏录制/回放、不改变 Quick Open/LSP result palette、不实现 package/plugin command 入口。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.test(CommandPaletteReplaysRecentCommandArguments|CommandPalettePersistsRecentCommandArgumentsAcrossDelegates|CommandPalettePersistsRecentCommandsAcrossDelegates|CommandPaletteOrdersRecentCommandsFirst|ExecuteCommandAcceptsTypedArgumentsForParameterizedCommands)'`
+    - `git diff --check`
 
 ## 阶段 9: 配置、偏好与 capability DTO 完整性
 

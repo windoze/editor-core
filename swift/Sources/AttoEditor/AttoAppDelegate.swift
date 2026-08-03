@@ -4,39 +4,144 @@ import EditorCoreUI
 import EditorCoreUIFFI
 import Foundation
 
+struct AttoRecentCommandRecord: Equatable {
+    let commandID: String
+    let arguments: AttoCommandArguments
+}
+
 @MainActor
 struct AttoRecentCommandStore {
-    private static let defaultKey = "AttoEditor.RecentCommandIDs"
+    private static let defaultRecordsKey = "AttoEditor.RecentCommandRecords"
+    private static let legacyCommandIDsKey = "AttoEditor.RecentCommandIDs"
 
     private let userDefaults: UserDefaults
-    private let key: String
+    private let recordsKey: String
+    private let legacyCommandIDsKey: String
 
     static let appDefault = AttoRecentCommandStore(userDefaults: .standard)
 
-    init(userDefaults: UserDefaults, key: String = AttoRecentCommandStore.defaultKey) {
+    init(
+        userDefaults: UserDefaults,
+        recordsKey: String = AttoRecentCommandStore.defaultRecordsKey,
+        legacyCommandIDsKey: String = AttoRecentCommandStore.legacyCommandIDsKey
+    ) {
         self.userDefaults = userDefaults
-        self.key = key
+        self.recordsKey = recordsKey
+        self.legacyCommandIDsKey = legacyCommandIDsKey
     }
 
-    func load(maxCount: Int) -> [String] {
-        sanitize(userDefaults.stringArray(forKey: key) ?? [], maxCount: maxCount)
+    func load(maxCount: Int) -> [AttoRecentCommandRecord] {
+        if let data = userDefaults.data(forKey: recordsKey),
+           let stored = try? JSONDecoder().decode([StoredRecord].self, from: data)
+        {
+            return sanitize(stored.map(\.record), maxCount: maxCount)
+        }
+
+        return sanitize(
+            (userDefaults.stringArray(forKey: legacyCommandIDsKey) ?? []).map {
+                AttoRecentCommandRecord(commandID: $0, arguments: [:])
+            },
+            maxCount: maxCount
+        )
     }
 
-    func save(_ commandIDs: [String], maxCount: Int) {
-        userDefaults.set(sanitize(commandIDs, maxCount: maxCount), forKey: key)
+    func save(_ records: [AttoRecentCommandRecord], maxCount: Int) {
+        let sanitized = sanitize(records, maxCount: maxCount)
+        let stored = sanitized.map(StoredRecord.init(record:))
+        if let data = try? JSONEncoder().encode(stored) {
+            userDefaults.set(data, forKey: recordsKey)
+        }
+        userDefaults.set(sanitized.map(\.commandID), forKey: legacyCommandIDsKey)
     }
 
-    private func sanitize(_ commandIDs: [String], maxCount: Int) -> [String] {
-        var out: [String] = []
+    private func sanitize(_ records: [AttoRecentCommandRecord], maxCount: Int) -> [AttoRecentCommandRecord] {
+        var out: [AttoRecentCommandRecord] = []
         var seen: Set<String> = []
-        for commandID in commandIDs {
-            let trimmed = commandID.trimmingCharacters(in: .whitespacesAndNewlines)
+        for record in records {
+            let trimmed = record.commandID.trimmingCharacters(in: .whitespacesAndNewlines)
             guard trimmed.isEmpty == false, seen.contains(trimmed) == false else { continue }
             seen.insert(trimmed)
-            out.append(trimmed)
+            out.append(AttoRecentCommandRecord(commandID: trimmed, arguments: record.arguments))
             if out.count >= maxCount { break }
         }
         return out
+    }
+
+    private struct StoredRecord: Codable {
+        let commandID: String
+        let arguments: [String: StoredArgument]
+
+        init(record: AttoRecentCommandRecord) {
+            commandID = record.commandID
+            arguments = record.arguments.mapValues { StoredArgument(value: $0) }
+        }
+
+        var record: AttoRecentCommandRecord {
+            AttoRecentCommandRecord(
+                commandID: commandID,
+                arguments: arguments.compactMapValues { $0.value }
+            )
+        }
+    }
+
+    private struct StoredArgument: Codable {
+        let type: String
+        let stringValue: String?
+        let integerValue: Int?
+        let numberValue: Double?
+        let booleanValue: Bool?
+
+        init(value: AttoCommandArgumentValue) {
+            switch value {
+            case .string(let value):
+                type = "string"
+                stringValue = value
+                integerValue = nil
+                numberValue = nil
+                booleanValue = nil
+            case .integer(let value):
+                type = "integer"
+                stringValue = nil
+                integerValue = value
+                numberValue = nil
+                booleanValue = nil
+            case .number(let value):
+                type = "number"
+                stringValue = nil
+                integerValue = nil
+                numberValue = value
+                booleanValue = nil
+            case .boolean(let value):
+                type = "boolean"
+                stringValue = nil
+                integerValue = nil
+                numberValue = nil
+                booleanValue = value
+            case .json(let value):
+                type = "json"
+                stringValue = value
+                integerValue = nil
+                numberValue = nil
+                booleanValue = nil
+            }
+        }
+
+        var value: AttoCommandArgumentValue? {
+            switch type {
+            case "string":
+                return stringValue.map(AttoCommandArgumentValue.string)
+            case "integer":
+                return integerValue.map(AttoCommandArgumentValue.integer)
+            case "number":
+                return numberValue.map(AttoCommandArgumentValue.number)
+            case "boolean":
+                return booleanValue.map(AttoCommandArgumentValue.boolean)
+            case "json":
+                return stringValue.map(AttoCommandArgumentValue.json)
+            default:
+                return nil
+            }
+        }
     }
 }
 
@@ -61,7 +166,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     private let keySequencePrefixTimeoutSeconds: TimeInterval
     private var keySequenceStatusHandler: ((String?) -> Void)?
     private var keyEventMonitor: Any?
-    private var recentCommandIDs: [String] = []
+    private var recentCommandRecords: [AttoRecentCommandRecord] = []
     private let recentCommandStore: AttoRecentCommandStore?
 
     private static let maxRecentCommandCount = 12
@@ -80,7 +185,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         self.keymapResolver = keymapResolver
         self.keySequencePrefixTimeoutSeconds = 1.0
         self.recentCommandStore = .appDefault
-        self.recentCommandIDs = recentCommandStore?.load(maxCount: Self.maxRecentCommandCount) ?? []
+        self.recentCommandRecords = recentCommandStore?.load(maxCount: Self.maxRecentCommandCount) ?? []
         super.init()
     }
 
@@ -100,7 +205,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         self.keySequencePrefixTimeoutSeconds = keySequencePrefixTimeoutSeconds
         self.keySequenceStatusHandler = keySequenceStatusHandler
         self.recentCommandStore = recentCommandStore
-        self.recentCommandIDs = recentCommandStore?.load(maxCount: Self.maxRecentCommandCount) ?? []
+        self.recentCommandRecords = recentCommandStore?.load(maxCount: Self.maxRecentCommandCount) ?? []
         super.init()
     }
 
@@ -662,7 +767,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         quickOpenController?.show(relativeTo: win, placeholder: "Type a file name to open…")
     }
 
-    private func defaultCommands() -> [AttoCommandPaletteCommand] {
+    private func defaultCommands(orderForCommandPalette: Bool = true) -> [AttoCommandPaletteCommand] {
         var commands: [AttoCommandPaletteCommand] = [
             .init(id: "file.new", title: "File: New File") { [weak self] in
                 self?.newFileMenuClicked(nil)
@@ -951,7 +1056,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
 
         commands.append(contentsOf: cursorMovementCommands())
         commands.append(contentsOf: editorCommandPaletteCommands())
-        return commandsOrderedForCommandPalette(commands.map(commandWithCurrentContext(_:)))
+        let contextualCommands = commands.map(commandWithCurrentContext(_:))
+        guard orderForCommandPalette else { return contextualCommands }
+        return commandsOrderedForCommandPalette(contextualCommands)
     }
 
     func _defaultCommandsForTesting() -> [AttoCommandPaletteCommand] {
@@ -992,15 +1099,19 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     }
 
     func _commandSchemaForTesting(commandID: String) -> AttoCommandSchema? {
-        defaultCommands().first(where: { $0.id == commandID })?.schema
+        defaultCommands(orderForCommandPalette: false).first(where: { $0.id == commandID })?.schema
     }
 
     func _commandConflictsForTesting() -> [String] {
-        Self.duplicateCommandIDs(in: defaultCommands())
+        Self.duplicateCommandIDs(in: defaultCommands(orderForCommandPalette: false))
     }
 
     func _recentCommandIDsForTesting() -> [String] {
-        recentCommandIDs
+        recentCommandRecords.map(\.commandID)
+    }
+
+    func _recentCommandArgumentsForTesting(commandID: String) -> AttoCommandArguments? {
+        recentCommandRecords.first { $0.commandID == commandID }?.arguments
     }
 
     func _validateRuntimeCompatibilityForTesting() -> Bool {
@@ -1035,7 +1146,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
 
     @discardableResult
     private func executeCommand(id commandID: String, explicitArguments arguments: AttoCommandArguments?) -> Bool {
-        guard let command = defaultCommands().first(where: { $0.id == commandID }) else {
+        guard let command = defaultCommands(orderForCommandPalette: false).first(where: { $0.id == commandID }) else {
             NSSound.beep()
             NSLog("AttoEditor: unknown command id %@", commandID)
             return false
@@ -1124,7 +1235,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             schema: metadata.schema,
             runWithArguments: { [weak self] arguments in
                 command.runWithArguments(arguments)
-                self?.rememberRecentCommand(command.id)
+                self?.rememberRecentCommand(command.id, arguments: arguments)
             }
         )
     }
@@ -1132,27 +1243,55 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     private func commandsOrderedForCommandPalette(
         _ commands: [AttoCommandPaletteCommand]
     ) -> [AttoCommandPaletteCommand] {
-        guard recentCommandIDs.isEmpty == false else { return commands }
+        guard recentCommandRecords.isEmpty == false else { return commands }
 
         var commandsByID: [String: AttoCommandPaletteCommand] = [:]
         for command in commands where commandsByID[command.id] == nil {
             commandsByID[command.id] = command
         }
-        let recentCommands = recentCommandIDs.compactMap { commandsByID[$0] }
+        let recentCommands = recentCommandRecords.compactMap { record -> AttoCommandPaletteCommand? in
+            guard let command = commandsByID[record.commandID] else { return nil }
+            return commandReplayingRecentArguments(command, arguments: record.arguments)
+        }
         let recentSet = Set(recentCommands.map(\.id))
         let remainingCommands = commands.filter { recentSet.contains($0.id) == false }
         return recentCommands + remainingCommands
     }
 
-    private func rememberRecentCommand(_ commandID: String) {
+    private func commandReplayingRecentArguments(
+        _ command: AttoCommandPaletteCommand,
+        arguments: AttoCommandArguments
+    ) -> AttoCommandPaletteCommand {
+        guard arguments.isEmpty == false,
+              let replayArguments = try? command.schema.normalizedArguments(arguments)
+        else {
+            return command
+        }
+
+        return AttoCommandPaletteCommand(
+            id: command.id,
+            title: command.title,
+            group: command.group,
+            swatchColor: command.swatchColor,
+            isEnabled: command.isEnabled,
+            requiresEditor: command.requiresEditor,
+            schema: command.schema,
+            runWithArguments: { providedArguments in
+                let effectiveArguments = providedArguments.isEmpty ? replayArguments : providedArguments
+                command.runWithArguments(effectiveArguments)
+            }
+        )
+    }
+
+    private func rememberRecentCommand(_ commandID: String, arguments: AttoCommandArguments) {
         guard commandID != "workbench.command_palette" else { return }
 
-        recentCommandIDs.removeAll { $0 == commandID }
-        recentCommandIDs.insert(commandID, at: 0)
-        if recentCommandIDs.count > Self.maxRecentCommandCount {
-            recentCommandIDs.removeLast(recentCommandIDs.count - Self.maxRecentCommandCount)
+        recentCommandRecords.removeAll { $0.commandID == commandID }
+        recentCommandRecords.insert(AttoRecentCommandRecord(commandID: commandID, arguments: arguments), at: 0)
+        if recentCommandRecords.count > Self.maxRecentCommandCount {
+            recentCommandRecords.removeLast(recentCommandRecords.count - Self.maxRecentCommandCount)
         }
-        recentCommandStore?.save(recentCommandIDs, maxCount: Self.maxRecentCommandCount)
+        recentCommandStore?.save(recentCommandRecords, maxCount: Self.maxRecentCommandCount)
     }
 
     private func commandIsEnabled(commandID: String) -> Bool {
