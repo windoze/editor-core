@@ -180,6 +180,7 @@ struct AttoLspResultLifecycleEvent: Equatable {
     let title: String
     let recordedAt: Date
     let sourceSequence: UInt64?
+    let state: AttoLspResultLifecycleState
     let payload: Payload
 }
 
@@ -202,6 +203,7 @@ final class AttoLspResultEventStream {
         title: String,
         recordedAt: Date = Date(),
         sourceSequence: UInt64? = nil,
+        state: AttoLspResultLifecycleState = .fresh,
         payload: AttoLspResultLifecycleEvent.Payload
     ) -> AttoLspResultLifecycleEvent {
         let event = AttoLspResultLifecycleEvent(
@@ -210,6 +212,7 @@ final class AttoLspResultEventStream {
             title: title,
             recordedAt: recordedAt,
             sourceSequence: sourceSequence,
+            state: state,
             payload: payload
         )
         nextSequence += 1
@@ -218,6 +221,38 @@ final class AttoLspResultEventStream {
             events.removeFirst(events.count - maxHistoryEntries)
         }
         return event
+    }
+
+    @discardableResult
+    func updateLatestStates(
+        families: Set<String>,
+        state: AttoLspResultLifecycleState
+    ) -> [AttoLspResultLifecycleEvent] {
+        var remaining = families
+        var updated: [AttoLspResultLifecycleEvent] = []
+
+        for index in events.indices.reversed() {
+            let event = events[index]
+            guard remaining.contains(event.family) else { continue }
+
+            let replacement = AttoLspResultLifecycleEvent(
+                sequence: event.sequence,
+                family: event.family,
+                title: event.title,
+                recordedAt: event.recordedAt,
+                sourceSequence: event.sourceSequence,
+                state: state,
+                payload: event.payload
+            )
+            events[index] = replacement
+            updated.append(replacement)
+            remaining.remove(event.family)
+            if remaining.isEmpty {
+                break
+            }
+        }
+
+        return updated.reversed()
     }
 
     func entries(after sequence: UInt64) -> [AttoLspResultLifecycleEvent] {

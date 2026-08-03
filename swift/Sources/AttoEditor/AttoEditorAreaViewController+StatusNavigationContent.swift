@@ -338,6 +338,17 @@ extension AttoEditorAreaViewController {
             lspSymbolPanelController?.update(entry: entry)
             didUpdate = true
         }
+        let updatedEvents = lspResultEventStream.updateLatestStates(
+            families: [
+                "code_lens",
+                "inlay_hints",
+                "document_links",
+                "document_colors",
+                "hierarchy",
+            ],
+            state: state
+        )
+        didUpdate = didUpdate || updatedEvents.isEmpty == false
         if didUpdate {
             updateVisibleLspWorkbenchPanel()
         }

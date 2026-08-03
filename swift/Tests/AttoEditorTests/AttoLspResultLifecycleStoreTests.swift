@@ -188,6 +188,17 @@ final class AttoLspResultLifecycleStoreTests: XCTestCase {
                 staleReason: .workspaceRefreshRequested
             )
         )
+        XCTAssertEqual(stream.events.map(\.state), [.fresh, .fresh])
+
+        let staleState = AttoLspResultLifecycleState.stale(reason: "document edited")
+        let updated = stream.updateLatestStates(
+            families: ["symbols", "diagnostics.active", "missing"],
+            state: staleState
+        )
+        XCTAssertEqual(updated.map(\.family), ["symbols", "diagnostics.active"])
+        XCTAssertEqual(updated.map(\.state), [staleState, staleState])
+        XCTAssertEqual(stream.events.map(\.state), [staleState, staleState])
+        XCTAssertEqual(stream.entries(after: 2).map(\.state), [staleState])
 
         stream.clear()
         XCTAssertEqual(stream.events, [])

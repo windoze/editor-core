@@ -1271,6 +1271,16 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testLspWorkbenchPanelSummarizesResultFamilies`
     - `swift test --package-path swift --filter AttoLspResultLifecycleStoreTests`
     - `git diff --check`
+- 中间提交：`feat(app): mark workbench event results stale`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量；把统一 LSP Workbench 中 event-backed result family 的 Fresh 状态推进到可被当前文档编辑标记 Stale 的最小 lifecycle schema。
+  - 提交边界：`AttoLspResultLifecycleEvent` 新增 `state`，`AttoLspResultEventStream` 可按 family 更新最近事件状态；Workbench event-backed 行使用 event state 显示 Fresh/Stale；`markCurrentLspResultPanelsStale(...)` 会同步标记 `code_lens`、`inlay_hints`、`document_links`、`document_colors` 和 `hierarchy` 最近事件。该提交不新增 error propagation、不改变 event payload/schema 语义、不新增 pin/history 模型、不迁移到真正内嵌 dock，也不改变具体 LSP result/decoration 协议。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testCodeLensPanelUsesDerivedDecorations`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testInlayHintPanelUsesDerivedDecorations`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testDocumentLinkPanelUsesDerivedDecorations`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testLspWorkbenchPanelSummarizesResultFamilies`
+    - `swift test --package-path swift --filter AttoLspResultLifecycleStoreTests`
+    - `git diff --check`
 
 ## 阶段 8: Command、menu、keymap、palette 与 Sublime 行为矩阵
 

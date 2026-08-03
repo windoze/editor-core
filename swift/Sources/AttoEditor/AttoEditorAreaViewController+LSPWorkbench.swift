@@ -211,7 +211,7 @@ extension AttoEditorAreaViewController {
     ) -> String {
         var parts = [
             countText,
-            "Fresh",
+            event.state.displayText,
             "Result #\(event.sequence)",
             event.family,
         ]

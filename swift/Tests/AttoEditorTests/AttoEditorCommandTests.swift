@@ -564,6 +564,15 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(
             statuses["Document Links"]?.contains(" | document_links | Document Links: 2 links") == true
         )
+
+        vc.markCurrentLspResultPanelsStale(reason: "document edited")
+        let staleStatuses = Dictionary(uniqueKeysWithValues: vc._lspWorkbenchPanelItemsForTesting().map {
+            ($0.title, $0.status)
+        })
+        XCTAssertTrue(staleStatuses["Document Links"]?.hasPrefix("2 links | Stale: document edited | Result #") == true)
+        XCTAssertTrue(
+            staleStatuses["Document Links"]?.contains(" | document_links | Document Links: 2 links") == true
+        )
     }
 
     func testLspWorkbenchPanelSummarizesResultFamilies() throws {
@@ -875,6 +884,15 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(
             statuses["Document Colors"]?.contains(" | document_colors | Document Colors: 1 color") == true
         )
+
+        vc.markCurrentLspResultPanelsStale(reason: "document edited")
+        let staleStatuses = Dictionary(uniqueKeysWithValues: vc._lspWorkbenchPanelItemsForTesting().map {
+            ($0.title, $0.status)
+        })
+        XCTAssertTrue(staleStatuses["Document Colors"]?.hasPrefix("1 color | Stale: document edited | Result #") == true)
+        XCTAssertTrue(
+            staleStatuses["Document Colors"]?.contains(" | document_colors | Document Colors: 1 color") == true
+        )
         XCTAssertEqual(vc._lspWorkbenchPanelRowCountForTesting(), 10)
         XCTAssertTrue(vc._lspWorkbenchPanelIsVisibleForTesting())
     }
@@ -970,6 +988,15 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(statuses["Inlay Hints"]?.hasPrefix("2 hints | Fresh | Result #") == true)
         XCTAssertTrue(
             statuses["Inlay Hints"]?.contains(" | inlay_hints | Inlay Hints: 2 hints") == true
+        )
+
+        vc.markCurrentLspResultPanelsStale(reason: "document edited")
+        let staleStatuses = Dictionary(uniqueKeysWithValues: vc._lspWorkbenchPanelItemsForTesting().map {
+            ($0.title, $0.status)
+        })
+        XCTAssertTrue(staleStatuses["Inlay Hints"]?.hasPrefix("2 hints | Stale: document edited | Result #") == true)
+        XCTAssertTrue(
+            staleStatuses["Inlay Hints"]?.contains(" | inlay_hints | Inlay Hints: 2 hints") == true
         )
     }
 
@@ -1108,6 +1135,15 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(statuses["Code Lens"]?.hasPrefix("2 actions | Fresh | Result #") == true)
         XCTAssertTrue(
             statuses["Code Lens"]?.contains(" | code_lens | Code Lens: 2 actions") == true
+        )
+
+        vc.markCurrentLspResultPanelsStale(reason: "document edited")
+        let staleStatuses = Dictionary(uniqueKeysWithValues: vc._lspWorkbenchPanelItemsForTesting().map {
+            ($0.title, $0.status)
+        })
+        XCTAssertTrue(staleStatuses["Code Lens"]?.hasPrefix("2 actions | Stale: document edited | Result #") == true)
+        XCTAssertTrue(
+            staleStatuses["Code Lens"]?.contains(" | code_lens | Code Lens: 2 actions") == true
         )
     }
 
@@ -4304,6 +4340,13 @@ final class AttoEditorCommandTests: XCTestCase {
         })
         XCTAssertTrue(statuses["Hierarchy"]?.hasPrefix("2 results | Fresh | Result #") == true)
         XCTAssertTrue(statuses["Hierarchy"]?.contains(" | hierarchy | Incoming Calls") == true)
+
+        vc.markCurrentLspResultPanelsStale(reason: "document edited")
+        let staleStatuses = Dictionary(uniqueKeysWithValues: vc._lspWorkbenchPanelItemsForTesting().map {
+            ($0.title, $0.status)
+        })
+        XCTAssertTrue(staleStatuses["Hierarchy"]?.hasPrefix("2 results | Stale: document edited | Result #") == true)
+        XCTAssertTrue(staleStatuses["Hierarchy"]?.contains(" | hierarchy | Incoming Calls") == true)
     }
 
     func testFormattingResultsUseUnifiedFeedbackStatus() throws {
