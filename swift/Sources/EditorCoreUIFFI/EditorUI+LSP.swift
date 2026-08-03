@@ -217,6 +217,42 @@ extension EditorUI {
         )
     }
 
+    public func eventStreamEnvelopeJSON(streamRawValue: String, after sequence: UInt64 = 0) throws -> String {
+        guard let ptr = streamRawValue.withCString({ streamPtr in
+            editor_core_ui_ffi_editor_ui_event_stream_envelope_json(handle, streamPtr, sequence)
+        }) else {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .internal,
+                context: "editor_ui_event_stream_envelope_json",
+                message: library.lastErrorMessageString()
+            )
+        }
+        defer { editor_core_ui_ffi_string_free(ptr) }
+        return String(cString: ptr)
+    }
+
+    public func eventStreamEnvelopeJSON(stream: EcuEventStreamName, after sequence: UInt64 = 0) throws -> String {
+        try eventStreamEnvelopeJSON(streamRawValue: stream.rawValue, after: sequence)
+    }
+
+    public func eventStreamEnvelope(
+        streamRawValue: String,
+        after sequence: UInt64 = 0
+    ) throws -> EcuJSONEventStreamEnvelope {
+        try Self.decodeSnapshot(
+            EcuJSONEventStreamEnvelope.self,
+            from: eventStreamEnvelopeJSON(streamRawValue: streamRawValue, after: sequence),
+            context: "editor_ui_event_stream_envelope_decode"
+        )
+    }
+
+    public func eventStreamEnvelope(
+        stream: EcuEventStreamName,
+        after sequence: UInt64 = 0
+    ) throws -> EcuJSONEventStreamEnvelope {
+        try eventStreamEnvelope(streamRawValue: stream.rawValue, after: sequence)
+    }
+
     public func lspCancelRequest(_ requestId: UInt64) throws -> Bool {
         var recorded: UInt8 = 0
         let status = editor_core_ui_ffi_editor_ui_lsp_cancel_request(handle, requestId, &recorded)

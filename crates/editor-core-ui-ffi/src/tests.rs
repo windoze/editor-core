@@ -106,6 +106,10 @@ fn ffi_feature_flags_include_semantic_tokens_requests() {
         editor_core_ui_ffi_feature_flags() & ECU_FEATURE_LSP_RESULT_ENVELOPE,
         0
     );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags() & ECU_FEATURE_EVENT_STREAM_ENVELOPE,
+        0
+    );
 }
 
 #[test]
@@ -128,6 +132,11 @@ fn ffi_runtime_info_json_reports_version_and_feature_descriptors() {
         feature["name"] == "lsp_result_envelope"
             && feature["bit"] == 26
             && feature["flag"] == ECU_FEATURE_LSP_RESULT_ENVELOPE
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "event_stream_envelope"
+            && feature["bit"] == 27
+            && feature["flag"] == ECU_FEATURE_EVENT_STREAM_ENVELOPE
     }));
     assert!(features.iter().any(|feature| {
         feature["name"] == "multi_document_workspace_edit_transaction"
@@ -231,6 +240,83 @@ fn ffi_lsp_take_last_result_envelope_json_reports_empty_and_errors() {
     assert_eq!(null_slot["error"]["message"], "slot_utf8 is null");
 
     unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
+}
+
+#[test]
+fn ffi_event_stream_envelope_json_reports_snapshots_and_errors() {
+    let initial = CString::new("abc").unwrap();
+    let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+    assert!(!ui.is_null());
+
+    let state_stream = CString::new("state_events").unwrap();
+    let state_json = take_owned_string(editor_core_ui_ffi_editor_ui_event_stream_envelope_json(
+        ui,
+        state_stream.as_ptr(),
+        0,
+    ));
+    let state: serde_json::Value = serde_json::from_str(&state_json).unwrap();
+    assert_eq!(state["ok"], true);
+    assert_eq!(state["owner"], "editor_ui");
+    assert_eq!(state["stream"], "state_events");
+    assert_eq!(state["status"], "success");
+    assert_eq!(state["after_sequence"], 0);
+    assert_eq!(state["value"]["latest_sequence"], 0);
+    assert_eq!(state["value"]["events"].as_array().unwrap().len(), 0);
+    assert!(state["error"].is_null());
+    assert_eq!(state["version"], ECU_ABI_VERSION);
+
+    let unknown = CString::new("future_events").unwrap();
+    let error_json = take_owned_string(editor_core_ui_ffi_editor_ui_event_stream_envelope_json(
+        ui,
+        unknown.as_ptr(),
+        7,
+    ));
+    let error: serde_json::Value = serde_json::from_str(&error_json).unwrap();
+    assert_eq!(error["ok"], false);
+    assert_eq!(error["owner"], "editor_ui");
+    assert_eq!(error["stream"], "future_events");
+    assert_eq!(error["after_sequence"], 7);
+    assert_eq!(error["error"]["code"], "invalid_argument");
+    assert_eq!(error["error"]["status"], ECU_ERR_INVALID_ARGUMENT);
+    assert!(
+        error["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("unknown editor_ui event stream")
+    );
+
+    let null_stream_json = take_owned_string(
+        editor_core_ui_ffi_editor_ui_event_stream_envelope_json(ui, ptr::null(), 0),
+    );
+    let null_stream: serde_json::Value = serde_json::from_str(&null_stream_json).unwrap();
+    assert_eq!(null_stream["ok"], false);
+    assert!(null_stream["stream"].is_null());
+    assert_eq!(null_stream["error"]["code"], "invalid_argument");
+    assert_eq!(null_stream["error"]["message"], "stream_utf8 is null");
+
+    unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
+
+    let multi = editor_core_ui_ffi_multi_document_new();
+    assert!(!multi.is_null());
+    let request_stream = CString::new("lsp_request_events").unwrap();
+    let multi_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_event_stream_envelope_json(
+            multi,
+            request_stream.as_ptr(),
+            0,
+        ),
+    );
+    let multi_envelope: serde_json::Value = serde_json::from_str(&multi_json).unwrap();
+    assert_eq!(multi_envelope["ok"], true);
+    assert_eq!(multi_envelope["owner"], "multi_document");
+    assert_eq!(multi_envelope["stream"], "lsp_request_events");
+    assert_eq!(multi_envelope["value"]["latest_sequence"], 0);
+    assert_eq!(
+        multi_envelope["value"]["events"].as_array().unwrap().len(),
+        0
+    );
+
+    unsafe { editor_core_ui_ffi_multi_document_free(multi) };
 }
 
 #[test]

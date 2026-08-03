@@ -213,6 +213,11 @@ public enum EditorCoreUIFFIRuntimeCompatibility {
             name: "LSP result envelope",
             reason: "Swift hosts can read LSP take-last result slots through structured `{ ok, value, error, version }` envelopes."
         ),
+        EditorCoreUIFFIRuntimeFeature(
+            feature: .eventStreamEnvelope,
+            name: "event stream envelope",
+            reason: "Swift hosts can drain EditorUi and multi-document event streams through structured `{ ok, value, error, version }` envelopes."
+        ),
     ]
 
     public static let requiredFeatures: [EditorCoreUIFFIRuntimeFeature] = knownFeatures

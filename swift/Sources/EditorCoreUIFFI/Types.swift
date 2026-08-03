@@ -587,6 +587,96 @@ public struct EcuLspResultEnvelopeError: Equatable, Sendable, Decodable {
     }
 }
 
+public struct EcuJSONEventStreamEnvelope: Equatable, Sendable, Decodable {
+    public var ok: Bool
+    public var owner: String
+    public var stream: String?
+    public var status: String
+    public var afterSequence: UInt64
+    public var value: EcuJSONValue?
+    public var error: EcuJSONEventStreamEnvelopeError?
+    public var version: UInt32
+
+    public init(
+        ok: Bool,
+        owner: String,
+        stream: String?,
+        status: String,
+        afterSequence: UInt64,
+        value: EcuJSONValue?,
+        error: EcuJSONEventStreamEnvelopeError?,
+        version: UInt32
+    ) {
+        self.ok = ok
+        self.owner = owner
+        self.stream = stream
+        self.status = status
+        self.afterSequence = afterSequence
+        self.value = value
+        self.error = error
+        self.version = version
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case ok
+        case owner
+        case stream
+        case status
+        case afterSequence
+        case afterSequenceSnake = "after_sequence"
+        case value
+        case error
+        case version
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        ok = try container.decode(Bool.self, forKey: .ok)
+        owner = try container.decodeIfPresent(String.self, forKey: .owner) ?? "unknown"
+        stream = try container.decodeIfPresent(String.self, forKey: .stream)
+        status = try container.decodeIfPresent(String.self, forKey: .status) ?? "unknown"
+        afterSequence = try container.decodeIfPresent(UInt64.self, forKey: .afterSequenceSnake)
+            ?? container.decodeIfPresent(UInt64.self, forKey: .afterSequence)
+            ?? 0
+        if container.contains(.value) {
+            value = try container.decode(EcuJSONValue.self, forKey: .value)
+        } else {
+            value = nil
+        }
+        error = try container.decodeIfPresent(EcuJSONEventStreamEnvelopeError.self, forKey: .error)
+        version = try container.decodeIfPresent(UInt32.self, forKey: .version) ?? 0
+    }
+}
+
+public struct EcuJSONEventStreamEnvelopeError: Equatable, Sendable, Decodable {
+    public var code: String
+    public var status: EcuStatus?
+    public var message: String
+
+    public init(code: String, status: EcuStatus?, message: String) {
+        self.code = code
+        self.status = status
+        self.message = message
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case code
+        case status
+        case message
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        code = try container.decodeIfPresent(String.self, forKey: .code) ?? "unknown"
+        message = try container.decodeIfPresent(String.self, forKey: .message) ?? ""
+        if let rawStatus = try container.decodeIfPresent(Int32.self, forKey: .status) {
+            status = EcuStatus(rawValue: rawStatus)
+        } else {
+            status = nil
+        }
+    }
+}
+
 public enum EcuLspAvailability: Equatable, Sendable, Decodable {
     case disabled
     case enabled

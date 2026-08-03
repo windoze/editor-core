@@ -162,12 +162,3 @@ fn lsp_result_envelope_error(slot: Option<&str>, status: c_int, message: String)
     })
     .to_string()
 }
-
-fn status_code_name(status: c_int) -> &'static str {
-    match status {
-        ECU_ERR_INVALID_ARGUMENT => "invalid_argument",
-        ECU_ERR_BUFFER_TOO_SMALL => "buffer_too_small",
-        ECU_ERR_INTERNAL => "internal",
-        _ => "unknown",
-    }
-}

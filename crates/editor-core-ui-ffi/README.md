@@ -27,7 +27,7 @@ char* editor_core_ui_ffi_runtime_info_json(void);
   "kind": "editor-core-ui-ffi",
   "abi_version": 1,
   "version": "0.5.0",
-  "feature_flags": 134217727,
+  "feature_flags": 268435455,
   "features": [
     { "bit": 0, "flag": 1, "name": "json_command_dispatch", "description": "..." }
   ]
@@ -124,6 +124,63 @@ Error:
 The returned string is owned by the caller and must be freed with
 `editor_core_ui_ffi_string_free`. Availability is advertised by
 `ECU_FEATURE_LSP_RESULT_ENVELOPE`.
+
+## Event Stream Envelope
+
+The legacy event stream APIs remain available as raw JSON string functions, for example
+`editor_core_ui_ffi_editor_ui_state_events_json(...)` and
+`editor_core_ui_ffi_multi_document_lsp_request_events_json(...)`. Hosts that want a single
+JSON result/error shape can use the additive stream-based envelope variants:
+
+```c
+char* editor_core_ui_ffi_editor_ui_event_stream_envelope_json(
+    EditorUi* ui,
+    const char* stream_utf8,
+    uint64_t after_sequence
+);
+
+char* editor_core_ui_ffi_multi_document_event_stream_envelope_json(
+    MultiDocumentEditorUi* multi,
+    const char* stream_utf8,
+    uint64_t after_sequence
+);
+```
+
+`stream_utf8` currently accepts `state_events`, `lsp_result_events`, and `lsp_request_events`.
+
+Success:
+
+```json
+{
+  "ok": true,
+  "owner": "editor_ui",
+  "stream": "state_events",
+  "status": "success",
+  "after_sequence": 0,
+  "value": { "latest_sequence": 0, "events": [] },
+  "error": null,
+  "version": 1
+}
+```
+
+Error:
+
+```json
+{
+  "ok": false,
+  "owner": "editor_ui",
+  "stream": "future_events",
+  "status": "error",
+  "after_sequence": 7,
+  "value": null,
+  "error": { "code": "invalid_argument", "status": 1, "message": "unknown editor_ui event stream \"future_events\"" },
+  "version": 1
+}
+```
+
+The returned string is owned by the caller and must be freed with
+`editor_core_ui_ffi_string_free`. Availability is advertised by
+`ECU_FEATURE_EVENT_STREAM_ENVELOPE`.
 
 ## LSP Workspace Lifecycle
 

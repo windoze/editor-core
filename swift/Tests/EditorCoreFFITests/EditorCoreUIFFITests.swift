@@ -102,6 +102,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(info.supports(.multiDocumentTabLanguageID))
         XCTAssertTrue(info.supports(.jsonCommandEnvelope))
         XCTAssertTrue(info.supports(.lspResultEnvelope))
+        XCTAssertTrue(info.supports(.eventStreamEnvelope))
 
         let runtimeJSON = try JSONTestHelpers.object(try lib.runtimeInfoJSON())
         XCTAssertEqual(runtimeJSON["kind"] as? String, "editor-core-ui-ffi")
@@ -117,6 +118,11 @@ final class EditorCoreUIFFITests: XCTestCase {
             feature["name"] as? String == "lsp_result_envelope"
                 && (feature["bit"] as? NSNumber)?.uint8Value == 26
                 && (feature["flag"] as? NSNumber)?.uint64Value == EditorCoreUIFFIFeatures.lspResultEnvelope.rawValue
+        })
+        XCTAssertTrue(features.contains { feature in
+            feature["name"] as? String == "event_stream_envelope"
+                && (feature["bit"] as? NSNumber)?.uint8Value == 27
+                && (feature["flag"] as? NSNumber)?.uint64Value == EditorCoreUIFFIFeatures.eventStreamEnvelope.rawValue
         })
     }
 
@@ -276,6 +282,115 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertFalse(failure.ok)
         XCTAssertEqual(failure.slotKind, .hover)
         XCTAssertEqual(failure.statusKind, .error)
+        XCTAssertEqual(failure.value, .null)
+        XCTAssertEqual(failure.error?.code, "future_error")
+        XCTAssertEqual(failure.error?.message, "future failure")
+        XCTAssertNil(failure.error?.status)
+    }
+
+    func testEventStreamEnvelopeReportsSnapshotsAndErrors() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui = try EditorUI(library: lib, initialText: "abc", viewportWidthCells: 80)
+
+        let state = try ui.eventStreamEnvelope(stream: .stateEvents)
+        XCTAssertTrue(state.ok)
+        XCTAssertEqual(state.version, lib.abiVersion)
+        XCTAssertEqual(state.owner, "editor_ui")
+        XCTAssertEqual(state.ownerKind, .editorUI)
+        XCTAssertEqual(state.stream, "state_events")
+        XCTAssertEqual(state.streamKind, .stateEvents)
+        XCTAssertEqual(state.statusKind, .success)
+        XCTAssertEqual(state.afterSequence, 0)
+        XCTAssertNil(state.error)
+        guard case .object(let stateValue)? = state.value else {
+            XCTFail("expected state event snapshot object")
+            return
+        }
+        XCTAssertEqual(stateValue["latest_sequence"], .number(0))
+        XCTAssertEqual(stateValue["events"], .array([]))
+
+        let failure = try ui.eventStreamEnvelope(streamRawValue: "future_events", after: 7)
+        XCTAssertFalse(failure.ok)
+        XCTAssertEqual(failure.version, lib.abiVersion)
+        XCTAssertEqual(failure.ownerKind, .editorUI)
+        XCTAssertEqual(failure.streamKind, .unknown("future_events"))
+        XCTAssertEqual(failure.statusKind, .error)
+        XCTAssertEqual(failure.afterSequence, 7)
+        XCTAssertEqual(failure.value, .null)
+        XCTAssertEqual(failure.error?.code, "invalid_argument")
+        XCTAssertEqual(failure.error?.status, .invalidArgument)
+        XCTAssertTrue(failure.error?.message.contains("unknown editor_ui event stream") ?? false)
+
+        let multi = try MultiDocumentEditorUI(library: lib)
+        let requestEvents = try multi.eventStreamEnvelope(stream: .lspRequestEvents)
+        XCTAssertTrue(requestEvents.ok)
+        XCTAssertEqual(requestEvents.version, lib.abiVersion)
+        XCTAssertEqual(requestEvents.ownerKind, .multiDocument)
+        XCTAssertEqual(requestEvents.streamKind, .lspRequestEvents)
+        XCTAssertEqual(requestEvents.statusKind, .success)
+        guard case .object(let requestValue)? = requestEvents.value else {
+            XCTFail("expected multi-document request event snapshot object")
+            return
+        }
+        XCTAssertEqual(requestValue["latest_sequence"], .number(0))
+        XCTAssertEqual(requestValue["events"], .array([]))
+    }
+
+    func testEventStreamEnvelopeDecodesFutureFieldsAndUnknownStatus() throws {
+        let successJSON = """
+        {
+          "ok": true,
+          "owner": "future_owner",
+          "stream": "future_stream",
+          "status": "future_status",
+          "after_sequence": 42,
+          "value": {
+            "latest_sequence": 99,
+            "events": [
+              { "kind": "future_event", "metadata": true }
+            ]
+          },
+          "error": null,
+          "version": 5,
+          "futureTopLevel": "ignored"
+        }
+        """
+        let success = try JSONTestHelpers.decode(EcuJSONEventStreamEnvelope.self, from: successJSON)
+        XCTAssertTrue(success.ok)
+        XCTAssertEqual(success.ownerKind, .unknown("future_owner"))
+        XCTAssertEqual(success.streamKind, .unknown("future_stream"))
+        XCTAssertEqual(success.statusKind, .unknown("future_status"))
+        XCTAssertEqual(success.afterSequence, 42)
+        XCTAssertNil(success.error)
+        guard case .object(let value)? = success.value else {
+            XCTFail("expected future event stream value object")
+            return
+        }
+        XCTAssertEqual(value["latest_sequence"], .number(99))
+
+        let failureJSON = """
+        {
+          "ok": false,
+          "owner": "editor_ui",
+          "stream": "state_events",
+          "status": "error",
+          "afterSequence": 8,
+          "value": null,
+          "error": {
+            "code": "future_error",
+            "status": 456789,
+            "message": "future failure",
+            "futureErrorMetadata": true
+          },
+          "version": 6
+        }
+        """
+        let failure = try JSONTestHelpers.decode(EcuJSONEventStreamEnvelope.self, from: failureJSON)
+        XCTAssertFalse(failure.ok)
+        XCTAssertEqual(failure.ownerKind, .editorUI)
+        XCTAssertEqual(failure.streamKind, .stateEvents)
+        XCTAssertEqual(failure.statusKind, .error)
+        XCTAssertEqual(failure.afterSequence, 8)
         XCTAssertEqual(failure.value, .null)
         XCTAssertEqual(failure.error?.code, "future_error")
         XCTAssertEqual(failure.error?.message, "future failure")

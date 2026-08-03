@@ -163,6 +163,7 @@ uint32_t editor_core_ui_ffi_abi_version(void);
 #define ECU_FEATURE_MULTI_DOCUMENT_TAB_LANGUAGE_ID (1ull << 24)
 #define ECU_FEATURE_JSON_COMMAND_ENVELOPE    (1ull << 25)
 #define ECU_FEATURE_LSP_RESULT_ENVELOPE      (1ull << 26)
+#define ECU_FEATURE_EVENT_STREAM_ENVELOPE    (1ull << 27)
 uint64_t editor_core_ui_ffi_feature_flags(void);
 char* editor_core_ui_ffi_runtime_info_json(void);
 
@@ -310,6 +311,10 @@ int32_t editor_core_ui_ffi_multi_document_state_events_latest_sequence(
     uint64_t* out_sequence);
 char* editor_core_ui_ffi_multi_document_state_events_json(MultiDocumentEditorUi* multi,
                                                           uint64_t after_sequence);
+char* editor_core_ui_ffi_multi_document_event_stream_envelope_json(
+    MultiDocumentEditorUi* multi,
+    const char* stream_utf8,
+    uint64_t after_sequence);
 int32_t editor_core_ui_ffi_multi_document_clear_workspace_diagnostics(
     MultiDocumentEditorUi* multi);
 
@@ -406,6 +411,9 @@ int32_t editor_core_ui_ffi_editor_ui_state_events_latest_sequence(EditorUi* ui,
                                                                   uint64_t* out_sequence);
 char* editor_core_ui_ffi_editor_ui_state_events_json(EditorUi* ui,
                                                      uint64_t after_sequence);
+char* editor_core_ui_ffi_editor_ui_event_stream_envelope_json(EditorUi* ui,
+                                                              const char* stream_utf8,
+                                                              uint64_t after_sequence);
 int32_t editor_core_ui_ffi_editor_ui_lsp_cancel_request(EditorUi* ui,
                                                         uint64_t request_id,
                                                         uint8_t* out_recorded);

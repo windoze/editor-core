@@ -1166,6 +1166,36 @@ public final class MultiDocumentEditorUI {
         )
     }
 
+    public func eventStreamEnvelopeJSON(streamRawValue: String, after sequence: UInt64 = 0) throws -> String {
+        try streamRawValue.withCString { streamPtr in
+            try ffiStringResult(context: "multi_document_event_stream_envelope_json") {
+                editor_core_ui_ffi_multi_document_event_stream_envelope_json(handle, streamPtr, sequence)
+            }
+        }
+    }
+
+    public func eventStreamEnvelopeJSON(stream: EcuEventStreamName, after sequence: UInt64 = 0) throws -> String {
+        try eventStreamEnvelopeJSON(streamRawValue: stream.rawValue, after: sequence)
+    }
+
+    public func eventStreamEnvelope(
+        streamRawValue: String,
+        after sequence: UInt64 = 0
+    ) throws -> EcuJSONEventStreamEnvelope {
+        try decode(
+            EcuJSONEventStreamEnvelope.self,
+            from: eventStreamEnvelopeJSON(streamRawValue: streamRawValue, after: sequence),
+            context: "multi_document_event_stream_envelope_decode"
+        )
+    }
+
+    public func eventStreamEnvelope(
+        stream: EcuEventStreamName,
+        after sequence: UInt64 = 0
+    ) throws -> EcuJSONEventStreamEnvelope {
+        try eventStreamEnvelope(streamRawValue: stream.rawValue, after: sequence)
+    }
+
     public func clearWorkspaceDiagnostics() throws {
         let status = editor_core_ui_ffi_multi_document_clear_workspace_diagnostics(handle)
         try library.ensureStatus(status, context: "multi_document_clear_workspace_diagnostics")

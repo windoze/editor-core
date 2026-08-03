@@ -1693,6 +1693,17 @@
     - `swift test --package-path swift --filter 'EditorCoreUIFFIRuntimeCompatibilityTests/testReportsMissingRequiredFeatures'`
     - `cargo fmt --check`
     - `git diff --check`
+- 中间提交：`feat(ffi): envelope ui event streams`
+  - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；把兼容的结构化 result envelope 扩展到 per-EditorUi 与 MultiDocument 的统一事件流入口。
+  - 提交边界：新增 `editor_core_ui_ffi_editor_ui_event_stream_envelope_json(EditorUi*, stream, after_sequence)`、`editor_core_ui_ffi_multi_document_event_stream_envelope_json(MultiDocumentEditorUi*, stream, after_sequence)` 和 `ECU_FEATURE_EVENT_STREAM_ENVELOPE` feature bit；legacy `*_state_events_json` / `*_lsp_result_events_json` / `*_lsp_request_events_json` 保持 raw JSON/null+last_error 语义；Swift `EditorUI` 与 `MultiDocumentEditorUI` 新增 raw/typed event stream envelope accessor 与 `EcuJSONEventStreamEnvelope`，Atto RuntimeCompatibility 将该能力报告为可选 feature。该提交不切换 App 主路径，不替换 workspace diagnostics / WorkspaceEdit transaction 等专用事件流 API，不统一所有 remaining JSON helper，也不完成完整外部 capability negotiation protocol。
+  - 验证记录：
+    - `cargo test -p editor-core-ui-ffi --release ffi_event_stream_envelope_json_reports_snapshots_and_errors`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFITests/testEventStreamEnvelope'`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFITests/testLoadsLibraryAndVersion'`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFIRuntimeCompatibilityTests/testReportsMissingRequiredFeatures'`
+    - `swift test --package-path swift --filter 'AttoRuntimeCompatibilityTests/test(MissingOptionalFeaturesDoNotBlockLaunchCompatibility|ReportsMissingRequiredFeatures)'`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 11: Tree-sitter 与 LSP 主路线产品化
 

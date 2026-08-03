@@ -437,6 +437,95 @@ public enum EcuLspResultStatus: Hashable, Sendable {
     }
 }
 
+public enum EcuEventStreamOwner: Hashable, Sendable {
+    case editorUI
+    case multiDocument
+    case unknown(String)
+
+    public init(rawValue: String) {
+        switch rawValue {
+        case "editor_ui":
+            self = .editorUI
+        case "multi_document":
+            self = .multiDocument
+        default:
+            self = .unknown(rawValue)
+        }
+    }
+
+    public var rawValue: String {
+        switch self {
+        case .editorUI:
+            return "editor_ui"
+        case .multiDocument:
+            return "multi_document"
+        case let .unknown(rawValue):
+            return rawValue
+        }
+    }
+}
+
+public enum EcuEventStreamName: Hashable, Sendable {
+    case stateEvents
+    case lspResultEvents
+    case lspRequestEvents
+    case unknown(String)
+
+    public init(rawValue: String) {
+        switch rawValue {
+        case "state_events":
+            self = .stateEvents
+        case "lsp_result_events":
+            self = .lspResultEvents
+        case "lsp_request_events":
+            self = .lspRequestEvents
+        default:
+            self = .unknown(rawValue)
+        }
+    }
+
+    public var rawValue: String {
+        switch self {
+        case .stateEvents:
+            return "state_events"
+        case .lspResultEvents:
+            return "lsp_result_events"
+        case .lspRequestEvents:
+            return "lsp_request_events"
+        case let .unknown(rawValue):
+            return rawValue
+        }
+    }
+}
+
+public enum EcuEventStreamEnvelopeStatus: Hashable, Sendable {
+    case success
+    case error
+    case unknown(String)
+
+    public init(rawValue: String) {
+        switch rawValue {
+        case "success":
+            self = .success
+        case "error":
+            self = .error
+        default:
+            self = .unknown(rawValue)
+        }
+    }
+
+    public var rawValue: String {
+        switch self {
+        case .success:
+            return "success"
+        case .error:
+            return "error"
+        case let .unknown(rawValue):
+            return rawValue
+        }
+    }
+}
+
 public enum EcuLspRequestPhase: Hashable, Sendable {
     case started
     case completed
@@ -631,6 +720,20 @@ public extension EcuLspResultEnvelope {
 
     var statusKind: EcuLspResultStatus {
         EcuLspResultStatus(rawValue: status)
+    }
+}
+
+public extension EcuJSONEventStreamEnvelope {
+    var ownerKind: EcuEventStreamOwner {
+        EcuEventStreamOwner(rawValue: owner)
+    }
+
+    var streamKind: EcuEventStreamName? {
+        stream.map(EcuEventStreamName.init(rawValue:))
+    }
+
+    var statusKind: EcuEventStreamEnvelopeStatus {
+        EcuEventStreamEnvelopeStatus(rawValue: status)
     }
 }
 
