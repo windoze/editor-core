@@ -3,13 +3,14 @@ use editor_core_ffi::{
     ECF_FEATURE_JSON_COMMAND_DISPATCH, ECF_FEATURE_JSON_COMMAND_ENVELOPE, ECF_FEATURE_LSP_HELPERS,
     ECF_FEATURE_PROCESSING_EDIT_JSON, ECF_FEATURE_RENDERING_SNAPSHOT_ENVELOPE,
     ECF_FEATURE_SUBLIME_PROCESSOR, ECF_FEATURE_TREESITTER_PROCESSOR, ECF_FEATURE_TYPED_HOT_PATH,
-    ECF_FEATURE_VIEWPORT_BLOB, ECF_FEATURE_WORKSPACE_QUERY_ENVELOPE,
-    ECF_FEATURE_WORKSPACE_RESULT_ENVELOPE, ECF_FEATURE_WORKSPACE_TYPED_API, EcfCreateViewResult,
-    EcfDocumentStats, EcfEditorState, EcfOpenBufferResult, EcfStatus, EcfWorkspace,
-    EcfWorkspaceInfo, EcfWorkspaceViewportState, ecf_abi_version, ecf_editor_backspace,
-    ecf_editor_get_viewport_blob, ecf_editor_insert_text_utf8, ecf_editor_move_to,
-    ecf_feature_flags, editor_core_ffi_editor_get_document_stats,
-    editor_core_ffi_editor_get_viewport_blob, editor_core_ffi_editor_insert_text_utf8,
+    ECF_FEATURE_VIEWPORT_BLOB, ECF_FEATURE_WORKSPACE_LIFECYCLE_ENVELOPE,
+    ECF_FEATURE_WORKSPACE_QUERY_ENVELOPE, ECF_FEATURE_WORKSPACE_RESULT_ENVELOPE,
+    ECF_FEATURE_WORKSPACE_TYPED_API, EcfCreateViewResult, EcfDocumentStats, EcfEditorState,
+    EcfOpenBufferResult, EcfStatus, EcfWorkspace, EcfWorkspaceInfo, EcfWorkspaceViewportState,
+    ecf_abi_version, ecf_editor_backspace, ecf_editor_get_viewport_blob,
+    ecf_editor_insert_text_utf8, ecf_editor_move_to, ecf_feature_flags,
+    editor_core_ffi_editor_get_document_stats, editor_core_ffi_editor_get_viewport_blob,
+    editor_core_ffi_editor_insert_text_utf8,
     editor_core_ffi_editor_state_derived_snapshot_envelope_json,
     editor_core_ffi_editor_state_execute_envelope_json, editor_core_ffi_editor_state_free,
     editor_core_ffi_editor_state_minimap_envelope_json, editor_core_ffi_editor_state_minimap_json,
@@ -23,12 +24,14 @@ use editor_core_ffi::{
     editor_core_ffi_runtime_info_json, editor_core_ffi_string_free,
     editor_core_ffi_workspace_apply_text_edits_envelope_json, editor_core_ffi_workspace_backspace,
     editor_core_ffi_workspace_buffer_text_envelope_json,
+    editor_core_ffi_workspace_create_view_envelope_json,
     editor_core_ffi_workspace_create_view_typed, editor_core_ffi_workspace_execute_envelope_json,
     editor_core_ffi_workspace_free, editor_core_ffi_workspace_get_info,
     editor_core_ffi_workspace_get_viewport_blob, editor_core_ffi_workspace_get_viewport_state,
     editor_core_ffi_workspace_info_envelope_json, editor_core_ffi_workspace_insert_text_utf8,
     editor_core_ffi_workspace_minimap_envelope_json, editor_core_ffi_workspace_minimap_json,
     editor_core_ffi_workspace_move_to, editor_core_ffi_workspace_new,
+    editor_core_ffi_workspace_open_buffer_envelope_json,
     editor_core_ffi_workspace_open_buffer_typed,
     editor_core_ffi_workspace_search_all_open_buffers_envelope_json,
     editor_core_ffi_workspace_set_smooth_scroll_state,
@@ -84,6 +87,7 @@ fn feature_flags_and_alias_work() {
     );
     assert_ne!(flags & ECF_FEATURE_WORKSPACE_RESULT_ENVELOPE, 0);
     assert_ne!(flags & ECF_FEATURE_WORKSPACE_QUERY_ENVELOPE, 0);
+    assert_ne!(flags & ECF_FEATURE_WORKSPACE_LIFECYCLE_ENVELOPE, 0);
 }
 
 #[test]
@@ -121,6 +125,11 @@ fn runtime_info_json_reports_version_and_feature_descriptors() {
         feature["name"] == "workspace_query_envelope"
             && feature["bit"] == 12
             && feature["flag"] == ECF_FEATURE_WORKSPACE_QUERY_ENVELOPE
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "workspace_lifecycle_envelope"
+            && feature["bit"] == 13
+            && feature["flag"] == ECF_FEATURE_WORKSPACE_LIFECYCLE_ENVELOPE
     }));
     assert!(features.iter().any(|feature| {
         feature["name"] == "lsp_helpers"
@@ -162,6 +171,14 @@ fn public_abi_scalar_signatures_are_fixed_width() {
     ) -> i32 = editor_core_ffi_workspace_open_buffer_typed;
     let _: unsafe extern "C" fn(*mut EcfWorkspace, u64, u32, *mut EcfCreateViewResult) -> i32 =
         editor_core_ffi_workspace_create_view_typed;
+    let _: extern "C" fn(
+        *mut EcfWorkspace,
+        *const std::ffi::c_char,
+        *const std::ffi::c_char,
+        u32,
+    ) -> *mut std::ffi::c_char = editor_core_ffi_workspace_open_buffer_envelope_json;
+    let _: extern "C" fn(*mut EcfWorkspace, u64, u32) -> *mut std::ffi::c_char =
+        editor_core_ffi_workspace_create_view_envelope_json;
     let _: extern "C" fn(*mut EcfWorkspace, u64, u32) -> bool =
         editor_core_ffi_workspace_set_viewport_height;
     let _: extern "C" fn(*mut EcfWorkspace, u64, u32, u16, u32) -> bool =
@@ -790,6 +807,100 @@ fn workspace_execute_envelope_json_reports_success_and_errors() {
             .unwrap()
             .contains("workspace execute failed")
     );
+
+    unsafe { editor_core_ffi_workspace_free(workspace) };
+}
+
+#[test]
+fn workspace_lifecycle_envelope_json_reports_success_and_errors() {
+    let workspace = editor_core_ffi_workspace_new();
+    assert!(!workspace.is_null());
+
+    let text = CString::new("alpha\nbeta\n").expect("cstring");
+    let uri = CString::new("file:///workspace-lifecycle.txt").expect("cstring");
+    let open_json = take_string(editor_core_ffi_workspace_open_buffer_envelope_json(
+        workspace,
+        uri.as_ptr(),
+        text.as_ptr(),
+        80,
+    ));
+    let open: serde_json::Value = serde_json::from_str(&open_json).unwrap();
+    assert_eq!(open["ok"], true);
+    assert_eq!(open["status"], "success");
+    assert_eq!(open["operation"], "open_buffer");
+    assert_eq!(open["version"], ECF_ABI_VERSION);
+    assert!(open["error"].is_null());
+    let buffer_id = open["value"]["buffer_id"].as_u64().unwrap();
+    let view_id = open["value"]["view_id"].as_u64().unwrap();
+
+    let duplicate_json = take_string(editor_core_ffi_workspace_open_buffer_envelope_json(
+        workspace,
+        uri.as_ptr(),
+        text.as_ptr(),
+        80,
+    ));
+    let duplicate: serde_json::Value = serde_json::from_str(&duplicate_json).unwrap();
+    assert_eq!(duplicate["ok"], false);
+    assert_eq!(duplicate["status"], "error");
+    assert_eq!(duplicate["operation"], "open_buffer");
+    assert!(duplicate["value"].is_null());
+    assert_eq!(duplicate["error"]["code"], "invalid_argument");
+    assert_eq!(
+        duplicate["error"]["status"],
+        status(EcfStatus::InvalidArgument)
+    );
+    assert!(
+        duplicate["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("open_buffer failed")
+    );
+
+    let create_json = take_string(editor_core_ffi_workspace_create_view_envelope_json(
+        workspace, buffer_id, 40,
+    ));
+    let create: serde_json::Value = serde_json::from_str(&create_json).unwrap();
+    assert_eq!(create["ok"], true);
+    assert_eq!(create["status"], "success");
+    assert_eq!(create["operation"], "create_view");
+    assert_eq!(create["version"], ECF_ABI_VERSION);
+    assert!(create["error"].is_null());
+    let second_view_id = create["value"]["view_id"].as_u64().unwrap();
+    assert_ne!(second_view_id, view_id);
+
+    let missing_json = take_string(editor_core_ffi_workspace_create_view_envelope_json(
+        workspace, 999_999, 40,
+    ));
+    let missing: serde_json::Value = serde_json::from_str(&missing_json).unwrap();
+    assert_eq!(missing["ok"], false);
+    assert_eq!(missing["status"], "error");
+    assert_eq!(missing["operation"], "create_view");
+    assert!(missing["value"].is_null());
+    assert_eq!(missing["error"]["code"], "not_found");
+    assert_eq!(missing["error"]["status"], status(EcfStatus::NotFound));
+    assert!(
+        missing["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("create_view failed")
+    );
+
+    let null_workspace_json = take_string(editor_core_ffi_workspace_open_buffer_envelope_json(
+        std::ptr::null_mut(),
+        uri.as_ptr(),
+        text.as_ptr(),
+        80,
+    ));
+    let null_workspace: serde_json::Value = serde_json::from_str(&null_workspace_json).unwrap();
+    assert_eq!(null_workspace["ok"], false);
+    assert_eq!(null_workspace["status"], "error");
+    assert_eq!(null_workspace["operation"], "open_buffer");
+    assert_eq!(null_workspace["error"]["code"], "invalid_argument");
+    assert_eq!(
+        null_workspace["error"]["status"],
+        status(EcfStatus::InvalidArgument)
+    );
+    assert_eq!(null_workspace["error"]["message"], "workspace is null");
 
     unsafe { editor_core_ffi_workspace_free(workspace) };
 }

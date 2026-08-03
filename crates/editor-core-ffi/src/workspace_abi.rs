@@ -36,16 +36,42 @@ pub extern "C" fn editor_core_ffi_workspace_open_buffer(
     viewport_width: u32,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
-        let workspace = require_mut(workspace, "workspace")?;
-        let uri = optional_string(uri, "uri")?;
-        let text = require_string(text, "text")?;
-        let viewport_width = usize_from_u32(viewport_width, "viewport_width")?.max(1);
-        let opened = workspace
-            .inner
-            .open_buffer(uri, &text, viewport_width)
-            .map_err(|err| format!("open_buffer failed: {err:?}"))?;
-        Ok(value_open_buffer_result(opened))
+        workspace_open_buffer_value(workspace, uri, text, viewport_width)
+            .map_err(|(_, message)| message)
     })
+}
+
+/// Open a buffer and return a stable result envelope.
+///
+/// Caller owns returned string and must free it with `editor_core_ffi_string_free`.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_workspace_open_buffer_envelope_json(
+    workspace: *mut EcfWorkspace,
+    uri: *const c_char,
+    text: *const c_char,
+    viewport_width: u32,
+) -> *mut c_char {
+    workspace_result_envelope_json_ptr("open_buffer", || {
+        workspace_open_buffer_value(workspace, uri, text, viewport_width)
+    })
+}
+
+fn workspace_open_buffer_value(
+    workspace: *mut EcfWorkspace,
+    uri: *const c_char,
+    text: *const c_char,
+    viewport_width: u32,
+) -> Result<Value, (EcfStatus, String)> {
+    let workspace = require_mut(workspace, "workspace")
+        .map_err(|message| (EcfStatus::InvalidArgument, message))?;
+    let uri = optional_string_status(uri, "uri")?;
+    let text = require_string_status(text, "text")?;
+    let viewport_width = status_usize_from_u32(viewport_width, "viewport_width")?.max(1);
+    let opened = workspace
+        .inner
+        .open_buffer(uri, &text, viewport_width)
+        .map_err(|err| workspace_error_result(err, "open_buffer"))?;
+    Ok(value_open_buffer_result(opened))
 }
 
 /// Typed ABI variant: open a buffer and create its initial view.
@@ -135,14 +161,38 @@ pub extern "C" fn editor_core_ffi_workspace_create_view(
     viewport_width: u32,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
-        let workspace = require_mut(workspace, "workspace")?;
-        let viewport_width = usize_from_u32(viewport_width, "viewport_width")?.max(1);
-        let view_id = workspace
-            .inner
-            .create_view(BufferId::from_raw(buffer_id), viewport_width)
-            .map_err(|err| format!("create_view failed: {err:?}"))?;
-        Ok(json!({ "view_id": view_id.get() }))
+        workspace_create_view_value(workspace, buffer_id, viewport_width)
+            .map_err(|(_, message)| message)
     })
+}
+
+/// Create a new view and return a stable result envelope.
+///
+/// Caller owns returned string and must free it with `editor_core_ffi_string_free`.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_workspace_create_view_envelope_json(
+    workspace: *mut EcfWorkspace,
+    buffer_id: u64,
+    viewport_width: u32,
+) -> *mut c_char {
+    workspace_result_envelope_json_ptr("create_view", || {
+        workspace_create_view_value(workspace, buffer_id, viewport_width)
+    })
+}
+
+fn workspace_create_view_value(
+    workspace: *mut EcfWorkspace,
+    buffer_id: u64,
+    viewport_width: u32,
+) -> Result<Value, (EcfStatus, String)> {
+    let workspace = require_mut(workspace, "workspace")
+        .map_err(|message| (EcfStatus::InvalidArgument, message))?;
+    let viewport_width = status_usize_from_u32(viewport_width, "viewport_width")?.max(1);
+    let view_id = workspace
+        .inner
+        .create_view(BufferId::from_raw(buffer_id), viewport_width)
+        .map_err(|err| workspace_error_result(err, "create_view"))?;
+    Ok(json!({ "view_id": view_id.get() }))
 }
 
 /// Typed ABI variant: create a new view for an existing buffer.
@@ -245,6 +295,16 @@ fn workspace_error_status(err: &WorkspaceError) -> EcfStatus {
 fn workspace_error_result(err: WorkspaceError, prefix: &str) -> (EcfStatus, String) {
     let status = workspace_error_status(&err);
     (status, format!("{prefix} failed: {err:?}"))
+}
+
+fn optional_string_status(
+    ptr: *const c_char,
+    name: &str,
+) -> Result<Option<String>, (EcfStatus, String)> {
+    if ptr.is_null() {
+        return Ok(None);
+    }
+    require_string_status(ptr, name).map(Some)
 }
 
 /// Typed ABI variant: return workspace basic stats and active ids.

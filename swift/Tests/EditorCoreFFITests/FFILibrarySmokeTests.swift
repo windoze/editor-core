@@ -23,6 +23,7 @@ final class FFILibrarySmokeTests: XCTestCase {
         XCTAssertTrue(info.supports(.editorStateDerivedSnapshotEnvelope))
         XCTAssertTrue(info.supports(.workspaceResultEnvelope))
         XCTAssertTrue(info.supports(.workspaceQueryEnvelope))
+        XCTAssertTrue(info.supports(.workspaceLifecycleEnvelope))
 
         let runtimeJSON = try JSONTestHelpers.object(try library.runtimeInfoJSON())
         XCTAssertEqual(runtimeJSON["kind"] as? String, "editor-core-ffi")
@@ -54,6 +55,11 @@ final class FFILibrarySmokeTests: XCTestCase {
                 && (feature["bit"] as? NSNumber)?.uint8Value == 12
                 && (feature["flag"] as? NSNumber)?.uint64Value == EditorCoreFFIFeatures.workspaceQueryEnvelope.rawValue
         })
+        XCTAssertTrue(features.contains { feature in
+            feature["name"] as? String == "workspace_lifecycle_envelope"
+                && (feature["bit"] as? NSNumber)?.uint8Value == 13
+                && (feature["flag"] as? NSNumber)?.uint64Value == EditorCoreFFIFeatures.workspaceLifecycleEnvelope.rawValue
+        })
     }
 
     func testPathInitializerIsIgnoredInStaticLinkMode() throws {
@@ -66,5 +72,6 @@ final class FFILibrarySmokeTests: XCTestCase {
         XCTAssertTrue(library.featureFlags.contains(.editorStateDerivedSnapshotEnvelope))
         XCTAssertTrue(library.featureFlags.contains(.workspaceResultEnvelope))
         XCTAssertTrue(library.featureFlags.contains(.workspaceQueryEnvelope))
+        XCTAssertTrue(library.featureFlags.contains(.workspaceLifecycleEnvelope))
     }
 }

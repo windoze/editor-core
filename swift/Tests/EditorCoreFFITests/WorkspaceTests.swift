@@ -182,6 +182,63 @@ final class WorkspaceTests: XCTestCase {
         XCTAssertEqual(failure.value, .null)
     }
 
+    func testWorkspaceLifecycleEnvelopes() throws {
+        let library = try EditorCoreFFITestSupport.shared.loadLibrary()
+        let ws = try Workspace(library: library)
+
+        let opened = try ws.openBufferEnvelope(
+            uri: "file:///lifecycle-envelope.txt",
+            text: "hello\nworld\n",
+            viewportWidth: 80
+        )
+        XCTAssertTrue(opened.ok)
+        XCTAssertEqual(opened.statusKind, .success)
+        XCTAssertEqual(opened.operation, "open_buffer")
+        XCTAssertEqual(opened.version, library.abiVersion)
+        XCTAssertNil(opened.error)
+        guard case .object(let openValue)? = opened.value,
+              case .number(let bufferIDNumber)? = openValue["buffer_id"],
+              case .number(let viewIDNumber)? = openValue["view_id"] else {
+            return XCTFail("expected open_buffer value object")
+        }
+        let bufferId = UInt64(bufferIDNumber)
+        let viewId = UInt64(viewIDNumber)
+
+        let duplicate = try ws.openBufferEnvelope(
+            uri: "file:///lifecycle-envelope.txt",
+            text: "hello\nworld\n",
+            viewportWidth: 80
+        )
+        XCTAssertFalse(duplicate.ok)
+        XCTAssertEqual(duplicate.statusKind, .error)
+        XCTAssertEqual(duplicate.operation, "open_buffer")
+        XCTAssertEqual(duplicate.value, .null)
+        XCTAssertEqual(duplicate.error?.code, "invalid_argument")
+        XCTAssertEqual(duplicate.error?.status, .invalidArgument)
+        XCTAssertTrue(duplicate.error?.message.contains("open_buffer failed") ?? false)
+
+        let created = try ws.createViewEnvelope(bufferId: bufferId, viewportWidth: 40)
+        XCTAssertTrue(created.ok)
+        XCTAssertEqual(created.statusKind, .success)
+        XCTAssertEqual(created.operation, "create_view")
+        XCTAssertEqual(created.version, library.abiVersion)
+        XCTAssertNil(created.error)
+        guard case .object(let createValue)? = created.value,
+              case .number(let createdViewIDNumber)? = createValue["view_id"] else {
+            return XCTFail("expected create_view value object")
+        }
+        XCTAssertNotEqual(UInt64(createdViewIDNumber), viewId)
+
+        let missing = try ws.createViewEnvelope(bufferId: 999_999, viewportWidth: 40)
+        XCTAssertFalse(missing.ok)
+        XCTAssertEqual(missing.statusKind, .error)
+        XCTAssertEqual(missing.operation, "create_view")
+        XCTAssertEqual(missing.value, .null)
+        XCTAssertEqual(missing.error?.code, "not_found")
+        XCTAssertEqual(missing.error?.status, .notFound)
+        XCTAssertTrue(missing.error?.message.contains("create_view failed") ?? false)
+    }
+
     func testWorkspaceQueryEnvelopes() throws {
         let library = try EditorCoreFFITestSupport.shared.loadLibrary()
         let ws = try Workspace(library: library)

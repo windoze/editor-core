@@ -67,6 +67,7 @@ include:
 - `ECF_FEATURE_EDITOR_STATE_DERIVED_SNAPSHOT_ENVELOPE`
 - `ECF_FEATURE_WORKSPACE_RESULT_ENVELOPE`
 - `ECF_FEATURE_WORKSPACE_QUERY_ENVELOPE`
+- `ECF_FEATURE_WORKSPACE_LIFECYCLE_ENVELOPE`
 
 `editor_core_ffi_runtime_info_json()` returns a caller-owned one-call capability snapshot for
 C/non-Swift hosts:
@@ -76,7 +77,7 @@ C/non-Swift hosts:
   "kind": "editor-core-ffi",
   "abi_version": 1,
   "version": "0.5.0",
-  "feature_flags": 8191,
+  "feature_flags": 16383,
   "features": [
     { "bit": 0, "flag": 1, "name": "json_command_dispatch", "description": "..." }
   ]
@@ -337,6 +338,56 @@ Failure envelopes keep the same metadata and report a structured `EcfStatus`:
     "code": "internal",
     "status": 7,
     "message": "get_minimap_content failed: ..."
+  },
+  "version": 1
+}
+```
+
+## Workspace Lifecycle Envelopes
+
+Legacy workspace lifecycle helpers keep returning raw JSON on success and `NULL` on failure. Hosts
+that need non-null structured success/error results can use the envelope variants guarded by
+`ECF_FEATURE_WORKSPACE_LIFECYCLE_ENVELOPE`:
+
+```c
+char* editor_core_ffi_workspace_open_buffer_envelope_json(
+    EcfWorkspace* workspace,
+    const char* uri,
+    const char* text,
+    uint32_t viewport_width);
+
+char* editor_core_ffi_workspace_create_view_envelope_json(
+    EcfWorkspace* workspace,
+    uint64_t buffer_id,
+    uint32_t viewport_width);
+```
+
+Success envelopes preserve the legacy lifecycle payload under `value` and identify the operation:
+
+```json
+{
+  "ok": true,
+  "status": "success",
+  "operation": "open_buffer",
+  "value": { "buffer_id": 1, "view_id": 1 },
+  "error": null,
+  "version": 1
+}
+```
+
+Failure envelopes return an allocated JSON string with a structured `EcfStatus` instead of the
+legacy `NULL` sentinel:
+
+```json
+{
+  "ok": false,
+  "status": "error",
+  "operation": "create_view",
+  "value": null,
+  "error": {
+    "code": "not_found",
+    "status": 3,
+    "message": "create_view failed: ..."
   },
   "version": 1
 }

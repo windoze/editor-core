@@ -298,6 +298,7 @@ Guidelines:
   `ECF_FEATURE_EDITOR_STATE_DERIVED_SNAPSHOT_ENVELOPE`,
   `ECF_FEATURE_WORKSPACE_RESULT_ENVELOPE`,
   `ECF_FEATURE_WORKSPACE_QUERY_ENVELOPE`,
+  `ECF_FEATURE_WORKSPACE_LIFECYCLE_ENVELOPE`,
   `ECU_FEATURE_JSON_COMMAND_ENVELOPE`, and
   `ECU_FEATURE_LSP_RESULT_ENVELOPE` / `ECU_FEATURE_EVENT_STREAM_ENVELOPE` /
   `ECU_FEATURE_MULTI_DOCUMENT_SPECIAL_EVENT_STREAM_ENVELOPE` /
@@ -375,6 +376,8 @@ char* editor_core_ffi_editor_state_execute_envelope_json(EcfEditorState* state, 
 
 int32_t editor_core_ffi_workspace_open_buffer_typed(EcfWorkspace* workspace, const char* uri, const char* text, uint32_t viewport_width, EcfOpenBufferResult* out_result);
 int32_t editor_core_ffi_workspace_create_view_typed(EcfWorkspace* workspace, uint64_t buffer_id, uint32_t viewport_width, EcfCreateViewResult* out_result);
+char* editor_core_ffi_workspace_open_buffer_envelope_json(EcfWorkspace* workspace, const char* uri, const char* text, uint32_t viewport_width);
+char* editor_core_ffi_workspace_create_view_envelope_json(EcfWorkspace* workspace, uint64_t buffer_id, uint32_t viewport_width);
 bool editor_core_ffi_workspace_set_viewport_height(EcfWorkspace* workspace, uint64_t view_id, uint32_t height);
 bool editor_core_ffi_workspace_set_smooth_scroll_state(EcfWorkspace* workspace, uint64_t view_id, uint32_t top_visual_row, uint16_t sub_row_offset, uint32_t overscan_rows);
 char* editor_core_ffi_workspace_execute_envelope_json(EcfWorkspace* workspace, uint64_t view_id, const char* command_json);

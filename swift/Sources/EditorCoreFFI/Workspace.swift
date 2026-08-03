@@ -38,12 +38,49 @@ public final class Workspace {
         return OpenBufferResult(bufferId: raw.buffer_id, viewId: raw.view_id)
     }
 
+    public func openBufferEnvelopeJSON(uri: String?, text: String, viewportWidth: UInt) throws -> String {
+        let width = try checkedFFIUInt32(max(1, viewportWidth), context: "workspace_open_buffer_envelope_json.viewport_width")
+        let ptr: UnsafeMutablePointer<CChar>? = text.withCString { textPtr in
+            if let uri {
+                return uri.withCString { uriPtr in
+                    editor_core_ffi_workspace_open_buffer_envelope_json(handle, uriPtr, textPtr, width)
+                }
+            }
+            return editor_core_ffi_workspace_open_buffer_envelope_json(handle, nil, textPtr, width)
+        }
+        return try ffi.takeOwnedCString(ptr, context: "workspace_open_buffer_envelope_json")
+    }
+
+    public func openBufferEnvelope(uri: String?, text: String, viewportWidth: UInt) throws -> EcfWorkspaceResultEnvelope {
+        try JSON.decode(
+            EcfWorkspaceResultEnvelope.self,
+            from: openBufferEnvelopeJSON(uri: uri, text: text, viewportWidth: viewportWidth),
+            context: "workspace_open_buffer_envelope"
+        )
+    }
+
     public func createView(bufferId: UInt64, viewportWidth: UInt) throws -> UInt64 {
         var raw = EcfCreateViewResult()
         let width = try checkedFFIUInt32(max(1, viewportWidth), context: "workspace_create_view_typed.viewport_width")
         let status = editor_core_ffi_workspace_create_view_typed(handle, bufferId, width, &raw)
         try ffi.ensureStatus(status, context: "workspace_create_view_typed")
         return raw.view_id
+    }
+
+    public func createViewEnvelopeJSON(bufferId: UInt64, viewportWidth: UInt) throws -> String {
+        let width = try checkedFFIUInt32(max(1, viewportWidth), context: "workspace_create_view_envelope_json.viewport_width")
+        return try ffi.takeOwnedCString(
+            editor_core_ffi_workspace_create_view_envelope_json(handle, bufferId, width),
+            context: "workspace_create_view_envelope_json"
+        )
+    }
+
+    public func createViewEnvelope(bufferId: UInt64, viewportWidth: UInt) throws -> EcfWorkspaceResultEnvelope {
+        try JSON.decode(
+            EcfWorkspaceResultEnvelope.self,
+            from: createViewEnvelopeJSON(bufferId: bufferId, viewportWidth: viewportWidth),
+            context: "workspace_create_view_envelope"
+        )
     }
 
     public func executeJSON(viewId: UInt64, commandJSON: String) throws -> String {
