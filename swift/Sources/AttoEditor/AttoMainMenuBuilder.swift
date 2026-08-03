@@ -28,6 +28,7 @@ enum AttoMainMenuBuilder {
         fileMenu.addItem(commandItem(title: "Open File...", commandID: "file.open_file", appDelegate: appDelegate))
         fileMenu.addItem(commandItem(title: "Save", commandID: "file.save", appDelegate: appDelegate))
         fileMenu.addItem(commandItem(title: "Reload File", commandID: "file.reload", appDelegate: appDelegate))
+        fileMenu.addItem(commandItem(title: "Pin Tab", commandID: "file.pin_tab", appDelegate: appDelegate))
         fileMenu.addItem(.separator())
         fileMenu.addItem(commandItem(title: "Close Tab", commandID: "file.close_tab", appDelegate: appDelegate))
         fileMenu.addItem(commandItem(title: "Close All Tabs", commandID: "file.close_all_tabs", appDelegate: appDelegate))

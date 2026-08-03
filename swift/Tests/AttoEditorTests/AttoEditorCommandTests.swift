@@ -19,6 +19,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("editor.duplicate_lines"))
         XCTAssertTrue(ids.contains("file.close_tab"))
         XCTAssertTrue(ids.contains("file.reload"))
+        XCTAssertTrue(ids.contains("file.pin_tab"))
         XCTAssertTrue(ids.contains("file.close_all_tabs"))
         XCTAssertTrue(ids.contains("file.close_other_tabs"))
         XCTAssertTrue(ids.contains("file.close_tabs_to_right"))
@@ -2165,6 +2166,7 @@ final class AttoEditorCommandTests: XCTestCase {
 
         let fileMenu = try XCTUnwrap(topLevelMenu(title: "File", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "file.reload", in: fileMenu))
+        XCTAssertNotNil(findMenuItem(commandID: "file.pin_tab", in: fileMenu))
         XCTAssertNotNil(findMenuItem(commandID: "file.close_all_tabs", in: fileMenu))
         XCTAssertNotNil(findMenuItem(commandID: "file.close_other_tabs", in: fileMenu))
         XCTAssertNotNil(findMenuItem(commandID: "file.close_tabs_to_right", in: fileMenu))
@@ -4957,6 +4959,34 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(try ctx.editorAreaController.coreDocuments?.tabText(tabId: coreTabID), "after\n")
         XCTAssertEqual(try ctx.editorAreaController.coreDocuments?.isTabModified(coreTabID), false)
         XCTAssertEqual(ctx.editorAreaController._transientStatusTextForTesting(), "Reloaded reload-command.txt")
+    }
+
+    func testPinTabCommandPinsActivePreviewTab() throws {
+        let delegate = AttoAppDelegate(keyBindings: [:])
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("pin-command.txt")
+        try "preview\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let ctx = delegate._createWindowForTesting(workspaceRootURL: tempDir)
+        defer { ctx.window.close() }
+        ctx.editorAreaController.openFile(url: fileURL, mode: .preview)
+        let tab = try XCTUnwrap(ctx.editorAreaController.activeTab)
+        let coreTabID = try XCTUnwrap(tab.coreTabID)
+        let coreDocuments = try XCTUnwrap(ctx.editorAreaController.coreDocuments)
+        XCTAssertTrue(tab.isPreview)
+        XCTAssertTrue(try coreDocuments.isPreviewTab(coreTabID))
+
+        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "file.pin_tab"))
+        XCTAssertTrue(delegate.executeCommand(id: "file.pin_tab"))
+
+        XCTAssertFalse(tab.isPreview)
+        XCTAssertFalse(try coreDocuments.isPreviewTab(coreTabID))
+        let item = try XCTUnwrap(ctx.editorAreaController.openFileItems().first { $0.id == tab.id })
+        XCTAssertFalse(item.isPreview)
     }
 
     func testCommandPaletteOrdersRecentCommandsFirst() throws {
@@ -8358,6 +8388,43 @@ final class AttoEditorCommandTests: XCTestCase {
         snapshot = try XCTUnwrap(vc._coreMultiDocumentSnapshotForTesting())
         XCTAssertTrue(snapshot.tabs.isEmpty)
         XCTAssertNil(snapshot.activeTabId)
+    }
+
+    func testPinActiveTabUsesCoreActivePreviewProjection() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let firstURL = tempDir.appendingPathComponent("pin-first.txt")
+        let secondURL = tempDir.appendingPathComponent("pin-second.txt")
+        try "first".write(to: firstURL, atomically: true, encoding: .utf8)
+        try "second".write(to: secondURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: firstURL, mode: .pinned)
+        let firstTab = try XCTUnwrap(vc.activeTab)
+        vc.openFile(url: secondURL, mode: .preview)
+        let secondTab = try XCTUnwrap(vc.activeTab)
+
+        vc.selectTab(id: firstTab.id)
+        XCTAssertEqual(vc.selectedTabID, firstTab.id)
+
+        let coreDocuments = try XCTUnwrap(vc.coreDocuments)
+        let secondCoreTabID = try XCTUnwrap(secondTab.coreTabID)
+        try coreDocuments.setActiveTab(secondCoreTabID)
+        XCTAssertEqual(vc.activeTab?.id, secondTab.id)
+        XCTAssertTrue(try coreDocuments.isPreviewTab(secondCoreTabID))
+        XCTAssertTrue(secondTab.isPreview)
+
+        XCTAssertTrue(vc.pinActiveTabIfPreview())
+
+        XCTAssertFalse(try coreDocuments.isPreviewTab(secondCoreTabID))
+        XCTAssertFalse(secondTab.isPreview)
+        XCTAssertEqual(firstTab.isPreview, false)
+        let secondItem = try XCTUnwrap(vc.openFileItems().first { $0.id == secondTab.id })
+        XCTAssertFalse(secondItem.isPreview)
     }
 
     func testWorkspaceRootChangeNotifiesOpenTabLspWorkspaceFolders() throws {

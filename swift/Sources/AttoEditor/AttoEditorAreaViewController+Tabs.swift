@@ -1154,13 +1154,34 @@ extension AttoEditorAreaViewController {
         return projectedTabs.first(where: { $0.coreTab.id == activeCoreTabID })?.tab.id
     }
 
-    func pinTabIfPreview(id: UUID) {
-        guard let tab = tabs.first(where: { $0.id == id }) else { return }
-        guard tab.isPreview else { return }
+    @discardableResult
+    func pinActiveTabIfPreview() -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+        return pinTabIfPreview(id: tab.id)
+    }
+
+    @discardableResult
+    func pinTabIfPreview(id: UUID) -> Bool {
+        guard let tab = tabs.first(where: { $0.id == id }) else { return false }
+        guard projectedIsPreview(tab) else { return false }
         tab.isPreview = false
         pinCoreTabIfPreview(tab)
         refreshTabBar()
         notifySessionStateChanged()
+        return true
+    }
+
+    private func projectedIsPreview(_ tab: AttoEditorTab) -> Bool {
+        if let projection = makeCoreProjectedTabs(),
+           let projected = projection.tabs.first(where: { $0.tab.id == tab.id })
+        {
+            return projected.coreTab.isPreview
+        }
+
+        return tab.isPreview
     }
 
     @discardableResult

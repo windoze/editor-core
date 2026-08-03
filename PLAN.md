@@ -753,6 +753,12 @@
   - 验证记录：
     - `swift test --package-path swift --filter 'AttoEditorCommandTests.testSaveActiveTabUsesCoreDocumentURIProjectionAndSyncsCoreDirtyState|AttoEditorCommandTests.testReloadActiveTabUsesCoreDocumentURIProjectionAndSyncsCoreDirtyState|AttoEditorCommandTests.testFormatOnSaveRunsBeforeWritingFile|AttoEditorCommandTests.testSaveAndCloseNotifyLspDocumentLifecycle|AttoEditorCommandTests.testWorkspaceEditPreviewSaveConflictDecisionSavesTargetTabBeforeRetry|AttoEditorCommandTests.testWorkspaceEditPreviewSaveAndRetryDecisionAppliesAfterSavingTargetTab'`
     - `git diff --check`
+- 中间提交：`feat(app): pin active tab from core tabs`
+  - 所属任务：阶段 5 的多文档/tab/split/project/session 迁移增量；让 AttoEditor 的 pin-tab 用户路径使用 core snapshot 中的 active tab / preview 状态投影，而不是只依赖 Swift `selectedTabID` 和本地 `isPreview`。
+  - 提交边界：新增 `file.pin_tab` command/menu 入口，并让 `pinActiveTabIfPreview()` / `pinTabIfPreview(id:)` 以 core-projected active tab 和 `is_preview` 为准，同时保留双击 preview tab 的既有行为。本提交不新增 Rust/FFI ABI，不实现 drag/drop tab-to-split、session schema migration 或完整 core-owned project/session ownership。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testPinActiveTabUsesCoreActivePreviewProjection|AttoEditorCommandTests.testPinTabCommandPinsActivePreviewTab|AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs|AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap|AttoPreviewTabDoubleClickTests.testDoubleClickPreviewTabPinsInsteadOfReplacing'`
+    - `git diff --check`
 
 ## 阶段 6: LSP workspace lifecycle 与 project-level 语言能力
 
