@@ -1,0 +1,9 @@
+AttoEditor visual baseline fixture
+
+ASCII: tabs, status bar, find bar, gutter, editor surface
+Unicode CJK: 视觉基线 文件布局 搜索面板
+Combining marks: café naivé resumé
+Full-width: ＡｔｔｏＥｄｉｔｏｒ　１２３４５
+Emoji: cursor ✅ diagnostics ⚠️ search 🔎
+
+Long line: AttoEditor should keep editor chrome stable while this line is long enough to exercise horizontal content clipping without changing the outer AppKit layout.

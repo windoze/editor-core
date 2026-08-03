@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "id": "editor-chrome-light-unicode",
+      "description": "Light editor chrome with an opened Unicode document and the find bar visible.",
+      "fixture": "VisualFixtures/editor-chrome-light-unicode.txt",
+      "baseline": "VisualBaselines/editor-chrome-light-unicode.png",
+      "artifactName": "editor-chrome-light-unicode",
+      "theme": "defaultLight",
+      "window": {
+        "width": 640,
+        "height": 420
+      },
+      "scale": 1.0,
+      "showFindBar": true,
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    }
+  ]
+}

@@ -2084,6 +2084,12 @@
   - 验证记录：
     - `swift test --package-path swift --filter 'AttoEditorVisualSnapshotHarnessTests'`
     - `git diff --check`
+- 中间提交：`test(app): add visual baseline fixture manifest`
+  - 所属任务：阶段 13 的 macOS UI 自动化与视觉回归测试体系增量；把 snapshot/diff harness 推进到可版本化的 fixture/manifest 入口，为后续 checked-in PNG baselines、fixture matrix 和 CI 视觉回归提供统一用例描述。
+  - 提交边界：`AttoEditorTests` 新增 SwiftPM 测试资源、`VisualBaselines/manifest.json` 和首个 light theme + Unicode editor chrome fixture；snapshot/comparison 工具抽到测试模块共享 support；新增 manifest 测试，默认捕获真实 `AttoEditorAreaViewController` review artifact，设置 `ATTO_VISUAL_BASELINE_DIR` 时可读取外部 PNG baseline 并生成 diff artifacts，`ATTO_VISUAL_ARTIFACT_DIR` 可指定 artifact 输出目录。该提交不提交机器相关 PNG baseline、不引入 baseline 更新 CLI、不新增 `XCUIApplication` 黑盒 target、不接 CI runner 固定字体/DPI/scale，也不改变产品 UI 或渲染行为。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests|AttoEditorVisualSnapshotHarnessTests'`
+    - `git diff --check`
 
 ## 阶段 14: 外观、布局与 Sublime-like 操作打磨
 

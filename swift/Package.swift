@@ -132,7 +132,10 @@ let package = Package(
         .testTarget(
             name: "AttoEditorTests",
             dependencies: ["AttoEditor", "AttoEditorSupport"],
-            path: "Tests/AttoEditorTests"
+            path: "Tests/AttoEditorTests",
+            resources: [
+                .process("Resources")
+            ]
         ),
     ]
 )

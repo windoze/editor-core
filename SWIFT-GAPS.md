@@ -1613,8 +1613,9 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 已完成：主菜单、核心 editor chrome、tab bar、find/replace、status bar、sidebar、quick panel 和 completion popup 已有基础稳定 AppKit identifiers，并有组件测试覆盖。
 - 已完成：阶段 13 已新增 AppKit component layout invariant 起点，固定窗口尺寸下覆盖 empty/open document、find/replace bar、窄窗口和 split pane 的 tab bar/status bar/content host 高度、相邻关系、填充和非重叠断言。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): assert editor chrome layout invariants` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
 - 已完成：阶段 13 已新增 visual snapshot/diff harness 起点，可从 AppKit view 捕获 RGBA snapshot、写出 PNG artifact、按 tolerance 比较 expected/actual，并在 mismatch 时输出 actual/expected/diff PNG。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): add visual snapshot diff harness` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
-- 仍缺将 visual snapshot/diff harness 接入 checked-in golden baseline fixtures 和 baseline 更新流程。
-- 引入 fixtures，覆盖主题、字体、Unicode、多光标、折叠、diagnostics、minimap。
+- 已完成：阶段 13 已新增 visual baseline fixture manifest 起点，`AttoEditorTests` 可通过 SwiftPM resource bundle 加载 `VisualBaselines/manifest.json` 和首个 light theme + Unicode editor chrome fixture；默认生成/校验 review PNG artifact，设置 `ATTO_VISUAL_BASELINE_DIR` 时可读取外部 PNG baseline 严格比较并输出 diff artifacts，设置 `ATTO_VISUAL_ARTIFACT_DIR` 时可固定 artifact 输出目录。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): add visual baseline fixture manifest` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
+- 仍缺提交机器稳定的 PNG golden baselines、baseline 更新 CLI/流程和 CI baseline 审核策略。
+- 继续扩展 fixtures，覆盖更多主题、字体、多光标、折叠、diagnostics、minimap；当前 manifest 起点只覆盖 light theme + Unicode editor chrome。
 - 补 `XCUIApplication` smoke tests。
 - 在 CI 上固定 macOS runner、字体、scale factor 和渲染后端。
 
