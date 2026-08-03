@@ -131,6 +131,10 @@ fn ffi_feature_flags_include_semantic_tokens_requests() {
         editor_core_ui_ffi_feature_flags() & ECU_FEATURE_MULTI_DOCUMENT_SNAPSHOT_ENVELOPE,
         0
     );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags() & ECU_FEATURE_MULTI_DOCUMENT_SEARCH_ENVELOPE,
+        0
+    );
 }
 
 #[test]
@@ -183,6 +187,11 @@ fn ffi_runtime_info_json_reports_version_and_feature_descriptors() {
         feature["name"] == "multi_document_snapshot_envelope"
             && feature["bit"] == 32
             && feature["flag"] == ECU_FEATURE_MULTI_DOCUMENT_SNAPSHOT_ENVELOPE
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "multi_document_search_envelope"
+            && feature["bit"] == 33
+            && feature["flag"] == ECU_FEATURE_MULTI_DOCUMENT_SEARCH_ENVELOPE
     }));
     assert!(features.iter().any(|feature| {
         feature["name"] == "multi_document_workspace_edit_transaction"
@@ -476,6 +485,67 @@ fn ffi_multi_document_snapshot_envelope_json_reports_success_and_errors() {
     assert_eq!(error["error"]["code"], "invalid_argument");
     assert_eq!(error["error"]["status"], ECU_ERR_INVALID_ARGUMENT);
     assert_eq!(error["error"]["message"], "multi is null");
+    assert_eq!(error["version"], ECU_ABI_VERSION);
+
+    unsafe { editor_core_ui_ffi_multi_document_free(multi) };
+}
+
+#[test]
+fn ffi_multi_document_search_envelope_json_reports_success_and_errors() {
+    let multi = editor_core_ui_ffi_multi_document_new();
+    assert!(!multi.is_null());
+
+    let alpha = CString::new("alpha world").unwrap();
+    let beta = CString::new("beta world").unwrap();
+    let mut alpha_id = 0u64;
+    let mut beta_id = 0u64;
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_open_tab(multi, alpha.as_ptr(), 80, &mut alpha_id),
+        ECU_OK
+    );
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_open_tab(multi, beta.as_ptr(), 80, &mut beta_id),
+        ECU_OK
+    );
+
+    let query = CString::new("world").unwrap();
+    let envelope_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_search_all_tabs_envelope_json(
+            multi,
+            query.as_ptr(),
+            1,
+            0,
+            0,
+        ),
+    );
+    let envelope: serde_json::Value = serde_json::from_str(&envelope_json).unwrap();
+    assert_eq!(envelope["ok"], true);
+    assert_eq!(envelope["status"], "success");
+    assert!(envelope["error"].is_null());
+    assert_eq!(envelope["version"], ECU_ABI_VERSION);
+    let results = envelope["value"]["results"].as_array().unwrap();
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0]["tab_id"], alpha_id);
+    assert_eq!(results[0]["matches"][0]["start"], 6);
+    assert_eq!(results[0]["matches"][0]["end"], 11);
+    assert_eq!(results[1]["tab_id"], beta_id);
+
+    let error_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_search_all_tabs_envelope_json(
+            multi,
+            ptr::null(),
+            1,
+            0,
+            0,
+        ),
+    );
+    let error: serde_json::Value = serde_json::from_str(&error_json).unwrap();
+    assert_eq!(error["ok"], false);
+    assert_eq!(error["status"], "error");
+    assert!(error["value"].is_null());
+    assert_eq!(error["error"]["code"], "invalid_argument");
+    assert_eq!(error["error"]["status"], ECU_ERR_INVALID_ARGUMENT);
+    assert_eq!(error["error"]["message"], "query_utf8 is null");
     assert_eq!(error["version"], ECU_ABI_VERSION);
 
     unsafe { editor_core_ui_ffi_multi_document_free(multi) };

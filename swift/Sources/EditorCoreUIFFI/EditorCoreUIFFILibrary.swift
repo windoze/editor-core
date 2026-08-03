@@ -105,6 +105,7 @@ public struct EditorCoreUIFFIFeatures: OptionSet, Equatable, Sendable {
     public static let workspaceDiagnosticsEnvelope = Self(rawValue: 1 << 30)
     public static let workspaceOutlineSnapshotEnvelope = Self(rawValue: 1 << 31)
     public static let multiDocumentSnapshotEnvelope = Self(rawValue: 1 << 32)
+    public static let multiDocumentSearchEnvelope = Self(rawValue: 1 << 33)
 }
 
 public struct EditorCoreUIFFIRuntimeInfo: Equatable, Sendable {

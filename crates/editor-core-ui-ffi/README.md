@@ -27,7 +27,7 @@ char* editor_core_ui_ffi_runtime_info_json(void);
   "kind": "editor-core-ui-ffi",
   "abi_version": 1,
   "version": "0.5.0",
-  "feature_flags": 8589934591,
+  "feature_flags": 17179869183,
   "features": [
     { "bit": 0, "flag": 1, "name": "json_command_dispatch", "description": "..." }
   ]
@@ -115,6 +115,50 @@ Error:
 The returned string is owned by the caller and must be freed with
 `editor_core_ui_ffi_string_free`. Availability is advertised by
 `ECU_FEATURE_MULTI_DOCUMENT_SNAPSHOT_ENVELOPE`.
+
+## MultiDocument Search Envelope
+
+The legacy all-tabs search API remains available as a raw JSON string function:
+`editor_core_ui_ffi_multi_document_search_all_tabs_json(...)`. Hosts that want a single JSON
+result/error shape can use the additive envelope variant:
+
+```c
+char* editor_core_ui_ffi_multi_document_search_all_tabs_envelope_json(
+    MultiDocumentEditorUi* multi,
+    const char* query_utf8,
+    uint8_t case_sensitive,
+    uint8_t whole_word,
+    uint8_t regex
+);
+```
+
+Success:
+
+```json
+{
+  "ok": true,
+  "status": "success",
+  "value": { "results": [{ "tab_id": 1, "matches": [{ "start": 6, "end": 11 }] }] },
+  "error": null,
+  "version": 1
+}
+```
+
+Error:
+
+```json
+{
+  "ok": false,
+  "status": "error",
+  "value": null,
+  "error": { "code": "invalid_argument", "status": 1, "message": "query_utf8 is null" },
+  "version": 1
+}
+```
+
+The returned string is owned by the caller and must be freed with
+`editor_core_ui_ffi_string_free`. Availability is advertised by
+`ECU_FEATURE_MULTI_DOCUMENT_SEARCH_ENVELOPE`.
 
 ## LSP Result Envelope
 

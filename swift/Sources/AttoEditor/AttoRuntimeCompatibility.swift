@@ -148,6 +148,11 @@ struct AttoRuntimeCompatibility {
             reason: "Project-level UI can read tab/project snapshots through structured envelopes; Swift falls back to the legacy typed snapshot wrapper when unavailable."
         ),
         RuntimeFeature(
+            feature: .multiDocumentSearchEnvelope,
+            name: "multi-document search envelope",
+            reason: "Find in open tabs can read core search results through structured envelopes; Swift falls back to the legacy typed search wrapper when unavailable."
+        ),
+        RuntimeFeature(
             feature: .eventStreamEnvelope,
             name: "event stream envelope",
             reason: "Host UI can drain editor and project event streams through structured envelopes; Swift falls back to legacy raw event stream JSON when unavailable."

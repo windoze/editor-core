@@ -59,6 +59,7 @@ final class AttoRuntimeCompatibilityTests: XCTestCase {
         XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .workspaceEditTransactionEnvelope })
         XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .workspaceDiagnosticsEnvelope })
         XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .workspaceOutlineSnapshotEnvelope })
+        XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .multiDocumentSearchEnvelope })
         XCTAssertTrue(report.diagnosticMessage.contains("Missing UI FFI features"))
     }
 
@@ -95,6 +96,7 @@ final class AttoRuntimeCompatibilityTests: XCTestCase {
                 EditorCoreUIFFIFeatures.workspaceEditTransactionEnvelope.rawValue,
                 EditorCoreUIFFIFeatures.workspaceDiagnosticsEnvelope.rawValue,
                 EditorCoreUIFFIFeatures.workspaceOutlineSnapshotEnvelope.rawValue,
+                EditorCoreUIFFIFeatures.multiDocumentSearchEnvelope.rawValue,
                 EditorCoreUIFFIFeatures.workspaceOutlineSnapshot.rawValue,
                 EditorCoreUIFFIFeatures.multiDocumentTabDocumentURI.rawValue,
                 EditorCoreUIFFIFeatures.multiDocumentTabLanguageID.rawValue,

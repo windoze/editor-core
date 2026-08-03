@@ -219,6 +219,90 @@ private struct EcuTabSearchResponse: Decodable {
     let results: [EcuTabSearchResult]
 }
 
+public enum EcuMultiDocumentSearchEnvelopeStatus: Hashable, Sendable {
+    case success
+    case error
+    case unknown(String)
+
+    public init(rawValue: String) {
+        switch rawValue {
+        case "success":
+            self = .success
+        case "error":
+            self = .error
+        default:
+            self = .unknown(rawValue)
+        }
+    }
+
+    public var rawValue: String {
+        switch self {
+        case .success:
+            return "success"
+        case .error:
+            return "error"
+        case let .unknown(rawValue):
+            return rawValue
+        }
+    }
+}
+
+public struct EcuMultiDocumentSearchEnvelope: Decodable, Equatable, Sendable {
+    public let ok: Bool
+    public let status: String
+    public let value: EcuJSONValue?
+    public let error: EcuMultiDocumentSearchEnvelopeError?
+    public let version: UInt32
+
+    public var statusKind: EcuMultiDocumentSearchEnvelopeStatus {
+        EcuMultiDocumentSearchEnvelopeStatus(rawValue: status)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case ok
+        case status
+        case value
+        case error
+        case version
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        ok = try container.decode(Bool.self, forKey: .ok)
+        status = try container.decodeIfPresent(String.self, forKey: .status) ?? "unknown"
+        if container.contains(.value) {
+            value = try container.decode(EcuJSONValue.self, forKey: .value)
+        } else {
+            value = nil
+        }
+        error = try container.decodeIfPresent(EcuMultiDocumentSearchEnvelopeError.self, forKey: .error)
+        version = try container.decodeIfPresent(UInt32.self, forKey: .version) ?? 0
+    }
+}
+
+public struct EcuMultiDocumentSearchEnvelopeError: Decodable, Equatable, Sendable {
+    public let code: String
+    public let status: EcuStatus?
+    public let message: String
+
+    private enum CodingKeys: String, CodingKey {
+        case code
+        case status
+        case message
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        code = try container.decodeIfPresent(String.self, forKey: .code) ?? "unknown"
+        message = try container.decodeIfPresent(String.self, forKey: .message) ?? ""
+        if let rawStatus = try container.decodeIfPresent(Int32.self, forKey: .status) {
+            status = EcuStatus(rawValue: rawStatus)
+        } else {
+            status = nil
+        }
+    }
+}
+
 public struct EcuWorkspaceEditTransactionDocument: Decodable, Equatable, Sendable {
     public let uri: String
     public let editCount: Int
@@ -1292,6 +1376,31 @@ public final class MultiDocumentEditorUI {
     public func searchAllTabs(query: String, options: EcuSearchOptions = EcuSearchOptions()) throws -> [EcuTabSearchResult] {
         let json = try searchAllTabsJSON(query: query, options: options)
         return try decode(EcuTabSearchResponse.self, from: json, context: "multi_document_search_decode").results
+    }
+
+    public func searchAllTabsEnvelopeJSON(query: String, options: EcuSearchOptions = EcuSearchOptions()) throws -> String {
+        try ffiStringResult(context: "multi_document_search_all_tabs_envelope_json") {
+            query.withCString { queryPtr in
+                editor_core_ui_ffi_multi_document_search_all_tabs_envelope_json(
+                    handle,
+                    queryPtr,
+                    options.ffiCaseSensitive,
+                    options.ffiWholeWord,
+                    options.ffiRegex
+                )
+            }
+        }
+    }
+
+    public func searchAllTabsEnvelope(
+        query: String,
+        options: EcuSearchOptions = EcuSearchOptions()
+    ) throws -> EcuMultiDocumentSearchEnvelope {
+        try decode(
+            EcuMultiDocumentSearchEnvelope.self,
+            from: searchAllTabsEnvelopeJSON(query: query, options: options),
+            context: "multi_document_search_all_tabs_envelope_decode"
+        )
     }
 
     public func workspaceOutlineSnapshotJSON() throws -> String {

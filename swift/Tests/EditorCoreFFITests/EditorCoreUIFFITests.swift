@@ -108,6 +108,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(info.supports(.workspaceDiagnosticsEnvelope))
         XCTAssertTrue(info.supports(.workspaceOutlineSnapshotEnvelope))
         XCTAssertTrue(info.supports(.multiDocumentSnapshotEnvelope))
+        XCTAssertTrue(info.supports(.multiDocumentSearchEnvelope))
 
         let runtimeJSON = try JSONTestHelpers.object(try lib.runtimeInfoJSON())
         XCTAssertEqual(runtimeJSON["kind"] as? String, "editor-core-ui-ffi")
@@ -153,6 +154,11 @@ final class EditorCoreUIFFITests: XCTestCase {
             feature["name"] as? String == "multi_document_snapshot_envelope"
                 && (feature["bit"] as? NSNumber)?.uint8Value == 32
                 && (feature["flag"] as? NSNumber)?.uint64Value == EditorCoreUIFFIFeatures.multiDocumentSnapshotEnvelope.rawValue
+        })
+        XCTAssertTrue(features.contains { feature in
+            feature["name"] as? String == "multi_document_search_envelope"
+                && (feature["bit"] as? NSNumber)?.uint8Value == 33
+                && (feature["flag"] as? NSNumber)?.uint64Value == EditorCoreUIFFIFeatures.multiDocumentSearchEnvelope.rawValue
         })
     }
 
@@ -520,6 +526,81 @@ final class EditorCoreUIFFITests: XCTestCase {
         }
         """
         let failure = try JSONTestHelpers.decode(EcuMultiDocumentSnapshotEnvelope.self, from: failureJSON)
+        XCTAssertFalse(failure.ok)
+        XCTAssertEqual(failure.statusKind, .error)
+        XCTAssertEqual(failure.value, .null)
+        XCTAssertEqual(failure.error?.code, "future_error")
+        XCTAssertEqual(failure.error?.message, "future failure")
+        XCTAssertNil(failure.error?.status)
+    }
+
+    func testMultiDocumentSearchEnvelopeReportsSuccess() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let multi = try MultiDocumentEditorUI(library: lib)
+        let alpha = try multi.openTab(text: "alpha world", viewportWidthCells: 80)
+        let beta = try multi.openTab(text: "beta world", viewportWidthCells: 80)
+
+        let envelope = try multi.searchAllTabsEnvelope(query: "world")
+        XCTAssertTrue(envelope.ok)
+        XCTAssertEqual(envelope.version, lib.abiVersion)
+        XCTAssertEqual(envelope.statusKind, .success)
+        XCTAssertNil(envelope.error)
+        guard case .object(let value)? = envelope.value,
+              case .array(let results)? = value["results"],
+              case .object(let first)? = results.first,
+              case .object(let second)? = results.dropFirst().first,
+              case .array(let firstMatches)? = first["matches"],
+              case .object(let firstMatch)? = firstMatches.first
+        else {
+            XCTFail("expected multi-document search result object")
+            return
+        }
+        XCTAssertEqual(first["tab_id"], .number(Double(alpha)))
+        XCTAssertEqual(firstMatch["start"], .number(6))
+        XCTAssertEqual(firstMatch["end"], .number(11))
+        XCTAssertEqual(second["tab_id"], .number(Double(beta)))
+    }
+
+    func testMultiDocumentSearchEnvelopeDecodesFutureFieldsAndUnknownStatus() throws {
+        let successJSON = """
+        {
+          "ok": true,
+          "status": "future_status",
+          "value": {
+            "results": [],
+            "future": true
+          },
+          "error": null,
+          "version": 9,
+          "futureTopLevel": true
+        }
+        """
+        let success = try JSONTestHelpers.decode(EcuMultiDocumentSearchEnvelope.self, from: successJSON)
+        XCTAssertTrue(success.ok)
+        XCTAssertEqual(success.statusKind, .unknown("future_status"))
+        XCTAssertNil(success.error)
+        guard case .object(let value)? = success.value else {
+            XCTFail("expected future multi-document search value")
+            return
+        }
+        XCTAssertEqual(value["results"], .array([]))
+        XCTAssertEqual(value["future"], .bool(true))
+
+        let failureJSON = """
+        {
+          "ok": false,
+          "status": "error",
+          "value": null,
+          "error": {
+            "code": "future_error",
+            "status": 999999,
+            "message": "future failure",
+            "futureErrorMetadata": true
+          },
+          "version": 10
+        }
+        """
+        let failure = try JSONTestHelpers.decode(EcuMultiDocumentSearchEnvelope.self, from: failureJSON)
         XCTAssertFalse(failure.ok)
         XCTAssertEqual(failure.statusKind, .error)
         XCTAssertEqual(failure.value, .null)

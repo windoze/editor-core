@@ -70,6 +70,8 @@ pub const ECU_FEATURE_WORKSPACE_DIAGNOSTICS_ENVELOPE: u64 = 1 << 30;
 pub const ECU_FEATURE_WORKSPACE_OUTLINE_SNAPSHOT_ENVELOPE: u64 = 1 << 31;
 /// Feature bit: multi-document tab/project snapshots can return structured result envelopes.
 pub const ECU_FEATURE_MULTI_DOCUMENT_SNAPSHOT_ENVELOPE: u64 = 1 << 32;
+/// Feature bit: multi-document all-tabs search can return structured result envelopes.
+pub const ECU_FEATURE_MULTI_DOCUMENT_SEARCH_ENVELOPE: u64 = 1 << 33;
 
 pub const ECU_FEATURE_FLAGS: u64 = ECU_FEATURE_JSON_COMMAND_DISPATCH
     | ECU_FEATURE_TYPED_DERIVED_SNAPSHOTS
@@ -103,7 +105,8 @@ pub const ECU_FEATURE_FLAGS: u64 = ECU_FEATURE_JSON_COMMAND_DISPATCH
     | ECU_FEATURE_WORKSPACE_EDIT_TRANSACTION_ENVELOPE
     | ECU_FEATURE_WORKSPACE_DIAGNOSTICS_ENVELOPE
     | ECU_FEATURE_WORKSPACE_OUTLINE_SNAPSHOT_ENVELOPE
-    | ECU_FEATURE_MULTI_DOCUMENT_SNAPSHOT_ENVELOPE;
+    | ECU_FEATURE_MULTI_DOCUMENT_SNAPSHOT_ENVELOPE
+    | ECU_FEATURE_MULTI_DOCUMENT_SEARCH_ENVELOPE;
 
 struct FeatureDescriptor {
     bit: u8,
@@ -310,6 +313,12 @@ const FEATURE_DESCRIPTORS: &[FeatureDescriptor] = &[
         flag: ECU_FEATURE_MULTI_DOCUMENT_SNAPSHOT_ENVELOPE,
         name: "multi_document_snapshot_envelope",
         description: "Multi-document tab/project snapshots can return structured result envelopes.",
+    },
+    FeatureDescriptor {
+        bit: 33,
+        flag: ECU_FEATURE_MULTI_DOCUMENT_SEARCH_ENVELOPE,
+        name: "multi_document_search_envelope",
+        description: "Multi-document all-tabs search can return structured result envelopes.",
     },
 ];
 
