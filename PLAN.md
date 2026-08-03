@@ -795,6 +795,12 @@
   - 验证记录：
     - `swift test --package-path swift --filter 'AttoEditorCommandTests.testSaveAllDirtyTabsUsesCoreTabProjectionOrder|AttoEditorCommandTests.testSaveActiveTabUsesCoreDocumentURIProjectionAndSyncsCoreDirtyState'`
     - `git diff --check`
+- 中间提交：`feat(app): project close active fallback from core tabs`
+  - 所属任务：阶段 5 的多文档/tab/split/project/session 迁移增量；让关闭当前 tab 后的下一选中 tab 使用 core `MultiDocumentEditorUi.close_tab` 后的 active tab fallback 投影，而不是用 Swift 本地 `tabs.last` 覆盖 core active state。
+  - 提交边界：只迁移 `closeTab(id:)` 的 selected-tab close fallback；关闭非选中 tab、dirty close/save/cancel、LSP close/shutdown、core close command、close callback URL 和 empty-state 语义保持不变。本提交不新增 Rust/FFI ABI，不实现 project/session ownership、tab drag/drop to split 或 pane layout tree。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testCloseActiveTabUsesCoreActiveFallbackProjection|AttoEditorCommandTests.testCloseTabGroupCommandsUseCoreTabProjection'`
+    - `git diff --check`
 
 ## 阶段 6: LSP workspace lifecycle 与 project-level 语言能力
 

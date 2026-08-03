@@ -983,16 +983,34 @@ extension AttoEditorAreaViewController {
         notifySessionStateChanged()
 
         if wasSelected {
-            if let next = tabs.indices.last {
-                selectTab(id: tabs[next].id)
-            } else {
-                selectedTabID = nil
-                showEmptyState()
-                refreshTabBar()
-                updateStatusBar()
-            }
+            selectTabAfterClosingSelectedTab()
         } else {
             refreshTabBar()
+        }
+    }
+
+    private func selectTabAfterClosingSelectedTab() {
+        guard tabs.isEmpty == false else {
+            selectedTabID = nil
+            showEmptyState()
+            refreshTabBar()
+            updateStatusBar()
+            return
+        }
+
+        if let projection = makeCoreProjectedTabs(),
+           let selectedID = projectedSelectedTabID(
+               snapshot: projection.snapshot,
+               projectedTabs: projection.tabs
+           ),
+           tabs.contains(where: { $0.id == selectedID })
+        {
+            selectTab(id: selectedID)
+            return
+        }
+
+        if let next = tabs.indices.last {
+            selectTab(id: tabs[next].id)
         }
     }
 

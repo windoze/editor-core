@@ -10610,6 +10610,50 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(window.title, "AttoEditor — second-active.txt")
     }
 
+    func testCloseActiveTabUsesCoreActiveFallbackProjection() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let firstURL = tempDir.appendingPathComponent("first-close-active.txt")
+        let secondURL = tempDir.appendingPathComponent("second-close-active.txt")
+        let thirdURL = tempDir.appendingPathComponent("third-close-active.txt")
+        try "first".write(to: firstURL, atomically: true, encoding: .utf8)
+        try "second".write(to: secondURL, atomically: true, encoding: .utf8)
+        try "third".write(to: thirdURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: firstURL, mode: .pinned)
+        vc.openFile(url: secondURL, mode: .pinned)
+        vc.openFile(url: thirdURL, mode: .pinned)
+
+        let firstTab = try XCTUnwrap(vc.tabs.first { $0.fileURL.standardizedFileURL == firstURL.standardizedFileURL })
+        let thirdTab = try XCTUnwrap(vc.tabs.first { $0.fileURL.standardizedFileURL == thirdURL.standardizedFileURL })
+        XCTAssertEqual(vc.selectedTabID, thirdTab.id)
+
+        let coreDocuments = try XCTUnwrap(vc.coreDocuments)
+        XCTAssertTrue(try coreDocuments.moveTab(fromIndex: 2, toIndex: 0))
+        XCTAssertEqual(try coreDocuments.snapshot().tabs.map(\.title), [
+            "third-close-active.txt",
+            "first-close-active.txt",
+            "second-close-active.txt",
+        ])
+
+        vc.closeActiveTab()
+
+        XCTAssertFalse(vc.tabs.contains { $0.id == thirdTab.id })
+        XCTAssertEqual(vc.selectedTabID, firstTab.id)
+        XCTAssertEqual(vc.activeTab?.id, firstTab.id)
+        let snapshot = try coreDocuments.snapshot()
+        XCTAssertEqual(snapshot.tabs.map(\.title), [
+            "first-close-active.txt",
+            "second-close-active.txt",
+        ])
+        XCTAssertEqual(snapshot.activeTabId, firstTab.coreTabID)
+    }
+
     func testWindowTitleUsesCoreDocumentURIProjection() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
