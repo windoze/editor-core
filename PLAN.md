@@ -789,6 +789,12 @@
   - 验证记录：
     - `swift test --package-path swift --filter 'AttoEditorCommandTests.testPreviewReplacementCloseCallbackUsesCoreDocumentURIProjection|AttoEditorCommandTests.testOpenPreviewUsesCorePreviewProjectionForReplacement'`
     - `git diff --check`
+- 中间提交：`feat(app): save dirty tabs in core order`
+  - 所属任务：阶段 5 的多文档/tab/split/project/session 迁移增量；让 AttoEditor Save All / close-window dirty Save All 路径按 core snapshot 的 tab order 遍历 dirty tabs，而不是按 Swift 本地 `tabs` 数组顺序。
+  - 提交边界：只迁移 `saveAllDirtyTabs()` 的 bulk traversal order；单 tab save、Save Panel、format-on-save、LSP didSave、dirty 判断和失败短路语义保持不变。本提交不新增 Rust/FFI ABI，不实现 project/session ownership、tab drag/drop to split 或 pane layout tree。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testSaveAllDirtyTabsUsesCoreTabProjectionOrder|AttoEditorCommandTests.testSaveActiveTabUsesCoreDocumentURIProjectionAndSyncsCoreDirtyState'`
+    - `git diff --check`
 
 ## 阶段 6: LSP workspace lifecycle 与 project-level 语言能力
 

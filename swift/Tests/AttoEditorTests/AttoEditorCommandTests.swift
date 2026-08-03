@@ -10446,6 +10446,54 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(savedCallback?.createdOnDisk, false)
     }
 
+    func testSaveAllDirtyTabsUsesCoreTabProjectionOrder() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let firstURL = tempDir.appendingPathComponent("first-save-all.txt")
+        let secondURL = tempDir.appendingPathComponent("second-save-all.txt")
+        let thirdURL = tempDir.appendingPathComponent("third-save-all.txt")
+        try "first\n".write(to: firstURL, atomically: true, encoding: .utf8)
+        try "second\n".write(to: secondURL, atomically: true, encoding: .utf8)
+        try "third\n".write(to: thirdURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: firstURL, mode: .pinned)
+        XCTAssertTrue(vc.executeActiveEditorCommandJSON(#"{"kind":"edit","op":"insert_text","text":"dirty "}"#))
+        vc.openFile(url: secondURL, mode: .pinned)
+        XCTAssertTrue(vc.executeActiveEditorCommandJSON(#"{"kind":"edit","op":"insert_text","text":"dirty "}"#))
+        vc.openFile(url: thirdURL, mode: .pinned)
+        XCTAssertTrue(vc.executeActiveEditorCommandJSON(#"{"kind":"edit","op":"insert_text","text":"dirty "}"#))
+
+        let coreDocuments = try XCTUnwrap(vc.coreDocuments)
+        XCTAssertTrue(try coreDocuments.moveTab(fromIndex: 2, toIndex: 0))
+        XCTAssertEqual(try coreDocuments.snapshot().tabs.map(\.title), [
+            "third-save-all.txt",
+            "first-save-all.txt",
+            "second-save-all.txt",
+        ])
+
+        var savedURLs: [URL] = []
+        vc.onDidSaveFile = { url, _ in
+            savedURLs.append(url.standardizedFileURL)
+        }
+
+        XCTAssertTrue(vc.saveAllDirtyTabs())
+
+        XCTAssertEqual(savedURLs, [
+            thirdURL.standardizedFileURL,
+            firstURL.standardizedFileURL,
+            secondURL.standardizedFileURL,
+        ])
+        XCTAssertEqual(try String(contentsOf: firstURL, encoding: .utf8), "dirty first\n")
+        XCTAssertEqual(try String(contentsOf: secondURL, encoding: .utf8), "dirty second\n")
+        XCTAssertEqual(try String(contentsOf: thirdURL, encoding: .utf8), "dirty third\n")
+        XCTAssertTrue(try coreDocuments.snapshot().tabs.allSatisfy { $0.isModified == false })
+    }
+
     func testSelectAndOpenFileUseCoreDocumentURIProjection() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

@@ -936,7 +936,7 @@ extension AttoEditorAreaViewController {
     }
 
     func saveAllDirtyTabs() -> Bool {
-        for tab in tabs {
+        for tab in projectedTabsForBulkOperations() {
             if isTabDirtyForDataLossDecision(tab) {
                 if saveTabWithSavePanelIfNeeded(tab) == false {
                     return false
@@ -944,6 +944,14 @@ extension AttoEditorAreaViewController {
             }
         }
         return true
+    }
+
+    private func projectedTabsForBulkOperations() -> [AttoEditorTab] {
+        if let projection = makeCoreProjectedTabs() {
+            return projection.tabs.map(\.tab)
+        }
+
+        return tabs
     }
 
     func closeTab(id: UUID) {
