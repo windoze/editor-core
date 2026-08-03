@@ -777,6 +777,12 @@
   - 验证记录：
     - `swift test --package-path swift --filter 'AttoEditorCommandTests.testDirtyCloseConfirmationUsesCoreDocumentURIProjection|AttoEditorCommandTests.testCloseTabCallbackUsesCoreDocumentURIProjection'`
     - `git diff --check`
+- 中间提交：`feat(app): replace preview tabs from core state`
+  - 所属任务：阶段 5 的多文档/tab/split/project/session 迁移增量；让 AttoEditor 打开新的 preview 文件和把已有 preview tab 重新打开为 pinned 的路径使用 core snapshot 的 `is_preview` / tab order 投影，而不是只依赖 Swift 本地 `isPreview`。
+  - 提交边界：只迁移 `openFile(url:mode:isUntitled:)` 的 existing-tab pinned 判断和 preview replacement 目标选择；保留 dirty preview tab 的 pin 保护和 Swift fallback。本提交不新增 Rust/FFI ABI，不实现 drag/drop tab-to-split、跨 pane tab move、pane layout tree 或完整 core-owned project/session ownership。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testOpenPreviewUsesCorePreviewProjectionForReplacement|AttoEditorCommandTests.testOpenPinnedExistingTabUsesCorePreviewProjection|AttoPreviewTabDoubleClickTests.testDoubleClickPreviewTabPinsInsteadOfReplacing'`
+    - `git diff --check`
 
 ## 阶段 6: LSP workspace lifecycle 与 project-level 语言能力
 

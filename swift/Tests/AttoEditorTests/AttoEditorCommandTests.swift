@@ -8427,6 +8427,70 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertFalse(secondItem.isPreview)
     }
 
+    func testOpenPreviewUsesCorePreviewProjectionForReplacement() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let firstURL = tempDir.appendingPathComponent("first-preview.txt")
+        let secondURL = tempDir.appendingPathComponent("second-preview.txt")
+        try "first".write(to: firstURL, atomically: true, encoding: .utf8)
+        try "second".write(to: secondURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        XCTAssertTrue(vc.openFile(url: firstURL, mode: .preview))
+        let firstTab = try XCTUnwrap(vc.activeTab)
+        let firstTabID = firstTab.id
+        let firstCoreTabID = try XCTUnwrap(firstTab.coreTabID)
+        let coreDocuments = try XCTUnwrap(vc.coreDocuments)
+        XCTAssertTrue(try coreDocuments.isPreviewTab(firstCoreTabID))
+
+        firstTab.isPreview = false
+        XCTAssertTrue(vc.openFile(url: secondURL, mode: .preview))
+
+        XCTAssertFalse(vc.tabs.contains { $0.id == firstTabID })
+        XCTAssertEqual(vc.tabs.count, 1)
+        let replacementTab = try XCTUnwrap(vc.activeTab)
+        XCTAssertEqual(replacementTab.coreTabID, firstCoreTabID)
+        XCTAssertEqual(replacementTab.fileURL.standardizedFileURL, secondURL.standardizedFileURL)
+        XCTAssertTrue(try coreDocuments.isPreviewTab(firstCoreTabID))
+        let items = vc.openFileItems()
+        XCTAssertEqual(items.map { $0.url.standardizedFileURL }, [secondURL.standardizedFileURL])
+        XCTAssertEqual(items.map(\.isPreview), [true])
+        let snapshot = try coreDocuments.snapshot()
+        XCTAssertEqual(snapshot.tabs.map(\.documentURI), [secondURL.standardizedFileURL.absoluteString])
+        XCTAssertEqual(snapshot.tabs.map(\.isPreview), [true])
+    }
+
+    func testOpenPinnedExistingTabUsesCorePreviewProjection() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("existing-preview.txt")
+        try "preview".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        XCTAssertTrue(vc.openFile(url: fileURL, mode: .preview))
+        let tab = try XCTUnwrap(vc.activeTab)
+        let coreTabID = try XCTUnwrap(tab.coreTabID)
+        let coreDocuments = try XCTUnwrap(vc.coreDocuments)
+        XCTAssertTrue(try coreDocuments.isPreviewTab(coreTabID))
+
+        tab.isPreview = false
+        XCTAssertTrue(vc.openFile(url: fileURL, mode: .pinned))
+
+        XCTAssertEqual(vc.activeTab?.id, tab.id)
+        XCTAssertFalse(tab.isPreview)
+        XCTAssertFalse(try coreDocuments.isPreviewTab(coreTabID))
+        let item = try XCTUnwrap(vc.openFileItems().first { $0.id == tab.id })
+        XCTAssertFalse(item.isPreview)
+    }
+
     func testWorkspaceRootChangeNotifiesOpenTabLspWorkspaceFolders() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

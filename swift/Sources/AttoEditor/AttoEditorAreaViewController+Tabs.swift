@@ -458,7 +458,7 @@ extension AttoEditorAreaViewController {
     @discardableResult
     func openFile(url: URL, mode: OpenMode, isUntitled: Bool = false) -> Bool {
         if let existing = projectedTab(forFileURL: url) {
-            if mode == .pinned, existing.isPreview {
+            if mode == .pinned, projectedIsPreview(existing) {
                 existing.isPreview = false
                 pinCoreTabIfPreview(existing)
             }
@@ -473,7 +473,7 @@ extension AttoEditorAreaViewController {
         do {
             switch mode {
             case .preview:
-                if let previewIdx = tabs.firstIndex(where: { $0.isPreview }) {
+                if let previewIdx = projectedPreviewReplacementIndex() {
                     // Safety: never discard dirty state; pin the preview tab if it got edited.
                     if isTabDirtyForDataLossDecision(tabs[previewIdx]) {
                         tabs[previewIdx].isPreview = false
@@ -515,6 +515,16 @@ extension AttoEditorAreaViewController {
             NSLog("AttoEditor: failed to open file %@: %@", url.path, String(describing: error))
             return false
         }
+    }
+
+    private func projectedPreviewReplacementIndex() -> Int? {
+        if let projection = makeCoreProjectedTabs() {
+            return projection.tabs.first(where: { $0.coreTab.isPreview }).flatMap { projected in
+                tabs.firstIndex(where: { $0.id == projected.tab.id })
+            }
+        }
+
+        return tabs.firstIndex(where: { $0.isPreview })
     }
 
     @discardableResult
