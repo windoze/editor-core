@@ -1541,6 +1541,12 @@
   - 验证记录：
     - `swift test --package-path swift --filter 'Atto(EditorPreferencesApplication|ConfigurationSettings|Preferences)Tests'`
     - `git diff --check`
+- 中间提交：`feat(app): apply runtime configuration overrides`
+  - 所属任务：阶段 9 的配置、偏好与 capability DTO 完整性增量；把 settings resolution 中已有的 runtime override 层接入 AttoEditor App 的实际窗口配置解析路径。
+  - 提交边界：`AttoAppDelegate` 新增 process-local runtime `AttoConfigurationSettings` override 状态；创建窗口和偏好重应用时按 base → user → workspace → runtime 顺序解析 `AttoConfigurationSnapshot`，并立即更新已打开 editor 的 theme、font、ligatures、wrap 和 auto-pairs。该提交不实现 runtime override 的用户 UI 或持久化，不实现 Sublime settings scope selector 规则、不实现迁移/损坏文件备份、不新增 Rust/FFI ABI，也不完成 core/headless capability negotiation。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'Atto(EditorPreferencesApplication|ConfigurationSettings|Preferences)Tests'`
+    - `git diff --check`
 
 ## 阶段 10: ABI 版本、错误模型与兼容性门禁
 

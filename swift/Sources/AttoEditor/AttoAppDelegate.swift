@@ -187,6 +187,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     private let recentCommandStore: AttoRecentCommandStore?
     private let macroStore: AttoMacroStore?
     private let settingsStore: AttoConfigurationSettingsStore
+    private var runtimeConfigurationSettings: AttoConfigurationSettings?
     private var macroImportSelectionProvider: (() -> (url: URL, name: String)?)?
     private var macroExportSelectionProvider: (([String]) -> (name: String, url: URL)?)?
     private var macroDeleteConfirmationProvider: (([String]) -> Bool)?
@@ -1458,6 +1459,10 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         applyEditorPreferencesToAllWindows()
     }
 
+    func _setRuntimeConfigurationSettingsForTesting(_ settings: AttoConfigurationSettings?) {
+        setRuntimeConfigurationSettings(settings)
+    }
+
     @discardableResult
     func executeCommand(id commandID: String) -> Bool {
         executeCommand(id: commandID, explicitArguments: nil)
@@ -2671,6 +2676,15 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         }
     }
 
+    private func setRuntimeConfigurationSettings(_ settings: AttoConfigurationSettings?) {
+        if let settings, settings.isEmpty == false {
+            runtimeConfigurationSettings = settings
+        } else {
+            runtimeConfigurationSettings = nil
+        }
+        applyEditorPreferencesToAllWindows()
+    }
+
     private func configurationSnapshot(forWorkspaceRootURL workspaceRootURL: URL) -> AttoConfigurationSnapshot {
         let base = AttoPreferences.shared.effectiveConfigurationSnapshot(workspaceRootURL: workspaceRootURL)
 
@@ -2701,7 +2715,11 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             )
         }
 
-        return base.resolvingSettings(user: userSettings, workspace: workspaceSettings).snapshot
+        return base.resolvingSettings(
+            user: userSettings,
+            workspace: workspaceSettings,
+            runtime: runtimeConfigurationSettings
+        ).snapshot
     }
 
     private func quickOpenCommands() -> [AttoCommandPaletteCommand] {

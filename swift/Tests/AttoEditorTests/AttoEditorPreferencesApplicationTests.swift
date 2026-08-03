@@ -80,6 +80,70 @@ final class AttoEditorPreferencesApplicationTests: XCTestCase {
         XCTAssertTrue(try viewportLines(editorView.editor).contains { ($0["is_wrapped_part"] as? Bool) == true })
     }
 
+    func testRuntimeConfigurationSettingsOverrideUserAndWorkspaceSettings() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorRuntimeConfigurationTests-\(UUID().uuidString)", isDirectory: true)
+        let workspaceRootURL = tempDir.appendingPathComponent("Workspace", isDirectory: true)
+        try FileManager.default.createDirectory(at: workspaceRootURL, withIntermediateDirectories: true)
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: tempDir)
+        }
+
+        let fileURL = workspaceRootURL.appendingPathComponent("wrap.txt")
+        try "abcdefghijklmnop\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let settingsStore = AttoConfigurationSettingsStore(
+            userSettingsURL: tempDir.appendingPathComponent("user-settings.json")
+        )
+        try settingsStore.saveUserSettings(AttoConfigurationSettings(
+            editor: AttoEditorPreferenceSettings(fontSizePoints: 17, wrapMode: "char"),
+            rendering: AttoRenderingPreferenceSettings(themeName: "Atto Light")
+        ))
+        try settingsStore.saveWorkspaceSettings(AttoConfigurationSettings(
+            editor: AttoEditorPreferenceSettings(wrapMode: "none"),
+            rendering: AttoRenderingPreferenceSettings(themeName: "Atto Dark")
+        ), workspaceRootURL: workspaceRootURL)
+
+        let delegate = AttoAppDelegate(
+            keyBindings: [:],
+            configurationSettingsStore: settingsStore
+        )
+        delegate._setRuntimeConfigurationSettingsForTesting(AttoConfigurationSettings(
+            editor: AttoEditorPreferenceSettings(fontSizePoints: 22, wrapMode: "char"),
+            rendering: AttoRenderingPreferenceSettings(themeName: "Atto Light")
+        ))
+
+        let ctx = delegate._createWindowForTesting(workspaceRootURL: workspaceRootURL)
+        addTeardownBlock {
+            ctx.window.close()
+        }
+
+        var snapshot = ctx.editorAreaController._configurationSnapshotForTesting()
+        XCTAssertEqual(snapshot.editor.fontSizePoints, 22)
+        XCTAssertEqual(snapshot.editor.wrapMode, "char")
+        XCTAssertEqual(snapshot.rendering.themeName, "Atto Light")
+
+        ctx.editorAreaController.openFile(url: fileURL, mode: .pinned)
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: ctx.editorAreaController.view))
+        try editorView.editor.setViewportWidthCells(4)
+        XCTAssertTrue(try viewportLines(editorView.editor).contains { ($0["is_wrapped_part"] as? Bool) == true })
+        XCTAssertEqual(editorView.fontSizePoints, CGFloat(22))
+
+        delegate._setRuntimeConfigurationSettingsForTesting(AttoConfigurationSettings(
+            editor: AttoEditorPreferenceSettings(wrapMode: "none"),
+            rendering: AttoRenderingPreferenceSettings(themeName: "Atto Dark")
+        ))
+
+        snapshot = ctx.editorAreaController._configurationSnapshotForTesting()
+        XCTAssertEqual(snapshot.editor.fontSizePoints, 17)
+        XCTAssertEqual(snapshot.editor.wrapMode, "none")
+        XCTAssertEqual(snapshot.rendering.themeName, "Atto Dark")
+
+        try editorView.editor.setViewportWidthCells(4)
+        XCTAssertFalse(try viewportLines(editorView.editor).contains { ($0["is_wrapped_part"] as? Bool) == true })
+        XCTAssertEqual(editorView.fontSizePoints, CGFloat(17))
+    }
+
     func testWrapModePreferenceAppliesToNewEditor() throws {
         let noWrap = try openEditor(wrapMode: .none)
         try noWrap.editor.setViewportWidthCells(4)
