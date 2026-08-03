@@ -482,6 +482,14 @@
     - `swift test --package-path swift --filter AttoWorkspaceEditSummaryTests`
     - `git diff --check`
 
+- 中间提交：`feat(app): gate blocking workspace edit conflicts`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；让 AttoEditor App 的 WorkspaceEdit preview confirmation 把 `preview.canApply == false` 作为硬 gate，避免 atomic blocking conflict 被测试决策 hook、无窗口 fallback 或后续 apply path 绕过。
+  - 提交边界：只调整 Swift/App confirmation 和 parser 消费路径；blocking conflict 会在调用 core apply transaction 前返回 false、保留具体 status feedback，并允许测试 hook 捕获 preview 但不能覆盖 gate；`AttoWorkspaceEditParser` 兼容解析 `{"applyMode":"atomic","workspaceEdit":{...}}` transaction envelope 以保证 App 入口和 core transaction API 接受同一 payload。本提交不新增 Rust/FFI ABI，不改变 core apply/preview/undo/redo 语义，不实现自动修复、跨 transaction conflict resolution 或 project-level conflict owner。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoWorkspaceEditParserTests.testParseUnwrapsWorkspaceEditTransactionEnvelope`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEditPreviewBlocksAtomicConflictEvenWhenDecisionProviderApplies`
+    - `git diff --check`
+
 ## 阶段 5: 多文档、tab、split、project、session 完整迁移
 
 ### 目标

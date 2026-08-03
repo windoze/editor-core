@@ -84,6 +84,41 @@ final class AttoWorkspaceEditParserTests: XCTestCase {
         )
     }
 
+    func testParseUnwrapsWorkspaceEditTransactionEnvelope() throws {
+        let edit = """
+        {
+          "applyMode": "atomic",
+          "workspaceEdit": {
+            "changes": {
+              "file:///project/a.swift": [
+                {
+                  "range": {
+                    "start": { "line": 0, "character": 0 },
+                    "end": { "line": 0, "character": 1 }
+                  },
+                  "newText": "A"
+                }
+              ]
+            },
+            "documentChanges": [
+              { "kind": "delete", "uri": "file:///project/remove.swift" }
+            ]
+          }
+        }
+        """
+
+        let parsed = try XCTUnwrap(AttoWorkspaceEditParser.parse(edit))
+
+        XCTAssertEqual(parsed.documents.map(\.uri), ["file:///project/a.swift"])
+        XCTAssertEqual(parsed.documents.first?.edits.first?.newText, "A")
+        XCTAssertEqual(
+            parsed.resourceOperations,
+            [
+                .delete(.init(uri: "file:///project/remove.swift", recursive: false, ignoreIfNotExists: false)),
+            ]
+        )
+    }
+
     func testParseTypedWorkspaceEditMatchesJSONPath() throws {
         let edit = try JSONDecoder().decode(EcuLspWorkspaceEdit.self, from: Data("""
         {

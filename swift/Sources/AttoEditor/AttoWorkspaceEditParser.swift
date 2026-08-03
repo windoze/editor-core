@@ -115,19 +115,29 @@ enum AttoWorkspaceEditParser {
             return nil
         }
 
+        let workspaceEditObject: [String: Any]
+        if let nestedWorkspaceEdit = object["workspaceEdit"] {
+            guard let nestedObject = nestedWorkspaceEdit as? [String: Any] else {
+                return nil
+            }
+            workspaceEditObject = nestedObject
+        } else {
+            workspaceEditObject = object
+        }
+
         var documentsByURI: [String: [TextEdit]] = [:]
         var documentOrder: [String] = []
         var resourceOperations: [ResourceOperation] = []
         var unsupportedURIs: [String] = []
 
-        if let changes = object["changes"] as? [String: Any] {
+        if let changes = workspaceEditObject["changes"] as? [String: Any] {
             for uri in changes.keys.sorted() {
                 appendDocumentURI(uri, to: &documentOrder, documentsByURI: &documentsByURI)
                 documentsByURI[uri, default: []].append(contentsOf: textEdits(from: changes[uri]))
             }
         }
 
-        if let documentChanges = object["documentChanges"] as? [Any] {
+        if let documentChanges = workspaceEditObject["documentChanges"] as? [Any] {
             for change in documentChanges {
                 guard let changeObject = change as? [String: Any] else { continue }
 

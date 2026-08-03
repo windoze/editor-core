@@ -6458,6 +6458,76 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: otherURL, encoding: .utf8), "other\n")
     }
 
+    func testWorkspaceEditPreviewBlocksAtomicConflictEvenWhenDecisionProviderApplies() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let dirtyURL = tempDir.appendingPathComponent("atomic-dirty-delete.txt")
+        let otherURL = tempDir.appendingPathComponent("atomic-other.txt")
+        try "dirty\n".write(to: dirtyURL, atomically: true, encoding: .utf8)
+        try "other\n".write(to: otherURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: dirtyURL, mode: .pinned)
+        XCTAssertTrue(vc.executeActiveEditorCommandJSON(#"{"kind":"edit","op":"insert_text","text":"!"}"#))
+
+        var capturedPreview: AttoWorkspaceEditPreview?
+        vc._setWorkspaceEditPreviewDecisionProviderForTesting { preview in
+            capturedPreview = preview
+            return .apply
+        }
+        let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
+
+        let workspaceEdit = """
+        {
+          "applyMode": "atomic",
+          "workspaceEdit": {
+            "documentChanges": [
+              {
+                "textDocument": {
+                  "uri": "\(otherURL.absoluteString)"
+                },
+                "edits": [
+                  {
+                    "range": {
+                      "start": { "line": 0, "character": 0 },
+                      "end": { "line": 0, "character": 0 }
+                    },
+                    "newText": "X"
+                  }
+                ]
+              },
+              {
+                "kind": "delete",
+                "uri": "\(dirtyURL.absoluteString)"
+              }
+            ]
+          }
+        }
+        """
+
+        XCTAssertFalse(vc.applyWorkspaceEditJSONToActiveTab(workspaceEdit))
+        XCTAssertEqual(
+            try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting()),
+            coreTransactionCursor
+        )
+
+        let preview = try XCTUnwrap(capturedPreview)
+        XCTAssertEqual(preview.applyMode, "atomic")
+        XCTAssertFalse(preview.canApply)
+        XCTAssertEqual(preview.applyButtonTitle, "Resolve Conflicts First")
+        XCTAssertTrue(preview.displayText.contains("will block atomic apply"))
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "Resolve WorkspaceEdit conflicts before applying")
+
+        XCTAssertEqual(try String(contentsOf: otherURL, encoding: .utf8), "other\n")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dirtyURL.path))
+        let dirtyItem = try XCTUnwrap(vc.openFileItems().first { $0.url.standardizedFileURL == dirtyURL.standardizedFileURL })
+        XCTAssertTrue(dirtyItem.isDirty)
+    }
+
     func testWorkspaceEditPreviewTextUsesCoreDocumentURIProjection() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

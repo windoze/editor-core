@@ -205,7 +205,9 @@ extension AttoEditorAreaViewController {
                 workspaceEditJSON: workspaceEditJSON,
                 editorView: feedbackEditorView
             ) else {
-                setTransientStatusText("Workspace edit cancelled")
+                if transientStatusText != "Resolve WorkspaceEdit conflicts before applying" {
+                    setTransientStatusText("Workspace edit cancelled")
+                }
                 return false
             }
             let projectedURLsBeforeApply = projectedFileURLsByTabID()
@@ -291,6 +293,12 @@ extension AttoEditorAreaViewController {
         _ preview: AttoWorkspaceEditPreview,
         editorView: EditorCoreSkiaView
     ) -> Bool {
+        guard preview.canApply else {
+            _ = workspaceEditPreviewDecisionProviderForTesting?(preview)
+            setTransientStatusText("Resolve WorkspaceEdit conflicts before applying")
+            NSSound.beep()
+            return false
+        }
         if let decisionProvider = workspaceEditPreviewDecisionProviderForTesting {
             return decisionProvider(preview) == .apply
         }
