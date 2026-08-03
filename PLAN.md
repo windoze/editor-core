@@ -1359,6 +1359,15 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testCommandRegistryCarriesMetadataAndAvailability`
     - `swift test --package-path swift --filter AttoAccessibilityIdentifierTests.testCommandPaletteShowsCommandGroupsAndFiltersByMetadata`
     - `git diff --check`
+- 中间提交：`feat(app): persist recent palette commands`
+  - 所属任务：阶段 8 的 Command、menu、keymap、palette 与 Sublime 行为矩阵增量；把主命令 palette recent command ordering 从单 delegate 内存状态推进到跨启动可恢复的持久状态。
+  - 提交边界：新增 `AttoRecentCommandStore`，默认 App delegate 使用 `UserDefaults.standard` 保存最近 command id，测试构造 delegate 默认不读写全局 defaults；recent list 读取和保存都会去空、去重并限制最大数量；成功触发的统一 command id 路径仍是唯一写入点。本提交不持久化命令参数、不实现参数 prompt/replay、不改变 Quick Open/LSP result palette、不实现宏录制/回放或插件命令入口。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testCommandPalettePersistsRecentCommandsAcrossDelegates`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testCommandPaletteOrdersRecentCommandsFirst`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testExecuteCommandUsesRegisteredCommandIDs`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testExecuteCommandAcceptsTypedArgumentsForParameterizedCommands`
+    - `git diff --check`
 
 ## 阶段 9: 配置、偏好与 capability DTO 完整性
 

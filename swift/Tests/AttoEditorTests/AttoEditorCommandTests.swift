@@ -4773,6 +4773,44 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(delegate._recentCommandIDsForTesting(), recentBeforeInvalidArguments)
     }
 
+    func testCommandPalettePersistsRecentCommandsAcrossDelegates() throws {
+        let suiteName = "AttoEditorCommandTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = AttoRecentCommandStore(userDefaults: defaults)
+        let firstDelegate = AttoAppDelegate(keyBindings: [:], recentCommandStore: store)
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("recent-persist.txt")
+        try "abc\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let ctx = firstDelegate._createWindowForTesting(workspaceRootURL: tempDir)
+        defer { ctx.window.close() }
+        ctx.editorAreaController.openFile(url: fileURL, mode: .pinned)
+
+        XCTAssertTrue(firstDelegate.executeCommand(id: "cursor.move_right"))
+        XCTAssertTrue(firstDelegate.executeCommand(id: "editor.duplicate_lines"))
+        XCTAssertEqual(Array(firstDelegate._recentCommandIDsForTesting().prefix(2)), [
+            "editor.duplicate_lines",
+            "cursor.move_right",
+        ])
+
+        let secondDelegate = AttoAppDelegate(keyBindings: [:], recentCommandStore: store)
+        XCTAssertEqual(Array(secondDelegate._recentCommandIDsForTesting().prefix(2)), [
+            "editor.duplicate_lines",
+            "cursor.move_right",
+        ])
+        XCTAssertEqual(
+            secondDelegate._defaultCommandsForTesting().prefix(2).map(\.id),
+            ["editor.duplicate_lines", "cursor.move_right"]
+        )
+    }
+
     func testExecuteCommandAcceptsTypedArgumentsForParameterizedCommands() throws {
         let delegate = AttoAppDelegate(keyBindings: [:])
         let tempDir = FileManager.default.temporaryDirectory

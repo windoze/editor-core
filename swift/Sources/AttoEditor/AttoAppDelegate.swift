@@ -5,6 +5,42 @@ import EditorCoreUIFFI
 import Foundation
 
 @MainActor
+struct AttoRecentCommandStore {
+    private static let defaultKey = "AttoEditor.RecentCommandIDs"
+
+    private let userDefaults: UserDefaults
+    private let key: String
+
+    static let appDefault = AttoRecentCommandStore(userDefaults: .standard)
+
+    init(userDefaults: UserDefaults, key: String = AttoRecentCommandStore.defaultKey) {
+        self.userDefaults = userDefaults
+        self.key = key
+    }
+
+    func load(maxCount: Int) -> [String] {
+        sanitize(userDefaults.stringArray(forKey: key) ?? [], maxCount: maxCount)
+    }
+
+    func save(_ commandIDs: [String], maxCount: Int) {
+        userDefaults.set(sanitize(commandIDs, maxCount: maxCount), forKey: key)
+    }
+
+    private func sanitize(_ commandIDs: [String], maxCount: Int) -> [String] {
+        var out: [String] = []
+        var seen: Set<String> = []
+        for commandID in commandIDs {
+            let trimmed = commandID.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard trimmed.isEmpty == false, seen.contains(trimmed) == false else { continue }
+            seen.insert(trimmed)
+            out.append(trimmed)
+            if out.count >= maxCount { break }
+        }
+        return out
+    }
+}
+
+@MainActor
 final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var commandPaletteController: AttoCommandPaletteController?
     private var quickOpenController: AttoCommandPaletteController?
@@ -26,6 +62,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     private var keySequenceStatusHandler: ((String?) -> Void)?
     private var keyEventMonitor: Any?
     private var recentCommandIDs: [String] = []
+    private let recentCommandStore: AttoRecentCommandStore?
 
     private static let maxRecentCommandCount = 12
 
@@ -42,6 +79,8 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         self.keyBindingArguments = keymap.arguments
         self.keymapResolver = keymapResolver
         self.keySequencePrefixTimeoutSeconds = 1.0
+        self.recentCommandStore = .appDefault
+        self.recentCommandIDs = recentCommandStore?.load(maxCount: Self.maxRecentCommandCount) ?? []
         super.init()
     }
 
@@ -51,7 +90,8 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         keySequences: [String: AttoKeySequence] = [:],
         keySequencePrefixTimeoutSeconds: TimeInterval = 1.0,
         keySequenceStatusHandler: ((String?) -> Void)? = nil,
-        keymapResolver: ((AttoKeymapContext) -> AttoKeymapResolution)? = nil
+        keymapResolver: ((AttoKeymapContext) -> AttoKeymapResolution)? = nil,
+        recentCommandStore: AttoRecentCommandStore? = nil
     ) {
         self.keyBindings = keyBindings
         self.keySequences = keySequences
@@ -59,6 +99,8 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         self.keymapResolver = keymapResolver
         self.keySequencePrefixTimeoutSeconds = keySequencePrefixTimeoutSeconds
         self.keySequenceStatusHandler = keySequenceStatusHandler
+        self.recentCommandStore = recentCommandStore
+        self.recentCommandIDs = recentCommandStore?.load(maxCount: Self.maxRecentCommandCount) ?? []
         super.init()
     }
 
@@ -1110,6 +1152,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         if recentCommandIDs.count > Self.maxRecentCommandCount {
             recentCommandIDs.removeLast(recentCommandIDs.count - Self.maxRecentCommandCount)
         }
+        recentCommandStore?.save(recentCommandIDs, maxCount: Self.maxRecentCommandCount)
     }
 
     private func commandIsEnabled(commandID: String) -> Bool {

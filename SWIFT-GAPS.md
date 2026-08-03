@@ -148,6 +148,7 @@ Swift 侧已经具备以下基础能力：
 - 阶段 313 继续补齐阶段 7 的统一 LSP Workbench error metadata：Document Colors 的 unavailable/request failed/timeout/take failed 分支，以及 Hierarchy 的 unavailable/position failed/prepare request failed/prepare timeout/take failed/children request failed/children timeout/take failed 分支，现在会把最近 `document_colors` / `hierarchy` result event 标为 Error；测试已改为已有结果后走真实 disabled request 路径验证 Workbench error 自动传播。仍缺统一 pin/history 数据模型、真正内嵌 dock/workbench 容器和跨 tab/project result history。
 - 阶段 314 开始推进阶段 8 的 command palette source category：主命令 palette 现在可显示 command registry 分组，row 文本为 `Group - Title`，并且 fuzzy 搜索会同时匹配 title、group 和 command id；LSP/Project/Quick Open 等 quick/result palette 默认保持原有标题展示。仍缺 recent commands、宏录制/回放、package/plugin command 入口和更完整 Sublime keymap 语义矩阵。
 - 阶段 315 继续推进阶段 8 的 command palette recent commands：App 现在维护 bounded in-memory recent command id 列表，统一 `executeCommand` / palette command wrapper 成功触发命令后会移动到最近列表顶部；主命令 palette 会把这些最近命令排在静态命令之前，重复触发去重，无效参数或未知/禁用命令不污染历史。仍缺跨启动持久化、参数 prompt/replay、宏录制/回放、package/plugin command 入口和更完整 Sublime keymap 语义矩阵。
+- 阶段 316 继续推进阶段 8 的 command palette recent commands：最近 command id 现在通过 `AttoRecentCommandStore` 持久化，默认 App delegate 使用 `UserDefaults.standard` 跨启动恢复，测试构造 delegate 默认不读写全局 defaults；recent list 读取/保存会去空、去重并限制最大数量。仍缺参数 prompt/replay、宏录制/回放、package/plugin command 入口和更完整 Sublime keymap 语义矩阵。
 - 2026-08-01 阶段 6 第一部分已完成：Swift UI binding 新增一组 LSP interactive request/take raw result API，覆盖 declaration、type definition、implementation、references、completion、signature help、document symbols、workspace symbols。
 - 阶段 6 第一部分在 Rust UI 内部把 hover/definition 的专用 result cache 泛化为按 LSP result slot 管理；document symbols response 会同步写入 core outline，供 `documentSymbolsJSON()` 读取。
 - 2026-08-01 阶段 6 第二部分已完成：AttoEditor command palette 和 Go 菜单新增 LSP location commands，覆盖 go to definition/declaration/type definition/implementation/find references；cmd-click definition 也复用同一套 location request/poll/navigate 路径。
@@ -1359,7 +1360,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 
 主要缺口：
 
-- command registry 已有基础命令启用/禁用状态、分组元数据、参数 schema、runtime feature requirement、宏录制策略和静态 editor-core JSON payload 元数据；主 command palette 已开始展示 source category，可按 title/group/id fuzzy 搜索，并已有 bounded in-memory recent command ordering；keymap 已有基础 context 条件过滤、快捷键冲突解析、`args` 执行路由、多键序列 dispatcher，以及阶段 237 补齐的 core-projected document URI context 起点。仍缺跨启动 recent 持久化、更完整的插件/宏运行时、命令上下文模型和完整 Sublime keymap 语义矩阵。
+- command registry 已有基础命令启用/禁用状态、分组元数据、参数 schema、runtime feature requirement、宏录制策略和静态 editor-core JSON payload 元数据；主 command palette 已开始展示 source category，可按 title/group/id fuzzy 搜索，并已有可跨启动恢复的 bounded recent command ordering；keymap 已有基础 context 条件过滤、快捷键冲突解析、`args` 执行路由、多键序列 dispatcher，以及阶段 237 补齐的 core-projected document URI context 起点。仍缺参数 prompt/replay、更完整的插件/宏运行时、命令上下文模型和完整 Sublime keymap 语义矩阵。
 - command palette、主菜单和 keymap 已覆盖一批 Sublime 基础编辑命令；LSP location、symbols quick panels、completion popup、signature help、rename 和 code action 主路径已接入，但更深层 LSP/项目级命令仍不完整。
 - P0 菜单、command palette、keymap 和测试已开始统一使用 command id；基础参数化命令可通过 typed arguments 执行，但更深层的命令上下文、插件/宏回放策略和 keymap 冲突解析仍缺。
 - 一些 core/LSP 命令仍没有 App 命令入口。
@@ -1499,6 +1500,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 已完成：AttoEditor command registry 已接入 runtime feature requirement，LSP/WorkspaceEdit 可选 feature 缺失时会按命令禁用相关菜单、palette 项和 `executeCommand` 路径，而基础编辑命令保持可用。
 - 已完成：AttoEditor 主命令 palette 已开始展示 command registry 分组，并能按命令 title、group 和 command id 搜索；LSP/Project/Quick Open 等结果 palette 仍保持原有简洁标题。
 - 已完成：AttoEditor 主命令 palette 已有 bounded in-memory recent command ordering，统一 command id 路径成功触发的命令会在下一次打开 palette 时排到前面。
+- 已完成：AttoEditor 主命令 palette 的 recent command ordering 已通过 `AttoRecentCommandStore` 跨启动持久化，默认 App 启动可恢复最近命令顺序。
 - 已完成：AttoEditor keymap 已支持 arrow/navigation function-key token，move lines up/down 已有默认 arrow-key 绑定。
 - 已完成：AttoEditor keymap 已支持基础 `context` 条件过滤和快捷键冲突解析，`resolvedKeymap(...)` 可暴露 conflicts 供测试和后续 UI/诊断使用。
 - 已完成：AttoEditor keymap 已支持用户条目 `args` 解码，并能通过菜单/shortcut command 路径调用 `executeCommand(id:arguments:)` 执行参数化命令。
