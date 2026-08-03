@@ -1744,6 +1744,12 @@
     - `swift test --package-path swift --filter 'AttoPreferencesTests'`
     - `swift test --package-path swift --filter 'Atto(ConfigurationSettings|EditorPreferencesApplication|Preferences)Tests'`
     - `git diff --check`
+- 中间提交：`feat(app): resolve scoped editor settings`
+  - 所属任务：阶段 9 的配置、偏好与 capability DTO 完整性增量；为 `settings scopes` 建立 typed resolver 起点，让 user/workspace/runtime settings overlay 可以按文档 URL、文件名/扩展名、语言 id 和简化 Sublime-style `source.*`/`text.*` selector 匹配后再覆盖 editor/rendering/language 配置。
+  - 提交边界：新增 `AttoScopedConfigurationSettings`、`AttoConfigurationDocumentContext` 和 `resolvingSettings(... documentContext:)`；`scoped_settings` 支持 `selector` / `selectors` JSON decode、unknown future fields 兼容、`language:` / `ext:` / `filename:` / `glob:` / `scope:` 以及 bare language/extension selector。该提交不新增 Rust/FFI ABI，不改变 App 当前 window-wide preference application，不实现 per-tab scoped settings cache、Preferences UI、runtime override UI/持久化、完整 Sublime settings selector grammar 或 core/headless capability negotiation。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoConfigurationSettingsTests`
+    - `git diff --check`
 
 ## 阶段 10: ABI 版本、错误模型与兼容性门禁
 

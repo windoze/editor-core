@@ -121,6 +121,110 @@ final class AttoConfigurationSettingsTests: XCTestCase {
         XCTAssertEqual(resolution.snapshot.editor.fontSizePoints, 18)
     }
 
+    func testSettingsResolutionAppliesMatchingScopedSettings() {
+        let base = baseSnapshot()
+        let user = AttoConfigurationSettings(
+            editor: AttoEditorPreferenceSettings(fontSizePoints: 14),
+            scopedSettings: [
+                AttoScopedConfigurationSettings(
+                    selector: "source.swift",
+                    editor: AttoEditorPreferenceSettings(
+                        fontSizePoints: 15,
+                        findCaseSensitive: false
+                    ),
+                    language: AttoLanguagePreferenceSettings(formatOnSaveEnabled: false)
+                ),
+            ]
+        )
+        let workspace = AttoConfigurationSettings(
+            editor: AttoEditorPreferenceSettings(fontSizePoints: 16),
+            scopedSettings: [
+                AttoScopedConfigurationSettings(
+                    selectors: ["*.swift"],
+                    editor: AttoEditorPreferenceSettings(
+                        fontSizePoints: 17,
+                        wrapMode: "none"
+                    ),
+                    rendering: AttoRenderingPreferenceSettings(themeName: "Workspace Swift")
+                ),
+            ]
+        )
+        let runtime = AttoConfigurationSettings(
+            scopedSettings: [
+                AttoScopedConfigurationSettings(
+                    selectors: ["language:swift"],
+                    editor: AttoEditorPreferenceSettings(fontSizePoints: 18),
+                    language: AttoLanguagePreferenceSettings(formatOnTypeEnabled: false)
+                ),
+            ]
+        )
+
+        let resolution = base.resolvingSettings(
+            user: user,
+            workspace: workspace,
+            runtime: runtime,
+            documentContext: AttoConfigurationDocumentContext(
+                fileURL: URL(fileURLWithPath: "/tmp/Sources/AppDelegate.swift"),
+                languageId: "swift"
+            )
+        )
+        let snapshot = resolution.snapshot
+
+        XCTAssertEqual(resolution.appliedScopes, [
+            .user,
+            .userScoped,
+            .workspace,
+            .workspaceScoped,
+            .runtimeScoped,
+        ])
+        XCTAssertEqual(snapshot.editor.fontSizePoints, 18)
+        XCTAssertEqual(snapshot.editor.wrapMode, "none")
+        XCTAssertFalse(snapshot.editor.findCaseSensitive)
+        XCTAssertEqual(snapshot.rendering.themeName, "Workspace Swift")
+        XCTAssertFalse(snapshot.language.formatOnSaveEnabled)
+        XCTAssertFalse(snapshot.language.formatOnTypeEnabled)
+    }
+
+    func testSettingsResolutionSkipsNonMatchingScopedSettings() {
+        let base = baseSnapshot()
+        let user = AttoConfigurationSettings(
+            scopedSettings: [
+                AttoScopedConfigurationSettings(
+                    selectors: ["source.swift", "*.swift"],
+                    editor: AttoEditorPreferenceSettings(fontSizePoints: 20)
+                ),
+            ]
+        )
+
+        let resolution = base.resolvingSettings(
+            user: user,
+            documentContext: AttoConfigurationDocumentContext(
+                fileURL: URL(fileURLWithPath: "/tmp/README.md"),
+                languageId: "markdown"
+            )
+        )
+
+        XCTAssertEqual(resolution.appliedScopes, [])
+        XCTAssertEqual(resolution.snapshot.editor.fontSizePoints, 13)
+    }
+
+    func testScopedSettingsMatchGlobFileExtensionAndBareLanguageSelectors() {
+        let swiftContext = AttoConfigurationDocumentContext(
+            fileURL: URL(fileURLWithPath: "/tmp/project/Sources/View.SWIFT"),
+            languageId: "swift"
+        )
+        let markdownContext = AttoConfigurationDocumentContext(
+            fileURL: URL(fileURLWithPath: "/tmp/project/Docs/README.md"),
+            languageId: "markdown"
+        )
+
+        XCTAssertTrue(AttoScopedConfigurationSettings(selectors: ["path:**/sources/*.swift"]).matches(swiftContext))
+        XCTAssertTrue(AttoScopedConfigurationSettings(selectors: ["ext:swift"]).matches(swiftContext))
+        XCTAssertTrue(AttoScopedConfigurationSettings(selectors: ["swift"]).matches(swiftContext))
+        XCTAssertTrue(AttoScopedConfigurationSettings(selectors: ["filename:readme.md"]).matches(markdownContext))
+        XCTAssertFalse(AttoScopedConfigurationSettings(selectors: ["source.swift"]).matches(markdownContext))
+    }
+
     func testSettingsStorePersistsUserAndWorkspaceSettings() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoConfigurationSettingsTests-\(UUID().uuidString)", isDirectory: true)
@@ -240,6 +344,20 @@ final class AttoConfigurationSettingsTests: XCTestCase {
             "workspace_search_exclude_globs": ["**/*.generated.swift"],
             "future_workspace_field": "ignored"
           },
+          "scoped_settings": [
+            {
+              "selector": "source.swift",
+              "selectors": ["*.swift"],
+              "editor": {
+                "font_size_points": 19,
+                "future_scoped_editor_field": "ignored"
+              },
+              "language": {
+                "format_on_save_enabled": false
+              },
+              "future_scoped_field": "ignored"
+            }
+          ],
           "language": {
             "semantic_highlighting_enabled": false,
             "format_on_save_enabled": true,
@@ -275,6 +393,10 @@ final class AttoConfigurationSettingsTests: XCTestCase {
         XCTAssertEqual(settings.language?.formatOnTypeEnabled, false)
         XCTAssertEqual(settings.language?.commentConfigurations?["swift"], .line("//"))
         XCTAssertEqual(settings.language?.lspAutoRestart?.maxAttempts, 5)
+        XCTAssertEqual(settings.scopedSettings.count, 1)
+        XCTAssertEqual(settings.scopedSettings.first?.selectors, ["source.swift", "*.swift"])
+        XCTAssertEqual(settings.scopedSettings.first?.editor?.fontSizePoints, 19)
+        XCTAssertEqual(settings.scopedSettings.first?.language?.formatOnSaveEnabled, false)
     }
 
     private func baseSnapshot() -> AttoConfigurationSnapshot {

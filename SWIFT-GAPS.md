@@ -191,6 +191,7 @@ Swift 侧已经具备以下基础能力：
 - 阶段 342 继续推进阶段 9 的 workspace search scope 配置接线：`AttoWorkspacePreferenceSnapshot` / `AttoWorkspacePreferenceSettings` 现在覆盖 Find in Files 的默认 `find_in_files_default_scope`，支持 `opened_files` 与 `workspace`，并在 AttoEditor 窗口创建和偏好重应用时同步到 Search 侧栏的 Opened/Folder scope 控件。仍缺 workspace include/exclude glob、自定义 word boundary 规则、Preferences UI、runtime override UI/持久化、Sublime settings scope selector 规则、跨 schema 字段语义迁移和完整 capability negotiation。
 - 阶段 343 继续推进阶段 9 的 workspace search glob 配置接线：`AttoWorkspacePreferenceSnapshot` / `AttoWorkspacePreferenceSettings` 现在覆盖 `workspace_search_include_globs` / `workspace_search_exclude_globs`，AttoEditor 的 Find in Files Folder/workspace scope 会在 `workspaceFilesProvider` 结果上应用这些 glob，支持常见 `*`、`?`、`**`、目录前缀和文件名 pattern。仍缺自定义 word boundary 规则、Preferences UI、runtime override UI/持久化、Sublime settings scope selector 规则、跨 schema 字段语义迁移和完整 capability negotiation。
 - 阶段 344 继续推进阶段 9 的 Preferences UI 起点：全局 `AttoPreferences` 现在可持久化默认 Find case-sensitive / whole-word / regex 选项和 Find in Files 默认 scope，支持 env fallback，并把这些值写入 `AttoConfigurationSnapshot`；Preferences Editor 页面新增 Search 分组，用户可直接设置这些默认搜索行为。仍缺 workspace glob 的 Preferences UI、workspace/project scoped settings 编辑 UI、自定义 word boundary 规则、runtime override UI/持久化、Sublime settings scope selector 规则、跨 schema 字段语义迁移和完整 capability negotiation。
+- 阶段 365 继续推进阶段 9 的 settings scopes 起点：`AttoConfigurationSettings` 现在支持 `scoped_settings` typed overlay，settings resolver 可按文档 URL、文件名/扩展名、语言 id 和简化 `source.*` / `text.*` selector 匹配 user/workspace/runtime scoped editor/rendering/language 配置；该完成项属于 `PLAN.md` 阶段 9 的 `feat(app): resolve scoped editor settings` 增量，`SWIFT-GAPS.md` 仅作为任务范围参考。仍缺 App per-tab scoped settings 应用、workspace/project scoped settings 编辑 UI、完整 Sublime settings selector grammar、runtime override UI/持久化、跨 schema 字段语义迁移和完整 capability negotiation。
 - 2026-08-01 阶段 6 第一部分已完成：Swift UI binding 新增一组 LSP interactive request/take raw result API，覆盖 declaration、type definition、implementation、references、completion、signature help、document symbols、workspace symbols。
 - 阶段 6 第一部分在 Rust UI 内部把 hover/definition 的专用 result cache 泛化为按 LSP result slot 管理；document symbols response 会同步写入 core outline，供 `documentSymbolsJSON()` 读取。
 - 2026-08-01 阶段 6 第二部分已完成：AttoEditor command palette 和 Go 菜单新增 LSP location commands，覆盖 go to definition/declaration/type definition/implementation/find references；cmd-click definition 也复用同一套 location request/poll/navigate 路径。
@@ -1680,7 +1681,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 
 ### P2：深化 Sublime 兼容
 
-- settings scopes。
+- settings scopes：已有 typed resolver 起点，支持 user/workspace/runtime scoped overlay 按文档 URL、文件名/扩展名、语言 id 和简化 `source.*` / `text.*` selector 匹配；仍缺 App per-tab 应用、完整 Sublime settings selector grammar 和编辑 UI。
 - 完整 Sublime keymap 文件兼容。
 - snippets/macros/build systems。
 - package resource loading。

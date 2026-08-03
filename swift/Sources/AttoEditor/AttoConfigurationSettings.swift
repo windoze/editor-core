@@ -2,8 +2,72 @@ import Foundation
 
 enum AttoConfigurationSettingsScope: String, Codable, Equatable {
     case user
+    case userScoped = "user_scoped"
     case workspace
+    case workspaceScoped = "workspace_scoped"
     case runtime
+    case runtimeScoped = "runtime_scoped"
+
+    var scopedVariant: Self {
+        switch self {
+        case .user, .userScoped:
+            return .userScoped
+        case .workspace, .workspaceScoped:
+            return .workspaceScoped
+        case .runtime, .runtimeScoped:
+            return .runtimeScoped
+        }
+    }
+}
+
+struct AttoConfigurationDocumentContext: Equatable {
+    var fileURL: URL?
+    var languageId: String?
+
+    init(fileURL: URL? = nil, languageId: String? = nil) {
+        self.fileURL = fileURL
+        self.languageId = languageId
+    }
+
+    var normalizedLanguageId: String? {
+        Self.normalizedIdentifier(languageId)
+    }
+
+    var normalizedFileExtension: String? {
+        let ext = Self.normalizedIdentifier(fileURL?.pathExtension)
+        return ext?.isEmpty == false ? ext : nil
+    }
+
+    var normalizedFileName: String? {
+        let name = Self.normalizedPathComponent(fileURL?.lastPathComponent)
+        return name?.isEmpty == false ? name : nil
+    }
+
+    var normalizedPath: String? {
+        guard let fileURL else { return nil }
+        let path = fileURL.standardizedFileURL.path
+            .replacingOccurrences(of: "\\", with: "/")
+            .lowercased()
+        return path.isEmpty ? nil : path
+    }
+
+    static func normalizedIdentifier(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let normalized = value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        return normalized.isEmpty ? nil : normalized
+    }
+
+    private static func normalizedPathComponent(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let normalized = value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\\", with: "/")
+            .lowercased()
+        return normalized.isEmpty ? nil : normalized
+    }
 }
 
 struct AttoConfigurationResolution: Equatable {
@@ -20,23 +84,30 @@ struct AttoConfigurationSettings: Codable, Equatable {
     var rendering: AttoRenderingPreferenceSettings?
     var language: AttoLanguagePreferenceSettings?
     var workspace: AttoWorkspacePreferenceSettings?
+    var scopedSettings: [AttoScopedConfigurationSettings]
 
     init(
         schemaVersion: Int = Self.currentSchemaVersion,
         editor: AttoEditorPreferenceSettings? = nil,
         rendering: AttoRenderingPreferenceSettings? = nil,
         language: AttoLanguagePreferenceSettings? = nil,
-        workspace: AttoWorkspacePreferenceSettings? = nil
+        workspace: AttoWorkspacePreferenceSettings? = nil,
+        scopedSettings: [AttoScopedConfigurationSettings] = []
     ) {
         self.schemaVersion = schemaVersion
         self.editor = editor
         self.rendering = rendering
         self.language = language
         self.workspace = workspace
+        self.scopedSettings = scopedSettings
     }
 
     var isEmpty: Bool {
-        editor == nil && rendering == nil && language == nil && workspace == nil
+        editor == nil
+            && rendering == nil
+            && language == nil
+            && workspace == nil
+            && scopedSettings.allSatisfy(\.isEmpty)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -45,6 +116,7 @@ struct AttoConfigurationSettings: Codable, Equatable {
         case rendering
         case language
         case workspace
+        case scopedSettings = "scoped_settings"
     }
 
     init(from decoder: Decoder) throws {
@@ -55,6 +127,10 @@ struct AttoConfigurationSettings: Codable, Equatable {
         self.rendering = try container.decodeIfPresent(AttoRenderingPreferenceSettings.self, forKey: .rendering)
         self.language = try container.decodeIfPresent(AttoLanguagePreferenceSettings.self, forKey: .language)
         self.workspace = try container.decodeIfPresent(AttoWorkspacePreferenceSettings.self, forKey: .workspace)
+        self.scopedSettings = try container.decodeIfPresent(
+            [AttoScopedConfigurationSettings].self,
+            forKey: .scopedSettings
+        ) ?? []
     }
 
     func migratedToCurrentSchema() -> Self {
@@ -62,6 +138,200 @@ struct AttoConfigurationSettings: Codable, Equatable {
         var migrated = self
         migrated.schemaVersion = Self.currentSchemaVersion
         return migrated
+    }
+}
+
+struct AttoScopedConfigurationSettings: Codable, Equatable {
+    var selectors: [String]
+    var editor: AttoEditorPreferenceSettings?
+    var rendering: AttoRenderingPreferenceSettings?
+    var language: AttoLanguagePreferenceSettings?
+
+    init(
+        selector: String? = nil,
+        selectors: [String] = [],
+        editor: AttoEditorPreferenceSettings? = nil,
+        rendering: AttoRenderingPreferenceSettings? = nil,
+        language: AttoLanguagePreferenceSettings? = nil
+    ) {
+        var normalizedSelectors = selectors
+        if let selector {
+            normalizedSelectors.insert(selector, at: 0)
+        }
+        self.selectors = normalizedSelectors
+        self.editor = editor
+        self.rendering = rendering
+        self.language = language
+    }
+
+    var isEmpty: Bool {
+        editor == nil && rendering == nil && language == nil
+    }
+
+    func matches(_ context: AttoConfigurationDocumentContext) -> Bool {
+        selectors.contains { Self.selector($0, matches: context) }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case selector
+        case selectors
+        case editor
+        case rendering
+        case language
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let selector = try container.decodeIfPresent(String.self, forKey: .selector)
+        let selectors = try container.decodeIfPresent([String].self, forKey: .selectors) ?? []
+        var normalizedSelectors = selectors
+        if let selector {
+            normalizedSelectors.insert(selector, at: 0)
+        }
+        self.selectors = normalizedSelectors
+        self.editor = try container.decodeIfPresent(AttoEditorPreferenceSettings.self, forKey: .editor)
+        self.rendering = try container.decodeIfPresent(AttoRenderingPreferenceSettings.self, forKey: .rendering)
+        self.language = try container.decodeIfPresent(AttoLanguagePreferenceSettings.self, forKey: .language)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(selectors, forKey: .selectors)
+        try container.encodeIfPresent(editor, forKey: .editor)
+        try container.encodeIfPresent(rendering, forKey: .rendering)
+        try container.encodeIfPresent(language, forKey: .language)
+    }
+
+    private static func selector(
+        _ rawSelector: String,
+        matches context: AttoConfigurationDocumentContext
+    ) -> Bool {
+        let selector = rawSelector
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        guard selector.isEmpty == false else { return false }
+        if selector == "*" || selector == "all" {
+            return true
+        }
+
+        let languageId = context.normalizedLanguageId
+        let fileExtension = context.normalizedFileExtension
+        let fileName = context.normalizedFileName
+        let filePath = context.normalizedPath
+
+        if let value = prefixedValue(selector, prefixes: ["language:", "lang:"]) {
+            return languageId == normalizedIdentifier(value)
+        }
+        if let value = prefixedValue(selector, prefixes: ["extension:", "ext:"]) {
+            return fileExtension == normalizedExtension(value)
+        }
+        if let value = prefixedValue(selector, prefixes: ["filename:", "file:"]) {
+            return fileName == normalizedPathComponent(value)
+        }
+        if let value = prefixedValue(selector, prefixes: ["glob:", "path:"]) {
+            return pathMatches(pattern: value, fileName: fileName, filePath: filePath)
+        }
+        if let value = prefixedValue(selector, prefixes: ["scope:"]) {
+            return sublimeScope(value, matchesLanguageId: languageId)
+        }
+
+        if selector.hasPrefix(".") {
+            return fileExtension == normalizedExtension(selector)
+        }
+        if selector.hasPrefix("*.") && selector.dropFirst(2).contains("/") == false {
+            return fileExtension == normalizedExtension(String(selector.dropFirst(1)))
+        }
+        if selector.contains("*") || selector.contains("?") {
+            return pathMatches(pattern: selector, fileName: fileName, filePath: filePath)
+        }
+        if selector.hasPrefix("source.") || selector.hasPrefix("text.") {
+            return sublimeScope(selector, matchesLanguageId: languageId)
+        }
+
+        let normalized = normalizedIdentifier(selector)
+        return languageId == normalized || fileExtension == normalized
+    }
+
+    private static func prefixedValue(_ selector: String, prefixes: [String]) -> String? {
+        for prefix in prefixes where selector.hasPrefix(prefix) {
+            return String(selector.dropFirst(prefix.count))
+        }
+        return nil
+    }
+
+    private static func sublimeScope(_ scope: String, matchesLanguageId languageId: String?) -> Bool {
+        guard let languageId else { return false }
+        let normalizedScope = scope.trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        if normalizedScope == languageId {
+            return true
+        }
+        return normalizedScope
+            .split(separator: ".")
+            .contains { String($0) == languageId }
+    }
+
+    private static func pathMatches(
+        pattern: String,
+        fileName: String?,
+        filePath: String?
+    ) -> Bool {
+        let normalizedPattern = normalizedPathComponent(pattern) ?? ""
+        if let filePath, glob(normalizedPattern, matches: filePath) {
+            return true
+        }
+        if let fileName, glob(normalizedPattern, matches: fileName) {
+            return true
+        }
+        return false
+    }
+
+    private static func glob(_ pattern: String, matches text: String) -> Bool {
+        let patternChars = Array(pattern)
+        let textChars = Array(text)
+        var memo: [String: Bool] = [:]
+
+        func match(_ patternIndex: Int, _ textIndex: Int) -> Bool {
+            let key = "\(patternIndex):\(textIndex)"
+            if let cached = memo[key] {
+                return cached
+            }
+
+            let result: Bool
+            if patternIndex == patternChars.count {
+                result = textIndex == textChars.count
+            } else if patternChars[patternIndex] == "*" {
+                result = match(patternIndex + 1, textIndex)
+                    || (textIndex < textChars.count && match(patternIndex, textIndex + 1))
+            } else if textIndex < textChars.count,
+                      patternChars[patternIndex] == "?"
+                        || patternChars[patternIndex] == textChars[textIndex]
+            {
+                result = match(patternIndex + 1, textIndex + 1)
+            } else {
+                result = false
+            }
+
+            memo[key] = result
+            return result
+        }
+
+        return match(0, 0)
+    }
+
+    private static func normalizedIdentifier(_ value: String) -> String {
+        AttoConfigurationDocumentContext.normalizedIdentifier(value) ?? ""
+    }
+
+    private static func normalizedExtension(_ value: String) -> String {
+        normalizedIdentifier(value.trimmingCharacters(in: CharacterSet(charactersIn: ".")))
+    }
+
+    private static func normalizedPathComponent(_ value: String) -> String? {
+        let normalized = value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\\", with: "/")
+            .lowercased()
+        return normalized.isEmpty ? nil : normalized
     }
 }
 
@@ -349,7 +619,8 @@ extension AttoConfigurationSnapshot {
     func resolvingSettings(
         user: AttoConfigurationSettings? = nil,
         workspace: AttoConfigurationSettings? = nil,
-        runtime: AttoConfigurationSettings? = nil
+        runtime: AttoConfigurationSettings? = nil,
+        documentContext: AttoConfigurationDocumentContext? = nil
     ) -> AttoConfigurationResolution {
         var snapshot = self
         var appliedScopes: [AttoConfigurationSettingsScope] = []
@@ -360,26 +631,58 @@ extension AttoConfigurationSnapshot {
             (.runtime, runtime),
         ] {
             guard let settings, settings.isEmpty == false else { continue }
-            snapshot.apply(settings)
-            appliedScopes.append(scope)
+            if snapshot.apply(settings) {
+                appliedScopes.append(scope)
+            }
+            guard let documentContext else { continue }
+            for scopedSettings in settings.scopedSettings
+                where scopedSettings.isEmpty == false && scopedSettings.matches(documentContext)
+            {
+                if snapshot.apply(scopedSettings) {
+                    appliedScopes.append(scope.scopedVariant)
+                }
+            }
         }
 
         return AttoConfigurationResolution(snapshot: snapshot, appliedScopes: appliedScopes)
     }
 
-    private mutating func apply(_ settings: AttoConfigurationSettings) {
+    private mutating func apply(_ settings: AttoConfigurationSettings) -> Bool {
+        var didApply = false
         if let editor = settings.editor {
             apply(editor)
+            didApply = true
         }
         if let rendering = settings.rendering {
             apply(rendering)
+            didApply = true
         }
         if let language = settings.language {
             apply(language)
+            didApply = true
         }
         if let workspace = settings.workspace {
             apply(workspace)
+            didApply = true
         }
+        return didApply
+    }
+
+    private mutating func apply(_ settings: AttoScopedConfigurationSettings) -> Bool {
+        var didApply = false
+        if let editor = settings.editor {
+            apply(editor)
+            didApply = true
+        }
+        if let rendering = settings.rendering {
+            apply(rendering)
+            didApply = true
+        }
+        if let language = settings.language {
+            apply(language)
+            didApply = true
+        }
+        return didApply
     }
 
     private mutating func apply(_ settings: AttoEditorPreferenceSettings) {
