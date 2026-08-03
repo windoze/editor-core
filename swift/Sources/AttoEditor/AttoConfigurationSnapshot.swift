@@ -405,7 +405,10 @@ extension AttoPreferences {
                 fontSizePoints: effectiveFontSizePoints,
                 autoPairsEnabled: effectiveAutoPairsEnabled,
                 wrapMode: effectiveWrapMode.rawValue,
-                wrapIndent: Self.wrapIndentStorageString(effectiveWrapIndent)
+                wrapIndent: Self.wrapIndentStorageString(effectiveWrapIndent),
+                findCaseSensitive: effectiveFindCaseSensitive,
+                findWholeWord: effectiveFindWholeWord,
+                findRegex: effectiveFindRegex
             ),
             rendering: AttoRenderingPreferenceSnapshot(
                 themeName: effectiveThemeName,
@@ -424,7 +427,8 @@ extension AttoPreferences {
             ),
             workspace: AttoWorkspacePreferenceSnapshot(
                 rootURL: workspaceRootURL?.absoluteString,
-                rootPath: workspaceRootURL?.path
+                rootPath: workspaceRootURL?.path,
+                findInFilesDefaultScope: effectiveFindInFilesDefaultScope
             )
         )
     }

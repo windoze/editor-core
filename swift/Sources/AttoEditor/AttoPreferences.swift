@@ -66,6 +66,10 @@ final class AttoPreferences: NSObject {
         static let autoPairsEnabled = "AttoEditor.preferences.autoPairsEnabled"
         static let wrapMode = "AttoEditor.preferences.wrapMode"
         static let wrapIndent = "AttoEditor.preferences.wrapIndent"
+        static let findCaseSensitive = "AttoEditor.preferences.findCaseSensitive"
+        static let findWholeWord = "AttoEditor.preferences.findWholeWord"
+        static let findRegex = "AttoEditor.preferences.findRegex"
+        static let findInFilesDefaultScope = "AttoEditor.preferences.findInFilesDefaultScope"
         static let themeName = "AttoEditor.preferences.themeName"
         static let commentConfigurations = "AttoEditor.preferences.commentConfigurations"
         static let lspAutoRestartEnabled = "AttoEditor.preferences.lspAutoRestartEnabled"
@@ -149,6 +153,38 @@ final class AttoPreferences: NSObject {
         return AttoThemeManager.defaultThemeName
     }
 
+    var effectiveFindCaseSensitive: Bool {
+        if let stored = storedFindCaseSensitive { return stored }
+        if let parsed = Self.parseBoolEnv(env["ATTO_EDITOR_FIND_CASE_SENSITIVE"]) {
+            return parsed
+        }
+        return true
+    }
+
+    var effectiveFindWholeWord: Bool {
+        if let stored = storedFindWholeWord { return stored }
+        if let parsed = Self.parseBoolEnv(env["ATTO_EDITOR_FIND_WHOLE_WORD"]) {
+            return parsed
+        }
+        return false
+    }
+
+    var effectiveFindRegex: Bool {
+        if let stored = storedFindRegex { return stored }
+        if let parsed = Self.parseBoolEnv(env["ATTO_EDITOR_FIND_REGEX"]) {
+            return parsed
+        }
+        return false
+    }
+
+    var effectiveFindInFilesDefaultScope: String {
+        if let stored = storedFindInFilesDefaultScope { return stored }
+        if let parsed = Self.normalizeFindInFilesDefaultScope(env["ATTO_EDITOR_FIND_IN_FILES_DEFAULT_SCOPE"]) {
+            return parsed
+        }
+        return AttoWorkspacePreferenceSnapshot.defaultFindInFilesScope
+    }
+
     var effectiveLspAutoRestartEnabled: Bool {
         if let stored = storedLspAutoRestartEnabled { return stored }
         if let parsed = Self.parseBoolEnv(env["ATTO_EDITOR_LSP_AUTO_RESTART"])
@@ -211,6 +247,22 @@ final class AttoPreferences: NSObject {
         guard let raw = defaults.string(forKey: Keys.themeName) else { return nil }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    var storedFindCaseSensitive: Bool? {
+        defaults.object(forKey: Keys.findCaseSensitive) as? Bool
+    }
+
+    var storedFindWholeWord: Bool? {
+        defaults.object(forKey: Keys.findWholeWord) as? Bool
+    }
+
+    var storedFindRegex: Bool? {
+        defaults.object(forKey: Keys.findRegex) as? Bool
+    }
+
+    var storedFindInFilesDefaultScope: String? {
+        Self.normalizeFindInFilesDefaultScope(defaults.string(forKey: Keys.findInFilesDefaultScope))
     }
 
     var storedCommentConfigurations: [String: AttoCommentConfiguration] {
@@ -311,6 +363,30 @@ final class AttoPreferences: NSObject {
             defaults.set(trimmed, forKey: Keys.themeName)
         } else {
             defaults.removeObject(forKey: Keys.themeName)
+        }
+        postDidChange()
+    }
+
+    func setFindCaseSensitive(_ enabled: Bool) {
+        defaults.set(enabled, forKey: Keys.findCaseSensitive)
+        postDidChange()
+    }
+
+    func setFindWholeWord(_ enabled: Bool) {
+        defaults.set(enabled, forKey: Keys.findWholeWord)
+        postDidChange()
+    }
+
+    func setFindRegex(_ enabled: Bool) {
+        defaults.set(enabled, forKey: Keys.findRegex)
+        postDidChange()
+    }
+
+    func setFindInFilesDefaultScope(_ scope: String?) {
+        if let normalized = Self.normalizeFindInFilesDefaultScope(scope) {
+            defaults.set(normalized, forKey: Keys.findInFilesDefaultScope)
+        } else {
+            defaults.removeObject(forKey: Keys.findInFilesDefaultScope)
         }
         postDidChange()
     }
@@ -593,6 +669,22 @@ final class AttoPreferences: NSObject {
 
     static func normalizeCommentConfigurationKey(_ raw: String) -> String {
         raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    static func normalizeFindInFilesDefaultScope(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let normalized = raw
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "-", with: "_")
+        switch normalized {
+        case "folder", "folders", "workspace", "workspace_files":
+            return "workspace"
+        case "open", "opened", "open_files", "opened_files", "tabs", "open_tabs":
+            return AttoWorkspacePreferenceSnapshot.defaultFindInFilesScope
+        default:
+            return nil
+        }
     }
 
     private func commentConfigurationStorage() -> [String: [String: String]] {

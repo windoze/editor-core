@@ -266,6 +266,10 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
 
     private let ligaturesCheckbox = NSButton(checkboxWithTitle: "Enable ligatures", target: nil, action: nil)
     private let autoPairsCheckbox = NSButton(checkboxWithTitle: "Enable auto pairs", target: nil, action: nil)
+    private let findCaseSensitiveCheckbox = NSButton(checkboxWithTitle: "Match case by default", target: nil, action: nil)
+    private let findWholeWordCheckbox = NSButton(checkboxWithTitle: "Whole word by default", target: nil, action: nil)
+    private let findRegexCheckbox = NSButton(checkboxWithTitle: "Regex by default", target: nil, action: nil)
+    private let findInFilesScopePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let lspAutoRestartCheckbox = NSButton(checkboxWithTitle: "Auto-restart failed LSP servers", target: nil, action: nil)
     private let lspAutoRestartMaxAttemptsField = NSTextField(string: "")
     private let lspAutoRestartMaxAttemptsStepper = NSStepper(frame: .zero)
@@ -460,6 +464,39 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
         autoPairsCheckbox.action = #selector(autoPairsToggled(_:))
         stack.addArrangedSubview(autoPairsCheckbox)
 
+        // Search
+        let searchLabel = NSTextField(labelWithString: "Search")
+        searchLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        stack.addArrangedSubview(searchLabel)
+
+        findCaseSensitiveCheckbox.target = self
+        findCaseSensitiveCheckbox.action = #selector(findCaseSensitiveToggled(_:))
+        stack.addArrangedSubview(findCaseSensitiveCheckbox)
+
+        findWholeWordCheckbox.target = self
+        findWholeWordCheckbox.action = #selector(findWholeWordToggled(_:))
+        stack.addArrangedSubview(findWholeWordCheckbox)
+
+        findRegexCheckbox.target = self
+        findRegexCheckbox.action = #selector(findRegexToggled(_:))
+        stack.addArrangedSubview(findRegexCheckbox)
+
+        let findInFilesScopeLabel = NSTextField(labelWithString: "Find in Files default scope")
+        findInFilesScopeLabel.font = NSFont.systemFont(ofSize: 13)
+        findInFilesScopePopUp.addItem(withTitle: "Opened Files")
+        findInFilesScopePopUp.item(at: 0)?.representedObject = "opened_files"
+        findInFilesScopePopUp.addItem(withTitle: "Workspace Folder")
+        findInFilesScopePopUp.item(at: 1)?.representedObject = "workspace"
+        findInFilesScopePopUp.target = self
+        findInFilesScopePopUp.action = #selector(findInFilesScopeChanged(_:))
+        findInFilesScopePopUp.widthAnchor.constraint(greaterThanOrEqualToConstant: 180).isActive = true
+
+        let findInFilesScopeRow = NSStackView(views: [findInFilesScopeLabel, findInFilesScopePopUp])
+        findInFilesScopeRow.orientation = .horizontal
+        findInFilesScopeRow.spacing = 8
+        findInFilesScopeRow.alignment = .centerY
+        stack.addArrangedSubview(findInFilesScopeRow)
+
         // LSP recovery
         let lspRecoveryLabel = NSTextField(labelWithString: "LSP recovery")
         lspRecoveryLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
@@ -581,6 +618,10 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
 
         ligaturesCheckbox.state = prefs.effectiveLigaturesEnabled ? .on : .off
         autoPairsCheckbox.state = prefs.effectiveAutoPairsEnabled ? .on : .off
+        findCaseSensitiveCheckbox.state = prefs.effectiveFindCaseSensitive ? .on : .off
+        findWholeWordCheckbox.state = prefs.effectiveFindWholeWord ? .on : .off
+        findRegexCheckbox.state = prefs.effectiveFindRegex ? .on : .off
+        selectFindInFilesScope(prefs.effectiveFindInFilesDefaultScope)
         let lspAutoRestartEnabled = prefs.effectiveLspAutoRestartEnabled
         lspAutoRestartCheckbox.state = lspAutoRestartEnabled ? .on : .off
         let lspMaxAttempts = prefs.effectiveLspAutoRestartMaxAttempts
@@ -679,6 +720,27 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
 
     @objc private func autoPairsToggled(_ sender: Any?) {
         prefs.setAutoPairsEnabled(autoPairsCheckbox.state == .on)
+    }
+
+    @objc private func findCaseSensitiveToggled(_ sender: Any?) {
+        prefs.setFindCaseSensitive(findCaseSensitiveCheckbox.state == .on)
+    }
+
+    @objc private func findWholeWordToggled(_ sender: Any?) {
+        prefs.setFindWholeWord(findWholeWordCheckbox.state == .on)
+    }
+
+    @objc private func findRegexToggled(_ sender: Any?) {
+        prefs.setFindRegex(findRegexCheckbox.state == .on)
+    }
+
+    @objc private func findInFilesScopeChanged(_ sender: Any?) {
+        guard isUpdatingFromModel == false else { return }
+        let idx = findInFilesScopePopUp.indexOfSelectedItem
+        guard idx >= 0,
+              let raw = findInFilesScopePopUp.item(at: idx)?.representedObject as? String
+        else { return }
+        prefs.setFindInFilesDefaultScope(raw)
     }
 
     @objc private func lspAutoRestartToggled(_ sender: Any?) {
@@ -818,6 +880,18 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
         let raw = wrapIndentFixedField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let parsed = Int(raw) ?? wrapIndentFixedStepper.integerValue
         return UInt32(max(0, min(80, parsed)))
+    }
+
+    private func selectFindInFilesScope(_ rawScope: String) {
+        let normalized = AttoPreferences.normalizeFindInFilesDefaultScope(rawScope)
+            ?? AttoWorkspacePreferenceSnapshot.defaultFindInFilesScope
+        for idx in 0..<findInFilesScopePopUp.numberOfItems {
+            if findInFilesScopePopUp.item(at: idx)?.representedObject as? String == normalized {
+                findInFilesScopePopUp.selectItem(at: idx)
+                return
+            }
+        }
+        findInFilesScopePopUp.selectItem(at: 0)
     }
 
     private func setWrapIndentFixedControlsEnabled(_ enabled: Bool) {

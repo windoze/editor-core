@@ -281,6 +281,49 @@ final class AttoPreferencesTests: XCTestCase {
         XCTAssertNil(prefs.commentConfigurationOverride(forLanguageKey: "lisp"))
     }
 
+    func testFindDefaultsEnvStoredAndScopeNormalization() {
+        let (defaults, _) = makeIsolatedDefaults()
+
+        var prefs = AttoPreferences(defaults: defaults, env: [:])
+        XCTAssertNil(prefs.storedFindCaseSensitive)
+        XCTAssertNil(prefs.storedFindWholeWord)
+        XCTAssertNil(prefs.storedFindRegex)
+        XCTAssertNil(prefs.storedFindInFilesDefaultScope)
+        XCTAssertTrue(prefs.effectiveFindCaseSensitive)
+        XCTAssertFalse(prefs.effectiveFindWholeWord)
+        XCTAssertFalse(prefs.effectiveFindRegex)
+        XCTAssertEqual(prefs.effectiveFindInFilesDefaultScope, "opened_files")
+
+        prefs = AttoPreferences(defaults: defaults, env: [
+            "ATTO_EDITOR_FIND_CASE_SENSITIVE": "0",
+            "ATTO_EDITOR_FIND_WHOLE_WORD": "1",
+            "ATTO_EDITOR_FIND_REGEX": "true",
+            "ATTO_EDITOR_FIND_IN_FILES_DEFAULT_SCOPE": "folder",
+        ])
+        XCTAssertFalse(prefs.effectiveFindCaseSensitive)
+        XCTAssertTrue(prefs.effectiveFindWholeWord)
+        XCTAssertTrue(prefs.effectiveFindRegex)
+        XCTAssertEqual(prefs.effectiveFindInFilesDefaultScope, "workspace")
+
+        prefs.setFindCaseSensitive(true)
+        prefs.setFindWholeWord(false)
+        prefs.setFindRegex(false)
+        prefs.setFindInFilesDefaultScope("open_tabs")
+
+        XCTAssertEqual(prefs.storedFindCaseSensitive, true)
+        XCTAssertEqual(prefs.storedFindWholeWord, false)
+        XCTAssertEqual(prefs.storedFindRegex, false)
+        XCTAssertEqual(prefs.storedFindInFilesDefaultScope, "opened_files")
+        XCTAssertTrue(prefs.effectiveFindCaseSensitive)
+        XCTAssertFalse(prefs.effectiveFindWholeWord)
+        XCTAssertFalse(prefs.effectiveFindRegex)
+        XCTAssertEqual(prefs.effectiveFindInFilesDefaultScope, "opened_files")
+
+        prefs.setFindInFilesDefaultScope(nil)
+        XCTAssertNil(prefs.storedFindInFilesDefaultScope)
+        XCTAssertEqual(prefs.effectiveFindInFilesDefaultScope, "workspace")
+    }
+
     func testEffectiveConfigurationSnapshotRoundTripsCurrentPreferences() throws {
         let (defaults, _) = makeIsolatedDefaults()
         let prefs = AttoPreferences(defaults: defaults, env: [
@@ -294,6 +337,10 @@ final class AttoPreferencesTests: XCTestCase {
         prefs.setLigaturesEnabled(true)
         prefs.setAutoPairsEnabled(false)
         prefs.setWrapIndent(.fixedCells(3))
+        prefs.setFindCaseSensitive(false)
+        prefs.setFindWholeWord(true)
+        prefs.setFindRegex(true)
+        prefs.setFindInFilesDefaultScope("workspace")
         prefs.setCommentConfiguration(.lineAndBlock("//", "/*", "*/"), forLanguageKey: "  Swift  ")
         prefs.setLspAutoRestartDisabled(true, forServerName: " Swift-LSP ", serverCommand: nil)
         prefs.setLspAutoRestartMaxAttempts(7, forServerName: "Swift-LSP", serverCommand: nil)
@@ -307,9 +354,9 @@ final class AttoPreferencesTests: XCTestCase {
         XCTAssertFalse(snapshot.editor.autoPairsEnabled)
         XCTAssertEqual(snapshot.editor.wrapMode, "word")
         XCTAssertEqual(snapshot.editor.wrapIndent, "fixed_cells:3")
-        XCTAssertTrue(snapshot.editor.findCaseSensitive)
-        XCTAssertFalse(snapshot.editor.findWholeWord)
-        XCTAssertFalse(snapshot.editor.findRegex)
+        XCTAssertFalse(snapshot.editor.findCaseSensitive)
+        XCTAssertTrue(snapshot.editor.findWholeWord)
+        XCTAssertTrue(snapshot.editor.findRegex)
         XCTAssertEqual(snapshot.rendering.themeName, "Atto Light")
         XCTAssertTrue(snapshot.rendering.fontLigaturesEnabled)
         XCTAssertEqual(
@@ -323,7 +370,7 @@ final class AttoPreferencesTests: XCTestCase {
         XCTAssertEqual(snapshot.language.lspAutoRestart.serverMaxAttempts, ["swift-lsp": 7])
         XCTAssertEqual(snapshot.workspace.rootURL, workspaceRootURL.absoluteString)
         XCTAssertEqual(snapshot.workspace.rootPath, workspaceRootURL.path)
-        XCTAssertEqual(snapshot.workspace.findInFilesDefaultScope, "opened_files")
+        XCTAssertEqual(snapshot.workspace.findInFilesDefaultScope, "workspace")
         XCTAssertEqual(snapshot.workspace.workspaceSearchIncludeGlobs, [])
         XCTAssertEqual(snapshot.workspace.workspaceSearchExcludeGlobs, [])
 

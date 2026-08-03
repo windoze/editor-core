@@ -1578,6 +1578,13 @@
   - 验证记录：
     - `swift test --package-path swift --filter 'Atto(ConfigurationSettings|EditorPreferencesApplication|Preferences)Tests'`
     - `git diff --check`
+- 中间提交：`feat(app): expose search defaults in preferences`
+  - 所属任务：阶段 9 的配置、偏好与 capability DTO 完整性增量；把已建模的默认 Find 选项和 Find in Files 默认 scope 接入全局 Preferences UI 与 base `AttoPreferences`。
+  - 提交边界：`AttoPreferences` 新增默认 case-sensitive / whole-word / regex 和 Find in Files scope 的 UserDefaults/env/default 解析；`effectiveConfigurationSnapshot` 把这些值写入 `AttoConfigurationSnapshot`；Preferences Editor 页面新增 Search 分组，允许用户设置默认 Find 选项和 Find in Files 默认范围。该提交不新增 Rust/FFI ABI，不实现 workspace glob 的 Preferences UI、不实现自定义 word boundary 规则、不实现 workspace/project scoped settings 编辑 UI、不实现 runtime override UI/持久化，也不完成 core/headless capability negotiation。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoPreferencesTests'`
+    - `swift test --package-path swift --filter 'Atto(ConfigurationSettings|EditorPreferencesApplication|Preferences)Tests'`
+    - `git diff --check`
 
 ## 阶段 10: ABI 版本、错误模型与兼容性门禁
 
