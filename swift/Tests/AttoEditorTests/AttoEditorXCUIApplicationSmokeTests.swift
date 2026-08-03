@@ -246,6 +246,24 @@ final class AttoEditorXCUIApplicationSmokeTests: XCTestCase {
         assertElementExists(AttoAccessibilityID.lspLocationPanelSearchField, in: launched.app)
         assertElementExists(AttoAccessibilityID.lspLocationPanelMetadataLabel, in: launched.app)
         assertElementExists(AttoAccessibilityID.lspLocationPanelTable, in: launched.app)
+        XCTAssertNotNil(
+            waitForElementText(
+                identifier: AttoAccessibilityID.lspLocationPanelRowTitle,
+                contains: "ResultFixtures.swift",
+                in: launched.app
+            ),
+            "expected injected Locations panel rows to render"
+        )
+        launched.app.typeKey(.downArrow, modifierFlags: [])
+        launched.app.typeKey(.return, modifierFlags: [])
+        XCTAssertNotNil(
+            waitForElementText(
+                identifier: AttoAccessibilityID.statusBarPositionLabel,
+                contains: "Ln 2, Col 3",
+                in: launched.app
+            ),
+            "expected opening the second Locations row to navigate to line 2 column 3"
+        )
 
         try runCommandPaletteCommand("lsp.show_symbols_panel", in: launched.app)
         assertElementExists(AttoAccessibilityID.lspSymbolPanel, in: launched.app)
@@ -253,12 +271,52 @@ final class AttoEditorXCUIApplicationSmokeTests: XCTestCase {
         assertElementExists(AttoAccessibilityID.lspSymbolPanelSearchField, in: launched.app)
         assertElementExists(AttoAccessibilityID.lspSymbolPanelMetadataLabel, in: launched.app)
         assertElementExists(AttoAccessibilityID.lspSymbolPanelTable, in: launched.app)
+        let symbolSearch = try requiredElement(identifier: AttoAccessibilityID.lspSymbolPanelSearchField, in: launched.app)
+        symbolSearch.click()
+        launched.app.typeText("smokeChild")
+        XCTAssertNotNil(
+            waitForElementText(
+                identifier: AttoAccessibilityID.lspSymbolPanelRowTitle,
+                contains: "smokeChild",
+                in: launched.app
+            ),
+            "expected injected Document Symbols panel rows to filter"
+        )
+        launched.app.typeKey(.return, modifierFlags: [])
+        XCTAssertNotNil(
+            waitForElementText(
+                identifier: AttoAccessibilityID.statusBarPositionLabel,
+                contains: "Ln 2, Col 1",
+                in: launched.app
+            ),
+            "expected opening the filtered Document Symbols row to navigate to line 2 column 1"
+        )
 
         try runCommandPaletteCommand("lsp.show_workspace_outline_panel", in: launched.app)
         assertElementExists(AttoAccessibilityID.lspSymbolPanel, in: launched.app)
         assertElementExists(AttoAccessibilityID.lspSymbolPanelSearchField, in: launched.app)
         assertElementExists(AttoAccessibilityID.lspSymbolPanelMetadataLabel, in: launched.app)
         assertElementExists(AttoAccessibilityID.lspSymbolPanelTable, in: launched.app)
+        let outlineSearch = try requiredElement(identifier: AttoAccessibilityID.lspSymbolPanelSearchField, in: launched.app)
+        outlineSearch.click()
+        launched.app.typeText("smokeChild")
+        XCTAssertNotNil(
+            waitForElementText(
+                identifier: AttoAccessibilityID.lspSymbolPanelRowTitle,
+                contains: "smokeChild",
+                in: launched.app
+            ),
+            "expected injected Workspace Outline rows to filter"
+        )
+        launched.app.typeKey(.return, modifierFlags: [])
+        XCTAssertNotNil(
+            waitForElementText(
+                identifier: AttoAccessibilityID.statusBarPositionLabel,
+                contains: "Ln 2, Col 1",
+                in: launched.app
+            ),
+            "expected opening the filtered Workspace Outline row to navigate to line 2 column 1"
+        )
     }
 
     private func launchAttoEditor(resultFixtures: Bool = false) throws -> LaunchedAttoApp {
