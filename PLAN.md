@@ -2134,6 +2134,12 @@
   - 验证记录：
     - `swift test --package-path swift --filter 'AttoEditorXCUIApplicationSmokeTests|AttoIPCTests|AttoCommandLineTests'`
     - `git diff --check`
+- 中间提交：`test(app): cover xcui lsp result panels`
+  - 所属任务：阶段 13 的 macOS UI 自动化与视觉回归测试体系增量；继续扩展 opt-in `XCUIApplication` 黑盒操作流，覆盖可在空结果状态下稳定打开的 LSP result/workbench panel 入口。
+  - 提交边界：只扩展 `AttoEditorXCUIApplicationSmokeTests`，新增 command palette 驱动 helper，并通过 `lsp.show_workbench_panel`、`lsp.show_problems_panel`、`lsp.show_workspace_problems_panel` 打开 LSP Workbench、active Problems 和 Workspace Problems panel，断言 panel/root/search/metadata/table 等稳定 AX 节点。该提交不启用默认 CI GUI 测试、不覆盖需要注入真实 result fixture 的 Locations/Symbols/Workspace Outline panel，不覆盖打开文件/保存或多光标，也不改变产品代码。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorXCUIApplicationSmokeTests|AttoIPCTests|AttoCommandLineTests'`
+    - `git diff --check`
 
 ## 阶段 14: 外观、布局与 Sublime-like 操作打磨
 

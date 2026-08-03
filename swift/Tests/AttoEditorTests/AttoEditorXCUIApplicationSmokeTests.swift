@@ -112,6 +112,36 @@ final class AttoEditorXCUIApplicationSmokeTests: XCTestCase {
         )
     }
 
+    func testLspResultPanelsOpenFromCommandPaletteSmokeFlow() throws {
+        let launched = try launchAttoEditor()
+        defer { launched.cleanUp() }
+
+        XCTAssertTrue(launched.app.wait(for: .runningForeground, timeout: Self.timeout))
+        XCTAssertTrue(launched.app.windows.firstMatch.waitForExistence(timeout: Self.timeout))
+
+        launched.app.typeKey("n", modifierFlags: [.command])
+        _ = try firstElement(identifierPrefix: dynamicIdentifierPrefix(AttoAccessibilityID.editorView), in: launched.app)
+
+        try runCommandPaletteCommand("lsp.show_workbench_panel", in: launched.app)
+        assertElementExists(AttoAccessibilityID.lspWorkbenchPanel, in: launched.app)
+        assertElementExists(AttoAccessibilityID.lspWorkbenchPanelRoot, in: launched.app)
+        assertElementExists(AttoAccessibilityID.lspWorkbenchPanelSearchField, in: launched.app)
+        assertElementExists(AttoAccessibilityID.lspWorkbenchPanelMetadataLabel, in: launched.app)
+        assertElementExists(AttoAccessibilityID.lspWorkbenchPanelTable, in: launched.app)
+
+        try runCommandPaletteCommand("lsp.show_problems_panel", in: launched.app)
+        assertElementExists(AttoAccessibilityID.problemsPanel, in: launched.app)
+        assertElementExists(AttoAccessibilityID.problemsPanelRoot, in: launched.app)
+        assertElementExists(AttoAccessibilityID.problemsPanelSearchField, in: launched.app)
+        assertElementExists(AttoAccessibilityID.problemsPanelTable, in: launched.app)
+
+        try runCommandPaletteCommand("lsp.show_workspace_problems_panel", in: launched.app)
+        assertElementExists(AttoAccessibilityID.workspaceProblemsPanel, in: launched.app)
+        assertElementExists(AttoAccessibilityID.workspaceProblemsPanelRoot, in: launched.app)
+        assertElementExists(AttoAccessibilityID.workspaceProblemsPanelSearchField, in: launched.app)
+        assertElementExists(AttoAccessibilityID.workspaceProblemsPanelTable, in: launched.app)
+    }
+
     private func launchAttoEditor() throws -> LaunchedAttoApp {
         guard Self.isEnabled else {
             throw XCTSkip(
@@ -195,6 +225,19 @@ final class AttoEditorXCUIApplicationSmokeTests: XCTestCase {
             throw AttoXCUISmokeConfigurationError.missingElement(identifier)
         }
         return element
+    }
+
+    private func runCommandPaletteCommand(_ query: String, in app: XCUIApplication) throws {
+        let prefix = "AttoEditor.CommandPalette"
+        app.typeKey("p", modifierFlags: [.command, .shift])
+        let searchField = try requiredElement(
+            identifier: AttoAccessibilityID.commandPaletteSearchField(prefix: prefix),
+            in: app
+        )
+        searchField.click()
+        app.typeText(query)
+        assertElementExists(AttoAccessibilityID.commandPaletteTable(prefix: prefix), in: app)
+        app.typeKey(.return, modifierFlags: [])
     }
 
     private func assertElementCount(

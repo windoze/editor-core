@@ -1620,9 +1620,10 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 已完成：阶段 13 已新增 opt-in `XCUIApplication` smoke test 起点，普通 `swift test` 只编译并跳过，设置 `ATTO_XCUI_SMOKE_TESTS=1` 和 `ATTO_XCUI_APP_PATH` 后可启动真实 AttoEditor.app，断言主窗口 chrome AX 节点和 command palette 快捷键路径；同时 `AttoIPC` 支持测试注入独立 socket/spool 路径，避免黑盒测试与用户实例冲突。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): add xcui smoke test entrypoint` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
 - 已完成：阶段 13 已扩展 opt-in `XCUIApplication` editing smoke flow，覆盖 `cmd+n` 新建 tab、editor view 输入文本、undo、`cmd+f` find bar、find query 输入和 `cmd+option+2` split pane 后的动态 AX 节点断言。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): extend xcui editing smoke flow` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
 - 已完成：阶段 13 已扩展 opt-in `XCUIApplication` sidebar/panel smoke flow，覆盖 `cmd+shift+f` Find in Files sidebar、查询输入、scope/status/table AX 节点，以及 `cmd+p` Quick Open panel、过滤输入和 panel/search/table AX 节点。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): cover xcui sidebar and quick panels` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
+- 已完成：阶段 13 已扩展 opt-in `XCUIApplication` LSP result panel smoke flow，通过 command palette 打开 LSP Workbench、active Problems 和 Workspace Problems panel，并断言 panel/root/search/metadata/table 等稳定 AX 节点。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): cover xcui lsp result panels` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
 - 仍缺提交机器稳定的 PNG golden baselines 和 CI baseline 审核策略。
 - 继续扩展 fixtures，覆盖更完整 minimap/overlay 组合、panel/popup 组合和更多跨 theme/window-size 的真实 baseline 审核场景。
-- 继续扩展 `XCUIApplication` smoke tests，覆盖打开文件/保存、选择/多光标、Problems/Outline/Locations 等结果面板黑盒操作流。
+- 继续扩展 `XCUIApplication` smoke tests，覆盖打开文件/保存、选择/多光标，以及需要真实 result fixture 或 LSP 注入路径的 Locations/Symbols/Workspace Outline 等结果面板黑盒操作流。
 - 在 CI 上固定 macOS runner、字体、scale factor 和渲染后端。
 
 ## 建议的功能矩阵
