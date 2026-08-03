@@ -106,6 +106,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(info.supports(.multiDocumentSpecialEventStreamEnvelope))
         XCTAssertTrue(info.supports(.workspaceEditTransactionEnvelope))
         XCTAssertTrue(info.supports(.workspaceDiagnosticsEnvelope))
+        XCTAssertTrue(info.supports(.workspaceOutlineSnapshotEnvelope))
 
         let runtimeJSON = try JSONTestHelpers.object(try lib.runtimeInfoJSON())
         XCTAssertEqual(runtimeJSON["kind"] as? String, "editor-core-ui-ffi")
@@ -141,6 +142,11 @@ final class EditorCoreUIFFITests: XCTestCase {
             feature["name"] as? String == "workspace_diagnostics_envelope"
                 && (feature["bit"] as? NSNumber)?.uint8Value == 30
                 && (feature["flag"] as? NSNumber)?.uint64Value == EditorCoreUIFFIFeatures.workspaceDiagnosticsEnvelope.rawValue
+        })
+        XCTAssertTrue(features.contains { feature in
+            feature["name"] as? String == "workspace_outline_snapshot_envelope"
+                && (feature["bit"] as? NSNumber)?.uint8Value == 31
+                && (feature["flag"] as? NSNumber)?.uint64Value == EditorCoreUIFFIFeatures.workspaceOutlineSnapshotEnvelope.rawValue
         })
     }
 
@@ -431,6 +437,98 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(failure.streamKind, .stateEvents)
         XCTAssertEqual(failure.statusKind, .error)
         XCTAssertEqual(failure.afterSequence, 8)
+        XCTAssertEqual(failure.value, .null)
+        XCTAssertEqual(failure.error?.code, "future_error")
+        XCTAssertEqual(failure.error?.message, "future failure")
+        XCTAssertNil(failure.error?.status)
+    }
+
+    func testWorkspaceOutlineSnapshotEnvelopeReportsSuccess() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let multi = try MultiDocumentEditorUI(library: lib)
+        let tab = try multi.openTab(text: "struct Beta {}\n", viewportWidthCells: 80)
+        try multi.setTabTitle("Beta", tabId: tab)
+        try multi.setTabDocumentURI("file:///project/Beta.swift", tabId: tab)
+        try multi.applyTabDocumentSymbolsJSON(tabId: tab, resultJSON: """
+        [
+          {
+            "name": "Beta",
+            "kind": 23,
+            "range": {
+              "start": { "line": 0, "character": 0 },
+              "end": { "line": 0, "character": 14 }
+            },
+            "selectionRange": {
+              "start": { "line": 0, "character": 7 },
+              "end": { "line": 0, "character": 11 }
+            }
+          }
+        ]
+        """)
+
+        let envelope = try multi.workspaceOutlineSnapshotEnvelope()
+        XCTAssertTrue(envelope.ok)
+        XCTAssertEqual(envelope.version, lib.abiVersion)
+        XCTAssertEqual(envelope.statusKind, .success)
+        XCTAssertNil(envelope.error)
+        guard case .object(let value)? = envelope.value,
+              case .array(let documents)? = value["documents"],
+              case .object(let document)? = documents.first,
+              case .array(let symbols)? = document["symbols"],
+              case .object(let symbol)? = symbols.first
+        else {
+            XCTFail("expected workspace outline snapshot object")
+            return
+        }
+        XCTAssertEqual(document["tab_id"], .number(Double(tab)))
+        XCTAssertEqual(document["title"], .string("Beta"))
+        XCTAssertEqual(document["document_uri"], .string("file:///project/Beta.swift"))
+        XCTAssertEqual(document["symbol_count"], .number(1))
+        XCTAssertEqual(symbol["name"], .string("Beta"))
+    }
+
+    func testWorkspaceOutlineSnapshotEnvelopeDecodesFutureFieldsAndUnknownStatus() throws {
+        let successJSON = """
+        {
+          "ok": true,
+          "status": "future_status",
+          "value": {
+            "documents": [],
+            "future": true
+          },
+          "error": null,
+          "version": 7,
+          "futureTopLevel": true
+        }
+        """
+        let success = try JSONTestHelpers.decode(EcuWorkspaceOutlineSnapshotEnvelope.self, from: successJSON)
+        XCTAssertTrue(success.ok)
+        XCTAssertEqual(success.statusKind, .unknown("future_status"))
+        XCTAssertNil(success.error)
+        guard case .object(let value)? = success.value else {
+            XCTFail("expected future workspace outline value")
+            return
+        }
+        XCTAssertEqual(value["documents"], .array([]))
+        XCTAssertEqual(value["future"], .bool(true))
+
+        let failureJSON = """
+        {
+          "ok": false,
+          "status": "error",
+          "value": null,
+          "error": {
+            "code": "future_error",
+            "status": 777777,
+            "message": "future failure",
+            "futureErrorMetadata": true
+          },
+          "version": 8
+        }
+        """
+        let failure = try JSONTestHelpers.decode(EcuWorkspaceOutlineSnapshotEnvelope.self, from: failureJSON)
+        XCTAssertFalse(failure.ok)
+        XCTAssertEqual(failure.statusKind, .error)
         XCTAssertEqual(failure.value, .null)
         XCTAssertEqual(failure.error?.code, "future_error")
         XCTAssertEqual(failure.error?.message, "future failure")

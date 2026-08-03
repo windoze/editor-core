@@ -297,7 +297,8 @@ Guidelines:
   `ECU_FEATURE_LSP_RESULT_ENVELOPE` / `ECU_FEATURE_EVENT_STREAM_ENVELOPE` /
   `ECU_FEATURE_MULTI_DOCUMENT_SPECIAL_EVENT_STREAM_ENVELOPE` /
   `ECU_FEATURE_WORKSPACE_EDIT_TRANSACTION_ENVELOPE` /
-  `ECU_FEATURE_WORKSPACE_DIAGNOSTICS_ENVELOPE` mark availability of the corresponding JSON
+  `ECU_FEATURE_WORKSPACE_DIAGNOSTICS_ENVELOPE` /
+  `ECU_FEATURE_WORKSPACE_OUTLINE_SNAPSHOT_ENVELOPE` mark availability of the corresponding JSON
   envelope symbols and stream/result coverage.
 - The current cycle is still pre-v1; breaking fixed-width cleanup is allowed before tagging v1, and `editor_core_ffi.h` is the authoritative declaration of the current C surface.
 - Compatible additions:
@@ -379,6 +380,7 @@ char* editor_core_ui_ffi_editor_ui_event_stream_envelope_json(EditorUi* ui, cons
 char* editor_core_ui_ffi_multi_document_event_stream_envelope_json(MultiDocumentEditorUi* multi, const char* stream_utf8, uint64_t after_sequence);
 char* editor_core_ui_ffi_multi_document_workspace_edit_transaction_envelope_json(MultiDocumentEditorUi* multi, const char* operation_utf8, const char* workspace_edit_json_utf8);
 char* editor_core_ui_ffi_multi_document_workspace_diagnostics_envelope_json(MultiDocumentEditorUi* multi, const char* operation_utf8, const char* result_json_utf8);
+char* editor_core_ui_ffi_multi_document_workspace_outline_snapshot_envelope_json(MultiDocumentEditorUi* multi);
 int32_t editor_core_ui_ffi_editor_ui_lsp_request_hover(EditorUi* ui, uint32_t line, uint32_t column, uint64_t* out_request_id);
 int32_t editor_core_ui_ffi_editor_ui_set_tab_width(EditorUi* ui, uint32_t width_cells);
 char* editor_core_ui_ffi_editor_ui_lsp_apply_workspace_edit_json(EditorUi* ui, const char* workspace_edit_json_utf8, const char* document_uri_utf8);

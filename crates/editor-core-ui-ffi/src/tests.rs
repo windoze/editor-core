@@ -123,6 +123,10 @@ fn ffi_feature_flags_include_semantic_tokens_requests() {
         editor_core_ui_ffi_feature_flags() & ECU_FEATURE_WORKSPACE_DIAGNOSTICS_ENVELOPE,
         0
     );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags() & ECU_FEATURE_WORKSPACE_OUTLINE_SNAPSHOT_ENVELOPE,
+        0
+    );
 }
 
 #[test]
@@ -165,6 +169,11 @@ fn ffi_runtime_info_json_reports_version_and_feature_descriptors() {
         feature["name"] == "workspace_diagnostics_envelope"
             && feature["bit"] == 30
             && feature["flag"] == ECU_FEATURE_WORKSPACE_DIAGNOSTICS_ENVELOPE
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "workspace_outline_snapshot_envelope"
+            && feature["bit"] == 31
+            && feature["flag"] == ECU_FEATURE_WORKSPACE_OUTLINE_SNAPSHOT_ENVELOPE
     }));
     assert!(features.iter().any(|feature| {
         feature["name"] == "multi_document_workspace_edit_transaction"
@@ -392,6 +401,83 @@ fn ffi_event_stream_envelope_json_reports_snapshots_and_errors() {
             .len(),
         0
     );
+
+    unsafe { editor_core_ui_ffi_multi_document_free(multi) };
+}
+
+#[test]
+fn ffi_workspace_outline_snapshot_envelope_json_reports_success_and_errors() {
+    let multi = editor_core_ui_ffi_multi_document_new();
+    assert!(!multi.is_null());
+
+    let text = CString::new("struct Beta {}\n").unwrap();
+    let mut tab_id = 0u64;
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_open_tab(multi, text.as_ptr(), 80, &mut tab_id),
+        ECU_OK
+    );
+    let title = CString::new("Beta").unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_set_tab_title(multi, tab_id, title.as_ptr()),
+        ECU_OK
+    );
+    let uri = CString::new("file:///project/Beta.swift").unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_set_tab_document_uri(multi, tab_id, uri.as_ptr()),
+        ECU_OK
+    );
+    let symbols = CString::new(
+        r#"[
+          {
+            "name": "Beta",
+            "kind": 23,
+            "range": {
+              "start": { "line": 0, "character": 0 },
+              "end": { "line": 0, "character": 14 }
+            },
+            "selectionRange": {
+              "start": { "line": 0, "character": 7 },
+              "end": { "line": 0, "character": 11 }
+            }
+          }
+        ]"#,
+    )
+    .unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_apply_tab_document_symbols_json(
+            multi,
+            tab_id,
+            symbols.as_ptr(),
+        ),
+        ECU_OK
+    );
+
+    let envelope_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_workspace_outline_snapshot_envelope_json(multi),
+    );
+    let envelope: serde_json::Value = serde_json::from_str(&envelope_json).unwrap();
+    assert_eq!(envelope["ok"], true);
+    assert_eq!(envelope["status"], "success");
+    assert!(envelope["error"].is_null());
+    assert_eq!(envelope["version"], ECU_ABI_VERSION);
+    let document = &envelope["value"]["documents"][0];
+    assert_eq!(document["tab_id"], tab_id);
+    assert_eq!(document["title"], "Beta");
+    assert_eq!(document["document_uri"], "file:///project/Beta.swift");
+    assert_eq!(document["symbol_count"], 1);
+    assert_eq!(document["symbols"][0]["name"], "Beta");
+
+    let error_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_workspace_outline_snapshot_envelope_json(ptr::null_mut()),
+    );
+    let error: serde_json::Value = serde_json::from_str(&error_json).unwrap();
+    assert_eq!(error["ok"], false);
+    assert_eq!(error["status"], "error");
+    assert!(error["value"].is_null());
+    assert_eq!(error["error"]["code"], "invalid_argument");
+    assert_eq!(error["error"]["status"], ECU_ERR_INVALID_ARGUMENT);
+    assert_eq!(error["error"]["message"], "multi is null");
+    assert_eq!(error["version"], ECU_ABI_VERSION);
 
     unsafe { editor_core_ui_ffi_multi_document_free(multi) };
 }

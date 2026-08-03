@@ -174,6 +174,11 @@ public enum EditorCoreUIFFIRuntimeCompatibility {
             reason: "Swift hosts can read the core-owned workspace outline snapshot."
         ),
         EditorCoreUIFFIRuntimeFeature(
+            feature: .workspaceOutlineSnapshotEnvelope,
+            name: "workspace outline snapshot envelope",
+            reason: "Swift hosts can read the core-owned workspace outline snapshot through a structured result envelope."
+        ),
+        EditorCoreUIFFIRuntimeFeature(
             feature: .multiDocumentTabDocumentURI,
             name: "multi-document tab document URI",
             reason: "Swift hosts can resolve open core tabs by document URI."

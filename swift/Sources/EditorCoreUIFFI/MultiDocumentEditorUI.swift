@@ -1202,6 +1202,20 @@ public final class MultiDocumentEditorUI {
         }
     }
 
+    public func workspaceOutlineSnapshotEnvelopeJSON() throws -> String {
+        try ffiStringResult(context: "multi_document_workspace_outline_snapshot_envelope_json") {
+            editor_core_ui_ffi_multi_document_workspace_outline_snapshot_envelope_json(handle)
+        }
+    }
+
+    public func workspaceOutlineSnapshotEnvelope() throws -> EcuWorkspaceOutlineSnapshotEnvelope {
+        try decode(
+            EcuWorkspaceOutlineSnapshotEnvelope.self,
+            from: workspaceOutlineSnapshotEnvelopeJSON(),
+            context: "multi_document_workspace_outline_snapshot_envelope_decode"
+        )
+    }
+
     public func workspaceOutlineSnapshot() throws -> EcuWorkspaceOutlineSnapshot {
         try decode(
             EcuWorkspaceOutlineSnapshot.self,

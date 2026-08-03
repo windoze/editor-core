@@ -1238,6 +1238,110 @@ public struct EcuWorkspaceOutlineSnapshot: Equatable, Sendable, Decodable {
     }
 }
 
+public enum EcuWorkspaceOutlineSnapshotEnvelopeStatus: Hashable, Sendable {
+    case success
+    case error
+    case unknown(String)
+
+    public init(rawValue: String) {
+        switch rawValue {
+        case "success":
+            self = .success
+        case "error":
+            self = .error
+        default:
+            self = .unknown(rawValue)
+        }
+    }
+
+    public var rawValue: String {
+        switch self {
+        case .success:
+            return "success"
+        case .error:
+            return "error"
+        case let .unknown(rawValue):
+            return rawValue
+        }
+    }
+}
+
+public struct EcuWorkspaceOutlineSnapshotEnvelope: Equatable, Sendable, Decodable {
+    public var ok: Bool
+    public var status: String
+    public var value: EcuJSONValue?
+    public var error: EcuWorkspaceOutlineSnapshotEnvelopeError?
+    public var version: UInt32
+
+    public var statusKind: EcuWorkspaceOutlineSnapshotEnvelopeStatus {
+        EcuWorkspaceOutlineSnapshotEnvelopeStatus(rawValue: status)
+    }
+
+    public init(
+        ok: Bool,
+        status: String,
+        value: EcuJSONValue?,
+        error: EcuWorkspaceOutlineSnapshotEnvelopeError?,
+        version: UInt32
+    ) {
+        self.ok = ok
+        self.status = status
+        self.value = value
+        self.error = error
+        self.version = version
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case ok
+        case status
+        case value
+        case error
+        case version
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        ok = try container.decode(Bool.self, forKey: .ok)
+        status = try container.decodeIfPresent(String.self, forKey: .status) ?? "unknown"
+        if container.contains(.value) {
+            value = try container.decode(EcuJSONValue.self, forKey: .value)
+        } else {
+            value = nil
+        }
+        error = try container.decodeIfPresent(EcuWorkspaceOutlineSnapshotEnvelopeError.self, forKey: .error)
+        version = try container.decodeIfPresent(UInt32.self, forKey: .version) ?? 0
+    }
+}
+
+public struct EcuWorkspaceOutlineSnapshotEnvelopeError: Equatable, Sendable, Decodable {
+    public var code: String
+    public var status: EcuStatus?
+    public var message: String
+
+    public init(code: String, status: EcuStatus?, message: String) {
+        self.code = code
+        self.status = status
+        self.message = message
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case code
+        case status
+        case message
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        code = try container.decodeIfPresent(String.self, forKey: .code) ?? "unknown"
+        message = try container.decodeIfPresent(String.self, forKey: .message) ?? ""
+        if let rawStatus = try container.decodeIfPresent(Int32.self, forKey: .status) {
+            status = EcuStatus(rawValue: rawStatus)
+        } else {
+            status = nil
+        }
+    }
+}
+
 @frozen
 public struct EcuFoldingRegion: Equatable, Sendable, Decodable {
     public var startLine: UInt32
