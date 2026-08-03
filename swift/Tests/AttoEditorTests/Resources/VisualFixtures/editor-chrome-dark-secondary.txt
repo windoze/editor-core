@@ -1,0 +1,11 @@
+AttoEditor dark theme active tab
+
+Second tab content:
+- active tab title and inactive tab title
+- dark minimap and scrollbar contrast
+- gutter and text surface alignment
+
+struct ActiveDocument {
+    var title = "dark secondary"
+    var selected = true
+}

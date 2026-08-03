@@ -11,6 +11,8 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
         XCTAssertEqual(manifest.schemaVersion, 1)
         XCTAssertFalse(manifest.cases.isEmpty)
         XCTAssertEqual(Set(manifest.cases.map(\.id)).count, manifest.cases.count)
+        XCTAssertEqual(Set(manifest.cases.map(\.artifactName)).count, manifest.cases.count)
+        XCTAssertEqual(Set(manifest.cases.map(\.baseline)).count, manifest.cases.count)
 
         for visualCase in manifest.cases {
             XCTAssertFalse(visualCase.id.isEmpty)
@@ -26,22 +28,32 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(visualCase.maxDifferentPixelRatio, 0)
             XCTAssertLessThanOrEqual(visualCase.maxDifferentPixelRatio, 1)
             XCTAssertTrue(visualCase.baseline.hasSuffix(".png"))
+            XCTAssertTrue(visualCase.showReplaceBar == false || visualCase.showFindBar)
 
-            let fixtureURL = try visualCase.fixtureURL()
-            XCTAssertTrue(FileManager.default.fileExists(atPath: fixtureURL.path))
+            for fixture in visualCase.allFixturePaths {
+                let fixtureURL = try visualCase.fixtureURL(path: fixture)
+                XCTAssertTrue(FileManager.default.fileExists(atPath: fixtureURL.path))
+            }
+            if let activeFixture = visualCase.activeFixture {
+                XCTAssertTrue(visualCase.allFixturePaths.contains(activeFixture))
+            }
             _ = try visualCase.makeTheme()
         }
     }
 
-    func testVisualBaselineFixtureCapturesReviewArtifactAndCanCompareExternalBaseline() throws {
+    func testVisualBaselineFixturesCaptureReviewArtifactsAndCanCompareExternalBaselines() throws {
         let manifest = try AttoVisualBaselineManifest.load()
-        let visualCase = try XCTUnwrap(manifest.cases.first { $0.id == "editor-chrome-light-unicode" })
-        let tempDir = try makeTemporaryDirectory()
+        for visualCase in manifest.cases {
+            try runVisualBaselineCase(visualCase)
+        }
+    }
+
+    private func runVisualBaselineCase(_ visualCase: AttoVisualBaselineCase) throws {
+        let tempDir = try makeTemporaryDirectory(caseID: visualCase.id)
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
-        let fixtureURL = try visualCase.fixtureURL()
-        let documentURL = tempDir.appendingPathComponent(fixtureURL.lastPathComponent)
-        try FileManager.default.copyItem(at: fixtureURL, to: documentURL)
+        let documentURLs = try materializeFixtures(for: visualCase, in: tempDir)
+        let primaryDocumentURL = try XCTUnwrap(documentURLs[visualCase.fixture])
 
         let vc = AttoEditorAreaViewController(
             library: EditorCoreUIFFILibrary(),
@@ -51,21 +63,37 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
         let window = attachToWindow(vc, size: visualCase.window.nsSize)
         defer { window.close() }
 
-        XCTAssertTrue(vc.openFile(url: documentURL, mode: AttoEditorAreaViewController.OpenMode.pinned))
-        if visualCase.showFindBar {
+        XCTAssertTrue(
+            vc.openFile(url: primaryDocumentURL, mode: AttoEditorAreaViewController.OpenMode.pinned),
+            visualCase.id
+        )
+        for fixture in visualCase.additionalFixtures {
+            let url = try XCTUnwrap(documentURLs[fixture])
+            XCTAssertTrue(vc.openFile(url: url, mode: AttoEditorAreaViewController.OpenMode.pinned), visualCase.id)
+        }
+        if let activeFixture = visualCase.activeFixture {
+            let url = try XCTUnwrap(documentURLs[activeFixture])
+            XCTAssertTrue(vc.openFile(url: url, mode: AttoEditorAreaViewController.OpenMode.pinned), visualCase.id)
+        }
+        if visualCase.splitActiveTabRight {
+            XCTAssertTrue(vc.splitActiveTabRight(), visualCase.id)
+        }
+        if visualCase.showReplaceBar {
+            vc.showReplaceBar()
+        } else if visualCase.showFindBar {
             vc.showFindBar()
         }
         vc.view.layoutSubtreeIfNeeded()
 
         let snapshot = try AttoVisualSnapshot.capture(view: vc.view, scale: CGFloat(visualCase.scale))
-        XCTAssertEqual(snapshot.width, visualCase.window.width)
-        XCTAssertEqual(snapshot.height, visualCase.window.height)
+        XCTAssertEqual(snapshot.width, visualCase.window.width, visualCase.id)
+        XCTAssertEqual(snapshot.height, visualCase.window.height, visualCase.id)
 
         let artifactDirectory = try visualArtifactDirectory(fallbackRoot: tempDir)
         try FileManager.default.createDirectory(at: artifactDirectory, withIntermediateDirectories: true)
         let actualArtifact = artifactDirectory.appendingPathComponent("\(visualCase.artifactName)-actual.png")
         try snapshot.writePNG(to: actualArtifact)
-        XCTAssertTrue(try Data(contentsOf: actualArtifact).starts(with: [0x89, 0x50, 0x4E, 0x47]))
+        XCTAssertTrue(try Data(contentsOf: actualArtifact).starts(with: [0x89, 0x50, 0x4E, 0x47]), visualCase.id)
 
         if let recordRoot = try recordBaselineRootURL() {
             let baselineURL = recordRoot.appendingPathComponent(visualCase.baseline)
@@ -74,7 +102,7 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
                 withIntermediateDirectories: true
             )
             try snapshot.writePNG(to: baselineURL)
-            XCTAssertTrue(try Data(contentsOf: baselineURL).starts(with: [0x89, 0x50, 0x4E, 0x47]))
+            XCTAssertTrue(try Data(contentsOf: baselineURL).starts(with: [0x89, 0x50, 0x4E, 0x47]), visualCase.id)
         }
 
         guard let baselineRoot = externalBaselineRootURL() else {
@@ -100,9 +128,29 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
         )
     }
 
-    private func makeTemporaryDirectory() throws -> URL {
+    private func materializeFixtures(
+        for visualCase: AttoVisualBaselineCase,
+        in tempDir: URL
+    ) throws -> [String: URL] {
+        var documentURLs: [String: URL] = [:]
+        for fixture in visualCase.allFixturePaths {
+            let fixtureURL = try visualCase.fixtureURL(path: fixture)
+            let documentURL = tempDir.appendingPathComponent(fixtureURL.lastPathComponent)
+            if FileManager.default.fileExists(atPath: documentURL.path) {
+                try FileManager.default.removeItem(at: documentURL)
+            }
+            try FileManager.default.copyItem(at: fixtureURL, to: documentURL)
+            documentURLs[fixture] = documentURL
+        }
+        return documentURLs
+    }
+
+    private func makeTemporaryDirectory(caseID: String) throws -> URL {
         let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("AttoEditorVisualBaselineManifestTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent(
+                "AttoEditorVisualBaselineManifestTests-\(caseID)-\(UUID().uuidString)",
+                isDirectory: true
+            )
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }
@@ -210,12 +258,20 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
     let themeName: String
     let window: AttoVisualBaselineWindow
     let scale: Double
+    let additionalFixtures: [String]
+    let activeFixture: String?
     let showFindBar: Bool
+    let showReplaceBar: Bool
+    let splitActiveTabRight: Bool
     let perChannelTolerance: UInt8
     let maxDifferentPixelRatio: Double
 
-    func fixtureURL() throws -> URL {
-        try resourceURL(path: fixture)
+    var allFixturePaths: [String] {
+        [fixture] + additionalFixtures
+    }
+
+    func fixtureURL(path: String) throws -> URL {
+        try resourceURL(path: path)
     }
 
     enum CodingKeys: String, CodingKey {
@@ -227,9 +283,32 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
         case themeName = "theme"
         case window
         case scale
+        case additionalFixtures
+        case activeFixture
         case showFindBar
+        case showReplaceBar
+        case splitActiveTabRight
         case perChannelTolerance
         case maxDifferentPixelRatio
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        description = try container.decode(String.self, forKey: .description)
+        fixture = try container.decode(String.self, forKey: .fixture)
+        baseline = try container.decode(String.self, forKey: .baseline)
+        artifactName = try container.decode(String.self, forKey: .artifactName)
+        themeName = try container.decode(String.self, forKey: .themeName)
+        window = try container.decode(AttoVisualBaselineWindow.self, forKey: .window)
+        scale = try container.decode(Double.self, forKey: .scale)
+        additionalFixtures = try container.decodeIfPresent([String].self, forKey: .additionalFixtures) ?? []
+        activeFixture = try container.decodeIfPresent(String.self, forKey: .activeFixture)
+        showFindBar = try container.decodeIfPresent(Bool.self, forKey: .showFindBar) ?? false
+        showReplaceBar = try container.decodeIfPresent(Bool.self, forKey: .showReplaceBar) ?? false
+        splitActiveTabRight = try container.decodeIfPresent(Bool.self, forKey: .splitActiveTabRight) ?? false
+        perChannelTolerance = try container.decode(UInt8.self, forKey: .perChannelTolerance)
+        maxDifferentPixelRatio = try container.decode(Double.self, forKey: .maxDifferentPixelRatio)
     }
 
     func makeTheme() throws -> EditorCoreSkiaTheme {

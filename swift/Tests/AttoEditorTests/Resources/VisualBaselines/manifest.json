@@ -16,6 +16,60 @@
       "showFindBar": true,
       "perChannelTolerance": 2,
       "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "editor-chrome-light-replace",
+      "description": "Light editor chrome with find and replace controls visible.",
+      "fixture": "VisualFixtures/editor-chrome-light-unicode.txt",
+      "baseline": "VisualBaselines/editor-chrome-light-replace.png",
+      "artifactName": "editor-chrome-light-replace",
+      "theme": "defaultLight",
+      "window": {
+        "width": 720,
+        "height": 460
+      },
+      "scale": 1.0,
+      "showFindBar": true,
+      "showReplaceBar": true,
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "editor-chrome-dark-tabs",
+      "description": "Dark editor chrome with two pinned tabs and the second tab active.",
+      "fixture": "VisualFixtures/editor-chrome-dark-primary.txt",
+      "additionalFixtures": [
+        "VisualFixtures/editor-chrome-dark-secondary.txt"
+      ],
+      "activeFixture": "VisualFixtures/editor-chrome-dark-secondary.txt",
+      "baseline": "VisualBaselines/editor-chrome-dark-tabs.png",
+      "artifactName": "editor-chrome-dark-tabs",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 760,
+        "height": 480
+      },
+      "scale": 1.0,
+      "showFindBar": false,
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "editor-chrome-light-split-minimap",
+      "description": "Light editor chrome with a split pane and long lines that exercise minimap and horizontal clipping.",
+      "fixture": "VisualFixtures/split-minimap-long-lines.txt",
+      "baseline": "VisualBaselines/editor-chrome-light-split-minimap.png",
+      "artifactName": "editor-chrome-light-split-minimap",
+      "theme": "defaultLight",
+      "window": {
+        "width": 820,
+        "height": 500
+      },
+      "scale": 1.0,
+      "showFindBar": false,
+      "splitActiveTabRight": true,
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
     }
   ]
 }

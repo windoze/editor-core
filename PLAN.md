@@ -2098,6 +2098,14 @@
     - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`（通过临时 `swift/.build/atto-visual-baseline-record.json` 指向 `/tmp/atto-visual-baselines-check` 和 `/tmp/atto-visual-artifacts-check` 验证 record mode）
     - `bash -n swift/scripts/update-visual-baselines.sh`
     - `git diff --check`
+- 中间提交：`test(app): expand visual baseline fixture matrix`
+  - 所属任务：阶段 13 的 macOS UI 自动化与视觉回归测试体系增量；把 visual baseline manifest 从单一 Unicode editor chrome case 扩展为多场景矩阵，并让同一 XCTest 遍历所有 manifest cases。
+  - 提交边界：`AttoEditorVisualBaselineManifestTests` 支持 `additionalFixtures`、`activeFixture`、`showReplaceBar` 和 `splitActiveTabRight`，按 manifest case 打开多个 tab、切换 active tab、展示 replace bar、创建 split pane 并捕获 snapshot；manifest 新增 light replace、dark tabs、light split/minimap 三个 case 和对应文本 fixtures。该提交不提交新生成 PNG baseline、不新增 diagnostics/folding/multi-cursor fixture、不新增 `XCUIApplication` 黑盒 target、不接 CI runner 固定字体/DPI/scale，也不改变产品 UI 或渲染行为。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests|AttoEditorVisualSnapshotHarnessTests'`
+    - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`（通过临时 `swift/.build/atto-visual-baseline-record.json` 指向 `/tmp/atto-visual-baselines-matrix-check` 和 `/tmp/atto-visual-artifacts-matrix-check` 验证 record mode 写出全部 manifest baselines）
+    - `bash -n swift/scripts/update-visual-baselines.sh`
+    - `git diff --check`
 
 ## 阶段 14: 外观、布局与 Sublime-like 操作打磨
 

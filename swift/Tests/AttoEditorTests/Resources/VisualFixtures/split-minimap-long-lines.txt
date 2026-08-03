@@ -1,0 +1,9 @@
+AttoEditor split and minimap fixture
+
+Left and right split panes should keep the tab bar, editor surface, minimap, gutter, and status bar aligned.
+
+Line 1: short
+Line 2: a deliberately long line that exercises horizontal clipping and minimap density without changing the outer AppKit chrome layout or causing title/status overlap in either split pane.
+Line 3: unicode in split view 视觉 分屏 mini map diagnostics markers gutter status
+Line 4: symbols {} [] () <> == != && || :: -> => ...
+Line 5: repeated tokens token token token token token token token token token token token token token token token token token token token token
