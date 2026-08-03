@@ -189,6 +189,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     private var macroExportSelectionProvider: (([String]) -> (name: String, url: URL)?)?
     private var macroDeleteConfirmationProvider: (([String]) -> Bool)?
     private var macroDeleteHistoryClearConfirmationProvider: ((Int, Int) -> Bool)?
+    private var macroDeleteHistoryEntryRemovalConfirmationProvider: ((Int, String) -> Bool)?
     private var isRecordingMacro = false
     private var isReplayingMacro = false
     private var currentMacroCommands: [AttoRecordedCommand] = []
@@ -430,6 +431,26 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
                     kind: .json,
                     isRequired: true,
                     help: "JSON array of named macros to delete, for example [\"Build\", \"Format\"]."
+                ),
+            ],
+            macroPolicy: .notRecordable
+        )
+    }
+
+    private static func macroDeleteHistoryEntryCommandSchema(
+        choices: [AttoCommandArgumentChoice] = []
+    ) -> AttoCommandSchema {
+        AttoCommandSchema(
+            parameters: [
+                AttoCommandParameterSchema(
+                    name: "index",
+                    title: "History Entry",
+                    kind: .integer,
+                    isRequired: true,
+                    choices: choices,
+                    minimumInteger: 1,
+                    maximumInteger: choices.isEmpty ? nil : choices.count,
+                    help: "1-based deleted macro history entry index, shown newest first."
                 ),
             ],
             macroPolicy: .notRecordable
@@ -1039,6 +1060,13 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .init(id: "macro.show_delete_history", title: "Macro: Show Deleted Macros…") { [weak self] in
                 _ = self?.showDeletedMacroHistory()
             },
+            .init(
+                id: "macro.remove_delete_history_entry",
+                title: "Macro: Remove Deleted Macro History Entry…",
+                schema: Self.macroDeleteHistoryEntryCommandSchema(choices: deletedMacroUndoRecordChoices())
+            ) { [weak self] arguments in
+                self?.removeDeletedMacroHistoryEntry(arguments: arguments)
+            },
             .init(id: "macro.clear_delete_history", title: "Macro: Clear Deleted Macro History…") { [weak self] in
                 _ = self?.clearDeletedMacroHistory()
             },
@@ -1364,6 +1392,10 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         macroDeleteHistoryClearConfirmationProvider = provider
     }
 
+    func _setMacroDeleteHistoryEntryRemovalConfirmationProviderForTesting(_ provider: ((Int, String) -> Bool)?) {
+        macroDeleteHistoryEntryRemovalConfirmationProvider = provider
+    }
+
     func _validateRuntimeCompatibilityForTesting() -> Bool {
         validateRuntimeCompatibilityBeforeLaunch(logSuccess: false)
     }
@@ -1624,6 +1656,19 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         _ = deleteNamedMacros(named: names)
     }
 
+    private func removeDeletedMacroHistoryEntry(arguments: AttoCommandArguments) {
+        let effectiveArguments = arguments.isEmpty
+            ? (promptMacroArguments(
+                commandID: "macro.remove_delete_history_entry",
+                title: "Macro: Remove Deleted Macro History Entry…"
+            ) ?? [:])
+            : arguments
+        guard let displayIndex = effectiveArguments.integer("index") else {
+            return
+        }
+        _ = removeDeletedMacroHistoryEntry(displayIndex: displayIndex - 1)
+    }
+
     private func importNamedMacro(arguments: AttoCommandArguments) {
         if arguments.isEmpty {
             guard let selection = macroImportSelectionProvider?() ?? promptImportMacroFile() else {
@@ -1824,6 +1869,33 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         return true
     }
 
+    private func removeDeletedMacroHistoryEntry(displayIndex: Int) -> Bool {
+        guard isRecordingMacro == false,
+              macroStore != nil,
+              displayIndex >= 0,
+              displayIndex < deletedMacroUndoStack.count
+        else {
+            NSSound.beep()
+            return false
+        }
+
+        let stackIndex = deletedMacroUndoStack.count - 1 - displayIndex
+        let record = deletedMacroUndoStack[stackIndex]
+        let title = deletedMacroUndoRecordTitle(record)
+        guard confirmRemoveDeletedMacroHistoryEntry(displayIndex: displayIndex + 1, title: title) else {
+            return false
+        }
+
+        deletedMacroUndoStack.remove(at: stackIndex)
+        persistDeletedMacroUndoStack()
+        if deletedMacroUndoStack.isEmpty {
+            macroDeleteHistoryController?.hide()
+        } else {
+            macroDeleteHistoryController?.reloadCommands()
+        }
+        return true
+    }
+
     private func restoreDeletedMacroUndoRecord(atStackIndex stackIndex: Int) -> Bool {
         guard isRecordingMacro == false,
               let macroStore,
@@ -1861,6 +1933,16 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         let preview = names.prefix(3).joined(separator: ", ")
         let overflow = names.count > 3 ? ", +\(names.count - 3)" : ""
         return "\(preview)\(overflow) (\(names.count) macros)"
+    }
+
+    private func deletedMacroUndoRecordChoices() -> [AttoCommandArgumentChoice] {
+        let records = Array(deletedMacroUndoStack.enumerated().reversed())
+        return records.enumerated().map { displayIndex, item in
+            AttoCommandArgumentChoice(
+                title: "\(displayIndex + 1). \(deletedMacroUndoRecordTitle(item.element))",
+                value: .integer(displayIndex + 1)
+            )
+        }
     }
 
     private func pushDeletedMacroUndoRecord(_ record: AttoDeletedMacroUndoRecord) {
@@ -1948,6 +2030,20 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         let macroWord = macroCount == 1 ? "macro" : "macros"
         alert.informativeText = "Clear \(recordCount) deleted macro history \(recordWord) containing \(macroCount) \(macroWord). This removes restore history only; existing macro files are unchanged."
         alert.addButton(withTitle: "Clear History")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    private func confirmRemoveDeletedMacroHistoryEntry(displayIndex: Int, title: String) -> Bool {
+        if let macroDeleteHistoryEntryRemovalConfirmationProvider {
+            return macroDeleteHistoryEntryRemovalConfirmationProvider(displayIndex, title)
+        }
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Remove Deleted Macro History Entry?"
+        alert.informativeText = "Remove deleted macro history entry \(displayIndex): \(title). This removes restore history only; existing macro files are unchanged."
+        alert.addButton(withTitle: "Remove Entry")
         alert.addButton(withTitle: "Cancel")
         return alert.runModal() == .alertFirstButtonReturn
     }
@@ -2141,7 +2237,8 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             return isRecordingMacro == false && lastMacroCommands.isEmpty == false && macroStore != nil
         case "macro.replay_named", "macro.rename_named", "macro.delete_named", "macro.delete_named_batch":
             return isRecordingMacro == false && (macroStore?.namedMacroNames().isEmpty == false)
-        case "macro.undo_delete", "macro.show_delete_history", "macro.clear_delete_history":
+        case "macro.undo_delete", "macro.show_delete_history", "macro.remove_delete_history_entry",
+             "macro.clear_delete_history":
             return isRecordingMacro == false && macroStore != nil && deletedMacroUndoStack.isEmpty == false
         case "macro.import_file":
             return isRecordingMacro == false && macroStore != nil
@@ -2283,6 +2380,8 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             return Self.macroNameCommandSchema(choices: macroStore?.namedMacroNames() ?? [])
         case "macro.delete_named_batch":
             return Self.macroDeleteBatchCommandSchema()
+        case "macro.remove_delete_history_entry":
+            return Self.macroDeleteHistoryEntryCommandSchema(choices: deletedMacroUndoRecordChoices())
         case "macro.import_file":
             return Self.macroImportCommandSchema()
         case "macro.export_named":

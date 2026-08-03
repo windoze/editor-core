@@ -1470,6 +1470,12 @@
   - 验证记录：
     - `swift test --package-path swift --filter 'AttoEditorCommandTests.test(CommandMacroClearDeleteHistoryClearsPersistentUndoStack|CommandMacroDeleteHistoryPanelRestoresSelectedEntry|CommandMacroDeleteHistoryWithoutWindowDoesNotRestoreEntry|CommandMacroUndoDeleteHistoryPersistsAcrossDelegates|CommandMacroUndoDeleteUsesMultiLevelHistory|CommandMacroBatchDeletesNamedSublimeMacroFiles|CommandMacroRenamesAndDeletesNamedSublimeMacroFiles|DefaultCommandPaletteIncludesCoreEditorCommandIDs|CommandRegistryCarriesParameterSchemasAndMacroPolicies|MainMenuItemsUseCommandIDsAndResolvedKeymap)'`
     - `git diff --check`
+- 中间提交：`feat(app): remove command macro delete history entries`
+  - 所属任务：阶段 8 的 Command、menu、keymap、palette 与 Sublime 行为矩阵增量；为命名 `.sublime-macro` 删除历史补齐单条移除入口，让用户可以丢弃指定 restore 记录而不影响其他删除历史。
+  - 提交边界：新增 `macro.remove_delete_history_entry` 参数化命令和 Tools 菜单入口；参数 `index` 使用最近优先的 1-based 删除历史索引，并通过当前历史生成 choices。移除前独立确认，确认后删除指定历史记录、持久化隐藏 JSON，并刷新或关闭已打开的删除历史 palette。该提交不实现独立宏管理面板、删除历史批量选择管理、完整可视化回收站、完整 Sublime package/plugin command runtime、完整 `.sublime-macro` 扩展语义，也不捕获命令内部 modal prompt 产生的参数。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.test(CommandMacroRemoveDeleteHistoryEntryRemovesPersistentSelectedRecord|CommandMacroClearDeleteHistoryClearsPersistentUndoStack|CommandMacroDeleteHistoryPanelRestoresSelectedEntry|CommandMacroDeleteHistoryWithoutWindowDoesNotRestoreEntry|CommandMacroUndoDeleteHistoryPersistsAcrossDelegates|CommandMacroUndoDeleteUsesMultiLevelHistory|CommandMacroBatchDeletesNamedSublimeMacroFiles|CommandMacroRenamesAndDeletesNamedSublimeMacroFiles|DefaultCommandPaletteIncludesCoreEditorCommandIDs|CommandRegistryCarriesParameterSchemasAndMacroPolicies|MainMenuItemsUseCommandIDsAndResolvedKeymap)'`
+    - `git diff --check`
 
 ## 阶段 9: 配置、偏好与 capability DTO 完整性
 
