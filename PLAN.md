@@ -497,6 +497,13 @@
     - `swift test --package-path swift --filter 'AttoWorkspaceEditSummaryTests.testWorkspaceEditPreviewListsTypedConflicts|AttoEditorCommandTests.testWorkspaceEditPreviewOpenConflictDecisionSelectsTargetTab|AttoEditorCommandTests.testWorkspaceEditPreviewBlocksAtomicConflictEvenWhenDecisionProviderApplies'`
     - `git diff --check`
 
+- 中间提交：`feat(app): save workspace edit conflict targets`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；把 WorkspaceEdit `dirty_document` / `save_or_discard` conflict preview 从只能打开目标推进到可手动保存冲突目标，为用户保存后重试同一 WorkspaceEdit transaction 提供主路径。
+  - 提交边界：只新增 AppKit preview panel 的 `Save Conflict` 按钮、稳定 accessibility identifier、`AttoWorkspaceEditPreviewDecision.saveConflict(uri)`、saveable conflict target display-model helper 和 App 侧保存已打开目标 tab 的 handler；该动作关闭 preview、复用既有 save-tab 路径写盘并返回 false，不自动 discard、不自动重跑 LSP request、不自动重新 apply，也不新增 Rust/FFI ABI 或改变 core conflict schema、transaction apply/preview/undo/redo 语义。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoWorkspaceEditSummaryTests.testWorkspaceEditPreviewListsTypedConflicts|AttoEditorCommandTests.testWorkspaceEditPreviewSaveConflictDecisionSavesTargetTabBeforeRetry|AttoEditorCommandTests.testWorkspaceEditPreviewOpenConflictDecisionSelectsTargetTab|AttoEditorCommandTests.testWorkspaceEditPreviewBlocksAtomicConflictEvenWhenDecisionProviderApplies'`
+    - `git diff --check`
+
 ## 阶段 5: 多文档、tab、split、project、session 完整迁移
 
 ### 目标

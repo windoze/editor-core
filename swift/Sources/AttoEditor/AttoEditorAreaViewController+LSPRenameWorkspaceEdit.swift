@@ -341,6 +341,9 @@ extension AttoEditorAreaViewController {
         case .openConflict(let uri):
             openWorkspaceEditConflictTarget(uri, editorView: editorView)
             return false
+        case .saveConflict(let uri):
+            saveWorkspaceEditConflictTarget(uri, editorView: editorView)
+            return false
         }
     }
 
@@ -358,6 +361,30 @@ extension AttoEditorAreaViewController {
         }
         setTransientStatusText("Opened WorkspaceEdit conflict: \(url.lastPathComponent)")
         if let activeEditorView = activeTab?.editCore.editorView {
+            view.window?.makeFirstResponder(activeEditorView)
+        } else {
+            view.window?.makeFirstResponder(editorView)
+        }
+        return true
+    }
+
+    @discardableResult
+    func saveWorkspaceEditConflictTarget(_ uri: String, editorView: EditorCoreSkiaView) -> Bool {
+        guard let url = Self.fileURL(fromDocumentURI: uri)?.standardizedFileURL,
+              let tab = projectedTab(forFileURL: url)
+        else {
+            setTransientStatusText("WorkspaceEdit conflict target unavailable")
+            NSSound.beep()
+            return false
+        }
+
+        guard saveTabWithSavePanelIfNeeded(tab) else {
+            setTransientStatusText("WorkspaceEdit conflict save cancelled")
+            return false
+        }
+
+        setTransientStatusText("Saved WorkspaceEdit conflict: \(url.lastPathComponent)")
+        if activeTab?.id == tab.id, let activeEditorView = activeTab?.editCore.editorView {
             view.window?.makeFirstResponder(activeEditorView)
         } else {
             view.window?.makeFirstResponder(editorView)

@@ -13,6 +13,7 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
     private let detailTextView = NSTextView(frame: .zero)
     private let detailScrollView = NSScrollView(frame: .zero)
     private let cancelButton = NSButton(title: "Cancel", target: nil, action: nil)
+    private let saveConflictButton = NSButton(title: "Save Conflict", target: nil, action: nil)
     private let openConflictButton = NSButton(title: "Open Conflict", target: nil, action: nil)
     private let applyButton = NSButton(title: "Apply", target: nil, action: nil)
 
@@ -104,6 +105,7 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
         root.addSubview(summaryLabel)
         root.addSubview(tableScrollView)
         root.addSubview(detailScrollView)
+        root.addSubview(saveConflictButton)
         root.addSubview(openConflictButton)
         root.addSubview(cancelButton)
         root.addSubview(applyButton)
@@ -134,6 +136,10 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
             openConflictButton.trailingAnchor.constraint(equalTo: cancelButton.leadingAnchor, constant: -8),
             openConflictButton.centerYAnchor.constraint(equalTo: applyButton.centerYAnchor),
             openConflictButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 118),
+
+            saveConflictButton.trailingAnchor.constraint(equalTo: openConflictButton.leadingAnchor, constant: -8),
+            saveConflictButton.centerYAnchor.constraint(equalTo: applyButton.centerYAnchor),
+            saveConflictButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 112),
         ])
 
         return panel
@@ -185,6 +191,15 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
     }
 
     private func configureButtons() {
+        saveConflictButton.target = self
+        saveConflictButton.action = #selector(saveConflictClicked(_:))
+        saveConflictButton.bezelStyle = .rounded
+        saveConflictButton.isHidden = preview?.firstSaveableConflictTargetURI == nil
+        saveConflictButton.identifier = NSUserInterfaceItemIdentifier(
+            AttoAccessibilityID.workspaceEditPreviewSaveConflictButton
+        )
+        saveConflictButton.translatesAutoresizingMaskIntoConstraints = false
+
         openConflictButton.target = self
         openConflictButton.action = #selector(openConflictClicked(_:))
         openConflictButton.bezelStyle = .rounded
@@ -230,7 +245,7 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
         }
         tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
         updateDetail(row: row)
-        updateOpenConflictButton()
+        updateConflictActionButtons()
     }
 
     private func updateDetail(row: Int) {
@@ -241,7 +256,10 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
         detailTextView.string = sections[row].detailText
     }
 
-    private func updateOpenConflictButton() {
+    private func updateConflictActionButtons() {
+        if saveConflictButton.isHidden == false {
+            saveConflictButton.isEnabled = selectedSaveableConflictTargetURI() != nil
+        }
         guard openConflictButton.isHidden == false else { return }
         openConflictButton.isEnabled = selectedConflictTargetURI() != nil
     }
@@ -250,6 +268,12 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
         let row = tableView.selectedRow
         let section = sections.indices.contains(row) ? sections[row] : nil
         return preview?.conflictTargetURI(for: section)
+    }
+
+    private func selectedSaveableConflictTargetURI() -> String? {
+        let row = tableView.selectedRow
+        let section = sections.indices.contains(row) ? sections[row] : nil
+        return preview?.saveableConflictTargetURI(for: section)
     }
 
     func numberOfRows(in tableView: NSTableView) -> Int {
@@ -289,7 +313,7 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
         let row = tableView.selectedRow
         guard row >= 0 else { return }
         updateDetail(row: row)
-        updateOpenConflictButton()
+        updateConflictActionButtons()
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -308,6 +332,15 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
             return
         }
         decision = .openConflict(uri)
+        NSApp.stopModal()
+    }
+
+    @objc private func saveConflictClicked(_ sender: Any?) {
+        guard let uri = selectedSaveableConflictTargetURI() else {
+            NSSound.beep()
+            return
+        }
+        decision = .saveConflict(uri)
         NSApp.stopModal()
     }
 
