@@ -1416,6 +1416,13 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testCommandMacroImportsAndExportsSublimeMacroFiles`
     - `swift test --package-path swift --filter 'AttoEditorCommandTests.test(DefaultCommandPaletteIncludesCoreEditorCommandIDs|CommandRegistryCarriesParameterSchemasAndMacroPolicies|MainMenuItemsUseCommandIDsAndResolvedKeymap|CommandMacroRenamesAndDeletesNamedSublimeMacroFiles)'`
     - `git diff --check`
+- 中间提交：`feat(app): pick command macro files`
+  - 所属任务：阶段 8 的 Command、menu、keymap、palette 与 Sublime 行为矩阵增量；把导入/导出宏的菜单和无参数命令路径从手填路径推进到原生文件选择流程。
+  - 提交边界：`macro.import_file` 无参数执行时打开 `NSOpenPanel` 选择 `.sublime-macro` 文件，并用文件名作为默认宏名；`macro.export_named` 无参数执行时选择已有命名宏并打开 `NSSavePanel` 写出 `.sublime-macro`；保留参数化 command palette 路径用于显式路径和自动化；测试通过注入 selection provider 覆盖无参数分支。本提交不实现独立宏管理面板、删除确认 UI、完整 Sublime package/plugin command runtime、完整 `.sublime-macro` 扩展语义，也不捕获命令内部 modal prompt 产生的参数。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testCommandMacroImportExportUsesNativeFileSelectionProviders`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.test(CommandMacroImportsAndExportsSublimeMacroFiles|DefaultCommandPaletteIncludesCoreEditorCommandIDs|CommandRegistryCarriesParameterSchemasAndMacroPolicies|MainMenuItemsUseCommandIDsAndResolvedKeymap)'`
+    - `git diff --check`
 
 ## 阶段 9: 配置、偏好与 capability DTO 完整性
 

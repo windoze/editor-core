@@ -5205,6 +5205,47 @@ final class AttoEditorCommandTests: XCTestCase {
         )
     }
 
+    func testCommandMacroImportExportUsesNativeFileSelectionProviders() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let externalDir = tempDir.appendingPathComponent("External", isDirectory: true)
+        try FileManager.default.createDirectory(at: externalDir, withIntermediateDirectories: true)
+        let sourceMacroURL = externalDir.appendingPathComponent("Panel Source.sublime-macro")
+        try """
+        [
+          {
+            "command": "editor.duplicate_lines"
+          }
+        ]
+        """.write(to: sourceMacroURL, atomically: true, encoding: .utf8)
+
+        let internalDir = tempDir.appendingPathComponent("Internal", isDirectory: true)
+        let macroStore = AttoMacroStore(macroFileURL: internalDir.appendingPathComponent("Last Macro.sublime-macro"))
+        let delegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
+        delegate._setMacroImportSelectionProviderForTesting {
+            (url: sourceMacroURL, name: "Panel Imported")
+        }
+
+        XCTAssertTrue(delegate.executeCommand(id: "macro.import_file"))
+        XCTAssertEqual(macroStore.namedMacroNames(), ["Panel Imported"])
+
+        let exportURL = externalDir.appendingPathComponent("Panel Export.sublime-macro")
+        delegate._setMacroExportSelectionProviderForTesting { names in
+            XCTAssertEqual(names, ["Panel Imported"])
+            return (name: "Panel Imported", url: exportURL)
+        }
+
+        XCTAssertTrue(delegate.executeCommand(id: "macro.export_named"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: exportURL.path))
+        let exportedJSON = try JSONSerialization.jsonObject(with: Data(contentsOf: exportURL)) as? [[String: Any]]
+        let exported = try XCTUnwrap(exportedJSON)
+        XCTAssertEqual(exported.count, 1)
+        XCTAssertEqual(exported[0]["command"] as? String, "editor.duplicate_lines")
+    }
+
     func testExecuteCommandAcceptsTypedArgumentsForParameterizedCommands() throws {
         let delegate = AttoAppDelegate(keyBindings: [:])
         let tempDir = FileManager.default.temporaryDirectory

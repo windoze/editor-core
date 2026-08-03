@@ -3,6 +3,7 @@ import AttoEditorSupport
 import EditorCoreUI
 import EditorCoreUIFFI
 import Foundation
+import UniformTypeIdentifiers
 
 struct AttoRecentCommandRecord: Equatable {
     let commandID: String
@@ -174,6 +175,8 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     private var recentCommandRecords: [AttoRecentCommandRecord] = []
     private let recentCommandStore: AttoRecentCommandStore?
     private let macroStore: AttoMacroStore?
+    private var macroImportSelectionProvider: (() -> (url: URL, name: String)?)?
+    private var macroExportSelectionProvider: (([String]) -> (name: String, url: URL)?)?
     private var isRecordingMacro = false
     private var isReplayingMacro = false
     private var currentMacroCommands: [AttoRecordedCommand] = []
@@ -181,6 +184,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
 
     private static let maxRecentCommandCount = 12
     private static let maxRecordedMacroCommandCount = 512
+    private static let sublimeMacroFileType = UTType(filenameExtension: "sublime-macro") ?? .json
 
     var ipcServer: AttoIpcServer?
     var createDefaultWindowOnLaunch: Bool = true
@@ -1280,6 +1284,14 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         lastMacroCommands
     }
 
+    func _setMacroImportSelectionProviderForTesting(_ provider: (() -> (url: URL, name: String)?)?) {
+        macroImportSelectionProvider = provider
+    }
+
+    func _setMacroExportSelectionProviderForTesting(_ provider: (([String]) -> (name: String, url: URL)?)?) {
+        macroExportSelectionProvider = provider
+    }
+
     func _validateRuntimeCompatibilityForTesting() -> Bool {
         validateRuntimeCompatibilityBeforeLaunch(logSuccess: false)
     }
@@ -1531,6 +1543,14 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     }
 
     private func importNamedMacro(arguments: AttoCommandArguments) {
+        if arguments.isEmpty {
+            guard let selection = macroImportSelectionProvider?() ?? promptImportMacroFile() else {
+                return
+            }
+            _ = importNamedMacro(from: selection.url, named: selection.name)
+            return
+        }
+
         let effectiveArguments = arguments.isEmpty
             ? (promptMacroArguments(commandID: "macro.import_file", title: "Macro: Import Macro File…") ?? [:])
             : arguments
@@ -1543,6 +1563,15 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     }
 
     private func exportNamedMacro(arguments: AttoCommandArguments) {
+        if arguments.isEmpty {
+            let names = macroStore?.namedMacroNames() ?? []
+            guard let selection = macroExportSelectionProvider?(names) ?? promptExportNamedMacro(names: names) else {
+                return
+            }
+            _ = exportNamedMacro(named: selection.name, to: selection.url)
+            return
+        }
+
         let effectiveArguments = arguments.isEmpty
             ? (promptMacroArguments(commandID: "macro.export_named", title: "Macro: Export Named Macro…") ?? [:])
             : arguments
@@ -1616,7 +1645,16 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     }
 
     private func importNamedMacro(fromPath path: String, named name: String) -> Bool {
-        guard isRecordingMacro == false, let macroStore, let sourceURL = macroFileURL(fromPath: path) else {
+        guard isRecordingMacro == false, let sourceURL = macroFileURL(fromPath: path) else {
+            NSSound.beep()
+            return false
+        }
+
+        return importNamedMacro(from: sourceURL, named: name)
+    }
+
+    private func importNamedMacro(from sourceURL: URL, named name: String) -> Bool {
+        guard isRecordingMacro == false, let macroStore else {
             NSSound.beep()
             return false
         }
@@ -1626,13 +1664,22 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             return true
         } catch {
             NSSound.beep()
-            NSLog("AttoEditor: failed to import macro %@ from %@: %@", name, path, String(describing: error))
+            NSLog("AttoEditor: failed to import macro %@ from %@: %@", name, sourceURL.path, String(describing: error))
             return false
         }
     }
 
     private func exportNamedMacro(named name: String, toPath path: String) -> Bool {
-        guard isRecordingMacro == false, let macroStore, let destinationURL = macroFileURL(fromPath: path) else {
+        guard isRecordingMacro == false, let destinationURL = macroFileURL(fromPath: path) else {
+            NSSound.beep()
+            return false
+        }
+
+        return exportNamedMacro(named: name, to: destinationURL)
+    }
+
+    private func exportNamedMacro(named name: String, to destinationURL: URL) -> Bool {
+        guard isRecordingMacro == false, let macroStore else {
             NSSound.beep()
             return false
         }
@@ -1642,7 +1689,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             return true
         } catch {
             NSSound.beep()
-            NSLog("AttoEditor: failed to export macro %@ to %@: %@", name, path, String(describing: error))
+            NSLog("AttoEditor: failed to export macro %@ to %@: %@", name, destinationURL.path, String(describing: error))
             return false
         }
     }
@@ -1658,8 +1705,64 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .standardizedFileURL
     }
 
+    private func promptImportMacroFile() -> (url: URL, name: String)? {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Import"
+        panel.message = "Choose a .sublime-macro file to import."
+        panel.allowedContentTypes = [Self.sublimeMacroFileType]
+
+        guard panel.runModal() == .OK, let url = panel.url?.standardizedFileURL else {
+            return nil
+        }
+
+        let derivedName = url.deletingPathExtension().lastPathComponent
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return (url, derivedName.isEmpty ? "Imported Macro" : derivedName)
+    }
+
+    private func promptExportNamedMacro(names: [String]) -> (name: String, url: URL)? {
+        guard names.isEmpty == false else { return nil }
+        let name: String
+        if names.count == 1 {
+            name = names[0]
+        } else {
+            guard let selected = promptMacroName(
+                title: "Macro: Export Named Macro…",
+                choices: names
+            ) else {
+                return nil
+            }
+            name = selected
+        }
+
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.prompt = "Export"
+        panel.message = "Export the selected macro as a .sublime-macro file."
+        panel.nameFieldStringValue = "\(name).sublime-macro"
+        panel.allowedContentTypes = [Self.sublimeMacroFileType]
+
+        guard panel.runModal() == .OK, let url = panel.url?.standardizedFileURL else {
+            return nil
+        }
+        return (name, url)
+    }
+
     private func promptMacroName(commandID: String, title: String) -> String? {
         promptMacroArguments(commandID: commandID, title: title)?.string("name")
+    }
+
+    private func promptMacroName(title: String, choices: [String]) -> String? {
+        let promptCommand = AttoCommandPaletteCommand(
+            id: "macro.select_named",
+            title: title,
+            schema: Self.macroNameCommandSchema(choices: choices),
+            promptsForArguments: true
+        ) { _ in }
+        return AttoCommandArgumentPrompt.promptArguments(for: promptCommand)?.string("name")
     }
 
     private func promptMacroArguments(commandID: String, title: String) -> AttoCommandArguments? {
