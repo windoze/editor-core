@@ -2188,6 +2188,13 @@
     - `swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures`
     - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
     - `git diff --check`
+- 中间提交：`test(app): expand visual floating panel matrix`
+  - 所属任务：阶段 13 的 macOS UI 自动化与视觉回归测试体系增量；继续扩展 floating panel / popup 视觉矩阵，把更多 LSP result quick panel 纳入可记录 artifact。
+  - 提交边界：测试 harness 新增 manifest `lspLocationResults` 与 `codeActionResults` 场景动作；manifest 新增 dark Location Results quick panel 和 dark Code Actions quick panel 两个 artifact case，复用现有 floating panel fixture。该提交不提交 golden PNG、不启用 strict 默认门禁、不改变产品 UI 或运行时代码，也不覆盖 hover/signature/持久在线 result panels 的截图。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures`
+    - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
+    - `git diff --check`
 
 ## 阶段 14: 外观、布局与 Sublime-like 操作打磨
 

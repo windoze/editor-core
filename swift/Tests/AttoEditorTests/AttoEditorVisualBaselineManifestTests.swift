@@ -248,6 +248,27 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
                 placeholder: symbolResults.placeholder
             )
         }
+        if let locationResults = visualCase.lspLocationResults {
+            let tab = try XCTUnwrap(vc.activeTab, visualCase.id)
+            let documentURI = vc.projectedFileURL(for: tab).standardizedFileURL.absoluteString
+            XCTAssertTrue(
+                vc.showLspLocationResultJSONInActiveTab(
+                    try locationResults.resultJSON(documentURI: documentURI),
+                    kind: locationResults.requestKind
+                ),
+                visualCase.id
+            )
+        }
+        if let codeActionResults = visualCase.codeActionResults {
+            XCTAssertTrue(
+                vc._showCodeActionResultJSONForTesting(
+                    try codeActionResults.resultJSON(),
+                    onlyKinds: codeActionResults.onlyKinds,
+                    showFeedback: false
+                ),
+                visualCase.id
+            )
+        }
         if let completionPopup = visualCase.completionPopup {
             XCTAssertTrue(
                 vc._showCompletionResultJSONForTesting(try completionPopup.resultJSON(), showFeedback: false),
@@ -415,6 +436,8 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
     let semanticTokens: EcuLspSemanticTokensResult?
     let diagnosticMarkers: [AttoVisualDiagnosticMarker]
     let lspSymbolResults: AttoVisualLspSymbolResults?
+    let lspLocationResults: AttoVisualLspLocationResults?
+    let codeActionResults: AttoVisualCodeActionResults?
     let completionPopup: AttoVisualCompletionPopup?
     let captureTarget: AttoVisualCaptureTarget
     let perChannelTolerance: UInt8
@@ -451,6 +474,8 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
         case semanticTokens
         case diagnosticMarkers
         case lspSymbolResults
+        case lspLocationResults
+        case codeActionResults
         case completionPopup
         case captureTarget
         case perChannelTolerance
@@ -487,6 +512,11 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
             forKey: .diagnosticMarkers
         ) ?? []
         lspSymbolResults = try container.decodeIfPresent(AttoVisualLspSymbolResults.self, forKey: .lspSymbolResults)
+        lspLocationResults = try container.decodeIfPresent(
+            AttoVisualLspLocationResults.self,
+            forKey: .lspLocationResults
+        )
+        codeActionResults = try container.decodeIfPresent(AttoVisualCodeActionResults.self, forKey: .codeActionResults)
         completionPopup = try container.decodeIfPresent(AttoVisualCompletionPopup.self, forKey: .completionPopup)
         captureTarget = try container.decodeIfPresent(AttoVisualCaptureTarget.self, forKey: .captureTarget) ?? .mainWindow
         perChannelTolerance = try container.decode(UInt8.self, forKey: .perChannelTolerance)
@@ -635,6 +665,130 @@ private struct AttoVisualLspSymbol: Decodable, Equatable {
             depth: depth
         )
     }
+}
+
+private struct AttoVisualLspLocationResults: Codable, Equatable {
+    let kind: AttoVisualLspLocationKind
+    let targets: [AttoVisualLspLocationTarget]
+
+    var requestKind: AttoEditorAreaViewController.LspLocationRequestKind {
+        switch kind {
+        case .definition:
+            return .definition
+        case .declaration:
+            return .declaration
+        case .typeDefinition:
+            return .typeDefinition
+        case .implementation:
+            return .implementation
+        case .references:
+            return .references
+        }
+    }
+
+    func resultJSON(documentURI: String) throws -> String {
+        let result = targets.map { $0.location(documentURI: documentURI) }
+        let data = try JSONEncoder().encode(result)
+        guard let json = String(data: data, encoding: .utf8) else {
+            throw AttoVisualBaselineError.invalidManifest("failed to encode location results JSON")
+        }
+        return json
+    }
+}
+
+private enum AttoVisualLspLocationKind: String, Codable, Equatable {
+    case definition
+    case declaration
+    case typeDefinition
+    case implementation
+    case references
+}
+
+private struct AttoVisualLspLocationTarget: Codable, Equatable {
+    let line: UInt32
+    let utf16Character: UInt32
+    let length: UInt32
+
+    enum CodingKeys: String, CodingKey {
+        case line
+        case utf16Character
+        case length
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        line = try container.decode(UInt32.self, forKey: .line)
+        utf16Character = try container.decode(UInt32.self, forKey: .utf16Character)
+        length = try container.decodeIfPresent(UInt32.self, forKey: .length) ?? 1
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(line, forKey: .line)
+        try container.encode(utf16Character, forKey: .utf16Character)
+        try container.encode(length, forKey: .length)
+    }
+
+    func location(documentURI: String) -> AttoVisualLspLocation {
+        AttoVisualLspLocation(
+            uri: documentURI,
+            range: AttoVisualLspRange(
+                start: AttoVisualLspPosition(line: line, character: utf16Character),
+                end: AttoVisualLspPosition(line: line, character: utf16Character + length)
+            )
+        )
+    }
+}
+
+private struct AttoVisualLspLocation: Codable, Equatable {
+    let uri: String
+    let range: AttoVisualLspRange
+}
+
+private struct AttoVisualLspRange: Codable, Equatable {
+    let start: AttoVisualLspPosition
+    let end: AttoVisualLspPosition
+}
+
+private struct AttoVisualLspPosition: Codable, Equatable {
+    let line: UInt32
+    let character: UInt32
+}
+
+private struct AttoVisualCodeActionResults: Codable, Equatable {
+    let onlyKinds: [String]
+    let items: [AttoVisualCodeActionItem]
+
+    enum CodingKeys: String, CodingKey {
+        case onlyKinds
+        case items
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        onlyKinds = try container.decodeIfPresent([String].self, forKey: .onlyKinds) ?? []
+        items = try container.decode([AttoVisualCodeActionItem].self, forKey: .items)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(onlyKinds, forKey: .onlyKinds)
+        try container.encode(items, forKey: .items)
+    }
+
+    func resultJSON() throws -> String {
+        let data = try JSONEncoder().encode(items)
+        guard let json = String(data: data, encoding: .utf8) else {
+            throw AttoVisualBaselineError.invalidManifest("failed to encode code action results JSON")
+        }
+        return json
+    }
+}
+
+private struct AttoVisualCodeActionItem: Codable, Equatable {
+    let title: String
+    let kind: String?
+    let isPreferred: Bool?
 }
 
 private struct AttoVisualCompletionPopup: Codable, Equatable {

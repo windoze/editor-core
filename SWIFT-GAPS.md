@@ -1628,8 +1628,9 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 已完成：阶段 13 已继续扩展 visual baseline fixture matrix，新增 dark narrow editor chrome + find bar + collapsed fold + selection + diagnostics/minimap markers 场景，以及 light wide split-pane + long-line minimap density + multi-selection + diagnostics 场景。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): expand visual overlay window fixtures` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
 - 已完成：阶段 13 已扩展 opt-in `XCUIApplication` injected result panel smoke flow，通过显式 `ATTO_XCUI_RESULT_FIXTURES` 测试 seam 给打开文件后的当前 tab 注入 Locations、Document Symbols 和 Workspace Outline stores，并经 command palette 打开 Locations、Symbols、Workspace Outline panel 断言稳定 AX 节点。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): cover xcui injected result panels` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
 - 已完成：阶段 13 已扩展 visual baseline harness 覆盖 floating panel / popup 截图场景，manifest 可捕获指定 child floating window content view，并新增 dark LSP symbol results floating panel 与 dark completion popup 两个 artifact case。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): cover visual floating panels` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
+- 已完成：阶段 13 已进一步扩展 floating panel visual matrix，manifest 可声明 LSP Location Results 和 Code Actions result payload，并新增 dark Location Results quick panel 与 dark Code Actions quick panel 两个 artifact case。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): expand visual floating panel matrix` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
 - 仍缺提交首批经批准机器生成的 PNG golden baselines，并在首批 PNG 合入后把 strict visual comparison 提升为默认必过门禁。
-- 继续扩展 fixtures，覆盖更多 floating panel/popup 类型以及经审核的跨 theme/window-size 真实 baseline 场景。
+- 继续扩展 fixtures，覆盖 hover/signature 等更多 popup 类型、持久在线 result panels 以及经审核的跨 theme/window-size 真实 baseline 场景。
 - 继续扩展 `XCUIApplication` smoke tests，覆盖真实 LSP server 驱动的 Locations/Symbols/Workspace Outline 结果生成、panel row navigation 和打开目标行为。
 - 仍缺把 CI strict visual comparison 升级为首批 PNG baseline 合入后的默认必过门禁。
 

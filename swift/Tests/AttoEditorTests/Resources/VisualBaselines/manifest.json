@@ -404,6 +404,85 @@
       },
       "perChannelTolerance": 2,
       "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "floating-location-results-dark",
+      "description": "Dark LSP location results floating panel with multiple reference targets.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/floating-location-results-dark.png",
+      "artifactName": "floating-location-results-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 820,
+        "height": 520
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.LSP.LocationResults.Panel",
+        "width": 640,
+        "height": 360
+      },
+      "lspLocationResults": {
+        "kind": "references",
+        "targets": [
+          {
+            "line": 0,
+            "utf16Character": 7,
+            "length": 14
+          },
+          {
+            "line": 1,
+            "utf16Character": 8,
+            "length": 12
+          },
+          {
+            "line": 4,
+            "utf16Character": 8,
+            "length": 5
+          }
+        ]
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "floating-code-actions-dark",
+      "description": "Dark code actions floating panel with quickfix and refactor actions.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/floating-code-actions-dark.png",
+      "artifactName": "floating-code-actions-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 820,
+        "height": 520
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.LSP.CodeActions.Panel",
+        "width": 640,
+        "height": 360
+      },
+      "codeActionResults": {
+        "items": [
+          {
+            "title": "Fix unresolved print import",
+            "kind": "quickfix",
+            "isPreferred": true
+          },
+          {
+            "title": "Extract renderLine helper",
+            "kind": "refactor.extract"
+          },
+          {
+            "title": "Organize imports",
+            "kind": "source.organizeImports"
+          }
+        ]
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
     }
   ]
 }
