@@ -150,6 +150,7 @@ Swift 侧已经具备以下基础能力：
 - 阶段 315 继续推进阶段 8 的 command palette recent commands：App 现在维护 bounded in-memory recent command id 列表，统一 `executeCommand` / palette command wrapper 成功触发命令后会移动到最近列表顶部；主命令 palette 会把这些最近命令排在静态命令之前，重复触发去重，无效参数或未知/禁用命令不污染历史。仍缺跨启动持久化、参数 prompt/replay、宏录制/回放、package/plugin command 入口和更完整 Sublime keymap 语义矩阵。
 - 阶段 316 继续推进阶段 8 的 command palette recent commands：最近 command id 现在通过 `AttoRecentCommandStore` 持久化，默认 App delegate 使用 `UserDefaults.standard` 跨启动恢复，测试构造 delegate 默认不读写全局 defaults；recent list 读取/保存会去空、去重并限制最大数量。仍缺参数 prompt/replay、宏录制/回放、package/plugin command 入口和更完整 Sublime keymap 语义矩阵。
 - 阶段 317 继续推进阶段 8 的 command palette recent commands：最近命令持久化从 command id 扩展为 command record，包含最近一次 normalized typed arguments；主命令 palette 中排在前面的 recent 参数化命令可在无显式参数触发时 replay 最近参数，而菜单、keymap 和直接 `executeCommand(id:)` 无参数路径仍不会静默套用历史参数。仍缺通用参数 prompt UI、宏录制/回放、package/plugin command 入口和更完整 Sublime keymap 语义矩阵。
+- 阶段 318 继续推进阶段 8 的 command palette 参数体验：主命令 palette 现在会根据 `AttoCommandSchema` 为参数化命令打开通用参数表单，支持 string/integer/number/boolean/json 和 choices 的基础输入、schema 校验和错误重试；recent command record 中的最近参数会作为表单初始值，用户可直接确认 replay 或编辑后运行。Quick Open/LSP result palette 等非主 palette 默认不启用该 prompt。仍缺宏录制/回放、package/plugin command 入口、Sublime overlay/panel 级参数 UI 复刻和更完整 Sublime keymap 语义矩阵。
 - 2026-08-01 阶段 6 第一部分已完成：Swift UI binding 新增一组 LSP interactive request/take raw result API，覆盖 declaration、type definition、implementation、references、completion、signature help、document symbols、workspace symbols。
 - 阶段 6 第一部分在 Rust UI 内部把 hover/definition 的专用 result cache 泛化为按 LSP result slot 管理；document symbols response 会同步写入 core outline，供 `documentSymbolsJSON()` 读取。
 - 2026-08-01 阶段 6 第二部分已完成：AttoEditor command palette 和 Go 菜单新增 LSP location commands，覆盖 go to definition/declaration/type definition/implementation/find references；cmd-click definition 也复用同一套 location request/poll/navigate 路径。
@@ -1361,7 +1362,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 
 主要缺口：
 
-- command registry 已有基础命令启用/禁用状态、分组元数据、参数 schema、runtime feature requirement、宏录制策略和静态 editor-core JSON payload 元数据；主 command palette 已开始展示 source category，可按 title/group/id fuzzy 搜索，并已有可跨启动恢复的 bounded recent command ordering 和最近参数 replay；keymap 已有基础 context 条件过滤、快捷键冲突解析、`args` 执行路由、多键序列 dispatcher，以及阶段 237 补齐的 core-projected document URI context 起点。仍缺通用参数 prompt UI、更完整的插件/宏运行时、命令上下文模型和完整 Sublime keymap 语义矩阵。
+- command registry 已有基础命令启用/禁用状态、分组元数据、参数 schema、runtime feature requirement、宏录制策略和静态 editor-core JSON payload 元数据；主 command palette 已开始展示 source category，可按 title/group/id fuzzy 搜索，并已有可跨启动恢复的 bounded recent command ordering、最近参数 replay 和基础通用参数 prompt；keymap 已有基础 context 条件过滤、快捷键冲突解析、`args` 执行路由、多键序列 dispatcher，以及阶段 237 补齐的 core-projected document URI context 起点。仍缺更完整的插件/宏运行时、命令上下文模型、Sublime overlay/panel 级参数 UI 和完整 Sublime keymap 语义矩阵。
 - command palette、主菜单和 keymap 已覆盖一批 Sublime 基础编辑命令；LSP location、symbols quick panels、completion popup、signature help、rename 和 code action 主路径已接入，但更深层 LSP/项目级命令仍不完整。
 - P0 菜单、command palette、keymap 和测试已开始统一使用 command id；基础参数化命令可通过 typed arguments 执行，但更深层的命令上下文、插件/宏回放策略和 keymap 冲突解析仍缺。
 - 一些 core/LSP 命令仍没有 App 命令入口。
@@ -1503,6 +1504,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 已完成：AttoEditor 主命令 palette 已有 bounded in-memory recent command ordering，统一 command id 路径成功触发的命令会在下一次打开 palette 时排到前面。
 - 已完成：AttoEditor 主命令 palette 的 recent command ordering 已通过 `AttoRecentCommandStore` 跨启动持久化，默认 App 启动可恢复最近命令顺序。
 - 已完成：AttoEditor 主命令 palette 的 recent command record 已持久化最近一次 typed arguments，palette 触发最近参数化命令时可 replay 参数；菜单、keymap 和直接无参数 command 执行路径不复用历史参数。
+- 已完成：AttoEditor 主命令 palette 已接入基础通用参数 prompt，按 command schema 渲染参数表单并预填最近参数；Quick Open/LSP result palette 默认保持无参数 prompt 行为。
 - 已完成：AttoEditor keymap 已支持 arrow/navigation function-key token，move lines up/down 已有默认 arrow-key 绑定。
 - 已完成：AttoEditor keymap 已支持基础 `context` 条件过滤和快捷键冲突解析，`resolvedKeymap(...)` 可暴露 conflicts 供测试和后续 UI/诊断使用。
 - 已完成：AttoEditor keymap 已支持用户条目 `args` 解码，并能通过菜单/shortcut command 路径调用 `executeCommand(id:arguments:)` 执行参数化命令。

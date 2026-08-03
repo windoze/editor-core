@@ -9,6 +9,8 @@ struct AttoCommandPaletteCommand {
     let isEnabled: Bool
     let requiresEditor: Bool
     let schema: AttoCommandSchema
+    let promptsForArguments: Bool
+    let initialArguments: AttoCommandArguments
     let run: () -> Void
     let runWithArguments: (AttoCommandArguments) -> Void
 
@@ -20,6 +22,8 @@ struct AttoCommandPaletteCommand {
         isEnabled: Bool = true,
         requiresEditor: Bool = false,
         schema: AttoCommandSchema = AttoCommandSchema(),
+        promptsForArguments: Bool = false,
+        initialArguments: AttoCommandArguments = [:],
         run: @escaping () -> Void
     ) {
         self.id = id
@@ -29,6 +33,8 @@ struct AttoCommandPaletteCommand {
         self.isEnabled = isEnabled
         self.requiresEditor = requiresEditor
         self.schema = schema
+        self.promptsForArguments = promptsForArguments
+        self.initialArguments = initialArguments
         self.run = run
         self.runWithArguments = { _ in run() }
     }
@@ -41,6 +47,8 @@ struct AttoCommandPaletteCommand {
         isEnabled: Bool = true,
         requiresEditor: Bool = false,
         schema: AttoCommandSchema,
+        promptsForArguments: Bool = false,
+        initialArguments: AttoCommandArguments = [:],
         runWithArguments: @escaping (AttoCommandArguments) -> Void
     ) {
         self.id = id
@@ -50,6 +58,8 @@ struct AttoCommandPaletteCommand {
         self.isEnabled = isEnabled
         self.requiresEditor = requiresEditor
         self.schema = schema
+        self.promptsForArguments = promptsForArguments
+        self.initialArguments = initialArguments
         self.run = { runWithArguments([:]) }
         self.runWithArguments = runWithArguments
     }
@@ -61,6 +71,8 @@ struct AttoCommandPaletteCommand {
         isEnabled: Bool = true,
         requiresEditor: Bool = false,
         schema: AttoCommandSchema = AttoCommandSchema(),
+        promptsForArguments: Bool = false,
+        initialArguments: AttoCommandArguments = [:],
         run: @escaping () -> Void
     ) {
         self.id = title
@@ -70,6 +82,8 @@ struct AttoCommandPaletteCommand {
         self.isEnabled = isEnabled
         self.requiresEditor = requiresEditor
         self.schema = schema
+        self.promptsForArguments = promptsForArguments
+        self.initialArguments = initialArguments
         self.run = run
         self.runWithArguments = { _ in run() }
     }
@@ -82,6 +96,7 @@ final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTab
     private let filtersCommands: Bool
     private let showsCommandGroups: Bool
     private let searchTextDidChange: ((String) -> Void)?
+    private let argumentProvider: ((AttoCommandPaletteCommand) -> AttoCommandArguments?)?
 
     private var panel: NSPanel?
     private let searchField = NSSearchField(frame: .zero)
@@ -95,12 +110,14 @@ final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTab
         accessibilityPrefix: String = "AttoEditor.CommandPalette",
         filtersCommands: Bool = true,
         showsCommandGroups: Bool = false,
+        argumentProvider: ((AttoCommandPaletteCommand) -> AttoCommandArguments?)? = nil,
         searchTextDidChange: ((String) -> Void)? = nil,
         commandsProvider: @escaping () -> [AttoCommandPaletteCommand]
     ) {
         self.accessibilityPrefix = accessibilityPrefix
         self.filtersCommands = filtersCommands
         self.showsCommandGroups = showsCommandGroups
+        self.argumentProvider = argumentProvider
         self.searchTextDidChange = searchTextDidChange
         self.commandsProvider = commandsProvider
         super.init()
@@ -353,7 +370,18 @@ final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTab
             return
         }
         hide()
-        cmd.run()
+        guard cmd.promptsForArguments, cmd.schema.isParameterized, let argumentProvider else {
+            cmd.run()
+            return
+        }
+        guard let arguments = argumentProvider(cmd) else { return }
+        do {
+            let normalized = try cmd.schema.normalizedArguments(arguments)
+            cmd.runWithArguments(normalized)
+        } catch {
+            NSSound.beep()
+            NSLog("AttoEditor: invalid command palette arguments for %@: %@", cmd.id, String(describing: error))
+        }
     }
 
     // MARK: - NSTextFieldDelegate

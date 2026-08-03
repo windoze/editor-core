@@ -228,6 +228,70 @@ final class AttoAccessibilityIdentifierTests: XCTestCase {
         XCTAssertEqual(idCell.textField?.stringValue, "Edit - Duplicate Line")
     }
 
+    func testCommandPalettePromptsForParameterizedCommands() throws {
+        let prefix = "AttoEditor.ArgumentPalette"
+        let schema = AttoCommandSchema(
+            parameters: [
+                AttoCommandParameterSchema(
+                    name: "snippet",
+                    title: "Snippet",
+                    kind: .string,
+                    isRequired: true,
+                    allowsEmptyString: false
+                ),
+            ]
+        )
+
+        var promptedCommandID: String?
+        var receivedArguments: AttoCommandArguments?
+        let controller = AttoCommandPaletteController(
+            accessibilityPrefix: prefix,
+            argumentProvider: { command in
+                promptedCommandID = command.id
+                XCTAssertEqual(command.initialArguments, ["snippet": .string("old$0")])
+                return ["snippet": .string("new$0")]
+            }
+        ) {
+            [
+                AttoCommandPaletteCommand(
+                    id: "editor.apply_snippet",
+                    title: "Apply Snippet",
+                    schema: schema,
+                    promptsForArguments: true,
+                    initialArguments: ["snippet": .string("old$0")]
+                ) { arguments in
+                    receivedArguments = arguments
+                },
+            ]
+        }
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        defer {
+            controller.hide()
+            window.close()
+        }
+
+        window.contentView = NSView(frame: NSRect(x: 0, y: 0, width: 640, height: 480))
+        window.makeKeyAndOrderFront(nil)
+        controller.show(relativeTo: window)
+
+        let panel = try XCTUnwrap(window.childWindows?.first)
+        let root = try XCTUnwrap(panel.contentView)
+        let searchField = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.commandPaletteSearchField(prefix: prefix), in: root) as? NSSearchField
+        )
+
+        XCTAssertTrue(
+            controller.control(searchField, textView: NSTextView(), doCommandBy: #selector(NSResponder.insertNewline(_:)))
+        )
+        XCTAssertEqual(promptedCommandID, "editor.apply_snippet")
+        XCTAssertEqual(receivedArguments, ["snippet": .string("new$0")])
+    }
+
     func testLspLocationPanelExposesStableIdentifiersAndFiltersRows() throws {
         let fileURL = URL(fileURLWithPath: "/tmp/location-panel.swift")
         let snapshot = AttoEditorAreaViewController.LspLocationResultSnapshot(

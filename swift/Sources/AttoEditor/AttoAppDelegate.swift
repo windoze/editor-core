@@ -373,6 +373,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         commandPaletteController = AttoCommandPaletteController(
             accessibilityPrefix: "AttoEditor.CommandPalette",
             showsCommandGroups: true,
+            argumentProvider: { command in
+                AttoCommandArgumentPrompt.promptArguments(for: command)
+            },
             commandsProvider: { [weak self] in
                 self?.defaultCommands() ?? []
             }
@@ -1230,9 +1233,12 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             id: command.id,
             title: command.title,
             group: metadata.group,
+            swatchColor: command.swatchColor,
             isEnabled: commandIsEnabled(requirement: metadata.requirement, schema: metadata.schema),
             requiresEditor: metadata.requirement.requiresEditor,
             schema: metadata.schema,
+            promptsForArguments: metadata.schema.isParameterized,
+            initialArguments: command.initialArguments,
             runWithArguments: { [weak self] arguments in
                 command.runWithArguments(arguments)
                 self?.rememberRecentCommand(command.id, arguments: arguments)
@@ -1276,6 +1282,8 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             isEnabled: command.isEnabled,
             requiresEditor: command.requiresEditor,
             schema: command.schema,
+            promptsForArguments: command.promptsForArguments,
+            initialArguments: replayArguments,
             runWithArguments: { providedArguments in
                 let effectiveArguments = providedArguments.isEmpty ? replayArguments : providedArguments
                 command.runWithArguments(effectiveArguments)

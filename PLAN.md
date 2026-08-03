@@ -1374,6 +1374,12 @@
   - 验证记录：
     - `swift test --package-path swift --filter 'AttoEditorCommandTests.test(CommandPaletteReplaysRecentCommandArguments|CommandPalettePersistsRecentCommandArgumentsAcrossDelegates|CommandPalettePersistsRecentCommandsAcrossDelegates|CommandPaletteOrdersRecentCommandsFirst|ExecuteCommandAcceptsTypedArgumentsForParameterizedCommands)'`
     - `git diff --check`
+- 中间提交：`feat(app): prompt palette command arguments`
+  - 所属任务：阶段 8 的 Command、menu、keymap、palette 与 Sublime 行为矩阵增量；让主命令 palette 能根据 command schema 为参数化命令打开通用参数表单，并把最近参数作为可编辑初始值。
+  - 提交边界：`AttoCommandPaletteCommand` 增加参数 prompt 标志和 initial arguments；主 command palette 注入 `AttoCommandArgumentPrompt`，支持 string/integer/number/boolean/json 和 choices 的基础 AppKit 表单、schema 校验与错误重试；Quick Open/LSP result palette 等复用 controller 的非主 palette 默认不启用参数 prompt。最近参数 command 仍保留 `run()` replay 语义，但在主 command palette UI 中会先以最近参数预填表单。本提交不实现宏录制/回放、不实现 package/plugin command 入口、不做 Sublime overlay/panel 级参数 UI 复刻，也不改变菜单/keymap 无参数执行边界。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'Atto(AccessibilityIdentifierTests.test(CommandPalettePromptsForParameterizedCommands|CommandPaletteShowsCommandGroupsAndFiltersByMetadata|CommandPalettePanelExposesStableIdentifiers)|EditorCommandTests.test(CommandPaletteReplaysRecentCommandArguments|CommandPalettePersistsRecentCommandArgumentsAcrossDelegates))'`
+    - `git diff --check`
 
 ## 阶段 9: 配置、偏好与 capability DTO 完整性
 
