@@ -161,6 +161,11 @@ fn ffi_feature_flags_include_semantic_tokens_requests() {
         editor_core_ui_ffi_feature_flags() & ECU_FEATURE_EDITOR_UI_MINIMAP_ENVELOPE,
         0
     );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags()
+            & ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_REDO,
+        0
+    );
 }
 
 #[test]
@@ -248,6 +253,11 @@ fn ffi_runtime_info_json_reports_version_and_feature_descriptors() {
         feature["name"] == "editor_ui_minimap_envelope"
             && feature["bit"] == 39
             && feature["flag"] == ECU_FEATURE_EDITOR_UI_MINIMAP_ENVELOPE
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "multi_document_workspace_edit_transaction_redo"
+            && feature["bit"] == 40
+            && feature["flag"] == ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_REDO
     }));
     assert!(features.iter().any(|feature| {
         feature["name"] == "multi_document_workspace_edit_transaction"
@@ -1587,6 +1597,42 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
         .into_owned();
     unsafe { editor_core_ui_ffi_string_free(restored_beta_text_ptr) };
     assert_eq!(restored_beta_text, "beta saved mirror");
+
+    let redo_ptr =
+        editor_core_ui_ffi_multi_document_redo_last_workspace_edit_transaction_json(multi);
+    assert!(!redo_ptr.is_null());
+    let redo_json = unsafe { std::ffi::CStr::from_ptr(redo_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(redo_ptr) };
+    let redo_value: serde_json::Value = serde_json::from_str(&redo_json).unwrap();
+    assert_eq!(redo_value["mode"], "redo");
+    assert_eq!(redo_value["applied"], true);
+    assert_eq!(redo_value["applied_uris"][0], "file:///project/Beta.swift");
+    let redone_beta_text_ptr = editor_core_ui_ffi_multi_document_tab_text(multi, beta_id);
+    assert!(!redone_beta_text_ptr.is_null());
+    let redone_beta_text = unsafe { std::ffi::CStr::from_ptr(redone_beta_text_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(redone_beta_text_ptr) };
+    assert_eq!(redone_beta_text, "BETA saved mirror");
+
+    let transaction_events_ptr =
+        editor_core_ui_ffi_multi_document_workspace_edit_transaction_events_json(multi, 1);
+    assert!(!transaction_events_ptr.is_null());
+    let transaction_events_json = unsafe { std::ffi::CStr::from_ptr(transaction_events_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(transaction_events_ptr) };
+    let transaction_events_value: serde_json::Value =
+        serde_json::from_str(&transaction_events_json).unwrap();
+    assert_eq!(transaction_events_value["latest_sequence"], 2);
+    assert_eq!(transaction_events_value["events"][0]["operation"], "redo");
+
+    let second_undo_ptr =
+        editor_core_ui_ffi_multi_document_undo_last_workspace_edit_transaction_json(multi);
+    assert!(!second_undo_ptr.is_null());
+    unsafe { editor_core_ui_ffi_string_free(second_undo_ptr) };
 
     let unavailable_undo_ptr =
         editor_core_ui_ffi_multi_document_undo_last_workspace_edit_transaction_json(multi);

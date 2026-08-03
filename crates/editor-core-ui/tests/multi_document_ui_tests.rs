@@ -2,6 +2,7 @@ use editor_core::SearchOptions;
 use editor_core_lsp::path_to_file_uri;
 use editor_core_ui::MultiDocumentEditorUi;
 use serde_json::json;
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 fn unique_test_dir(prefix: &str) -> PathBuf {
@@ -1113,7 +1114,7 @@ fn multi_document_ui_undoes_last_workspace_edit_transaction() {
             {
                 "textDocument": {
                     "uri": open_uri.as_str(),
-                    "version": null
+                    "version": 0
                 },
                 "edits": [
                     {
@@ -1168,6 +1169,92 @@ fn multi_document_ui_undoes_last_workspace_edit_transaction() {
     let unavailable = ui.undo_last_workspace_edit_transaction().unwrap();
     assert!(!unavailable.undone);
     assert!(unavailable.restored_uris.is_empty());
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn multi_document_ui_redoes_last_workspace_edit_transaction() {
+    let root = unique_test_dir("editor-core-ui-workspace-edit-redo");
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    let unopened = root.join("src").join("Unopened.swift");
+    std::fs::write(&unopened, "unopened\n").unwrap();
+
+    let root_uri = path_to_file_uri(root.as_path());
+    let open_uri = path_to_file_uri(root.join("src").join("Open.swift").as_path());
+    let unopened_uri = path_to_file_uri(unopened.as_path());
+
+    let mut ui = MultiDocumentEditorUi::new();
+    ui.set_workspace_roots([root_uri]);
+    let tab = ui.open_tab("open\n", 80);
+    ui.set_tab_document_uri(tab, Some(open_uri.clone()))
+        .unwrap();
+
+    let edit = json!({
+        "documentChanges": [
+            {
+                "textDocument": {
+                    "uri": open_uri.as_str(),
+                    "version": 0
+                },
+                "edits": [
+                    {
+                        "range": {
+                            "start": { "line": 0, "character": 0 },
+                            "end": { "line": 0, "character": 4 }
+                        },
+                        "newText": "OPEN"
+                    }
+                ]
+            },
+            {
+                "textDocument": {
+                    "uri": unopened_uri.as_str(),
+                    "version": null
+                },
+                "edits": [
+                    {
+                        "range": {
+                            "start": { "line": 0, "character": 0 },
+                            "end": { "line": 0, "character": 8 }
+                        },
+                        "newText": "UNOPENED"
+                    }
+                ]
+            }
+        ]
+    })
+    .to_string();
+
+    let applied = ui.apply_workspace_edit_transaction(&edit).unwrap();
+    assert!(applied.applied);
+    assert_eq!(ui.tab_text(tab).unwrap(), "OPEN\n");
+    assert_eq!(std::fs::read_to_string(&unopened).unwrap(), "UNOPENED\n");
+
+    let undone = ui.undo_last_workspace_edit_transaction().unwrap();
+    assert!(undone.undone);
+    assert_eq!(ui.tab_text(tab).unwrap(), "open\n");
+    assert_eq!(std::fs::read_to_string(&unopened).unwrap(), "unopened\n");
+
+    let redone = ui.redo_last_workspace_edit_transaction().unwrap();
+    assert!(redone.applied);
+    assert_eq!(redone.mode, "redo");
+    assert_eq!(redone.applied_edit_count, 2);
+    assert_eq!(
+        redone.applied_uris.into_iter().collect::<BTreeSet<_>>(),
+        [open_uri, unopened_uri].into_iter().collect()
+    );
+    assert_eq!(ui.tab_text(tab).unwrap(), "OPEN\n");
+    assert_eq!(std::fs::read_to_string(&unopened).unwrap(), "UNOPENED\n");
+
+    let events = ui.workspace_edit_transaction_events_after(0);
+    assert_eq!(events.latest_sequence, 2);
+    assert_eq!(events.events[0].operation, "apply");
+    assert_eq!(events.events[1].operation, "redo");
+
+    let unavailable = ui.redo_last_workspace_edit_transaction().unwrap();
+    assert!(!unavailable.applied);
+    assert_eq!(unavailable.mode, "redo");
 
     let _ = std::fs::remove_dir_all(root);
 }

@@ -99,6 +99,7 @@ enum AttoKeymap {
         "editor.find": AttoKeyBinding(keyEquivalent: "f", modifiers: [.command]),
         "editor.replace": AttoKeyBinding(keyEquivalent: "f", modifiers: [.command, .option]),
         "workspace.undo_last_workspace_edit": AttoKeyBinding(keyEquivalent: "z", modifiers: [.command, .option]),
+        "workspace.redo_last_workspace_edit": AttoKeyBinding(keyEquivalent: "z", modifiers: [.command, .option, .shift]),
         "editor.format_selection": AttoKeyBinding(keyEquivalent: "f", modifiers: [.option, .shift]),
         "editor.duplicate_lines": AttoKeyBinding(keyEquivalent: "d", modifiers: [.command, .shift]),
         "editor.delete_lines": AttoKeyBinding(keyEquivalent: "k", modifiers: [.command, .shift]),

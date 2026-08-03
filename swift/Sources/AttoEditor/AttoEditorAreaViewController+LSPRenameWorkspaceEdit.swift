@@ -584,6 +584,9 @@ extension AttoEditorAreaViewController {
             if let undoneSequence {
                 workspaceEditConsumedUndoSequences.insert(undoneSequence)
             }
+            if view.window?.undoManager?.isUndoing == true {
+                registerWorkspaceEditRedoManagerAction()
+            }
             setTransientStatusText("Workspace edit undone")
             refreshWorkspaceEditHistoryPanelIfVisible()
             return true
@@ -595,10 +598,50 @@ extension AttoEditorAreaViewController {
         }
     }
 
+    @discardableResult
+    func redoLastCoreWorkspaceEditTransaction() -> Bool {
+        guard let coreDocuments else {
+            NSSound.beep()
+            return false
+        }
+
+        do {
+            let projectedURLsBeforeRedo = projectedFileURLsByTabID()
+            let result = try coreDocuments.redoLastWorkspaceEditTransaction()
+            guard result.applied else {
+                setTransientStatusText("No WorkspaceEdit transaction to redo")
+                return false
+            }
+            try syncAppTabsFromCoreWorkspaceEditTransaction(
+                coreDocuments,
+                projectedURLsBeforeSync: projectedURLsBeforeRedo
+            )
+            if view.window?.undoManager?.isRedoing == true {
+                registerWorkspaceEditUndoManagerAction()
+            }
+            setTransientStatusText("Workspace edit redone")
+            refreshWorkspaceEditHistoryPanelIfVisible()
+            return true
+        } catch {
+            NSLog("AttoEditor: failed to redo WorkspaceEdit transaction: %@", String(describing: error))
+            setTransientStatusText("Workspace edit redo failed")
+            NSSound.beep()
+            return false
+        }
+    }
+
     func registerWorkspaceEditUndoManagerAction() {
         guard let undoManager = view.window?.undoManager else { return }
         undoManager.registerUndo(withTarget: self) { controller in
             controller.undoLastCoreWorkspaceEditTransaction()
+        }
+        undoManager.setActionName("Workspace Edit")
+    }
+
+    func registerWorkspaceEditRedoManagerAction() {
+        guard let undoManager = view.window?.undoManager else { return }
+        undoManager.registerUndo(withTarget: self) { controller in
+            controller.redoLastCoreWorkspaceEditTransaction()
         }
         undoManager.setActionName("Workspace Edit")
     }

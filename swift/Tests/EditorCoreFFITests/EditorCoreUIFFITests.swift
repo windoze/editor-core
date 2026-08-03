@@ -99,6 +99,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(info.supports(.multiDocumentWorkspaceEditTransactionEvents))
         XCTAssertTrue(info.supports(.multiDocumentWorkspaceRoots))
         XCTAssertTrue(info.supports(.multiDocumentWorkspaceEditTransactionUndo))
+        XCTAssertTrue(info.supports(.multiDocumentWorkspaceEditTransactionRedo))
         XCTAssertTrue(info.supports(.multiDocumentTabLanguageID))
         XCTAssertTrue(info.supports(.jsonCommandEnvelope))
         XCTAssertTrue(info.supports(.lspResultEnvelope))
@@ -201,6 +202,12 @@ final class EditorCoreUIFFITests: XCTestCase {
                 && (feature["bit"] as? NSNumber)?.uint8Value == 39
                 && (feature["flag"] as? NSNumber)?.uint64Value
                     == EditorCoreUIFFIFeatures.editorUIMinimapEnvelope.rawValue
+        })
+        XCTAssertTrue(features.contains { feature in
+            feature["name"] as? String == "multi_document_workspace_edit_transaction_redo"
+                && (feature["bit"] as? NSNumber)?.uint8Value == 40
+                && (feature["flag"] as? NSNumber)?.uint64Value
+                    == EditorCoreUIFFIFeatures.multiDocumentWorkspaceEditTransactionRedo.rawValue
         })
     }
 
@@ -1130,6 +1137,27 @@ final class EditorCoreUIFFITests: XCTestCase {
             return
         }
         XCTAssertEqual(undoValue["undone"], .bool(false))
+
+        let apply = try multi.applyWorkspaceEditTransactionEnvelope(workspaceEdit)
+        XCTAssertTrue(apply.ok)
+        XCTAssertEqual(apply.operationKind, .apply)
+        XCTAssertEqual(try multi.tabText(tabId: tab), "Hello\n")
+
+        let appliedUndo = try multi.undoLastWorkspaceEditTransactionEnvelope()
+        XCTAssertTrue(appliedUndo.ok)
+        XCTAssertEqual(appliedUndo.operationKind, .undo)
+        XCTAssertEqual(try multi.tabText(tabId: tab), "hello\n")
+
+        let redo = try multi.redoLastWorkspaceEditTransactionEnvelope()
+        XCTAssertTrue(redo.ok)
+        XCTAssertEqual(redo.operationKind, .redo)
+        guard case .object(let redoValue)? = redo.value else {
+            XCTFail("expected WorkspaceEdit redo result object")
+            return
+        }
+        XCTAssertEqual(redoValue["mode"], .string("redo"))
+        XCTAssertEqual(redoValue["applied"], .bool(true))
+        XCTAssertEqual(try multi.tabText(tabId: tab), "Hello\n")
 
         let failure = try multi.workspaceEditTransactionEnvelope(
             operationRawValue: "future_operation",
@@ -2304,6 +2332,19 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(undone.restoredURIs, [openURL.absoluteString, unopenedURL.absoluteString])
         XCTAssertEqual(try multi.tabText(tabId: tab), "open\n")
         XCTAssertFalse(try multi.isTabModified(tab))
+        XCTAssertEqual(try String(contentsOf: unopenedURL, encoding: .utf8), "unopened\n")
+
+        let redone = try multi.redoLastWorkspaceEditTransaction()
+        XCTAssertTrue(redone.applied)
+        XCTAssertEqual(redone.mode, "redo")
+        XCTAssertEqual(redone.appliedEditCount, 2)
+        XCTAssertEqual(redone.appliedURIs, [openURL.absoluteString, unopenedURL.absoluteString])
+        XCTAssertEqual(try multi.tabText(tabId: tab), "OPEN\n")
+        XCTAssertEqual(try String(contentsOf: unopenedURL, encoding: .utf8), "UNOPENED\n")
+
+        let undoAfterRedo = try multi.undoLastWorkspaceEditTransaction()
+        XCTAssertTrue(undoAfterRedo.undone)
+        XCTAssertEqual(try multi.tabText(tabId: tab), "open\n")
         XCTAssertEqual(try String(contentsOf: unopenedURL, encoding: .utf8), "unopened\n")
 
         let unavailable = try multi.undoLastWorkspaceEditTransaction()

@@ -176,6 +176,7 @@ uint32_t editor_core_ui_ffi_abi_version(void);
 #define ECU_FEATURE_LSP_STATUS_ENVELOPE (1ull << 37)
 #define ECU_FEATURE_LSP_WORKSPACE_EDIT_APPLICATION_ENVELOPE (1ull << 38)
 #define ECU_FEATURE_EDITOR_UI_MINIMAP_ENVELOPE (1ull << 39)
+#define ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_REDO (1ull << 40)
 uint64_t editor_core_ui_ffi_feature_flags(void);
 char* editor_core_ui_ffi_runtime_info_json(void);
 
@@ -299,6 +300,8 @@ char* editor_core_ui_ffi_multi_document_apply_workspace_edit_transaction_json(
     MultiDocumentEditorUi* multi,
     const char* workspace_edit_json_utf8);
 char* editor_core_ui_ffi_multi_document_undo_last_workspace_edit_transaction_json(
+    MultiDocumentEditorUi* multi);
+char* editor_core_ui_ffi_multi_document_redo_last_workspace_edit_transaction_json(
     MultiDocumentEditorUi* multi);
 char* editor_core_ui_ffi_multi_document_workspace_edit_transaction_envelope_json(
     MultiDocumentEditorUi* multi,

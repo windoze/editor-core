@@ -443,6 +443,24 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEditRegistersAppKitUndoManagerAction`
     - `swift test --package-path swift --filter 'AttoEditorCommandTests.testWorkspaceEditTransactionUndoCommandRestoresAppProjectionAndFiles|AttoEditorCommandTests.testWorkspaceEditHistoryPanelShowsCoreTransactionEvents'`
     - `git diff --check`
+- 中间提交：`feat(ui): redo workspace edit transactions`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；把 core-owned WorkspaceEdit transaction undo stack 后的 redo 能力从缺口推进到 Rust core、C ABI、Swift typed wrapper、AttoEditor command/menu/keymap、AppKit `UndoManager` redo 和 history panel 可见路径。
+  - 提交边界：新增 `MultiDocumentEditorUi.redo_last_workspace_edit_transaction(...)` 和 UI FFI `editor_core_ui_ffi_multi_document_redo_last_workspace_edit_transaction_json(...)`；redo record 复用原始 WorkspaceEdit transaction JSON 重新走 core apply 路径，并移除 redo 用 `TextDocumentEdit.version` 以避免 undo 后 document version 变化误阻断 redo；新增 `ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_REDO`、Swift `MultiDocumentEditorUI.redoLastWorkspaceEditTransaction()`、`workspace.redo_last_workspace_edit` command、Edit 菜单项、`cmd+option+shift+z` 默认 binding、AppKit redo action 和 history panel redo event 展示。本提交不实现更深层 conflict resolution UI，不改变普通 editor buffer undo/redo 语义。
+  - 验证记录：
+    - `cargo fmt --package editor-core-ui --package editor-core-ui-ffi`
+    - `cargo test -p editor-core-ui multi_document_ui_redoes_last_workspace_edit_transaction`
+    - `cargo test -p editor-core-ui multi_document_ui_undoes_last_workspace_edit_transaction`
+    - `cargo test -p editor-core-ui-ffi ffi_multi_document_exposes_tab_preview_split_and_search`
+    - `cargo test -p editor-core-ui-ffi ffi_workspace_edit_transaction_envelope_json_reports_success_and_errors`
+    - `cargo test -p editor-core-ui-ffi ffi_feature_flags_include_semantic_tokens_requests`
+    - `cargo test -p editor-core-ui-ffi ffi_runtime_info_json_reports_version_and_feature_descriptors`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFITests.testWorkspaceEditTransactionEnvelopeReportsSuccessAndError|EditorCoreUIFFITests.testMultiDocumentEditorUIUndoesLastWorkspaceEditTransaction'`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testLoadsLibraryAndVersion`
+    - `swift test --package-path swift --filter AttoRuntimeCompatibilityTests.testMissingOptionalFeaturesDoNotBlockLaunchCompatibility`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs|AttoEditorCommandTests.testCommandRegistryCarriesMetadataAndAvailability|AttoEditorCommandTests.testCommandRegistryCarriesParameterSchemasAndMacroPolicies|AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap|AttoEditorCommandTests.testWorkspaceEditTransactionUndoCommandRestoresAppProjectionAndFiles|AttoEditorCommandTests.testWorkspaceEditRegistersAppKitUndoManagerAction|AttoEditorCommandTests.testWorkspaceEditHistoryPanelShowsCoreTransactionEvents'`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testCommandRegistryDisablesCommandsForMissingOptionalRuntimeFeatures`
+    - `git diff --check`
 
 ## 阶段 5: 多文档、tab、split、project、session 完整迁移
 

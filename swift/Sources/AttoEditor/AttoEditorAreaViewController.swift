@@ -519,6 +519,10 @@ final class AttoEditorAreaViewController: NSViewController {
         undoLastCoreWorkspaceEditTransaction()
     }
 
+    func _redoLastCoreWorkspaceEditTransactionForTesting() -> Bool {
+        redoLastCoreWorkspaceEditTransaction()
+    }
+
     func _workspaceEditHistoryPanelItemsForTesting() -> [AttoWorkspaceEditHistoryPanelController.Item] {
         workspaceEditHistoryPanelController?.currentItems ?? []
     }

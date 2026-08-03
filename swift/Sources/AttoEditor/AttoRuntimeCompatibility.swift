@@ -242,6 +242,11 @@ struct AttoRuntimeCompatibility {
             name: "multi-document WorkspaceEdit transaction undo",
             reason: "WorkspaceEdit undo commands can restore the most recent core-owned transaction; Swift disables that command when unavailable."
         ),
+        RuntimeFeature(
+            feature: .multiDocumentWorkspaceEditTransactionRedo,
+            name: "multi-document WorkspaceEdit transaction redo",
+            reason: "WorkspaceEdit redo commands can reapply the most recently undone core-owned transaction; Swift disables that command when unavailable."
+        ),
     ]
 
     static func evaluate(library: EditorCoreUIFFILibrary) -> Report {

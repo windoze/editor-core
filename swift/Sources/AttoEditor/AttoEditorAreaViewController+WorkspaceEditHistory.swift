@@ -48,7 +48,7 @@ extension AttoEditorAreaViewController {
         guard let coreDocuments else { return nil }
         guard let snapshot = try? coreDocuments.workspaceEditTransactionEvents() else { return nil }
         return snapshot.events.last { event in
-            event.operation == "apply"
+            (event.operation == "apply" || event.operation == "redo")
                 && event.result.applied
                 && workspaceEditConsumedUndoSequences.contains(event.sequence) == false
         }?.sequence

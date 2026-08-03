@@ -1010,6 +1010,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .init(id: "workspace.undo_last_workspace_edit", title: "Workspace: Undo Last Workspace Edit") { [weak self] in
                 self?.activeWindow()?.editorAreaController.undoLastCoreWorkspaceEditTransaction()
             },
+            .init(id: "workspace.redo_last_workspace_edit", title: "Workspace: Redo Last Workspace Edit") { [weak self] in
+                self?.activeWindow()?.editorAreaController.redoLastCoreWorkspaceEditTransaction()
+            },
             .init(id: "workspace.show_workspace_edit_history", title: "Workspace: Show Workspace Edit History") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showWorkspaceEditHistoryPanel()
             },
@@ -2519,7 +2522,8 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             case "file.open_folder", "file.open_file", "file.new", "workbench.command_palette", "workbench.preferences":
                 return .none
             case "go.file", "search.find_in_files", "view.toggle_sidebar",
-                 "workspace.undo_last_workspace_edit", "workspace.show_workspace_edit_history":
+                 "workspace.undo_last_workspace_edit", "workspace.redo_last_workspace_edit",
+                 "workspace.show_workspace_edit_history":
                 return .activeWindow
             case "view.focus_next_pane", "view.focus_previous_pane", "view.move_pane_left", "view.move_pane_right", "view.close_pane":
                 return .multiplePanes
@@ -2583,6 +2587,11 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             return AttoCommandSchema(
                 macroPolicy: .notRecordable,
                 requiredRuntimeFeatures: .workspaceEditTransactionUndoCommandRequirements
+            )
+        case "workspace.redo_last_workspace_edit":
+            return AttoCommandSchema(
+                macroPolicy: .notRecordable,
+                requiredRuntimeFeatures: .workspaceEditTransactionRedoCommandRequirements
             )
         case "workspace.show_workspace_edit_history":
             return AttoCommandSchema(

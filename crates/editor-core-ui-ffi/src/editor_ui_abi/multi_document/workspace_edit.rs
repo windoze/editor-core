@@ -74,6 +74,28 @@ pub extern "C" fn editor_core_ui_ffi_multi_document_undo_last_workspace_edit_tra
     }
 }
 
+/// Redo the most recently undone WorkspaceEdit transaction.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_multi_document_redo_last_workspace_edit_transaction_json(
+    multi: *mut MultiDocumentEditorUi,
+) -> *mut c_char {
+    match ffi_catch(|| {
+        let multi = require_mut(multi, "multi")?;
+        multi
+            .redo_last_workspace_edit_transaction_json()
+            .map_err(map_ui_error)
+    }) {
+        Ok(json) => {
+            clear_last_error();
+            make_c_string_ptr(json)
+        }
+        Err(err) => {
+            set_last_error_from_error(err);
+            ptr::null_mut()
+        }
+    }
+}
+
 /// Preview, apply, or undo an LSP WorkspaceEdit transaction and return a structured envelope.
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_multi_document_workspace_edit_transaction_envelope_json(
@@ -139,6 +161,9 @@ fn workspace_edit_transaction_json(
         }
         "undo" => multi
             .undo_last_workspace_edit_transaction_json()
+            .map_err(map_ui_error),
+        "redo" => multi
+            .redo_last_workspace_edit_transaction_json()
             .map_err(map_ui_error),
         _ => Err(invalid_argument(format!(
             "unknown workspace edit transaction operation {operation:?}"

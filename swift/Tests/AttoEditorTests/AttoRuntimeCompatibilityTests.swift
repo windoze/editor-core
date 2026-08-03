@@ -120,6 +120,7 @@ final class AttoRuntimeCompatibilityTests: XCTestCase {
                 EditorCoreUIFFIFeatures.multiDocumentWorkspaceEditTransactionEvents.rawValue,
                 EditorCoreUIFFIFeatures.multiDocumentWorkspaceRoots.rawValue,
                 EditorCoreUIFFIFeatures.multiDocumentWorkspaceEditTransactionUndo.rawValue,
+                EditorCoreUIFFIFeatures.multiDocumentWorkspaceEditTransactionRedo.rawValue,
             ])
         )
         XCTAssertTrue(report.diagnosticMessage.contains("Unavailable optional UI FFI features"))

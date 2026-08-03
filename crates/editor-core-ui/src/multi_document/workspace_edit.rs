@@ -161,6 +161,11 @@ pub(super) struct WorkspaceEditTransactionUndoRecord {
     restored_uris: Vec<String>,
     restored_open_tab_count: usize,
     restored_filesystem_entry_count: usize,
+    workspace_edit_json: String,
+}
+
+pub(super) struct WorkspaceEditTransactionRedoRecord {
+    workspace_edit_json: String,
 }
 
 impl WorkspaceEditTransactionUndoRecord {
@@ -168,20 +173,29 @@ impl WorkspaceEditTransactionUndoRecord {
         open_tab_rollback: OpenTabRollback,
         filesystem_rollback: FilesystemRollback,
         restored_uris: Vec<String>,
+        workspace_edit_json: String,
     ) -> Self {
         let restored_open_tab_count = open_tab_rollback.affected_tab_count();
         let restored_filesystem_entry_count = filesystem_rollback.entry_count();
+        let redo_workspace_edit_json = workspace_edit_json_for_redo(workspace_edit_json.as_str());
         Self {
             open_tab_rollback,
             filesystem_rollback,
             restored_uris,
             restored_open_tab_count,
             restored_filesystem_entry_count,
+            workspace_edit_json: redo_workspace_edit_json,
         }
     }
 
     pub(super) fn discard(mut self) -> Result<(), UiError> {
         self.filesystem_rollback.cleanup_backups()
+    }
+
+    pub(super) fn redo_record(&self) -> WorkspaceEditTransactionRedoRecord {
+        WorkspaceEditTransactionRedoRecord {
+            workspace_edit_json: self.workspace_edit_json.clone(),
+        }
     }
 
     pub(super) fn undo(
@@ -220,6 +234,41 @@ impl WorkspaceEditTransactionUndoRecord {
     }
 }
 
+impl WorkspaceEditTransactionRedoRecord {
+    pub(super) fn workspace_edit_json(&self) -> &str {
+        self.workspace_edit_json.as_str()
+    }
+}
+
+fn workspace_edit_json_for_redo(workspace_edit_json: &str) -> String {
+    let Ok(mut value) = serde_json::from_str::<Value>(workspace_edit_json) else {
+        return workspace_edit_json.to_string();
+    };
+    strip_text_document_versions_for_redo(&mut value);
+    serde_json::to_string(&value).unwrap_or_else(|_| workspace_edit_json.to_string())
+}
+
+fn strip_text_document_versions_for_redo(value: &mut Value) {
+    let workspace_edit = match value.get_mut("workspaceEdit") {
+        Some(workspace_edit) => workspace_edit,
+        None => value,
+    };
+    let Some(document_changes) = workspace_edit
+        .get_mut("documentChanges")
+        .and_then(Value::as_array_mut)
+    else {
+        return;
+    };
+    for change in document_changes {
+        if let Some(text_document) = change
+            .get_mut("textDocument")
+            .and_then(Value::as_object_mut)
+        {
+            text_document.remove("version");
+        }
+    }
+}
+
 impl Drop for WorkspaceEditTransactionUndoRecord {
     fn drop(&mut self) {
         let _ = self.filesystem_rollback.cleanup_backups();
@@ -233,6 +282,25 @@ pub(super) fn undo_unavailable_result() -> WorkspaceEditTransactionUndoResult {
         restored_open_tab_count: 0,
         restored_filesystem_entry_count: 0,
         message: "no WorkspaceEdit transaction undo record is available".to_string(),
+    }
+}
+
+pub(super) fn redo_unavailable_result() -> WorkspaceEditTransactionResult {
+    WorkspaceEditTransactionResult {
+        mode: "redo".to_string(),
+        apply_mode: "partial".to_string(),
+        applied: false,
+        applied_uri: None,
+        applied_uris: Vec::new(),
+        applied_edit_count: 0,
+        applied_resource_operation_count: 0,
+        resource_operations: Vec::new(),
+        dirty_document_uris: Vec::new(),
+        conflicts: Vec::new(),
+        skipped_uris: Vec::new(),
+        skipped_details: Vec::new(),
+        unsupported_operation_uris: Vec::new(),
+        documents: Vec::new(),
     }
 }
 
@@ -569,6 +637,7 @@ pub(super) fn apply(
             open_tab_rollback,
             filesystem_rollback,
             result.applied_uris.clone(),
+            workspace_edit_json.to_string(),
         ))
     } else {
         filesystem_rollback.commit()?;

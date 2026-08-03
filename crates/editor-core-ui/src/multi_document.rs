@@ -95,6 +95,7 @@ pub struct MultiDocumentEditorUi {
     state_events: state_events::MultiDocumentStateEventStore,
     workspace_edit_transactions: workspace_edit::WorkspaceEditTransactionEventStore,
     workspace_edit_undo_stack: VecDeque<workspace_edit::WorkspaceEditTransactionUndoRecord>,
+    workspace_edit_redo_stack: VecDeque<workspace_edit::WorkspaceEditTransactionRedoRecord>,
 }
 
 impl MultiDocumentEditorUi {
@@ -709,6 +710,19 @@ impl MultiDocumentEditorUi {
         &mut self,
         workspace_edit_json: &str,
     ) -> Result<WorkspaceEditTransactionResult, UiError> {
+        let result =
+            self.apply_workspace_edit_transaction_with_operation(workspace_edit_json, "apply")?;
+        if result.applied {
+            self.workspace_edit_redo_stack.clear();
+        }
+        Ok(result)
+    }
+
+    fn apply_workspace_edit_transaction_with_operation(
+        &mut self,
+        workspace_edit_json: &str,
+        operation: &str,
+    ) -> Result<WorkspaceEditTransactionResult, UiError> {
         let apply_result = workspace_edit::apply(
             &mut self.tabs,
             &mut self.tab_order,
@@ -717,12 +731,13 @@ impl MultiDocumentEditorUi {
             &self.workspace_roots,
             workspace_edit_json,
         )?;
-        let result = apply_result.result;
+        let mut result = apply_result.result;
+        result.mode = operation.to_string();
         if let Some(record) = apply_result.undo_record {
             self.push_workspace_edit_undo_record(record);
         }
         self.workspace_edit_transactions
-            .record("apply", result.clone());
+            .record(operation, result.clone());
         Ok(result)
     }
 
@@ -746,12 +761,17 @@ impl MultiDocumentEditorUi {
         let Some(mut record) = self.workspace_edit_undo_stack.pop_back() else {
             return Ok(workspace_edit::undo_unavailable_result());
         };
-        record.undo(
+        let redo_record = record.redo_record();
+        let result = record.undo(
             &mut self.tabs,
             &mut self.tab_order,
             &mut self.active_tab,
             &mut self.preview_tab,
-        )
+        )?;
+        if result.undone {
+            self.push_workspace_edit_redo_record(redo_record);
+        }
+        Ok(result)
     }
 
     /// Undo the most recent successful WorkspaceEdit transaction as JSON.
@@ -760,6 +780,37 @@ impl MultiDocumentEditorUi {
         serde_json::to_string(&result).map_err(|err| {
             UiError::Processor(format!(
                 "failed to encode workspace edit transaction undo result: {err}"
+            ))
+        })
+    }
+
+    /// Redo the most recently undone WorkspaceEdit transaction owned by this model.
+    pub fn redo_last_workspace_edit_transaction(
+        &mut self,
+    ) -> Result<WorkspaceEditTransactionResult, UiError> {
+        let Some(record) = self.workspace_edit_redo_stack.pop_back() else {
+            return Ok(workspace_edit::redo_unavailable_result());
+        };
+        let workspace_edit_json = record.workspace_edit_json().to_string();
+        match self.apply_workspace_edit_transaction_with_operation(&workspace_edit_json, "redo") {
+            Ok(result) if result.applied => Ok(result),
+            Ok(result) => {
+                self.push_workspace_edit_redo_record(record);
+                Ok(result)
+            }
+            Err(err) => {
+                self.push_workspace_edit_redo_record(record);
+                Err(err)
+            }
+        }
+    }
+
+    /// Redo the most recently undone WorkspaceEdit transaction as JSON.
+    pub fn redo_last_workspace_edit_transaction_json(&mut self) -> Result<String, UiError> {
+        let result = self.redo_last_workspace_edit_transaction()?;
+        serde_json::to_string(&result).map_err(|err| {
+            UiError::Processor(format!(
+                "failed to encode workspace edit transaction redo result: {err}"
             ))
         })
     }
@@ -773,6 +824,16 @@ impl MultiDocumentEditorUi {
             if let Some(record) = self.workspace_edit_undo_stack.pop_front() {
                 let _ = record.discard();
             }
+        }
+    }
+
+    fn push_workspace_edit_redo_record(
+        &mut self,
+        record: workspace_edit::WorkspaceEditTransactionRedoRecord,
+    ) {
+        self.workspace_edit_redo_stack.push_back(record);
+        while self.workspace_edit_redo_stack.len() > MAX_WORKSPACE_EDIT_UNDO_RECORDS {
+            self.workspace_edit_redo_stack.pop_front();
         }
     }
 

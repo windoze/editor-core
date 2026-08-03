@@ -84,6 +84,8 @@ pub const ECU_FEATURE_LSP_STATUS_ENVELOPE: u64 = 1 << 37;
 pub const ECU_FEATURE_LSP_WORKSPACE_EDIT_APPLICATION_ENVELOPE: u64 = 1 << 38;
 /// Feature bit: per-EditorUi minimap snapshots can return structured result envelopes.
 pub const ECU_FEATURE_EDITOR_UI_MINIMAP_ENVELOPE: u64 = 1 << 39;
+/// Feature bit: multi-document WorkspaceEdit transaction redo is available.
+pub const ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_REDO: u64 = 1 << 40;
 
 pub const ECU_FEATURE_FLAGS: u64 = ECU_FEATURE_JSON_COMMAND_DISPATCH
     | ECU_FEATURE_TYPED_DERIVED_SNAPSHOTS
@@ -124,7 +126,8 @@ pub const ECU_FEATURE_FLAGS: u64 = ECU_FEATURE_JSON_COMMAND_DISPATCH
     | ECU_FEATURE_EDITOR_UI_DERIVED_SNAPSHOT_ENVELOPE
     | ECU_FEATURE_LSP_STATUS_ENVELOPE
     | ECU_FEATURE_LSP_WORKSPACE_EDIT_APPLICATION_ENVELOPE
-    | ECU_FEATURE_EDITOR_UI_MINIMAP_ENVELOPE;
+    | ECU_FEATURE_EDITOR_UI_MINIMAP_ENVELOPE
+    | ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_REDO;
 
 struct FeatureDescriptor {
     bit: u8,
@@ -373,6 +376,12 @@ const FEATURE_DESCRIPTORS: &[FeatureDescriptor] = &[
         flag: ECU_FEATURE_EDITOR_UI_MINIMAP_ENVELOPE,
         name: "editor_ui_minimap_envelope",
         description: "Per-EditorUi minimap snapshots can return structured result envelopes.",
+    },
+    FeatureDescriptor {
+        bit: 40,
+        flag: ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_REDO,
+        name: "multi_document_workspace_edit_transaction_redo",
+        description: "Multi-document WorkspaceEdit transaction redo.",
     },
 ];
 

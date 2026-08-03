@@ -361,6 +361,11 @@ extension EditorCoreUIFFIFeatures {
         .multiDocumentWorkspaceEditTransactionUndo,
     ]
 
+    static let workspaceEditTransactionRedoCommandRequirements: Self = [
+        .multiDocumentWorkspaceEditTransaction,
+        .multiDocumentWorkspaceEditTransactionRedo,
+    ]
+
     static let workspaceEditTransactionHistoryCommandRequirements: Self = [
         .multiDocumentWorkspaceEditTransaction,
         .multiDocumentWorkspaceEditTransactionEvents,

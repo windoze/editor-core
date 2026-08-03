@@ -699,6 +699,7 @@ public enum EcuWorkspaceEditTransactionOperation: Hashable, Sendable {
     case preview
     case apply
     case undo
+    case redo
     case unknown(String)
 
     public init(rawValue: String) {
@@ -709,6 +710,8 @@ public enum EcuWorkspaceEditTransactionOperation: Hashable, Sendable {
             self = .apply
         case "undo":
             self = .undo
+        case "redo":
+            self = .redo
         default:
             self = .unknown(rawValue)
         }
@@ -722,6 +725,8 @@ public enum EcuWorkspaceEditTransactionOperation: Hashable, Sendable {
             return "apply"
         case .undo:
             return "undo"
+        case .redo:
+            return "redo"
         case let .unknown(rawValue):
             return rawValue
         }
@@ -1690,6 +1695,20 @@ public final class MultiDocumentEditorUI {
         )
     }
 
+    public func redoLastWorkspaceEditTransactionJSON() throws -> String {
+        try ffiStringResult(context: "multi_document_redo_last_workspace_edit_transaction_json") {
+            editor_core_ui_ffi_multi_document_redo_last_workspace_edit_transaction_json(handle)
+        }
+    }
+
+    public func redoLastWorkspaceEditTransaction() throws -> EcuWorkspaceEditTransactionResult {
+        try decode(
+            EcuWorkspaceEditTransactionResult.self,
+            from: redoLastWorkspaceEditTransactionJSON(),
+            context: "multi_document_redo_last_workspace_edit_transaction_decode"
+        )
+    }
+
     public func workspaceEditTransactionEnvelopeJSON(
         operationRawValue: String,
         workspaceEditJSON: String? = nil
@@ -1760,6 +1779,10 @@ public final class MultiDocumentEditorUI {
 
     public func undoLastWorkspaceEditTransactionEnvelope() throws -> EcuWorkspaceEditTransactionEnvelope {
         try workspaceEditTransactionEnvelope(operation: .undo)
+    }
+
+    public func redoLastWorkspaceEditTransactionEnvelope() throws -> EcuWorkspaceEditTransactionEnvelope {
+        try workspaceEditTransactionEnvelope(operation: .redo)
     }
 
     public func workspaceEditTransactionEventsLatestSequence() throws -> UInt64 {

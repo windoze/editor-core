@@ -300,7 +300,7 @@ enum AttoWorkspaceEditHistoryFormatter {
         consumedUndoSequences: Set<UInt64> = []
     ) -> [AttoWorkspaceEditHistoryPanelController.Item] {
         let latestUndoableSequence = snapshot.events.last { event in
-            event.operation == "apply"
+            isUndoableTransactionOperation(event.operation)
                 && event.result.applied
                 && consumedUndoSequences.contains(event.sequence) == false
         }?.sequence
@@ -322,6 +322,10 @@ enum AttoWorkspaceEditHistoryFormatter {
     private static func operationTitle(_ operation: String) -> String {
         guard operation.isEmpty == false else { return "Transaction" }
         return operation.prefix(1).uppercased() + operation.dropFirst()
+    }
+
+    private static func isUndoableTransactionOperation(_ operation: String) -> Bool {
+        operation == "apply" || operation == "redo"
     }
 
     private static func status(for result: EcuWorkspaceEditTransactionResult) -> String {

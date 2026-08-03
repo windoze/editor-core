@@ -244,6 +244,11 @@ public enum EditorCoreUIFFIRuntimeCompatibility {
             reason: "Swift hosts can undo the most recent core-owned WorkspaceEdit transaction."
         ),
         EditorCoreUIFFIRuntimeFeature(
+            feature: .multiDocumentWorkspaceEditTransactionRedo,
+            name: "multi-document WorkspaceEdit transaction redo",
+            reason: "Swift hosts can redo the most recently undone core-owned WorkspaceEdit transaction."
+        ),
+        EditorCoreUIFFIRuntimeFeature(
             feature: .multiDocumentTabLanguageID,
             name: "multi-document tab language id",
             reason: "Swift hosts can attach language id metadata to core-owned tabs for project-level language features."

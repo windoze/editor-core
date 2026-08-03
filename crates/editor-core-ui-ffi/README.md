@@ -531,8 +531,12 @@ The returned string is owned by the caller and must be freed with
 The legacy WorkspaceEdit transaction APIs remain available as raw JSON string functions:
 `editor_core_ui_ffi_multi_document_preview_workspace_edit_transaction_json(...)`,
 `editor_core_ui_ffi_multi_document_apply_workspace_edit_transaction_json(...)`, and
-`editor_core_ui_ffi_multi_document_undo_last_workspace_edit_transaction_json(...)`. Hosts that want
-a single JSON result/error shape can use the additive operation-based envelope variant:
+`editor_core_ui_ffi_multi_document_undo_last_workspace_edit_transaction_json(...)`. When
+`ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_REDO` is present, hosts may also call
+`editor_core_ui_ffi_multi_document_redo_last_workspace_edit_transaction_json(...)`; redo returns the
+same result shape as apply with `mode: "redo"` and reuses the normal core WorkspaceEdit conflict
+checks. Hosts that want a single JSON result/error shape can use the additive operation-based
+envelope variant:
 
 ```c
 char* editor_core_ui_ffi_multi_document_workspace_edit_transaction_envelope_json(
@@ -542,8 +546,8 @@ char* editor_core_ui_ffi_multi_document_workspace_edit_transaction_envelope_json
 );
 ```
 
-`operation_utf8` accepts `preview`, `apply`, or `undo`. `preview` and `apply` require
-`workspace_edit_json_utf8`; `undo` ignores it and may be called with null.
+`operation_utf8` accepts `preview`, `apply`, `undo`, or `redo`. `preview` and `apply` require
+`workspace_edit_json_utf8`; `undo` and `redo` ignore it and may be called with null.
 
 Success:
 

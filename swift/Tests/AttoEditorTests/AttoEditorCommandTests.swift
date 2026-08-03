@@ -43,6 +43,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("editor.unfold"))
         XCTAssertTrue(ids.contains("editor.unfold_all"))
         XCTAssertTrue(ids.contains("workspace.undo_last_workspace_edit"))
+        XCTAssertTrue(ids.contains("workspace.redo_last_workspace_edit"))
         XCTAssertTrue(ids.contains("workspace.show_workspace_edit_history"))
         XCTAssertTrue(ids.contains("macro.toggle_recording"))
         XCTAssertTrue(ids.contains("macro.replay_last"))
@@ -151,6 +152,11 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertFalse(workspaceUndo.requiresEditor)
         XCTAssertFalse(workspaceUndo.isEnabled)
 
+        let workspaceRedo = try XCTUnwrap(commands.first { $0.id == "workspace.redo_last_workspace_edit" })
+        XCTAssertEqual(workspaceRedo.group, "Workspace")
+        XCTAssertFalse(workspaceRedo.requiresEditor)
+        XCTAssertFalse(workspaceRedo.isEnabled)
+
         let workspaceHistory = try XCTUnwrap(commands.first { $0.id == "workspace.show_workspace_edit_history" })
         XCTAssertEqual(workspaceHistory.group, "Workspace")
         XCTAssertFalse(workspaceHistory.requiresEditor)
@@ -224,6 +230,13 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(
             workspaceUndo.requiredRuntimeFeatures,
             .workspaceEditTransactionUndoCommandRequirements
+        )
+
+        let workspaceRedo = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "workspace.redo_last_workspace_edit"))
+        XCTAssertEqual(workspaceRedo.macroPolicy, .notRecordable)
+        XCTAssertEqual(
+            workspaceRedo.requiredRuntimeFeatures,
+            .workspaceEditTransactionRedoCommandRequirements
         )
 
         let toggleMacro = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "macro.toggle_recording"))
@@ -305,6 +318,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "lsp.workspace_symbols"))
         XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "lsp.rename"))
         XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "workspace.undo_last_workspace_edit"))
+        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "workspace.redo_last_workspace_edit"))
 
         delegate._setRuntimeInfoForTesting(EditorCoreUIFFIRuntimeInfo(
             abiVersion: AttoRuntimeCompatibility.minimumUIABIVersion,
@@ -320,6 +334,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "lsp.workspace_symbols"))
         XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "lsp.rename"))
         XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "workspace.undo_last_workspace_edit"))
+        XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "workspace.redo_last_workspace_edit"))
         XCTAssertFalse(delegate.executeCommand(id: "lsp.workspace_symbols", arguments: ["query": .string("A")]))
     }
 
@@ -2142,6 +2157,7 @@ final class AttoEditorCommandTests: XCTestCase {
             keyBindings: [
                 "editor.duplicate_lines": AttoKeyBinding(keyEquivalent: "l", modifiers: [.command, .shift]),
                 "workspace.undo_last_workspace_edit": AttoKeyBinding(keyEquivalent: "z", modifiers: [.command, .option]),
+                "workspace.redo_last_workspace_edit": AttoKeyBinding(keyEquivalent: "z", modifiers: [.command, .option, .shift]),
             ]
         )
         let menu = AttoMainMenuBuilder.build(appDelegate: delegate)
@@ -2171,6 +2187,12 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(
             workspaceUndo.keyEquivalentModifierMask.intersection(.deviceIndependentFlagsMask),
             [.command, .option]
+        )
+        let workspaceRedo = try XCTUnwrap(findMenuItem(commandID: "workspace.redo_last_workspace_edit", in: menu))
+        XCTAssertEqual(workspaceRedo.keyEquivalent, "z")
+        XCTAssertEqual(
+            workspaceRedo.keyEquivalentModifierMask.intersection(.deviceIndependentFlagsMask),
+            [.command, .option, .shift]
         )
         XCTAssertNotNil(findMenuItem(commandID: "editor.apply_snippet", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "editor.snippet_next_placeholder", in: menu))
@@ -6193,6 +6215,20 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(try editorView.editor.text(), "abc\n")
         XCTAssertEqual(try String(contentsOf: otherURL, encoding: .utf8), "other\n")
         XCTAssertFalse(ctx.window.title.contains("●"))
+
+        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "workspace.redo_last_workspace_edit"))
+        XCTAssertTrue(delegate.executeCommand(id: "workspace.redo_last_workspace_edit"))
+
+        editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: ctx.editorAreaController.view))
+        XCTAssertEqual(try editorView.editor.text(), "aBc\n")
+        XCTAssertEqual(try String(contentsOf: otherURL, encoding: .utf8), "Xother\n")
+        XCTAssertTrue(ctx.window.title.contains("●"))
+
+        XCTAssertTrue(delegate.executeCommand(id: "workspace.redo_last_workspace_edit"))
+
+        editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: ctx.editorAreaController.view))
+        XCTAssertEqual(try editorView.editor.text(), "aBZ\n")
+        XCTAssertEqual(try String(contentsOf: otherURL, encoding: .utf8), "Xother\n")
     }
 
     func testWorkspaceEditRegistersAppKitUndoManagerAction() throws {
@@ -6252,7 +6288,16 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(try editorView.editor.text(), "abc\n")
         XCTAssertEqual(try String(contentsOf: otherURL, encoding: .utf8), "other\n")
         XCTAssertFalse(window.title.contains("●"))
-        XCTAssertFalse(undoManager.canRedo)
+        XCTAssertTrue(undoManager.canRedo)
+        XCTAssertEqual(undoManager.redoActionName, "Workspace Edit")
+
+        undoManager.redo()
+
+        editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        XCTAssertEqual(try editorView.editor.text(), "aBc\n")
+        XCTAssertEqual(try String(contentsOf: otherURL, encoding: .utf8), "Xother\n")
+        XCTAssertTrue(window.title.contains("●"))
+        XCTAssertTrue(undoManager.canUndo)
     }
 
     func testWorkspaceEditHistoryPanelShowsCoreTransactionEvents() throws {
@@ -6329,6 +6374,13 @@ final class AttoEditorCommandTests: XCTestCase {
         let itemsAfterTwoUndos = ctx.editorAreaController._workspaceEditHistoryPanelItemsForTesting()
         XCTAssertFalse(try XCTUnwrap(itemsAfterTwoUndos.first { $0.sequence == 2 }).canUndoLatest)
         XCTAssertFalse(try XCTUnwrap(itemsAfterTwoUndos.first { $0.sequence == 1 }).canUndoLatest)
+
+        XCTAssertTrue(ctx.editorAreaController._redoLastCoreWorkspaceEditTransactionForTesting())
+        let itemsAfterRedo = ctx.editorAreaController._workspaceEditHistoryPanelItemsForTesting()
+        let redoItem = try XCTUnwrap(itemsAfterRedo.first { $0.sequence == 3 })
+        XCTAssertEqual(redoItem.operation, "redo")
+        XCTAssertTrue(redoItem.canUndoLatest)
+        XCTAssertTrue(redoItem.title.contains("Redo WorkspaceEdit"))
     }
 
     func testWorkspaceEditPreviewConfirmationCanCancelCoreTransaction() throws {
