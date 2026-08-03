@@ -300,6 +300,7 @@ Guidelines:
   `ECF_FEATURE_WORKSPACE_QUERY_ENVELOPE`,
   `ECF_FEATURE_WORKSPACE_LIFECYCLE_ENVELOPE`,
   `ECF_FEATURE_EDITOR_STATE_QUERY_ENVELOPE`,
+  `ECF_FEATURE_LSP_HELPER_ENVELOPE`,
   `ECU_FEATURE_JSON_COMMAND_ENVELOPE`, and
   `ECU_FEATURE_LSP_RESULT_ENVELOPE` / `ECU_FEATURE_EVENT_STREAM_ENVELOPE` /
   `ECU_FEATURE_MULTI_DOCUMENT_SPECIAL_EVENT_STREAM_ENVELOPE` /
@@ -400,6 +401,15 @@ char* editor_core_ffi_workspace_apply_text_edits_envelope_json(EcfWorkspace* wor
 uint64_t editor_core_ffi_lsp_char_offset_to_utf16(const char* line_text, uint64_t char_offset);
 uint64_t editor_core_ffi_lsp_utf16_to_char_offset(const char* line_text, uint64_t utf16_offset);
 char* editor_core_ffi_lsp_formatting_options_json(uint32_t tab_size, bool insert_spaces);
+char* editor_core_ffi_lsp_path_to_file_uri_envelope_json(const char* path);
+char* editor_core_ffi_lsp_file_uri_to_path_envelope_json(const char* uri);
+char* editor_core_ffi_lsp_percent_encode_path_envelope_json(const char* path);
+char* editor_core_ffi_lsp_percent_decode_path_envelope_json(const char* path);
+char* editor_core_ffi_lsp_formatting_options_envelope_json(uint32_t tab_size, bool insert_spaces);
+char* editor_core_ffi_lsp_formatting_options_for_indentation_config_envelope_json(const char* indentation_config_json, uint32_t tab_width);
+char* editor_core_ffi_lsp_decode_semantic_style_id_envelope_json(uint32_t style_id);
+char* editor_core_ffi_lsp_workspace_symbols_envelope_json(const char* result_json);
+char* editor_core_ffi_lsp_locations_envelope_json(const char* result_json);
 ```
 
 The UI FFI (`editor-core-ui-ffi`) follows the same fixed-width boundary discipline for its C surface. Examples include:

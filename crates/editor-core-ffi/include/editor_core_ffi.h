@@ -143,6 +143,7 @@ void editor_core_ffi_string_free(char* ptr);
 #define ECF_FEATURE_WORKSPACE_QUERY_ENVELOPE   (1ull << 12)
 #define ECF_FEATURE_WORKSPACE_LIFECYCLE_ENVELOPE (1ull << 13)
 #define ECF_FEATURE_EDITOR_STATE_QUERY_ENVELOPE (1ull << 14)
+#define ECF_FEATURE_LSP_HELPER_ENVELOPE        (1ull << 15)
 uint64_t editor_core_ffi_feature_flags(void);
 char* editor_core_ffi_runtime_info_json(void);
 
@@ -257,17 +258,24 @@ int32_t editor_core_ffi_workspace_get_viewport_blob(
     uint32_t* out_len);
 
 char* editor_core_ffi_lsp_path_to_file_uri(const char* path);
+char* editor_core_ffi_lsp_path_to_file_uri_envelope_json(const char* path);
 char* editor_core_ffi_lsp_file_uri_to_path(const char* uri);
+char* editor_core_ffi_lsp_file_uri_to_path_envelope_json(const char* uri);
 char* editor_core_ffi_lsp_percent_encode_path(const char* path);
+char* editor_core_ffi_lsp_percent_encode_path_envelope_json(const char* path);
 char* editor_core_ffi_lsp_percent_decode_path(const char* path);
+char* editor_core_ffi_lsp_percent_decode_path_envelope_json(const char* path);
 uint64_t editor_core_ffi_lsp_char_offset_to_utf16(const char* line_text, uint64_t char_offset);
 uint64_t editor_core_ffi_lsp_utf16_to_char_offset(const char* line_text, uint64_t utf16_offset);
 char* editor_core_ffi_lsp_formatting_options_json(uint32_t tab_size, bool insert_spaces);
+char* editor_core_ffi_lsp_formatting_options_envelope_json(uint32_t tab_size, bool insert_spaces);
 char* editor_core_ffi_lsp_formatting_options_for_indentation_config_json(const char* indentation_config_json, uint32_t tab_width);
+char* editor_core_ffi_lsp_formatting_options_for_indentation_config_envelope_json(const char* indentation_config_json, uint32_t tab_width);
 char* editor_core_ffi_lsp_on_type_formatting_params_json(const EcfEditorState* state, const char* uri, const char* ch, const char* options_json);
 char* editor_core_ffi_lsp_apply_text_edits_json(EcfEditorState* state, const char* edits_json);
 char* editor_core_ffi_lsp_semantic_tokens_to_intervals_json(const EcfEditorState* state, const char* data_json);
 char* editor_core_ffi_lsp_decode_semantic_style_id(uint32_t style_id);
+char* editor_core_ffi_lsp_decode_semantic_style_id_envelope_json(uint32_t style_id);
 char* editor_core_ffi_lsp_document_highlights_to_processing_edit_json(const EcfEditorState* state, const char* result_json);
 char* editor_core_ffi_lsp_inlay_hints_to_processing_edit_json(const EcfEditorState* state, const char* result_json);
 char* editor_core_ffi_lsp_document_links_to_processing_edit_json(const EcfEditorState* state, const char* result_json);
@@ -275,7 +283,9 @@ char* editor_core_ffi_lsp_code_lens_to_processing_edit_json(const EcfEditorState
 char* editor_core_ffi_lsp_document_symbols_to_processing_edit_json(const EcfEditorState* state, const char* result_json);
 char* editor_core_ffi_lsp_diagnostics_to_processing_edits_json(const EcfEditorState* state, const char* publish_diagnostics_params_json);
 char* editor_core_ffi_lsp_workspace_symbols_json(const char* result_json);
+char* editor_core_ffi_lsp_workspace_symbols_envelope_json(const char* result_json);
 char* editor_core_ffi_lsp_locations_json(const char* result_json);
+char* editor_core_ffi_lsp_locations_envelope_json(const char* result_json);
 char* editor_core_ffi_lsp_completion_item_to_text_edits_json(const EcfEditorState* state, const char* completion_item_json, const char* mode, uint64_t fallback_start, uint64_t fallback_end, bool has_fallback);
 bool editor_core_ffi_lsp_apply_completion_item_json(EcfEditorState* state, const char* completion_item_json, const char* mode);
 uint32_t editor_core_ffi_lsp_encode_semantic_style_id(uint32_t token_type, uint32_t token_modifiers);

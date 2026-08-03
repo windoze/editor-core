@@ -1,16 +1,17 @@
 use editor_core_ffi::{
     ECF_ABI_VERSION, ECF_FEATURE_EDITOR_STATE_DERIVED_SNAPSHOT_ENVELOPE,
     ECF_FEATURE_EDITOR_STATE_QUERY_ENVELOPE, ECF_FEATURE_JSON_COMMAND_DISPATCH,
-    ECF_FEATURE_JSON_COMMAND_ENVELOPE, ECF_FEATURE_LSP_HELPERS, ECF_FEATURE_PROCESSING_EDIT_JSON,
-    ECF_FEATURE_RENDERING_SNAPSHOT_ENVELOPE, ECF_FEATURE_SUBLIME_PROCESSOR,
-    ECF_FEATURE_TREESITTER_PROCESSOR, ECF_FEATURE_TYPED_HOT_PATH, ECF_FEATURE_VIEWPORT_BLOB,
-    ECF_FEATURE_WORKSPACE_LIFECYCLE_ENVELOPE, ECF_FEATURE_WORKSPACE_QUERY_ENVELOPE,
-    ECF_FEATURE_WORKSPACE_RESULT_ENVELOPE, ECF_FEATURE_WORKSPACE_TYPED_API, EcfCreateViewResult,
-    EcfDocumentStats, EcfEditorState, EcfOpenBufferResult, EcfStatus, EcfWorkspace,
-    EcfWorkspaceInfo, EcfWorkspaceViewportState, ecf_abi_version, ecf_editor_backspace,
-    ecf_editor_get_viewport_blob, ecf_editor_insert_text_utf8, ecf_editor_move_to,
-    ecf_feature_flags, editor_core_ffi_editor_get_document_stats,
-    editor_core_ffi_editor_get_viewport_blob, editor_core_ffi_editor_insert_text_utf8,
+    ECF_FEATURE_JSON_COMMAND_ENVELOPE, ECF_FEATURE_LSP_HELPER_ENVELOPE, ECF_FEATURE_LSP_HELPERS,
+    ECF_FEATURE_PROCESSING_EDIT_JSON, ECF_FEATURE_RENDERING_SNAPSHOT_ENVELOPE,
+    ECF_FEATURE_SUBLIME_PROCESSOR, ECF_FEATURE_TREESITTER_PROCESSOR, ECF_FEATURE_TYPED_HOT_PATH,
+    ECF_FEATURE_VIEWPORT_BLOB, ECF_FEATURE_WORKSPACE_LIFECYCLE_ENVELOPE,
+    ECF_FEATURE_WORKSPACE_QUERY_ENVELOPE, ECF_FEATURE_WORKSPACE_RESULT_ENVELOPE,
+    ECF_FEATURE_WORKSPACE_TYPED_API, EcfCreateViewResult, EcfDocumentStats, EcfEditorState,
+    EcfOpenBufferResult, EcfStatus, EcfWorkspace, EcfWorkspaceInfo, EcfWorkspaceViewportState,
+    ecf_abi_version, ecf_editor_backspace, ecf_editor_get_viewport_blob,
+    ecf_editor_insert_text_utf8, ecf_editor_move_to, ecf_feature_flags,
+    editor_core_ffi_editor_get_document_stats, editor_core_ffi_editor_get_viewport_blob,
+    editor_core_ffi_editor_insert_text_utf8,
     editor_core_ffi_editor_state_derived_snapshot_envelope_json,
     editor_core_ffi_editor_state_execute_envelope_json, editor_core_ffi_editor_state_free,
     editor_core_ffi_editor_state_full_state_envelope_json,
@@ -27,7 +28,15 @@ use editor_core_ffi::{
     editor_core_ffi_editor_state_viewport_styled_json, editor_core_ffi_feature_flags,
     editor_core_ffi_last_error_message, editor_core_ffi_lsp_char_offset_to_utf16,
     editor_core_ffi_lsp_completion_item_to_text_edits_json,
-    editor_core_ffi_lsp_formatting_options_json, editor_core_ffi_lsp_utf16_to_char_offset,
+    editor_core_ffi_lsp_decode_semantic_style_id_envelope_json,
+    editor_core_ffi_lsp_file_uri_to_path_envelope_json,
+    editor_core_ffi_lsp_formatting_options_envelope_json,
+    editor_core_ffi_lsp_formatting_options_for_indentation_config_envelope_json,
+    editor_core_ffi_lsp_formatting_options_json, editor_core_ffi_lsp_locations_envelope_json,
+    editor_core_ffi_lsp_path_to_file_uri_envelope_json,
+    editor_core_ffi_lsp_percent_decode_path_envelope_json,
+    editor_core_ffi_lsp_percent_encode_path_envelope_json,
+    editor_core_ffi_lsp_utf16_to_char_offset, editor_core_ffi_lsp_workspace_symbols_envelope_json,
     editor_core_ffi_runtime_info_json, editor_core_ffi_string_free,
     editor_core_ffi_workspace_apply_text_edits_envelope_json, editor_core_ffi_workspace_backspace,
     editor_core_ffi_workspace_buffer_text_envelope_json,
@@ -96,6 +105,7 @@ fn feature_flags_and_alias_work() {
     assert_ne!(flags & ECF_FEATURE_WORKSPACE_QUERY_ENVELOPE, 0);
     assert_ne!(flags & ECF_FEATURE_WORKSPACE_LIFECYCLE_ENVELOPE, 0);
     assert_ne!(flags & ECF_FEATURE_EDITOR_STATE_QUERY_ENVELOPE, 0);
+    assert_ne!(flags & ECF_FEATURE_LSP_HELPER_ENVELOPE, 0);
 }
 
 #[test]
@@ -143,6 +153,11 @@ fn runtime_info_json_reports_version_and_feature_descriptors() {
         feature["name"] == "editor_state_query_envelope"
             && feature["bit"] == 14
             && feature["flag"] == ECF_FEATURE_EDITOR_STATE_QUERY_ENVELOPE
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "lsp_helper_envelope"
+            && feature["bit"] == 15
+            && feature["flag"] == ECF_FEATURE_LSP_HELPER_ENVELOPE
     }));
     assert!(features.iter().any(|feature| {
         feature["name"] == "lsp_helpers"
@@ -242,6 +257,24 @@ fn public_abi_scalar_signatures_are_fixed_width() {
         editor_core_ffi_lsp_utf16_to_char_offset;
     let _: extern "C" fn(u32, bool) -> *mut std::ffi::c_char =
         editor_core_ffi_lsp_formatting_options_json;
+    let _: extern "C" fn(*const std::ffi::c_char) -> *mut std::ffi::c_char =
+        editor_core_ffi_lsp_path_to_file_uri_envelope_json;
+    let _: extern "C" fn(*const std::ffi::c_char) -> *mut std::ffi::c_char =
+        editor_core_ffi_lsp_file_uri_to_path_envelope_json;
+    let _: extern "C" fn(*const std::ffi::c_char) -> *mut std::ffi::c_char =
+        editor_core_ffi_lsp_percent_encode_path_envelope_json;
+    let _: extern "C" fn(*const std::ffi::c_char) -> *mut std::ffi::c_char =
+        editor_core_ffi_lsp_percent_decode_path_envelope_json;
+    let _: extern "C" fn(u32, bool) -> *mut std::ffi::c_char =
+        editor_core_ffi_lsp_formatting_options_envelope_json;
+    let _: extern "C" fn(*const std::ffi::c_char, u32) -> *mut std::ffi::c_char =
+        editor_core_ffi_lsp_formatting_options_for_indentation_config_envelope_json;
+    let _: extern "C" fn(u32) -> *mut std::ffi::c_char =
+        editor_core_ffi_lsp_decode_semantic_style_id_envelope_json;
+    let _: extern "C" fn(*const std::ffi::c_char) -> *mut std::ffi::c_char =
+        editor_core_ffi_lsp_workspace_symbols_envelope_json;
+    let _: extern "C" fn(*const std::ffi::c_char) -> *mut std::ffi::c_char =
+        editor_core_ffi_lsp_locations_envelope_json;
     let _: extern "C" fn(
         *const EcfEditorState,
         *const std::ffi::c_char,
@@ -250,6 +283,165 @@ fn public_abi_scalar_signatures_are_fixed_width() {
         u64,
         bool,
     ) -> *mut std::ffi::c_char = editor_core_ffi_lsp_completion_item_to_text_edits_json;
+}
+
+#[test]
+fn lsp_helper_envelope_json_reports_success_and_errors() {
+    let path = CString::new("/tmp/editor-core ffi.swift").unwrap();
+    let uri_json = take_string(editor_core_ffi_lsp_path_to_file_uri_envelope_json(
+        path.as_ptr(),
+    ));
+    let uri: serde_json::Value = serde_json::from_str(&uri_json).unwrap();
+    assert_eq!(uri["ok"], true);
+    assert_eq!(uri["status"], "success");
+    assert_eq!(uri["operation"], "path_to_file_uri");
+    let uri_value = uri["value"]["uri"].as_str().expect("uri string");
+    assert!(uri_value.starts_with("file://"));
+
+    let uri_c = CString::new(uri_value).unwrap();
+    let path_json = take_string(editor_core_ffi_lsp_file_uri_to_path_envelope_json(
+        uri_c.as_ptr(),
+    ));
+    let path_round_trip: serde_json::Value = serde_json::from_str(&path_json).unwrap();
+    assert_eq!(path_round_trip["ok"], true);
+    assert_eq!(path_round_trip["operation"], "file_uri_to_path");
+    assert_eq!(
+        path_round_trip["value"]["path"].as_str().unwrap(),
+        "/tmp/editor-core ffi.swift"
+    );
+
+    let segment = CString::new("editor-core ffi.swift").unwrap();
+    let encoded_json = take_string(editor_core_ffi_lsp_percent_encode_path_envelope_json(
+        segment.as_ptr(),
+    ));
+    let encoded: serde_json::Value = serde_json::from_str(&encoded_json).unwrap();
+    assert_eq!(encoded["ok"], true);
+    assert_eq!(encoded["operation"], "percent_encode_path");
+    let encoded_value = encoded["value"]["encoded"].as_str().unwrap();
+    assert!(encoded_value.contains("%20"));
+
+    let encoded_c = CString::new(encoded_value).unwrap();
+    let decoded_json = take_string(editor_core_ffi_lsp_percent_decode_path_envelope_json(
+        encoded_c.as_ptr(),
+    ));
+    let decoded: serde_json::Value = serde_json::from_str(&decoded_json).unwrap();
+    assert_eq!(decoded["ok"], true);
+    assert_eq!(decoded["operation"], "percent_decode_path");
+    assert_eq!(decoded["value"]["decoded"], "editor-core ffi.swift");
+
+    let formatting_json = take_string(editor_core_ffi_lsp_formatting_options_envelope_json(
+        4, true,
+    ));
+    let formatting: serde_json::Value = serde_json::from_str(&formatting_json).unwrap();
+    assert_eq!(formatting["ok"], true);
+    assert_eq!(formatting["operation"], "formatting_options");
+    assert_eq!(formatting["value"]["options"]["tabSize"], 4);
+    assert_eq!(formatting["value"]["options"]["insertSpaces"], true);
+
+    let indentation_config = CString::new(r#"{"style":{"kind":"spaces","width":2}}"#).unwrap();
+    let indentation_json = take_string(
+        editor_core_ffi_lsp_formatting_options_for_indentation_config_envelope_json(
+            indentation_config.as_ptr(),
+            4,
+        ),
+    );
+    let indentation: serde_json::Value = serde_json::from_str(&indentation_json).unwrap();
+    assert_eq!(indentation["ok"], true);
+    assert_eq!(
+        indentation["operation"],
+        "formatting_options_for_indentation_config"
+    );
+    assert_eq!(indentation["value"]["options"]["tabSize"], 2);
+    assert_eq!(indentation["value"]["options"]["insertSpaces"], true);
+
+    let style_json = take_string(editor_core_ffi_lsp_decode_semantic_style_id_envelope_json(
+        0,
+    ));
+    let style: serde_json::Value = serde_json::from_str(&style_json).unwrap();
+    assert_eq!(style["ok"], true);
+    assert_eq!(style["operation"], "decode_semantic_style_id");
+    assert_eq!(style["value"]["token_type"], 0);
+    assert_eq!(style["value"]["token_modifiers"], 0);
+
+    let workspace_symbols = CString::new(
+        r#"[
+          {
+            "name": "Foo",
+            "kind": 5,
+            "location": {
+              "uri": "file:///demo.txt",
+              "range": {
+                "start": { "line": 0, "character": 0 },
+                "end": { "line": 0, "character": 1 }
+              }
+            }
+          }
+        ]"#,
+    )
+    .unwrap();
+    let workspace_symbols_json = take_string(editor_core_ffi_lsp_workspace_symbols_envelope_json(
+        workspace_symbols.as_ptr(),
+    ));
+    let workspace_symbols: serde_json::Value =
+        serde_json::from_str(&workspace_symbols_json).unwrap();
+    assert_eq!(workspace_symbols["ok"], true);
+    assert_eq!(workspace_symbols["operation"], "workspace_symbols");
+    assert_eq!(
+        workspace_symbols["value"]["symbols"]
+            .as_array()
+            .expect("symbols")
+            .len(),
+        1
+    );
+
+    let location = CString::new(
+        r#"{
+          "uri": "file:///demo.txt",
+          "range": {
+            "start": { "line": 0, "character": 0 },
+            "end": { "line": 0, "character": 1 }
+          }
+        }"#,
+    )
+    .unwrap();
+    let locations_json = take_string(editor_core_ffi_lsp_locations_envelope_json(
+        location.as_ptr(),
+    ));
+    let locations: serde_json::Value = serde_json::from_str(&locations_json).unwrap();
+    assert_eq!(locations["ok"], true);
+    assert_eq!(locations["operation"], "locations");
+    assert_eq!(
+        locations["value"]["locations"]
+            .as_array()
+            .expect("locations")
+            .len(),
+        1
+    );
+
+    let invalid_uri = CString::new("not-a-file-uri").unwrap();
+    let invalid_uri_json = take_string(editor_core_ffi_lsp_file_uri_to_path_envelope_json(
+        invalid_uri.as_ptr(),
+    ));
+    let invalid_uri: serde_json::Value = serde_json::from_str(&invalid_uri_json).unwrap();
+    assert_eq!(invalid_uri["ok"], false);
+    assert_eq!(invalid_uri["operation"], "file_uri_to_path");
+    assert_eq!(invalid_uri["value"], serde_json::Value::Null);
+    assert_eq!(invalid_uri["error"]["code"], "invalid_argument");
+    assert_eq!(
+        invalid_uri["error"]["status"],
+        status(EcfStatus::InvalidArgument)
+    );
+
+    let invalid_json = CString::new("{not json").unwrap();
+    let parse_json = take_string(editor_core_ffi_lsp_workspace_symbols_envelope_json(
+        invalid_json.as_ptr(),
+    ));
+    let parse: serde_json::Value = serde_json::from_str(&parse_json).unwrap();
+    assert_eq!(parse["ok"], false);
+    assert_eq!(parse["operation"], "workspace_symbols");
+    assert_eq!(parse["value"], serde_json::Value::Null);
+    assert_eq!(parse["error"]["code"], "parse");
+    assert_eq!(parse["error"]["status"], status(EcfStatus::Parse));
 }
 
 #[test]

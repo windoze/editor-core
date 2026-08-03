@@ -1,19 +1,19 @@
 # PLAN: 完整实现 SWIFT-GAPS.md
 
-## TODO
+## TODO（未完成任务）
 
-- [待办] 完成 WorkspaceEdit conflict 检测、解决语义和跨请求/project 重试归属。（阶段 4）
-- [待办] 完成 tab、split、project、session 和 LSP ownership 向 core workspace 模型迁移。（阶段 5）
-- [待办] 完成 core-owned project/LSP lifecycle schema、server ownership、恢复策略和 dashboard 产品化。（阶段 6）
-- [待办] 完成跨 tab/project result panels、统一 dock/workbench 容器和刷新/过期策略。（阶段 7）
-- [待办] 完成 Sublime-like command/keymap 行为矩阵、keymap 文件兼容和 snippets/macros/build systems 边界。（阶段 8）
-- [待办] 完成 settings selector、schema-aware settings UI、runtime override 持久化和跨 schema 字段迁移。（阶段 9）
-- [进行中] 完成剩余 JSON result envelope 覆盖、错误模型统一和 host capability negotiation。（阶段 10）
-- [待办] 产品化 Tree-sitter + LSP 主路线的高亮、outline、folding、语言模式和降级体验。（阶段 11）
-- [待办] 完成 core-backed workspace search、project index、replace-in-files、recent 和 session 工作流。（阶段 12）
-- [待办] 合入首批 PNG baselines，并把 strict visual comparison 升级为默认 CI 门禁。（阶段 13）
-- [待办] 在测试保护下打磨 Sublime-like chrome、minimap、gutter、overlay、focus 和编辑交互。（阶段 14）
-- [待办] 完成最终文档审计、ABI/README 更新、过渡 API 清理和全量验证。（阶段 15）
+- [待办] 阶段 4：完成 WorkspaceEdit conflict 检测、解决语义和跨请求/project 重试归属。
+- [待办] 阶段 5：完成 tab、split、project、session 和 LSP ownership 向 core workspace 模型迁移。
+- [待办] 阶段 6：完成 core-owned project/LSP lifecycle schema、server ownership、恢复策略和 dashboard 产品化。
+- [待办] 阶段 7：完成跨 tab/project result panels、统一 dock/workbench 容器和刷新/过期策略。
+- [待办] 阶段 8：完成 Sublime-like command/keymap 行为矩阵、keymap 文件兼容和 snippets/macros/build systems 边界。
+- [待办] 阶段 9：完成 settings selector、schema-aware settings UI、runtime override 持久化和跨 schema 字段迁移。
+- [进行中] 阶段 10：完成剩余 JSON result envelope 覆盖、错误模型统一和 host capability negotiation。
+- [待办] 阶段 11：产品化 Tree-sitter + LSP 主路线的高亮、outline、folding、语言模式和降级体验。
+- [待办] 阶段 12：完成 core-backed workspace search、project index、replace-in-files、recent 和 session 工作流。
+- [待办] 阶段 13：合入首批 PNG baselines，并把 strict visual comparison 升级为默认 CI 门禁。
+- [待办] 阶段 14：在测试保护下打磨 Sublime-like chrome、minimap、gutter、overlay、focus 和编辑交互。
+- [待办] 阶段 15：完成最终文档审计、ABI/README 更新、过渡 API 清理和全量验证。
 
 本文是执行 `SWIFT-GAPS.md` 中所有剩余目标的工程计划。目标不是一次性堆功能，而是把 Swift/AppKit/Skia 产品层、Swift FFI binding、`editor-core-ui`、`editor-core-ui-ffi`、`editor-core-ffi` 与 `editor-core-*` 的能力边界逐步收敛到同一个模型中，并在每个阶段留下可验证、可回滚、可审计的提交。
 
@@ -2153,7 +2153,7 @@
     - `git diff --check`
 - 中间提交：`feat(ffi): envelope headless workspace lifecycle`
   - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；把 headless `Workspace` open-buffer 和 create-view lifecycle JSON 面纳入统一结构化 envelope。
-  - 提交边界：新增 `editor_core_ffi_workspace_open_buffer_envelope_json(...)`、`editor_core_ffi_workspace_create_view_envelope_json(...)` 和 `ECF_FEATURE_WORKSPACE_LIFECYCLE_ENVELOPE` feature bit；legacy `workspace_open_buffer` / `workspace_create_view` 保持 raw JSON/null+last_error 语义；Swift `Workspace` 新增 raw/typed lifecycle envelope accessor 并复用 `EcfWorkspaceResultEnvelope`；同步整理 `PLAN.md` 顶部 TODO 为“状态 + 一句话描述 + 阶段编号”格式。该提交不改变既有 typed `openBuffer(...)` / `createView(...)` 的返回类型或错误码，不切换 App 多文档主路径，不覆盖 processing edits bool API、LSP helper JSON 或完整外部 capability negotiation protocol。
+  - 提交边界：新增 `editor_core_ffi_workspace_open_buffer_envelope_json(...)`、`editor_core_ffi_workspace_create_view_envelope_json(...)` 和 `ECF_FEATURE_WORKSPACE_LIFECYCLE_ENVELOPE` feature bit；legacy `workspace_open_buffer` / `workspace_create_view` 保持 raw JSON/null+last_error 语义；Swift `Workspace` 新增 raw/typed lifecycle envelope accessor 并复用 `EcfWorkspaceResultEnvelope`。该提交不改变既有 typed `openBuffer(...)` / `createView(...)` 的返回类型或错误码，不切换 App 多文档主路径，不覆盖 processing edits bool API、LSP helper JSON 或完整外部 capability negotiation protocol。
   - 验证记录：
     - `cargo test -p editor-core-ffi --test abi_v1 workspace_lifecycle_envelope_json_reports_success_and_errors`
     - `cargo test -p editor-core-ffi --test abi_v1 feature_flags_and_alias_work`
@@ -2178,6 +2178,22 @@
     - `cargo build -p editor-core-ffi --release`
     - `swift test --package-path swift --filter 'EditorStateCoreTests/testEditorStateQueryEnvelope'`
     - `swift test --package-path swift --filter 'EditorStateCoreTests/testEditorStateQueryEnvelopeDecodesFutureFieldsAndUnknownStatus'`
+    - `swift test --package-path swift --filter 'FFILibrarySmokeTests'`
+    - `swift test --package-path swift --filter 'EditorCoreFFIRuntimeCompatibilityTests'`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(ffi): envelope headless lsp helpers`
+  - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；把 headless LSP URI/path/formatting/normalization helper JSON result 面纳入统一结构化 envelope。
+  - 提交边界：新增 `editor_core_ffi_lsp_path_to_file_uri_envelope_json(...)`、`editor_core_ffi_lsp_file_uri_to_path_envelope_json(...)`、`editor_core_ffi_lsp_percent_encode_path_envelope_json(...)`、`editor_core_ffi_lsp_percent_decode_path_envelope_json(...)`、`editor_core_ffi_lsp_formatting_options_envelope_json(...)`、`editor_core_ffi_lsp_formatting_options_for_indentation_config_envelope_json(...)`、`editor_core_ffi_lsp_decode_semantic_style_id_envelope_json(...)`、`editor_core_ffi_lsp_workspace_symbols_envelope_json(...)`、`editor_core_ffi_lsp_locations_envelope_json(...)` 和 `ECF_FEATURE_LSP_HELPER_ENVELOPE` feature bit；legacy raw helper API 保持 raw JSON/null+last_error 语义；Swift `LSPBridge` 新增 raw/typed envelope accessor 并以 `EcfLSPHelperEnvelope` 复用 operation/value/error envelope schema；同步整理 `PLAN.md` 顶部 TODO 为“状态 + 阶段编号 + 一句话描述”格式。该提交不覆盖 state-mutating LSP helpers，例如 apply text edits、semantic token interval conversion、processing edit conversion、completion apply，也不切换 App 主路径或完成完整外部 capability negotiation protocol。
+  - 验证记录：
+    - `cargo test -p editor-core-ffi --test abi_v1 lsp_helper_envelope_json_reports_success_and_errors`
+    - `cargo test -p editor-core-ffi --test abi_v1 feature_flags_and_alias_work`
+    - `cargo test -p editor-core-ffi --test abi_v1 runtime_info_json_reports_version_and_feature_descriptors`
+    - `cargo test -p editor-core-ffi --test abi_v1 public_abi_scalar_signatures_are_fixed_width`
+    - `cargo test -p editor-core-ffi --test abi_v1`
+    - `cargo build -p editor-core-ffi --release`
+    - `swift test --package-path swift --filter 'LSPBridgeTests/testLSPHelperEnvelopes'`
+    - `swift test --package-path swift --filter 'LSPBridgeTests/testLSPHelperEnvelopeDecodesFutureFieldsAndUnknownStatus'`
     - `swift test --package-path swift --filter 'FFILibrarySmokeTests'`
     - `swift test --package-path swift --filter 'EditorCoreFFIRuntimeCompatibilityTests'`
     - `cargo fmt --check`

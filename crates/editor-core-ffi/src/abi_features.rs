@@ -31,6 +31,8 @@ pub const ECF_FEATURE_WORKSPACE_QUERY_ENVELOPE: u64 = 1 << 12;
 pub const ECF_FEATURE_WORKSPACE_LIFECYCLE_ENVELOPE: u64 = 1 << 13;
 /// Feature bit: headless editor-state query JSON APIs can return structured envelopes.
 pub const ECF_FEATURE_EDITOR_STATE_QUERY_ENVELOPE: u64 = 1 << 14;
+/// Feature bit: headless LSP helper JSON APIs can return structured envelopes.
+pub const ECF_FEATURE_LSP_HELPER_ENVELOPE: u64 = 1 << 15;
 
 pub const ECF_FEATURE_FLAGS: u64 = ECF_FEATURE_JSON_COMMAND_DISPATCH
     | ECF_FEATURE_TYPED_HOT_PATH
@@ -46,7 +48,8 @@ pub const ECF_FEATURE_FLAGS: u64 = ECF_FEATURE_JSON_COMMAND_DISPATCH
     | ECF_FEATURE_WORKSPACE_RESULT_ENVELOPE
     | ECF_FEATURE_WORKSPACE_QUERY_ENVELOPE
     | ECF_FEATURE_WORKSPACE_LIFECYCLE_ENVELOPE
-    | ECF_FEATURE_EDITOR_STATE_QUERY_ENVELOPE;
+    | ECF_FEATURE_EDITOR_STATE_QUERY_ENVELOPE
+    | ECF_FEATURE_LSP_HELPER_ENVELOPE;
 
 struct FeatureDescriptor {
     bit: u8,
@@ -145,6 +148,12 @@ const FEATURE_DESCRIPTORS: &[FeatureDescriptor] = &[
         flag: ECF_FEATURE_EDITOR_STATE_QUERY_ENVELOPE,
         name: "editor_state_query_envelope",
         description: "Headless editor-state full-state/text/line-ending/text-delta query APIs can return structured result envelopes.",
+    },
+    FeatureDescriptor {
+        bit: 15,
+        flag: ECF_FEATURE_LSP_HELPER_ENVELOPE,
+        name: "lsp_helper_envelope",
+        description: "Headless LSP URI, formatting, and normalization helper JSON APIs can return structured result envelopes.",
     },
 ];
 

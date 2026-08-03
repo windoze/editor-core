@@ -4,40 +4,88 @@ use super::*;
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ffi_lsp_path_to_file_uri(path: *const c_char) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
-        let path = require_string(path, "path")?;
-        let uri = path_to_file_uri(Path::new(&path));
-        Ok(json!({ "uri": uri }))
+        lsp_path_to_file_uri_value(path).map_err(|(_, message)| message)
     })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_lsp_path_to_file_uri_envelope_json(
+    path: *const c_char,
+) -> *mut c_char {
+    lsp_helper_envelope_json_ptr("path_to_file_uri", || lsp_path_to_file_uri_value(path))
+}
+
+fn lsp_path_to_file_uri_value(path: *const c_char) -> Result<Value, (EcfStatus, String)> {
+    let path = require_string_status(path, "path")?;
+    let uri = path_to_file_uri(Path::new(&path));
+    Ok(json!({ "uri": uri }))
 }
 
 /// Convert a `file://` URI to path.
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ffi_lsp_file_uri_to_path(uri: *const c_char) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
-        let uri = require_string(uri, "uri")?;
-        let path = file_uri_to_path(&uri)
-            .map(|p| p.to_string_lossy().to_string())
-            .ok_or_else(|| "invalid file URI".to_string())?;
-        Ok(json!({ "path": path }))
+        lsp_file_uri_to_path_value(uri).map_err(|(_, message)| message)
     })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_lsp_file_uri_to_path_envelope_json(
+    uri: *const c_char,
+) -> *mut c_char {
+    lsp_helper_envelope_json_ptr("file_uri_to_path", || lsp_file_uri_to_path_value(uri))
+}
+
+fn lsp_file_uri_to_path_value(uri: *const c_char) -> Result<Value, (EcfStatus, String)> {
+    let uri = require_string_status(uri, "uri")?;
+    let path = file_uri_to_path(&uri)
+        .map(|p| p.to_string_lossy().to_string())
+        .ok_or_else(|| (EcfStatus::InvalidArgument, "invalid file URI".to_string()))?;
+    Ok(json!({ "path": path }))
 }
 
 /// Percent-encode a path segment.
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ffi_lsp_percent_encode_path(path: *const c_char) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
-        let path = require_string(path, "path")?;
-        Ok(json!({ "encoded": percent_encode_path(&path) }))
+        lsp_percent_encode_path_value(path).map_err(|(_, message)| message)
     })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_lsp_percent_encode_path_envelope_json(
+    path: *const c_char,
+) -> *mut c_char {
+    lsp_helper_envelope_json_ptr("percent_encode_path", || {
+        lsp_percent_encode_path_value(path)
+    })
+}
+
+fn lsp_percent_encode_path_value(path: *const c_char) -> Result<Value, (EcfStatus, String)> {
+    let path = require_string_status(path, "path")?;
+    Ok(json!({ "encoded": percent_encode_path(&path) }))
 }
 
 /// Percent-decode a path segment.
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ffi_lsp_percent_decode_path(path: *const c_char) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
-        let path = require_string(path, "path")?;
-        Ok(json!({ "decoded": percent_decode_path(&path) }))
+        lsp_percent_decode_path_value(path).map_err(|(_, message)| message)
     })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_lsp_percent_decode_path_envelope_json(
+    path: *const c_char,
+) -> *mut c_char {
+    lsp_helper_envelope_json_ptr("percent_decode_path", || {
+        lsp_percent_decode_path_value(path)
+    })
+}
+
+fn lsp_percent_decode_path_value(path: *const c_char) -> Result<Value, (EcfStatus, String)> {
+    let path = require_string_status(path, "path")?;
+    Ok(json!({ "decoded": percent_decode_path(&path) }))
 }
 
 /// Convert char offset to UTF-16 code units for one line of text.
@@ -95,9 +143,26 @@ pub extern "C" fn editor_core_ffi_lsp_formatting_options_json(
     insert_spaces: bool,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
-        let tab_size = usize_from_u32(tab_size, "tab_size")?;
-        Ok(json!({ "options": lsp_formatting_options(tab_size, insert_spaces) }))
+        lsp_formatting_options_value(tab_size, insert_spaces).map_err(|(_, message)| message)
     })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_lsp_formatting_options_envelope_json(
+    tab_size: u32,
+    insert_spaces: bool,
+) -> *mut c_char {
+    lsp_helper_envelope_json_ptr("formatting_options", || {
+        lsp_formatting_options_value(tab_size, insert_spaces)
+    })
+}
+
+fn lsp_formatting_options_value(
+    tab_size: u32,
+    insert_spaces: bool,
+) -> Result<Value, (EcfStatus, String)> {
+    let tab_size = status_usize_from_u32(tab_size, "tab_size")?;
+    Ok(json!({ "options": lsp_formatting_options(tab_size, insert_spaces) }))
 }
 
 /// Build LSP `FormattingOptions` JSON from an `editor-core` indentation config JSON.
@@ -113,14 +178,33 @@ pub extern "C" fn editor_core_ffi_lsp_formatting_options_for_indentation_config_
     tab_width: u32,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
-        let json_text = require_string(indentation_config_json, "indentation_config_json")?;
-        let cfg: FfiIndentationConfig = parse_json(&json_text, "indentation config")?;
-        let cfg: IndentationConfig = cfg.into();
-        let tab_width = usize_from_u32(tab_width, "tab_width")?;
-        Ok(json!({
-            "options": lsp_formatting_options_for_indentation_config(&cfg, tab_width)
-        }))
+        lsp_formatting_options_for_indentation_config_value(indentation_config_json, tab_width)
+            .map_err(|(_, message)| message)
     })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_lsp_formatting_options_for_indentation_config_envelope_json(
+    indentation_config_json: *const c_char,
+    tab_width: u32,
+) -> *mut c_char {
+    lsp_helper_envelope_json_ptr("formatting_options_for_indentation_config", || {
+        lsp_formatting_options_for_indentation_config_value(indentation_config_json, tab_width)
+    })
+}
+
+fn lsp_formatting_options_for_indentation_config_value(
+    indentation_config_json: *const c_char,
+    tab_width: u32,
+) -> Result<Value, (EcfStatus, String)> {
+    let json_text = require_string_status(indentation_config_json, "indentation_config_json")?;
+    let cfg: FfiIndentationConfig = parse_json(&json_text, "indentation config")
+        .map_err(|message| (EcfStatus::Parse, message))?;
+    let cfg: IndentationConfig = cfg.into();
+    let tab_width = status_usize_from_u32(tab_width, "tab_width")?;
+    Ok(json!({
+        "options": lsp_formatting_options_for_indentation_config(&cfg, tab_width)
+    }))
 }
 
 /// Build LSP `textDocument/onTypeFormatting` params JSON for the current cursor position.
@@ -215,12 +299,25 @@ pub extern "C" fn editor_core_ffi_lsp_semantic_tokens_to_intervals_json(
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ffi_lsp_decode_semantic_style_id(style_id: u32) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
-        let (token_type, token_modifiers) = decode_semantic_style_id(style_id);
-        Ok(json!({
-            "token_type": token_type,
-            "token_modifiers": token_modifiers,
-        }))
+        lsp_decode_semantic_style_id_value(style_id).map_err(|(_, message)| message)
     })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_lsp_decode_semantic_style_id_envelope_json(
+    style_id: u32,
+) -> *mut c_char {
+    lsp_helper_envelope_json_ptr("decode_semantic_style_id", || {
+        lsp_decode_semantic_style_id_value(style_id)
+    })
+}
+
+fn lsp_decode_semantic_style_id_value(style_id: u32) -> Result<Value, (EcfStatus, String)> {
+    let (token_type, token_modifiers) = decode_semantic_style_id(style_id);
+    Ok(json!({
+        "token_type": token_type,
+        "token_modifiers": token_modifiers,
+    }))
 }
 
 /// Convert LSP document highlights result JSON into one processing edit JSON.
@@ -315,43 +412,69 @@ pub extern "C" fn editor_core_ffi_lsp_workspace_symbols_json(
     result_json: *const c_char,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
-        let result_json = require_string(result_json, "result_json")?;
-        let value = parse_json_value(&result_json, "workspace symbols")?;
-        let symbols = lsp_workspace_symbols_to_results(&value);
-        Ok(json!({
-            "symbols": symbols.iter().map(value_workspace_symbol).collect::<Vec<_>>()
-        }))
+        lsp_workspace_symbols_value(result_json).map_err(|(_, message)| message)
     })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_lsp_workspace_symbols_envelope_json(
+    result_json: *const c_char,
+) -> *mut c_char {
+    lsp_helper_envelope_json_ptr("workspace_symbols", || {
+        lsp_workspace_symbols_value(result_json)
+    })
+}
+
+fn lsp_workspace_symbols_value(result_json: *const c_char) -> Result<Value, (EcfStatus, String)> {
+    let result_json = require_string_status(result_json, "result_json")?;
+    let value = parse_json_value(&result_json, "workspace symbols")
+        .map_err(|message| (EcfStatus::Parse, message))?;
+    let symbols = lsp_workspace_symbols_to_results(&value);
+    Ok(json!({
+        "symbols": symbols.iter().map(value_workspace_symbol).collect::<Vec<_>>()
+    }))
 }
 
 /// Normalize LSP locations result JSON (`Location|Location[]|LocationLink|LocationLink[]`).
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ffi_lsp_locations_json(result_json: *const c_char) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
-        let result_json = require_string(result_json, "result_json")?;
-        let value = parse_json_value(&result_json, "locations")?;
-        let locations = locations_from_value(&value);
-        Ok(json!({
-            "locations": locations
-                .iter()
-                .map(|loc| {
-                    json!({
-                        "uri": loc.uri,
-                        "range": {
-                            "start": {
-                                "line": loc.range.start.line,
-                                "character": loc.range.start.character,
-                            },
-                            "end": {
-                                "line": loc.range.end.line,
-                                "character": loc.range.end.character,
-                            }
-                        }
-                    })
-                })
-                .collect::<Vec<_>>()
-        }))
+        lsp_locations_value(result_json).map_err(|(_, message)| message)
     })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_lsp_locations_envelope_json(
+    result_json: *const c_char,
+) -> *mut c_char {
+    lsp_helper_envelope_json_ptr("locations", || lsp_locations_value(result_json))
+}
+
+fn lsp_locations_value(result_json: *const c_char) -> Result<Value, (EcfStatus, String)> {
+    let result_json = require_string_status(result_json, "result_json")?;
+    let value = parse_json_value(&result_json, "locations")
+        .map_err(|message| (EcfStatus::Parse, message))?;
+    let locations = locations_from_value(&value);
+    Ok(json!({
+        "locations": locations
+            .iter()
+            .map(|loc| {
+                json!({
+                    "uri": loc.uri,
+                    "range": {
+                        "start": {
+                            "line": loc.range.start.line,
+                            "character": loc.range.start.character,
+                        },
+                        "end": {
+                            "line": loc.range.end.line,
+                            "character": loc.range.end.character,
+                        }
+                    }
+                })
+            })
+            .collect::<Vec<_>>()
+    }))
 }
 
 /// Build completion text edits (`TextEditSpec[]`) from one completion item JSON.
@@ -441,5 +564,53 @@ where
         let value = parse_json_value(&result_json, "LSP result")?;
         let edit = f(state.inner.editor().line_index(), &value);
         Ok(value_processing_edit(&edit))
+    })
+}
+
+fn lsp_helper_envelope_json_ptr<F>(operation: &'static str, f: F) -> *mut c_char
+where
+    F: FnOnce() -> Result<Value, (EcfStatus, String)>,
+{
+    let envelope = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+        Ok(Ok(value)) => {
+            clear_last_error();
+            lsp_helper_envelope_success(operation, value)
+        }
+        Ok(Err((status, message))) => {
+            set_last_error(message.clone());
+            lsp_helper_envelope_error(operation, status, message)
+        }
+        Err(_) => {
+            let message = "panic across FFI boundary".to_string();
+            set_last_error(message.clone());
+            lsp_helper_envelope_error(operation, EcfStatus::Internal, message)
+        }
+    };
+    json_ptr(envelope)
+}
+
+fn lsp_helper_envelope_success(operation: &'static str, value: Value) -> Value {
+    json!({
+        "ok": true,
+        "status": "success",
+        "operation": operation,
+        "value": value,
+        "error": Value::Null,
+        "version": ECF_ABI_VERSION,
+    })
+}
+
+fn lsp_helper_envelope_error(operation: &'static str, status: EcfStatus, message: String) -> Value {
+    json!({
+        "ok": false,
+        "status": "error",
+        "operation": operation,
+        "value": Value::Null,
+        "error": {
+            "code": ecf_status_label(status),
+            "status": status.code(),
+            "message": message,
+        },
+        "version": ECF_ABI_VERSION,
     })
 }

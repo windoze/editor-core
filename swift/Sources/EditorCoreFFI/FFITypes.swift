@@ -442,6 +442,10 @@ public typealias EcfEditorStateQueryEnvelope = EcfWorkspaceResultEnvelope
 public typealias EcfEditorStateQueryEnvelopeError = EcfWorkspaceResultEnvelopeError
 public typealias EcfEditorStateQueryEnvelopeStatus = EcfWorkspaceResultEnvelopeStatus
 
+public typealias EcfLSPHelperEnvelope = EcfWorkspaceResultEnvelope
+public typealias EcfLSPHelperEnvelopeError = EcfWorkspaceResultEnvelopeError
+public typealias EcfLSPHelperEnvelopeStatus = EcfWorkspaceResultEnvelopeStatus
+
 public struct EcfAutoPair: Equatable, Sendable {
     public let open: String
     public let close: String

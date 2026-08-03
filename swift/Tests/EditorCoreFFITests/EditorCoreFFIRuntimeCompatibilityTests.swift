@@ -48,6 +48,7 @@ final class EditorCoreFFIRuntimeCompatibilityTests: XCTestCase {
         XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .workspaceQueryEnvelope })
         XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .workspaceLifecycleEnvelope })
         XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .editorStateQueryEnvelope })
+        XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .lspHelperEnvelope })
         XCTAssertTrue(report.diagnosticMessage.contains("Missing core FFI features"))
     }
 

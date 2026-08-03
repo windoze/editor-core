@@ -274,4 +274,192 @@ final class LSPBridgeTests: XCTestCase {
         let locations = try JSONTestHelpers.object(try bridge.locationsJSON(resultJSON: locationsResult))
         XCTAssertNotNil(locations["locations"])
     }
+
+    func testLSPHelperEnvelopes() throws {
+        let library = try EditorCoreFFITestSupport.shared.loadLibrary()
+        let bridge = LSPBridge(library: library)
+
+        let path = "/tmp/editor-core ffi.swift"
+        let uriEnvelope = try bridge.pathToFileURIEnvelope(path)
+        XCTAssertTrue(uriEnvelope.ok)
+        XCTAssertEqual(uriEnvelope.statusKind, .success)
+        XCTAssertEqual(uriEnvelope.operation, "path_to_file_uri")
+        let uriValue = try requireObject(uriEnvelope.value)
+        let uri = try requireString(uriValue["uri"])
+        XCTAssertTrue(uri.hasPrefix("file://"))
+
+        let pathEnvelope = try bridge.fileURIToPathEnvelope(uri)
+        XCTAssertTrue(pathEnvelope.ok)
+        XCTAssertEqual(pathEnvelope.operation, "file_uri_to_path")
+        let pathValue = try requireObject(pathEnvelope.value)
+        XCTAssertEqual(try requireString(pathValue["path"]), path)
+
+        let encodedEnvelope = try bridge.percentEncodePathEnvelope("editor-core ffi.swift")
+        XCTAssertTrue(encodedEnvelope.ok)
+        XCTAssertEqual(encodedEnvelope.operation, "percent_encode_path")
+        let encodedValue = try requireObject(encodedEnvelope.value)
+        let encoded = try requireString(encodedValue["encoded"])
+        XCTAssertTrue(encoded.contains("%20"))
+
+        let decodedEnvelope = try bridge.percentDecodePathEnvelope(encoded)
+        XCTAssertTrue(decodedEnvelope.ok)
+        XCTAssertEqual(decodedEnvelope.operation, "percent_decode_path")
+        let decodedValue = try requireObject(decodedEnvelope.value)
+        XCTAssertEqual(try requireString(decodedValue["decoded"]), "editor-core ffi.swift")
+
+        let formatting = try bridge.formattingOptionsEnvelope(tabSize: 4, insertSpaces: true)
+        XCTAssertTrue(formatting.ok)
+        XCTAssertEqual(formatting.operation, "formatting_options")
+        let formattingValue = try requireObject(formatting.value)
+        let formattingOptions = try requireObject(formattingValue["options"])
+        XCTAssertEqual(formattingOptions["tabSize"], .number(4))
+        XCTAssertEqual(formattingOptions["insertSpaces"], .bool(true))
+
+        let indentation = try bridge.formattingOptionsForIndentationConfigEnvelope(
+            indentationConfigJSON: #"{"style":{"kind":"spaces","width":2}}"#,
+            tabWidth: 4
+        )
+        XCTAssertTrue(indentation.ok)
+        XCTAssertEqual(indentation.operation, "formatting_options_for_indentation_config")
+        let indentationValue = try requireObject(indentation.value)
+        let indentationOptions = try requireObject(indentationValue["options"])
+        XCTAssertEqual(indentationOptions["tabSize"], .number(2))
+        XCTAssertEqual(indentationOptions["insertSpaces"], .bool(true))
+
+        let style = try bridge.decodeSemanticStyleIdEnvelope(0)
+        XCTAssertTrue(style.ok)
+        XCTAssertEqual(style.operation, "decode_semantic_style_id")
+        let styleValue = try requireObject(style.value)
+        XCTAssertEqual(styleValue["token_type"], .number(0))
+        XCTAssertEqual(styleValue["token_modifiers"], .number(0))
+
+        let workspaceSymbolsResult = """
+        [
+          {
+            "name": "Foo",
+            "kind": 5,
+            "location": {
+              "uri": "file:///demo.txt",
+              "range": {
+                "start": { "line": 0, "character": 0 },
+                "end": { "line": 0, "character": 1 }
+              }
+            }
+          }
+        ]
+        """
+        let workspaceSymbols = try bridge.workspaceSymbolsEnvelope(resultJSON: workspaceSymbolsResult)
+        XCTAssertTrue(workspaceSymbols.ok)
+        XCTAssertEqual(workspaceSymbols.operation, "workspace_symbols")
+        let workspaceSymbolsValue = try requireObject(workspaceSymbols.value)
+        let symbols = try requireArray(workspaceSymbolsValue["symbols"])
+        XCTAssertEqual(symbols.count, 1)
+
+        let locationsResult = """
+        {
+          "uri": "file:///demo.txt",
+          "range": {
+            "start": { "line": 0, "character": 0 },
+            "end": { "line": 0, "character": 1 }
+          }
+        }
+        """
+        let locations = try bridge.locationsEnvelope(resultJSON: locationsResult)
+        XCTAssertTrue(locations.ok)
+        XCTAssertEqual(locations.operation, "locations")
+        let locationsValue = try requireObject(locations.value)
+        let normalizedLocations = try requireArray(locationsValue["locations"])
+        XCTAssertEqual(normalizedLocations.count, 1)
+
+        let invalidURI = try bridge.fileURIToPathEnvelope("not-a-file-uri")
+        XCTAssertFalse(invalidURI.ok)
+        XCTAssertEqual(invalidURI.statusKind, .error)
+        XCTAssertEqual(invalidURI.operation, "file_uri_to_path")
+        XCTAssertEqual(invalidURI.error?.code, "invalid_argument")
+        XCTAssertEqual(invalidURI.error?.status, .invalidArgument)
+        XCTAssertEqual(invalidURI.value, .null)
+
+        let invalidSymbols = try bridge.workspaceSymbolsEnvelope(resultJSON: "{not json")
+        XCTAssertFalse(invalidSymbols.ok)
+        XCTAssertEqual(invalidSymbols.operation, "workspace_symbols")
+        XCTAssertEqual(invalidSymbols.error?.code, "parse")
+        XCTAssertEqual(invalidSymbols.error?.status, .parse)
+        XCTAssertEqual(invalidSymbols.value, .null)
+    }
+
+    func testLSPHelperEnvelopeDecodesFutureFieldsAndUnknownStatus() throws {
+        let success = try JSONTestHelpers.decode(EcfLSPHelperEnvelope.self, from: """
+        {
+          "ok": true,
+          "status": "future_success",
+          "operation": "future_helper",
+          "value": { "uri": "file:///future.swift" },
+          "error": null,
+          "version": 1,
+          "futureTopLevel": { "ignored": true }
+        }
+        """)
+        XCTAssertTrue(success.ok)
+        XCTAssertEqual(success.statusKind, .unknown("future_success"))
+        XCTAssertEqual(success.operation, "future_helper")
+        let value = try requireObject(success.value)
+        XCTAssertEqual(try requireString(value["uri"]), "file:///future.swift")
+
+        let failure = try JSONTestHelpers.decode(EcfLSPHelperEnvelope.self, from: """
+        {
+          "ok": false,
+          "status": "future_error",
+          "operation": "future_helper",
+          "value": null,
+          "error": {
+            "code": "future_code",
+            "status": 777,
+            "message": "future failure",
+            "details": { "ignored": true }
+          },
+          "version": 1
+        }
+        """)
+        XCTAssertFalse(failure.ok)
+        XCTAssertEqual(failure.statusKind, .unknown("future_error"))
+        XCTAssertEqual(failure.error?.code, "future_code")
+        XCTAssertNil(failure.error?.status)
+        XCTAssertEqual(failure.error?.message, "future failure")
+    }
+
+    private func requireObject(
+        _ value: EcfJSONValue?,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws -> [String: EcfJSONValue] {
+        guard case let .object(object)? = value else {
+            XCTFail("expected JSON object", file: file, line: line)
+            return [:]
+        }
+        return object
+    }
+
+    private func requireArray(
+        _ value: EcfJSONValue?,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws -> [EcfJSONValue] {
+        guard case let .array(array)? = value else {
+            XCTFail("expected JSON array", file: file, line: line)
+            return []
+        }
+        return array
+    }
+
+    private func requireString(
+        _ value: EcfJSONValue?,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws -> String {
+        guard case let .string(string)? = value else {
+            XCTFail("expected JSON string", file: file, line: line)
+            return ""
+        }
+        return string
+    }
 }

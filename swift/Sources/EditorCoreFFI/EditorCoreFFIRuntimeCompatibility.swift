@@ -153,6 +153,11 @@ public enum EditorCoreFFIRuntimeCompatibility {
             name: "editor-state query envelope",
             reason: "Swift editor-state full-state, text, line-ending, and text-delta envelope APIs require structured query results and errors."
         ),
+        EditorCoreFFIRuntimeFeature(
+            feature: .lspHelperEnvelope,
+            name: "LSP helper envelope",
+            reason: "Swift LSP helper envelope APIs require structured URI, formatting, and result-normalization helper results and errors."
+        ),
     ]
 
     public static let requiredFeatures: [EditorCoreFFIRuntimeFeature] = knownFeatures

@@ -69,6 +69,7 @@ include:
 - `ECF_FEATURE_WORKSPACE_QUERY_ENVELOPE`
 - `ECF_FEATURE_WORKSPACE_LIFECYCLE_ENVELOPE`
 - `ECF_FEATURE_EDITOR_STATE_QUERY_ENVELOPE`
+- `ECF_FEATURE_LSP_HELPER_ENVELOPE`
 
 `editor_core_ffi_runtime_info_json()` returns a caller-owned one-call capability snapshot for
 C/non-Swift hosts:
@@ -78,7 +79,7 @@ C/non-Swift hosts:
   "kind": "editor-core-ffi",
   "abi_version": 1,
   "version": "0.5.0",
-  "feature_flags": 32767,
+  "feature_flags": 65535,
   "features": [
     { "bit": 0, "flag": 1, "name": "json_command_dispatch", "description": "..." }
   ]
@@ -263,6 +264,88 @@ legacy `NULL` sentinel:
     "code": "invalid_argument",
     "status": 1,
     "message": "state is null"
+  },
+  "version": 1
+}
+```
+
+## LSP Helper Envelopes
+
+Legacy headless LSP helper APIs keep returning raw JSON on success and `NULL` on failure. Hosts
+that need non-null structured success/error results can use the envelope variants guarded by
+`ECF_FEATURE_LSP_HELPER_ENVELOPE`:
+
+```c
+char* editor_core_ffi_lsp_path_to_file_uri_envelope_json(
+    const char* path);
+
+char* editor_core_ffi_lsp_file_uri_to_path_envelope_json(
+    const char* uri);
+
+char* editor_core_ffi_lsp_percent_encode_path_envelope_json(
+    const char* path);
+
+char* editor_core_ffi_lsp_percent_decode_path_envelope_json(
+    const char* path);
+
+char* editor_core_ffi_lsp_formatting_options_envelope_json(
+    uint32_t tab_size,
+    bool insert_spaces);
+
+char* editor_core_ffi_lsp_formatting_options_for_indentation_config_envelope_json(
+    const char* indentation_config_json,
+    uint32_t tab_width);
+
+char* editor_core_ffi_lsp_decode_semantic_style_id_envelope_json(
+    uint32_t style_id);
+
+char* editor_core_ffi_lsp_workspace_symbols_envelope_json(
+    const char* result_json);
+
+char* editor_core_ffi_lsp_locations_envelope_json(
+    const char* result_json);
+```
+
+This family covers pure URI/path conversion, percent encode/decode, formatting option construction,
+semantic style id decoding, and result normalization for workspace symbols and locations. It does
+not cover state-mutating LSP helpers such as applying text edits or completion items.
+
+Success envelopes preserve the legacy helper payload under `value` and identify the operation:
+
+```json
+{
+  "ok": true,
+  "status": "success",
+  "operation": "locations",
+  "value": {
+    "locations": [
+      {
+        "uri": "file:///demo.txt",
+        "range": {
+          "start": { "line": 0, "character": 0 },
+          "end": { "line": 0, "character": 1 }
+        }
+      }
+    ]
+  },
+  "error": null,
+  "version": 1
+}
+```
+
+Failure envelopes return an allocated JSON string with a structured `EcfStatus` instead of the
+legacy `NULL` sentinel:
+
+```json
+{
+  "ok": false,
+  "status": "error",
+  "operation": "workspace_symbols",
+  "value": null,
+  "error": {
+    "code": "parse",
+    "status": 5,
+    "message": "invalid workspace symbols JSON: ..."
   },
   "version": 1
 }
