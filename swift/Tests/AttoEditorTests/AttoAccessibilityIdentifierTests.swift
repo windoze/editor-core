@@ -591,6 +591,79 @@ final class AttoAccessibilityIdentifierTests: XCTestCase {
         XCTAssertTrue(controller.isVisible)
     }
 
+    func testHierarchyPanelExposesStableIdentifiersAndFiltersRows() throws {
+        let entries = [
+            AttoLspHierarchyParser.Entry(
+                name: "render",
+                detail: "View.swift",
+                kindLabel: "function",
+                target: AttoLspDefinitionParser.Target(uri: "file:///tmp/View.swift", line: 4, utf16Character: 8),
+                relatedRangeCount: 2
+            ),
+            AttoLspHierarchyParser.Entry(
+                name: "layout",
+                detail: "Layout.swift",
+                kindLabel: "method",
+                target: AttoLspDefinitionParser.Target(uri: "file:///tmp/Layout.swift", line: 8, utf16Character: 4),
+                relatedRangeCount: 1
+            ),
+        ]
+
+        var openedEntries: [AttoLspHierarchyParser.Entry] = []
+        let controller = AttoHierarchyPanelController(
+            titleForEntry: { "\($0.name) - \($0.detail ?? "")" },
+            onOpen: { openedEntries.append($0) }
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 860, height: 540),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        defer {
+            controller.hide()
+            window.close()
+        }
+
+        window.contentView = NSView(frame: NSRect(x: 0, y: 0, width: 860, height: 540))
+        window.makeKeyAndOrderFront(nil)
+
+        XCTAssertTrue(controller.show(
+            relativeTo: window,
+            snapshot: AttoHierarchyPanelController.Snapshot(title: "Incoming Calls", entries: entries)
+        ))
+        let panel = try XCTUnwrap(window.childWindows?.first)
+        XCTAssertEqual(panel.identifier?.rawValue, AttoAccessibilityID.hierarchyPanel)
+        XCTAssertEqual(panel.title, "Hierarchy (2)")
+
+        let root = try XCTUnwrap(panel.contentView)
+        XCTAssertNotNil(findView(identifier: AttoAccessibilityID.hierarchyPanelRoot, in: root))
+        let searchField = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.hierarchyPanelSearchField, in: root) as? NSSearchField
+        )
+        let metadataLabel = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.hierarchyPanelMetadataLabel, in: root) as? NSTextField
+        )
+        let table = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.hierarchyPanelTable, in: root) as? NSTableView
+        )
+        XCTAssertNotNil(findView(identifier: AttoAccessibilityID.hierarchyPanelScrollView, in: root))
+        XCTAssertEqual(searchField.placeholderString, "Filter hierarchy results...")
+        XCTAssertEqual(metadataLabel.stringValue, "Incoming Calls | 2 results")
+        XCTAssertEqual(table.numberOfRows, 2)
+
+        let row = try XCTUnwrap(table.view(atColumn: 0, row: 0, makeIfNecessary: true))
+        XCTAssertNotNil(findView(identifier: AttoAccessibilityID.hierarchyPanelRowTitle, in: row))
+
+        searchField.stringValue = "layout"
+        controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: searchField))
+        XCTAssertEqual(table.numberOfRows, 1)
+
+        XCTAssertTrue(controller.control(searchField, textView: NSTextView(), doCommandBy: #selector(NSResponder.insertNewline(_:))))
+        XCTAssertEqual(openedEntries, [entries[1]])
+        XCTAssertTrue(controller.isVisible)
+    }
+
     func testProblemsPanelExposesStableIdentifiersAndFiltersRows() throws {
         let diagnostics = [
             EcuDiagnostic(

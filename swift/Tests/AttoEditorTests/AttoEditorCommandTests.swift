@@ -67,6 +67,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.call_hierarchy_outgoing"))
         XCTAssertTrue(ids.contains("lsp.type_hierarchy_supertypes"))
         XCTAssertTrue(ids.contains("lsp.type_hierarchy_subtypes"))
+        XCTAssertTrue(ids.contains("lsp.show_hierarchy_panel"))
         XCTAssertTrue(ids.contains("lsp.document_symbols"))
         XCTAssertTrue(ids.contains("lsp.workspace_symbols"))
         XCTAssertTrue(ids.contains("lsp.show_last_symbols"))
@@ -1622,6 +1623,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "lsp.call_hierarchy_outgoing", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.type_hierarchy_supertypes", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.type_hierarchy_subtypes", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.show_hierarchy_panel", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.document_symbols", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.workspace_symbols", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_last_symbols", in: menu))
@@ -3861,6 +3863,81 @@ final class AttoEditorCommandTests: XCTestCase {
 
         XCTAssertFalse(vc._showHierarchyResultJSONForTesting("[]", kind: "typeSupertypes", showFeedback: true))
         XCTAssertEqual(vc._transientStatusTextForTesting(), "Type hierarchy: no results")
+    }
+
+    func testHierarchyPanelUsesLastHierarchyResults() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("hierarchy.swift")
+        try "func caller() { render() }\nfunc layout() {}\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let window = attachToWindow(vc)
+        defer { window.close() }
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        XCTAssertTrue(vc._showHierarchyResultJSONForTesting("""
+        [
+          {
+            "from": {
+              "name": "render",
+              "kind": 12,
+              "detail": "View.swift",
+              "uri": "\(fileURL.absoluteString)",
+              "selectionRange": {
+                "start": { "line": 0, "character": 16 },
+                "end": { "line": 0, "character": 22 }
+              }
+            },
+            "fromRanges": [
+              {
+                "start": { "line": 0, "character": 16 },
+                "end": { "line": 0, "character": 22 }
+              }
+            ]
+          },
+          {
+            "from": {
+              "name": "layout",
+              "kind": 6,
+              "detail": "Layout.swift",
+              "uri": "\(fileURL.absoluteString)",
+              "selectionRange": {
+                "start": { "line": 1, "character": 5 },
+                "end": { "line": 1, "character": 11 }
+              }
+            },
+            "fromRanges": [
+              {
+                "start": { "line": 1, "character": 5 },
+                "end": { "line": 1, "character": 11 }
+              }
+            ]
+          }
+        ]
+        """, kind: "callIncoming"))
+
+        XCTAssertTrue(vc.showHierarchyPanelInActiveTab())
+        let panel = try XCTUnwrap(window.childWindows?.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.hierarchyPanel
+        })
+        XCTAssertEqual(panel.title, "Hierarchy (2)")
+
+        let root = try XCTUnwrap(panel.contentView)
+        let metadata = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.hierarchyPanelMetadataLabel, in: root) as? NSTextField
+        )
+        let table = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.hierarchyPanelTable, in: root) as? NSTableView
+        )
+        XCTAssertEqual(metadata.stringValue, "Incoming Calls | 2 results")
+        XCTAssertEqual(table.numberOfRows, 2)
+        XCTAssertEqual(vc._hierarchyPanelRowCountForTesting(), 2)
+        XCTAssertEqual(vc._hierarchyPanelEntriesForTesting().map(\.name), ["render", "layout"])
+        XCTAssertTrue(vc._hierarchyPanelIsVisibleForTesting())
     }
 
     func testFormattingResultsUseUnifiedFeedbackStatus() throws {

@@ -251,6 +251,18 @@ final class AttoEditorAreaViewController: NSViewController {
         documentColorPanelController?.isVisible == true
     }
 
+    func _hierarchyPanelEntriesForTesting() -> [AttoLspHierarchyParser.Entry] {
+        hierarchyPanelController?.currentEntries ?? []
+    }
+
+    func _hierarchyPanelRowCountForTesting() -> Int {
+        hierarchyPanelController?.rowCount ?? 0
+    }
+
+    func _hierarchyPanelIsVisibleForTesting() -> Bool {
+        hierarchyPanelController?.isVisible == true
+    }
+
     func _workspaceOutlineSnapshotForTesting() -> AttoWorkspaceOutlineSnapshot {
         workspaceOutlineStore.snapshot
     }
@@ -998,6 +1010,8 @@ final class AttoEditorAreaViewController: NSViewController {
     var hierarchyChildrenContext: HierarchyChildrenContext?
     var hierarchyChildrenPollTimer: DispatchSourceTimer?
     var hierarchyResultsController: AttoCommandPaletteController?
+    var hierarchyPanelSnapshot: AttoHierarchyPanelController.Snapshot?
+    var hierarchyPanelController: AttoHierarchyPanelController?
     var problemsResultsController: AttoCommandPaletteController?
     var problemsPanelController: AttoProblemsPanelController?
     let diagnosticsLifecycleStore = AttoLspResultLifecycleStore<AttoDiagnosticsLifecycleSnapshot>(

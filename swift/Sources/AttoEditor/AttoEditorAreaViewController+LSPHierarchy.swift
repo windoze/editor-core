@@ -27,6 +27,36 @@ extension AttoEditorAreaViewController {
         requestLspHierarchyAtPrimaryCaret(kind: .typeSubtypes)
     }
 
+    @discardableResult
+    func showHierarchyPanelInActiveTab() -> Bool {
+        guard let snapshot = hierarchyPanelSnapshot, snapshot.entries.isEmpty == false else {
+            NSSound.beep()
+            return false
+        }
+
+        cancelHoverUI()
+        cancelDefinitionUI()
+        cancelSymbolUI()
+        cancelHierarchyUI()
+        cancelSignatureHelpUI()
+        cancelCompletionUI()
+        cancelRenameUI()
+        cancelCodeActionUI()
+        cancelFoldingRangesUI()
+        cancelSelectionRangeUI()
+        cancelLinkedEditingUI()
+        cancelDocumentColorUI()
+
+        guard let window = view.window else {
+            navigateToLspTarget(snapshot.entries[0].target)
+            return true
+        }
+
+        let controller = hierarchyPanelController ?? makeHierarchyPanelController()
+        hierarchyPanelController = controller
+        return controller.show(relativeTo: window, snapshot: snapshot)
+    }
+
     func requestLspHierarchyAtPrimaryCaret(
         kind: LspHierarchyRequestKind,
         showFeedback: Bool = true
@@ -386,6 +416,11 @@ extension AttoEditorAreaViewController {
             return false
         }
 
+        recordHierarchyPanelSnapshot(
+            entries: entries,
+            title: hierarchyPanelTitle(placeholder: placeholder, feedbackFeature: feedbackFeature)
+        )
+
         guard let window = view.window else {
             navigateToLspTarget(entries[0].target)
             return true
@@ -407,6 +442,43 @@ extension AttoEditorAreaViewController {
         hierarchyResultsController = controller
         controller.show(relativeTo: window, placeholder: placeholder)
         return true
+    }
+
+    func recordHierarchyPanelSnapshot(entries: [AttoLspHierarchyParser.Entry], title: String) {
+        let snapshot = AttoHierarchyPanelController.Snapshot(title: title, entries: entries)
+        hierarchyPanelSnapshot = snapshot
+        if hierarchyPanelController?.isVisible == true {
+            hierarchyPanelController?.update(snapshot: snapshot)
+        }
+    }
+
+    func makeHierarchyPanelController() -> AttoHierarchyPanelController {
+        AttoHierarchyPanelController(
+            titleForEntry: { [weak self] entry in
+                self?.displayTitle(for: entry) ?? entry.name
+            },
+            onOpen: { [weak self] entry in
+                self?.navigateToLspTarget(entry.target)
+            }
+        )
+    }
+
+    func hierarchyPanelTitle(
+        placeholder: String,
+        feedbackFeature: AttoLspResultFeedback.Feature
+    ) -> String {
+        switch placeholder {
+        case "Filter incoming calls...":
+            return "Incoming Calls"
+        case "Filter outgoing calls...":
+            return "Outgoing Calls"
+        case "Filter supertypes...":
+            return "Supertypes"
+        case "Filter subtypes...":
+            return "Subtypes"
+        default:
+            return feedbackFeature.statusTitle
+        }
     }
 
     func displayTitle(for item: AttoLspHierarchyParser.Item) -> String {

@@ -162,6 +162,15 @@ enum AttoAccessibilityID {
     static let documentColorPanelSwatch = "AttoEditor.LSP.DocumentColorPanel.Swatch"
     static let documentColorPanelRowTitle = "AttoEditor.LSP.DocumentColorPanel.RowTitle"
 
+    static let hierarchyPanel = "AttoEditor.LSP.HierarchyPanel.Panel"
+    static let hierarchyPanelRoot = "AttoEditor.LSP.HierarchyPanel.Root"
+    static let hierarchyPanelSearchField = "AttoEditor.LSP.HierarchyPanel.SearchField"
+    static let hierarchyPanelMetadataLabel = "AttoEditor.LSP.HierarchyPanel.Metadata"
+    static let hierarchyPanelTable = "AttoEditor.LSP.HierarchyPanel.Table"
+    static let hierarchyPanelScrollView = "AttoEditor.LSP.HierarchyPanel.ScrollView"
+    static let hierarchyPanelRow = "AttoEditor.LSP.HierarchyPanel.Row"
+    static let hierarchyPanelRowTitle = "AttoEditor.LSP.HierarchyPanel.RowTitle"
+
     static let workspaceEditPreviewPanel = "AttoEditor.WorkspaceEditPreview.Panel"
     static let workspaceEditPreviewRoot = "AttoEditor.WorkspaceEditPreview.Root"
     static let workspaceEditPreviewSummary = "AttoEditor.WorkspaceEditPreview.Summary"

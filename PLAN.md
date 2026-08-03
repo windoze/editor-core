@@ -1205,6 +1205,15 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap`
     - `git diff --check`
+- 中间提交：`feat(app): add hierarchy workbench panel`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量；把 Call/Type Hierarchy 的 children 结果从 transient quick panel 推进到可重新打开、可保持打开、可过滤、可键盘跳转的持久 result panel 起点。
+  - 提交边界：新增 `AttoHierarchyPanelController` 提供稳定 AppKit identifiers、filter/search、row selection、Enter 跳转和关闭行为；AttoEditor 新增最近一次 hierarchy result snapshot、`lsp.show_hierarchy_panel` command、Go 菜单入口和 VC 测试钩子，并让已有 hierarchy quick result flow 在产生结果时同步更新已打开的持久在线 panel。该提交不改变 LSP call/type hierarchy prepare/children 请求协议、不移除既有 quick panel，也不实现真正树状展开、children refresh、跨 tab/project Hierarchy history 或统一 dock/workbench 容器。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoAccessibilityIdentifierTests.testHierarchyPanelExposesStableIdentifiersAndFiltersRows`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testHierarchyPanelUsesLastHierarchyResults`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap`
+    - `git diff --check`
 
 ## 阶段 8: Command、menu、keymap、palette 与 Sublime 行为矩阵
 

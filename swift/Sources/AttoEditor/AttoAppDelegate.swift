@@ -756,6 +756,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .init(id: "lsp.type_hierarchy_subtypes", title: "LSP: Subtypes") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showTypeSubtypesInActiveTab()
             },
+            .init(id: "lsp.show_hierarchy_panel", title: "LSP: Show Hierarchy Panel") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showHierarchyPanelInActiveTab()
+            },
             .init(
                 id: "lsp.rename",
                 title: "LSP: Rename Symbol",

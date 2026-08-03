@@ -146,6 +146,7 @@ enum AttoMainMenuBuilder {
         goMenu.addItem(commandItem(title: "Outgoing Calls", commandID: "lsp.call_hierarchy_outgoing", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Supertypes", commandID: "lsp.type_hierarchy_supertypes", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Subtypes", commandID: "lsp.type_hierarchy_subtypes", appDelegate: appDelegate))
+        goMenu.addItem(commandItem(title: "Show Hierarchy Panel", commandID: "lsp.show_hierarchy_panel", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Rename Symbol", commandID: "lsp.rename", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Code Actions", commandID: "lsp.code_actions", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Code Lens Actions", commandID: "lsp.code_lens_actions", appDelegate: appDelegate))
