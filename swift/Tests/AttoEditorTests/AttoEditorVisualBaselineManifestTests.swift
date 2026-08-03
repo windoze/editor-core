@@ -407,6 +407,13 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
                 workspaceEditJSONApplySummary.expectedApplied,
                 visualCase.id
             )
+            if workspaceEditJSONApplySummary.undoAfterApply {
+                XCTAssertEqual(
+                    vc._undoLastCoreWorkspaceEditTransactionForTesting(),
+                    workspaceEditJSONApplySummary.expectedUndo,
+                    visualCase.id
+                )
+            }
         }
         if let workspaceEditPreview = visualCase.workspaceEditPreview {
             let panelController = AttoWorkspaceEditPreviewPanelController()
@@ -1764,6 +1771,8 @@ private struct AttoVisualWorkspaceEditJSONApplySummary: Decodable, Equatable {
     let supportFiles: [AttoVisualWorkspaceEditSupportFile]
     let makeActiveDocumentDirty: Bool
     let expectedApplied: Bool
+    let undoAfterApply: Bool
+    let expectedUndo: Bool
     let documents: [AttoVisualWorkspaceEditJSONDocument]
     let resourceOperations: [AttoVisualWorkspaceEditJSONResourceOperation]
 
@@ -1771,6 +1780,8 @@ private struct AttoVisualWorkspaceEditJSONApplySummary: Decodable, Equatable {
         case supportFiles
         case makeActiveDocumentDirty
         case expectedApplied
+        case undoAfterApply
+        case expectedUndo
         case documents
         case resourceOperations
     }
@@ -1786,6 +1797,8 @@ private struct AttoVisualWorkspaceEditJSONApplySummary: Decodable, Equatable {
             forKey: .makeActiveDocumentDirty
         ) ?? false
         expectedApplied = try container.decodeIfPresent(Bool.self, forKey: .expectedApplied) ?? false
+        undoAfterApply = try container.decodeIfPresent(Bool.self, forKey: .undoAfterApply) ?? false
+        expectedUndo = try container.decodeIfPresent(Bool.self, forKey: .expectedUndo) ?? undoAfterApply
         documents = try container.decodeIfPresent(
             [AttoVisualWorkspaceEditJSONDocument].self,
             forKey: .documents

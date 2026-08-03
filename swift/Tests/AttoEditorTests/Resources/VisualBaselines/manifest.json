@@ -1268,6 +1268,39 @@
       },
       "perChannelTolerance": 2,
       "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "workspace-edit-undo-status-dark",
+      "description": "Dark editor chrome after a WorkspaceEdit transaction is undone.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/workspace-edit-undo-status-dark.png",
+      "artifactName": "workspace-edit-undo-status-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 760,
+        "height": 420
+      },
+      "scale": 1.0,
+      "workspaceEditJSONApplySummary": {
+        "expectedApplied": true,
+        "undoAfterApply": true,
+        "expectedUndo": true,
+        "documents": [
+          {
+            "fileName": "floating-panels.swift",
+            "edits": [
+              {
+                "startLine": 5,
+                "startUTF16Character": 16,
+                "endUTF16Character": 23,
+                "newText": "undoable"
+              }
+            ]
+          }
+        ]
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
     }
   ]
 }
