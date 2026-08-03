@@ -241,9 +241,10 @@ private final class AttoPreferencesContentHostViewController: NSViewController {
 private final class AttoPreferencesEditorPageViewController: NSViewController, NSTextViewDelegate, NSTextFieldDelegate {
     private let prefs = AttoPreferences.shared
 
-    private let scrollView = NSScrollView()
+    private let pageScrollView = NSScrollView()
     private let stack = NSStackView()
 
+    private let fontFacesScrollView = NSScrollView()
     private let fontFacesTextView = NSTextView(frame: .zero)
     private let fontFacesHelpLabel = NSTextField(labelWithString: "One family per line. Top to bottom is the fallback order.")
     private let fontFacesResetButton = NSButton(title: "Use System Default", target: nil, action: nil)
@@ -270,6 +271,12 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
     private let findWholeWordCheckbox = NSButton(checkboxWithTitle: "Whole word by default", target: nil, action: nil)
     private let findRegexCheckbox = NSButton(checkboxWithTitle: "Regex by default", target: nil, action: nil)
     private let findInFilesScopePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let workspaceSearchIncludeGlobsScrollView = NSScrollView()
+    private let workspaceSearchIncludeGlobsTextView = NSTextView(frame: .zero)
+    private let workspaceSearchIncludeGlobsHelpLabel = NSTextField(labelWithString: "One include glob per line. Empty includes all workspace files.")
+    private let workspaceSearchExcludeGlobsScrollView = NSScrollView()
+    private let workspaceSearchExcludeGlobsTextView = NSTextView(frame: .zero)
+    private let workspaceSearchExcludeGlobsHelpLabel = NSTextField(labelWithString: "One exclude glob per line. Excludes win over includes.")
     private let lspAutoRestartCheckbox = NSButton(checkboxWithTitle: "Auto-restart failed LSP servers", target: nil, action: nil)
     private let lspAutoRestartMaxAttemptsField = NSTextField(string: "")
     private let lspAutoRestartMaxAttemptsStepper = NSStepper(frame: .zero)
@@ -279,9 +286,9 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
     private var isUpdatingFromModel: Bool = false
     private var forceReloadFontFacesTextView: Bool = false
 
-    private func isEditingFontFacesTextView() -> Bool {
+    private func isEditingTextView(_ textView: NSTextView) -> Bool {
         guard let win = view.window else { return false }
-        return win.firstResponder === fontFacesTextView
+        return win.firstResponder === textView
     }
 
     override func loadView() {
@@ -348,31 +355,10 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
         fontFacesHelpLabel.maximumNumberOfLines = 2
         stack.addArrangedSubview(fontFacesHelpLabel)
 
-        fontFacesTextView.isRichText = false
-        fontFacesTextView.isAutomaticQuoteSubstitutionEnabled = false
-        fontFacesTextView.isAutomaticDataDetectionEnabled = false
-        fontFacesTextView.isAutomaticLinkDetectionEnabled = false
-        fontFacesTextView.isAutomaticTextReplacementEnabled = false
-        fontFacesTextView.allowsUndo = true
-        fontFacesTextView.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-        fontFacesTextView.delegate = self
+        configurePlainTextView(fontFacesTextView)
+        configureTextScrollView(fontFacesScrollView, textView: fontFacesTextView)
 
-        scrollView.documentView = fontFacesTextView
-        scrollView.hasVerticalScroller = true
-        scrollView.borderType = .bezelBorder
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.wantsLayer = true
-
-        let fontFacesContainer = NSView(frame: .zero)
-        fontFacesContainer.translatesAutoresizingMaskIntoConstraints = false
-        fontFacesContainer.addSubview(scrollView)
-        NSLayoutConstraint.activate([
-            scrollView.leadingAnchor.constraint(equalTo: fontFacesContainer.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: fontFacesContainer.trailingAnchor),
-            scrollView.topAnchor.constraint(equalTo: fontFacesContainer.topAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: fontFacesContainer.bottomAnchor),
-            scrollView.heightAnchor.constraint(equalToConstant: 120),
-        ])
+        let fontFacesContainer = makeTextViewContainer(scrollView: fontFacesScrollView, height: 120)
         stack.addArrangedSubview(fontFacesContainer)
         fontFacesContainer.widthAnchor.constraint(greaterThanOrEqualToConstant: 420).isActive = true
 
@@ -497,6 +483,36 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
         findInFilesScopeRow.alignment = .centerY
         stack.addArrangedSubview(findInFilesScopeRow)
 
+        let includeGlobsLabel = NSTextField(labelWithString: "Workspace include globs")
+        includeGlobsLabel.font = NSFont.systemFont(ofSize: 13)
+        stack.addArrangedSubview(includeGlobsLabel)
+
+        workspaceSearchIncludeGlobsHelpLabel.textColor = .secondaryLabelColor
+        workspaceSearchIncludeGlobsHelpLabel.font = NSFont.systemFont(ofSize: 12, weight: .regular)
+        workspaceSearchIncludeGlobsHelpLabel.maximumNumberOfLines = 2
+        stack.addArrangedSubview(workspaceSearchIncludeGlobsHelpLabel)
+
+        configurePlainTextView(workspaceSearchIncludeGlobsTextView)
+        configureTextScrollView(workspaceSearchIncludeGlobsScrollView, textView: workspaceSearchIncludeGlobsTextView)
+        let includeGlobsContainer = makeTextViewContainer(scrollView: workspaceSearchIncludeGlobsScrollView, height: 74)
+        stack.addArrangedSubview(includeGlobsContainer)
+        includeGlobsContainer.widthAnchor.constraint(greaterThanOrEqualToConstant: 420).isActive = true
+
+        let excludeGlobsLabel = NSTextField(labelWithString: "Workspace exclude globs")
+        excludeGlobsLabel.font = NSFont.systemFont(ofSize: 13)
+        stack.addArrangedSubview(excludeGlobsLabel)
+
+        workspaceSearchExcludeGlobsHelpLabel.textColor = .secondaryLabelColor
+        workspaceSearchExcludeGlobsHelpLabel.font = NSFont.systemFont(ofSize: 12, weight: .regular)
+        workspaceSearchExcludeGlobsHelpLabel.maximumNumberOfLines = 2
+        stack.addArrangedSubview(workspaceSearchExcludeGlobsHelpLabel)
+
+        configurePlainTextView(workspaceSearchExcludeGlobsTextView)
+        configureTextScrollView(workspaceSearchExcludeGlobsScrollView, textView: workspaceSearchExcludeGlobsTextView)
+        let excludeGlobsContainer = makeTextViewContainer(scrollView: workspaceSearchExcludeGlobsScrollView, height: 74)
+        stack.addArrangedSubview(excludeGlobsContainer)
+        excludeGlobsContainer.widthAnchor.constraint(greaterThanOrEqualToConstant: 420).isActive = true
+
         // LSP recovery
         let lspRecoveryLabel = NSTextField(labelWithString: "LSP recovery")
         lspRecoveryLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
@@ -563,20 +579,20 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
         let contentView = NSView(frame: .zero)
         contentView.translatesAutoresizingMaskIntoConstraints = false
 
-        scrollView.documentView = contentView
-        scrollView.hasVerticalScroller = true
-        scrollView.drawsBackground = false
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        pageScrollView.documentView = contentView
+        pageScrollView.hasVerticalScroller = true
+        pageScrollView.drawsBackground = false
+        pageScrollView.translatesAutoresizingMaskIntoConstraints = false
 
         contentView.addSubview(stack)
-        view.addSubview(scrollView)
+        view.addSubview(pageScrollView)
         NSLayoutConstraint.activate([
-            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            scrollView.topAnchor.constraint(equalTo: view.topAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            pageScrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            pageScrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            pageScrollView.topAnchor.constraint(equalTo: view.topAnchor),
+            pageScrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
-            contentView.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor),
+            contentView.widthAnchor.constraint(equalTo: pageScrollView.contentView.widthAnchor),
 
             stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 20),
             stack.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -20),
@@ -599,6 +615,43 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
         NotificationCenter.default.removeObserver(self)
     }
 
+    private func configurePlainTextView(_ textView: NSTextView) {
+        textView.isRichText = false
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDataDetectionEnabled = false
+        textView.isAutomaticLinkDetectionEnabled = false
+        textView.isAutomaticTextReplacementEnabled = false
+        textView.allowsUndo = true
+        textView.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        textView.textContainerInset = NSSize(width: 4, height: 4)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.textContainer?.widthTracksTextView = true
+        textView.delegate = self
+    }
+
+    private func configureTextScrollView(_ scrollView: NSScrollView, textView: NSTextView) {
+        scrollView.documentView = textView
+        scrollView.hasVerticalScroller = true
+        scrollView.borderType = .bezelBorder
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.wantsLayer = true
+    }
+
+    private func makeTextViewContainer(scrollView: NSScrollView, height: CGFloat) -> NSView {
+        let container = NSView(frame: .zero)
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(scrollView)
+        NSLayoutConstraint.activate([
+            scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: container.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            scrollView.heightAnchor.constraint(equalToConstant: height),
+        ])
+        return container
+    }
+
     private func reloadFromModel() {
         isUpdatingFromModel = true
         defer { isUpdatingFromModel = false }
@@ -608,8 +661,14 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
         // Avoid clobbering the user's selection/caret while they type: reloading `string`
         // resets selection (often to EOF) and makes `Enter` look broken because the model
         // serialization does not preserve trailing blank lines.
-        if isEditingFontFacesTextView() == false || forceReloadFontFacesTextView {
+        if isEditingTextView(fontFacesTextView) == false || forceReloadFontFacesTextView {
             fontFacesTextView.string = prefs.fontFacesMultilineTextForUI()
+        }
+        if isEditingTextView(workspaceSearchIncludeGlobsTextView) == false {
+            workspaceSearchIncludeGlobsTextView.string = prefs.workspaceSearchIncludeGlobsTextForUI()
+        }
+        if isEditingTextView(workspaceSearchExcludeGlobsTextView) == false {
+            workspaceSearchExcludeGlobsTextView.string = prefs.workspaceSearchExcludeGlobsTextForUI()
         }
 
         let size = prefs.effectiveFontSizePoints
@@ -763,9 +822,24 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
 
     func textDidChange(_ notification: Notification) {
         guard isUpdatingFromModel == false else { return }
-        guard notification.object as? NSTextView === fontFacesTextView else { return }
-        let faces = AttoPreferences.parseMultilineFontFaces(fontFacesTextView.string)
-        prefs.setFontFaces(faces)
+        guard let textView = notification.object as? NSTextView else { return }
+
+        if textView === fontFacesTextView {
+            let faces = AttoPreferences.parseMultilineFontFaces(fontFacesTextView.string)
+            prefs.setFontFaces(faces)
+            return
+        }
+
+        if textView === workspaceSearchIncludeGlobsTextView {
+            let patterns = AttoPreferences.parseWorkspaceSearchGlobsText(workspaceSearchIncludeGlobsTextView.string)
+            prefs.setWorkspaceSearchIncludeGlobs(patterns)
+            return
+        }
+
+        if textView === workspaceSearchExcludeGlobsTextView {
+            let patterns = AttoPreferences.parseWorkspaceSearchGlobsText(workspaceSearchExcludeGlobsTextView.string)
+            prefs.setWorkspaceSearchExcludeGlobs(patterns)
+        }
     }
 
     // MARK: - NSTextFieldDelegate

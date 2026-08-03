@@ -70,6 +70,8 @@ final class AttoPreferences: NSObject {
         static let findWholeWord = "AttoEditor.preferences.findWholeWord"
         static let findRegex = "AttoEditor.preferences.findRegex"
         static let findInFilesDefaultScope = "AttoEditor.preferences.findInFilesDefaultScope"
+        static let workspaceSearchIncludeGlobs = "AttoEditor.preferences.workspaceSearchIncludeGlobs"
+        static let workspaceSearchExcludeGlobs = "AttoEditor.preferences.workspaceSearchExcludeGlobs"
         static let themeName = "AttoEditor.preferences.themeName"
         static let commentConfigurations = "AttoEditor.preferences.commentConfigurations"
         static let lspAutoRestartEnabled = "AttoEditor.preferences.lspAutoRestartEnabled"
@@ -185,6 +187,22 @@ final class AttoPreferences: NSObject {
         return AttoWorkspacePreferenceSnapshot.defaultFindInFilesScope
     }
 
+    var effectiveWorkspaceSearchIncludeGlobs: [String] {
+        if let stored = storedWorkspaceSearchIncludeGlobs { return stored }
+        if let parsed = Self.parseWorkspaceSearchGlobsEnv(env["ATTO_EDITOR_WORKSPACE_SEARCH_INCLUDE_GLOBS"]) {
+            return parsed
+        }
+        return []
+    }
+
+    var effectiveWorkspaceSearchExcludeGlobs: [String] {
+        if let stored = storedWorkspaceSearchExcludeGlobs { return stored }
+        if let parsed = Self.parseWorkspaceSearchGlobsEnv(env["ATTO_EDITOR_WORKSPACE_SEARCH_EXCLUDE_GLOBS"]) {
+            return parsed
+        }
+        return []
+    }
+
     var effectiveLspAutoRestartEnabled: Bool {
         if let stored = storedLspAutoRestartEnabled { return stored }
         if let parsed = Self.parseBoolEnv(env["ATTO_EDITOR_LSP_AUTO_RESTART"])
@@ -263,6 +281,14 @@ final class AttoPreferences: NSObject {
 
     var storedFindInFilesDefaultScope: String? {
         Self.normalizeFindInFilesDefaultScope(defaults.string(forKey: Keys.findInFilesDefaultScope))
+    }
+
+    var storedWorkspaceSearchIncludeGlobs: [String]? {
+        defaults.stringArray(forKey: Keys.workspaceSearchIncludeGlobs).map(Self.normalizeWorkspaceSearchGlobs)
+    }
+
+    var storedWorkspaceSearchExcludeGlobs: [String]? {
+        defaults.stringArray(forKey: Keys.workspaceSearchExcludeGlobs).map(Self.normalizeWorkspaceSearchGlobs)
     }
 
     var storedCommentConfigurations: [String: AttoCommentConfiguration] {
@@ -388,6 +414,16 @@ final class AttoPreferences: NSObject {
         } else {
             defaults.removeObject(forKey: Keys.findInFilesDefaultScope)
         }
+        postDidChange()
+    }
+
+    func setWorkspaceSearchIncludeGlobs(_ patterns: [String]) {
+        defaults.set(Self.normalizeWorkspaceSearchGlobs(patterns), forKey: Keys.workspaceSearchIncludeGlobs)
+        postDidChange()
+    }
+
+    func setWorkspaceSearchExcludeGlobs(_ patterns: [String]) {
+        defaults.set(Self.normalizeWorkspaceSearchGlobs(patterns), forKey: Keys.workspaceSearchExcludeGlobs)
         postDidChange()
     }
 
@@ -565,6 +601,14 @@ final class AttoPreferences: NSObject {
         return faces.joined(separator: "\n")
     }
 
+    func workspaceSearchIncludeGlobsTextForUI() -> String {
+        effectiveWorkspaceSearchIncludeGlobs.joined(separator: "\n")
+    }
+
+    func workspaceSearchExcludeGlobsTextForUI() -> String {
+        effectiveWorkspaceSearchExcludeGlobs.joined(separator: "\n")
+    }
+
     static func parseMultilineFontFaces(_ text: String) -> [String] {
         text
             .split(whereSeparator: \.isNewline)
@@ -574,6 +618,14 @@ final class AttoPreferences: NSObject {
     static func parseCSVFontFaces(_ csv: String) -> [String] {
         csv
             .split(separator: ",")
+            .map { String($0) }
+    }
+
+    static func parseWorkspaceSearchGlobsText(_ text: String) -> [String] {
+        text
+            .split { char in
+                char == "," || char.isNewline
+            }
             .map { String($0) }
     }
 
@@ -685,6 +737,38 @@ final class AttoPreferences: NSObject {
         default:
             return nil
         }
+    }
+
+    static func normalizeWorkspaceSearchGlobs(_ patterns: [String]) -> [String] {
+        var seen: Set<String> = []
+        var out: [String] = []
+        out.reserveCapacity(patterns.count)
+
+        for pattern in patterns {
+            var normalized = pattern
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: "\\", with: "/")
+            while normalized.contains("//") {
+                normalized = normalized.replacingOccurrences(of: "//", with: "/")
+            }
+            if normalized.hasPrefix("./") {
+                normalized.removeFirst(2)
+            }
+            if normalized.hasSuffix("/") {
+                normalized.append("**")
+            }
+            guard normalized.isEmpty == false else { continue }
+            guard seen.insert(normalized).inserted else { continue }
+            out.append(normalized)
+        }
+
+        return out
+    }
+
+    private static func parseWorkspaceSearchGlobsEnv(_ raw: String?) -> [String]? {
+        guard let raw else { return nil }
+        let patterns = normalizeWorkspaceSearchGlobs(parseWorkspaceSearchGlobsText(raw))
+        return patterns.isEmpty ? nil : patterns
     }
 
     private func commentConfigurationStorage() -> [String: [String: String]] {

@@ -1585,6 +1585,13 @@
     - `swift test --package-path swift --filter 'AttoPreferencesTests'`
     - `swift test --package-path swift --filter 'Atto(ConfigurationSettings|EditorPreferencesApplication|Preferences)Tests'`
     - `git diff --check`
+- 中间提交：`feat(app): expose workspace search globs in preferences`
+  - 所属任务：阶段 9 的配置、偏好与 capability DTO 完整性增量；把已建模的 workspace search include/exclude glob 接入全局 Preferences UI 与 base `AttoPreferences`。
+  - 提交边界：`AttoPreferences` 新增 workspace search include/exclude glob 的 UserDefaults/env/default 解析、规范化和 UI 多行文本格式化；`effectiveConfigurationSnapshot` 把这些值写入 `AttoWorkspacePreferenceSnapshot`；Preferences Editor 页面 Search 分组新增 include/exclude glob 多行输入，并把页面滚动容器与文本框滚动容器分离，避免多行输入互相覆盖。该提交不新增 Rust/FFI ABI，不改变 Find in Files glob 匹配语义、不实现 workspace/project scoped settings 编辑 UI、不实现 runtime override UI/持久化、不实现自定义 word boundary 规则，也不完成 core/headless capability negotiation。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoPreferencesTests'`
+    - `swift test --package-path swift --filter 'Atto(ConfigurationSettings|EditorPreferencesApplication|Preferences)Tests'`
+    - `git diff --check`
 
 ## 阶段 10: ABI 版本、错误模型与兼容性门禁
 

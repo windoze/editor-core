@@ -324,6 +324,76 @@ final class AttoPreferencesTests: XCTestCase {
         XCTAssertEqual(prefs.effectiveFindInFilesDefaultScope, "workspace")
     }
 
+    func testWorkspaceSearchGlobDefaultsEnvStoredAndNormalization() {
+        let (defaults, _) = makeIsolatedDefaults()
+
+        var prefs = AttoPreferences(defaults: defaults, env: [:])
+        XCTAssertNil(prefs.storedWorkspaceSearchIncludeGlobs)
+        XCTAssertNil(prefs.storedWorkspaceSearchExcludeGlobs)
+        XCTAssertEqual(prefs.effectiveWorkspaceSearchIncludeGlobs, [])
+        XCTAssertEqual(prefs.effectiveWorkspaceSearchExcludeGlobs, [])
+        XCTAssertEqual(prefs.workspaceSearchIncludeGlobsTextForUI(), "")
+        XCTAssertEqual(prefs.workspaceSearchExcludeGlobsTextForUI(), "")
+
+        prefs = AttoPreferences(defaults: defaults, env: [
+            "ATTO_EDITOR_WORKSPACE_SEARCH_INCLUDE_GLOBS": " Sources/**/*.swift, README.md\n./Docs//**\n",
+            "ATTO_EDITOR_WORKSPACE_SEARCH_EXCLUDE_GLOBS": " Vendor/\n**/*.generated.swift, Vendor/** ",
+        ])
+        XCTAssertEqual(prefs.effectiveWorkspaceSearchIncludeGlobs, [
+            "Sources/**/*.swift",
+            "README.md",
+            "Docs/**",
+        ])
+        XCTAssertEqual(prefs.effectiveWorkspaceSearchExcludeGlobs, [
+            "Vendor/**",
+            "**/*.generated.swift",
+        ])
+        XCTAssertEqual(AttoPreferences.parseWorkspaceSearchGlobsText("Sources/**,README.md\nDocs/**"), [
+            "Sources/**",
+            "README.md",
+            "Docs/**",
+        ])
+
+        prefs.setWorkspaceSearchIncludeGlobs([
+            " ./Sources/**/*.swift ",
+            "README.md",
+            "Sources/**/*.swift",
+            "",
+        ])
+        prefs.setWorkspaceSearchExcludeGlobs([
+            "Vendor\\",
+            "Vendor/",
+            "**/*.generated.swift",
+            "**/*.generated.swift",
+        ])
+
+        XCTAssertEqual(prefs.storedWorkspaceSearchIncludeGlobs, [
+            "Sources/**/*.swift",
+            "README.md",
+        ])
+        XCTAssertEqual(prefs.storedWorkspaceSearchExcludeGlobs, [
+            "Vendor/**",
+            "**/*.generated.swift",
+        ])
+        XCTAssertEqual(prefs.effectiveWorkspaceSearchIncludeGlobs, [
+            "Sources/**/*.swift",
+            "README.md",
+        ])
+        XCTAssertEqual(prefs.effectiveWorkspaceSearchExcludeGlobs, [
+            "Vendor/**",
+            "**/*.generated.swift",
+        ])
+        XCTAssertEqual(prefs.workspaceSearchIncludeGlobsTextForUI(), "Sources/**/*.swift\nREADME.md")
+        XCTAssertEqual(prefs.workspaceSearchExcludeGlobsTextForUI(), "Vendor/**\n**/*.generated.swift")
+
+        prefs.setWorkspaceSearchIncludeGlobs([])
+        prefs.setWorkspaceSearchExcludeGlobs([])
+        XCTAssertEqual(prefs.storedWorkspaceSearchIncludeGlobs, [])
+        XCTAssertEqual(prefs.storedWorkspaceSearchExcludeGlobs, [])
+        XCTAssertEqual(prefs.effectiveWorkspaceSearchIncludeGlobs, [])
+        XCTAssertEqual(prefs.effectiveWorkspaceSearchExcludeGlobs, [])
+    }
+
     func testEffectiveConfigurationSnapshotRoundTripsCurrentPreferences() throws {
         let (defaults, _) = makeIsolatedDefaults()
         let prefs = AttoPreferences(defaults: defaults, env: [
@@ -341,6 +411,8 @@ final class AttoPreferencesTests: XCTestCase {
         prefs.setFindWholeWord(true)
         prefs.setFindRegex(true)
         prefs.setFindInFilesDefaultScope("workspace")
+        prefs.setWorkspaceSearchIncludeGlobs(["Sources/**/*.swift", "README.md"])
+        prefs.setWorkspaceSearchExcludeGlobs(["**/*.generated.swift", "Vendor/"])
         prefs.setCommentConfiguration(.lineAndBlock("//", "/*", "*/"), forLanguageKey: "  Swift  ")
         prefs.setLspAutoRestartDisabled(true, forServerName: " Swift-LSP ", serverCommand: nil)
         prefs.setLspAutoRestartMaxAttempts(7, forServerName: "Swift-LSP", serverCommand: nil)
@@ -371,8 +443,8 @@ final class AttoPreferencesTests: XCTestCase {
         XCTAssertEqual(snapshot.workspace.rootURL, workspaceRootURL.absoluteString)
         XCTAssertEqual(snapshot.workspace.rootPath, workspaceRootURL.path)
         XCTAssertEqual(snapshot.workspace.findInFilesDefaultScope, "workspace")
-        XCTAssertEqual(snapshot.workspace.workspaceSearchIncludeGlobs, [])
-        XCTAssertEqual(snapshot.workspace.workspaceSearchExcludeGlobs, [])
+        XCTAssertEqual(snapshot.workspace.workspaceSearchIncludeGlobs, ["Sources/**/*.swift", "README.md"])
+        XCTAssertEqual(snapshot.workspace.workspaceSearchExcludeGlobs, ["**/*.generated.swift", "Vendor/**"])
 
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]

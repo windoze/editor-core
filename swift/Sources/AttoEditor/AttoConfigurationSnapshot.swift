@@ -428,7 +428,9 @@ extension AttoPreferences {
             workspace: AttoWorkspacePreferenceSnapshot(
                 rootURL: workspaceRootURL?.absoluteString,
                 rootPath: workspaceRootURL?.path,
-                findInFilesDefaultScope: effectiveFindInFilesDefaultScope
+                findInFilesDefaultScope: effectiveFindInFilesDefaultScope,
+                workspaceSearchIncludeGlobs: effectiveWorkspaceSearchIncludeGlobs,
+                workspaceSearchExcludeGlobs: effectiveWorkspaceSearchExcludeGlobs
             )
         )
     }
