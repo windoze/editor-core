@@ -599,4 +599,60 @@ final class EditorStateJSONCommandBridgeTests: XCTestCase {
         XCTAssertEqual(failure.error?.status, .commandFailed)
         XCTAssertTrue(failure.error?.message.contains("command execution failed") ?? false)
     }
+
+    func testCommandEnvelopeDecodesFutureFieldsAndUnknownStatus() throws {
+        let successJSON = """
+        {
+          "ok": true,
+          "value": {
+            "kind": "future_result",
+            "futurePayload": {
+              "enabled": true,
+              "items": [1, "x"]
+            }
+          },
+          "error": null,
+          "version": 2,
+          "futureTopLevel": "ignored"
+        }
+        """
+        let success = try JSONTestHelpers.decode(EcfJSONCommandEnvelope.self, from: successJSON)
+        XCTAssertTrue(success.ok)
+        XCTAssertEqual(success.version, 2)
+        XCTAssertNil(success.error)
+        guard case .object(let successValue)? = success.value else {
+            XCTFail("expected future result object")
+            return
+        }
+        XCTAssertEqual(successValue["kind"], .string("future_result"))
+        XCTAssertEqual(
+            successValue["futurePayload"],
+            .object([
+                "enabled": .bool(true),
+                "items": .array([.number(1), .string("x")]),
+            ])
+        )
+
+        let failureJSON = """
+        {
+          "ok": false,
+          "value": null,
+          "error": {
+            "code": "future_error",
+            "status": 999,
+            "message": "future failure",
+            "futureErrorMetadata": { "retryable": false }
+          },
+          "version": 2,
+          "futureTopLevel": true
+        }
+        """
+        let failure = try JSONTestHelpers.decode(EcfJSONCommandEnvelope.self, from: failureJSON)
+        XCTAssertFalse(failure.ok)
+        XCTAssertNil(failure.value)
+        XCTAssertEqual(failure.version, 2)
+        XCTAssertEqual(failure.error?.code, "future_error")
+        XCTAssertNil(failure.error?.status)
+        XCTAssertEqual(failure.error?.message, "future failure")
+    }
 }

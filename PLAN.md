@@ -1654,6 +1654,13 @@
     - `swift test --package-path swift --filter 'FFILibrarySmokeTests'`
     - `cargo fmt --check`
     - `git diff --check`
+- 中间提交：`test(ffi): cover command envelope future compatibility`
+  - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；为 headless/UI Swift command envelope decoder 补齐 unknown future fields 和 unknown status 的兼容性回归测试。
+  - 提交边界：只新增 Swift test coverage，断言 `EcfJSONCommandEnvelope` 与 `EcuJSONCommandEnvelope` 会忽略未来新增 top-level/error metadata 字段、保留未来 result payload 为 typed JSON value，并把未知 numeric status 解码为 `nil` 而不是失败或误映射。本提交不改变 Rust/C ABI，不新增 feature bit，不改变 envelope schema，也不扩展其他 JSON result 面。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'EditorStateJSONCommandBridgeTests/testCommandEnvelopeDecodesFutureFieldsAndUnknownStatus'`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFITests/testExecuteCommandEnvelopeDecodesFutureFieldsAndUnknownStatus'`
+    - `git diff --check`
 
 ## 阶段 11: Tree-sitter 与 LSP 主路线产品化
 
