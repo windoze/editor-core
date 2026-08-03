@@ -310,6 +310,33 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
                 visualCase.id
             )
         }
+        if let codeLensResults = visualCase.codeLensResults {
+            XCTAssertTrue(
+                vc._applyCodeLensResultJSONForTesting(try codeLensResults.resultJSON()),
+                visualCase.id
+            )
+        }
+        if let inlayHints = visualCase.inlayHints {
+            XCTAssertTrue(
+                vc._applyInlayHintsResultJSONForTesting(try inlayHints.resultJSON()),
+                visualCase.id
+            )
+        }
+        if let documentLinks = visualCase.documentLinks {
+            XCTAssertTrue(
+                vc._applyDocumentLinksResultJSONForTesting(try documentLinks.resultJSON()),
+                visualCase.id
+            )
+        }
+        if let documentColors = visualCase.documentColors {
+            XCTAssertTrue(
+                vc.showDocumentColorPanelResultJSONInActiveTab(
+                    try documentColors.resultJSON(),
+                    showFeedback: false
+                ),
+                visualCase.id
+            )
+        }
         if let codeActionResults = visualCase.codeActionResults {
             XCTAssertTrue(
                 vc._showCodeActionResultJSONForTesting(
@@ -351,6 +378,14 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
                 XCTAssertTrue(vc.showLspWorkbenchPanel(), visualCase.id)
             case .hierarchyPanel:
                 XCTAssertTrue(vc.showHierarchyPanelInActiveTab(), visualCase.id)
+            case .codeLensPanel:
+                XCTAssertTrue(vc.showCodeLensPanelInActiveTab(), visualCase.id)
+            case .inlayHintPanel:
+                XCTAssertTrue(vc.showInlayHintsPanelInActiveTab(), visualCase.id)
+            case .documentLinkPanel:
+                XCTAssertTrue(vc.showDocumentLinksPanelInActiveTab(), visualCase.id)
+            case .documentColorPanel:
+                XCTAssertTrue(vc._documentColorPanelIsVisibleForTesting(), visualCase.id)
             }
         }
     }
@@ -548,6 +583,10 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
     let lspSymbolResults: AttoVisualLspSymbolResults?
     let lspLocationResults: AttoVisualLspLocationResults?
     let hierarchyResults: AttoVisualHierarchyResults?
+    let codeLensResults: AttoVisualCodeLensResults?
+    let inlayHints: AttoVisualInlayHints?
+    let documentLinks: AttoVisualDocumentLinks?
+    let documentColors: AttoVisualDocumentColors?
     let codeActionResults: AttoVisualCodeActionResults?
     let completionPopup: AttoVisualCompletionPopup?
     let hoverPopover: AttoVisualHoverPopover?
@@ -592,6 +631,10 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
         case lspSymbolResults
         case lspLocationResults
         case hierarchyResults
+        case codeLensResults
+        case inlayHints
+        case documentLinks
+        case documentColors
         case codeActionResults
         case completionPopup
         case hoverPopover
@@ -647,6 +690,19 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
         hierarchyResults = try container.decodeIfPresent(
             AttoVisualHierarchyResults.self,
             forKey: .hierarchyResults
+        )
+        codeLensResults = try container.decodeIfPresent(
+            AttoVisualCodeLensResults.self,
+            forKey: .codeLensResults
+        )
+        inlayHints = try container.decodeIfPresent(AttoVisualInlayHints.self, forKey: .inlayHints)
+        documentLinks = try container.decodeIfPresent(
+            AttoVisualDocumentLinks.self,
+            forKey: .documentLinks
+        )
+        documentColors = try container.decodeIfPresent(
+            AttoVisualDocumentColors.self,
+            forKey: .documentColors
         )
         codeActionResults = try container.decodeIfPresent(AttoVisualCodeActionResults.self, forKey: .codeActionResults)
         completionPopup = try container.decodeIfPresent(AttoVisualCompletionPopup.self, forKey: .completionPopup)
@@ -935,6 +991,10 @@ private enum AttoVisualPersistentPanel: String, Decodable, Equatable {
     case workspaceProblemsPanel
     case lspWorkbenchPanel
     case hierarchyPanel
+    case codeLensPanel
+    case inlayHintPanel
+    case documentLinkPanel
+    case documentColorPanel
 }
 
 private struct AttoVisualLspSymbolResults: Decodable, Equatable {
@@ -1244,6 +1304,199 @@ private struct AttoVisualHierarchyItemPayload: Encodable {
     let selectionRange: AttoVisualLspRange
 }
 
+private struct AttoVisualCodeLensResults: Decodable, Equatable {
+    let items: [AttoVisualCodeLens]
+
+    func resultJSON() throws -> String {
+        try encodeVisualJSON(items.map(\.payload), context: "code lens results")
+    }
+}
+
+private struct AttoVisualCodeLens: Decodable, Equatable {
+    let title: String
+    let command: String
+    let line: UInt32
+    let utf16Character: UInt32
+    let length: UInt32
+
+    enum CodingKeys: String, CodingKey {
+        case title
+        case command
+        case line
+        case utf16Character
+        case length
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        title = try container.decode(String.self, forKey: .title)
+        command = try container.decode(String.self, forKey: .command)
+        line = try container.decode(UInt32.self, forKey: .line)
+        utf16Character = try container.decodeIfPresent(UInt32.self, forKey: .utf16Character) ?? 0
+        length = try container.decodeIfPresent(UInt32.self, forKey: .length) ?? 0
+    }
+
+    var payload: AttoVisualCodeLensPayload {
+        AttoVisualCodeLensPayload(
+            range: visualRange(line: line, utf16Character: utf16Character, length: length),
+            command: AttoVisualCommandPayload(title: title, command: command)
+        )
+    }
+}
+
+private struct AttoVisualCodeLensPayload: Encodable {
+    let range: AttoVisualLspRange
+    let command: AttoVisualCommandPayload
+}
+
+private struct AttoVisualCommandPayload: Encodable {
+    let title: String
+    let command: String
+}
+
+private struct AttoVisualInlayHints: Decodable, Equatable {
+    let items: [AttoVisualInlayHint]
+
+    func resultJSON() throws -> String {
+        try encodeVisualJSON(items.map(\.payload), context: "inlay hint results")
+    }
+}
+
+private struct AttoVisualInlayHint: Decodable, Equatable {
+    let label: String
+    let kind: Int?
+    let line: UInt32
+    let utf16Character: UInt32
+
+    var payload: AttoVisualInlayHintPayload {
+        AttoVisualInlayHintPayload(
+            position: AttoVisualLspPosition(line: line, character: utf16Character),
+            label: label,
+            kind: kind
+        )
+    }
+}
+
+private struct AttoVisualInlayHintPayload: Encodable {
+    let position: AttoVisualLspPosition
+    let label: String
+    let kind: Int?
+}
+
+private struct AttoVisualDocumentLinks: Decodable, Equatable {
+    let items: [AttoVisualDocumentLink]
+
+    func resultJSON() throws -> String {
+        try encodeVisualJSON(items.map(\.payload), context: "document link results")
+    }
+}
+
+private struct AttoVisualDocumentLink: Decodable, Equatable {
+    let line: UInt32
+    let utf16Character: UInt32
+    let length: UInt32
+    let target: String?
+    let tooltip: String?
+    let dataID: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case line
+        case utf16Character
+        case length
+        case target
+        case tooltip
+        case dataID
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        line = try container.decode(UInt32.self, forKey: .line)
+        utf16Character = try container.decode(UInt32.self, forKey: .utf16Character)
+        length = try container.decode(UInt32.self, forKey: .length)
+        target = try container.decodeIfPresent(String.self, forKey: .target)
+        tooltip = try container.decodeIfPresent(String.self, forKey: .tooltip)
+        dataID = try container.decodeIfPresent(Int.self, forKey: .dataID)
+    }
+
+    var payload: AttoVisualDocumentLinkPayload {
+        AttoVisualDocumentLinkPayload(
+            range: visualRange(line: line, utf16Character: utf16Character, length: length),
+            target: target,
+            tooltip: tooltip,
+            data: dataID.map { AttoVisualDocumentLinkDataPayload(id: $0) }
+        )
+    }
+}
+
+private struct AttoVisualDocumentLinkPayload: Encodable {
+    let range: AttoVisualLspRange
+    let target: String?
+    let tooltip: String?
+    let data: AttoVisualDocumentLinkDataPayload?
+}
+
+private struct AttoVisualDocumentLinkDataPayload: Encodable {
+    let id: Int
+}
+
+private struct AttoVisualDocumentColors: Decodable, Equatable {
+    let items: [AttoVisualDocumentColor]
+
+    func resultJSON() throws -> String {
+        try encodeVisualJSON(items.map(\.payload), context: "document color results")
+    }
+}
+
+private struct AttoVisualDocumentColor: Decodable, Equatable {
+    let line: UInt32
+    let utf16Character: UInt32
+    let length: UInt32
+    let red: Double
+    let green: Double
+    let blue: Double
+    let alpha: Double
+
+    enum CodingKeys: String, CodingKey {
+        case line
+        case utf16Character
+        case length
+        case red
+        case green
+        case blue
+        case alpha
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        line = try container.decode(UInt32.self, forKey: .line)
+        utf16Character = try container.decode(UInt32.self, forKey: .utf16Character)
+        length = try container.decode(UInt32.self, forKey: .length)
+        red = try container.decode(Double.self, forKey: .red)
+        green = try container.decode(Double.self, forKey: .green)
+        blue = try container.decode(Double.self, forKey: .blue)
+        alpha = try container.decodeIfPresent(Double.self, forKey: .alpha) ?? 1
+    }
+
+    var payload: AttoVisualDocumentColorPayload {
+        AttoVisualDocumentColorPayload(
+            range: visualRange(line: line, utf16Character: utf16Character, length: length),
+            color: AttoVisualColorPayload(red: red, green: green, blue: blue, alpha: alpha)
+        )
+    }
+}
+
+private struct AttoVisualDocumentColorPayload: Encodable {
+    let range: AttoVisualLspRange
+    let color: AttoVisualColorPayload
+}
+
+private struct AttoVisualColorPayload: Encodable {
+    let red: Double
+    let green: Double
+    let blue: Double
+    let alpha: Double
+}
+
 private struct AttoVisualCodeActionResults: Codable, Equatable {
     let onlyKinds: [String]
     let items: [AttoVisualCodeActionItem]
@@ -1400,6 +1653,13 @@ private func encodeVisualJSON<T: Encodable>(_ value: T, context: String) throws 
         throw AttoVisualBaselineError.invalidManifest("failed to encode \(context) JSON")
     }
     return json
+}
+
+private func visualRange(line: UInt32, utf16Character: UInt32, length: UInt32) -> AttoVisualLspRange {
+    AttoVisualLspRange(
+        start: AttoVisualLspPosition(line: line, character: utf16Character),
+        end: AttoVisualLspPosition(line: line, character: utf16Character + length)
+    )
 }
 
 private struct AttoVisualBaselineWindow: Decodable, Equatable {

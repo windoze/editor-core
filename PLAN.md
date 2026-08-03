@@ -2223,6 +2223,13 @@
     - `swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures`
     - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
     - `git diff --check`
+- 中间提交：`test(app): cover visual auxiliary lsp panels`
+  - 所属任务：阶段 13 的 macOS UI 自动化与视觉回归测试体系增量；继续扩展持久在线 result panel 视觉矩阵，把 Code Lens、Inlay Hints、Document Links 和 Document Colors panels 纳入可记录 artifact。
+  - 提交边界：测试 harness 新增结构化 `codeLensResults` / `inlayHints` / `documentLinks` / `documentColors` manifest actions，并复用 App 的 derived-state/result apply 路径和 persistent panel 打开路径；manifest 新增四个 dark panel artifact case。该提交不提交 golden PNG、不启用 strict 默认门禁、不改变产品 UI 或运行时代码，也不覆盖 WorkspaceEdit/failure popup 或真实 LSP server 触发路径。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures`
+    - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
+    - `git diff --check`
 
 ## 阶段 14: 外观、布局与 Sublime-like 操作打磨
 

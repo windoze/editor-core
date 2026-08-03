@@ -870,6 +870,194 @@
       "persistentPanel": "hierarchyPanel",
       "perChannelTolerance": 2,
       "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "persistent-code-lens-panel-dark",
+      "description": "Dark Code Lens panel with runnable and reference actions.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/persistent-code-lens-panel-dark.png",
+      "artifactName": "persistent-code-lens-panel-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 900,
+        "height": 560
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.LSP.CodeLensPanel.Panel",
+        "width": 720,
+        "height": 380
+      },
+      "codeLensResults": {
+        "items": [
+          {
+            "title": "Run PaletteFixture tests",
+            "command": "atto.test.runPaletteFixture",
+            "line": 0,
+            "utf16Character": 0
+          },
+          {
+            "title": "Find references",
+            "command": "atto.references.find",
+            "line": 3,
+            "utf16Character": 4
+          },
+          {
+            "title": "Open generated preview",
+            "command": "atto.preview.openGenerated",
+            "line": 4,
+            "utf16Character": 8
+          }
+        ]
+      },
+      "persistentPanel": "codeLensPanel",
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "persistent-inlay-hints-panel-dark",
+      "description": "Dark Inlay Hints panel with type and parameter hints.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/persistent-inlay-hints-panel-dark.png",
+      "artifactName": "persistent-inlay-hints-panel-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 900,
+        "height": 560
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.LSP.InlayHintPanel.Panel",
+        "width": 720,
+        "height": 380
+      },
+      "inlayHints": {
+        "items": [
+          {
+            "label": ": Int",
+            "kind": 1,
+            "line": 1,
+            "utf16Character": 20
+          },
+          {
+            "label": "value:",
+            "kind": 2,
+            "line": 4,
+            "utf16Character": 14
+          },
+          {
+            "label": "-> String",
+            "kind": 1,
+            "line": 3,
+            "utf16Character": 28
+          }
+        ]
+      },
+      "persistentPanel": "inlayHintPanel",
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "persistent-document-links-panel-dark",
+      "description": "Dark Document Links panel with resolved and unresolved links.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/persistent-document-links-panel-dark.png",
+      "artifactName": "persistent-document-links-panel-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 900,
+        "height": 560
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.LSP.DocumentLinkPanel.Panel",
+        "width": 740,
+        "height": 380
+      },
+      "documentLinks": {
+        "items": [
+          {
+            "line": 0,
+            "utf16Character": 7,
+            "length": 14,
+            "target": "https://atto.example/docs/palette-fixture",
+            "tooltip": "Open PaletteFixture documentation"
+          },
+          {
+            "line": 3,
+            "utf16Character": 9,
+            "length": 10,
+            "tooltip": "Resolve renderLine symbol",
+            "dataID": 42
+          },
+          {
+            "line": 4,
+            "utf16Character": 14,
+            "length": 12,
+            "target": "file:///workspace/generated/PalettePreview.swift",
+            "tooltip": "Open generated preview"
+          }
+        ]
+      },
+      "persistentPanel": "documentLinkPanel",
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "persistent-document-colors-panel-dark",
+      "description": "Dark Document Colors panel with multiple color swatches.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/persistent-document-colors-panel-dark.png",
+      "artifactName": "persistent-document-colors-panel-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 900,
+        "height": 560
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.LSP.DocumentColorPanel.Panel",
+        "width": 720,
+        "height": 380
+      },
+      "documentColors": {
+        "items": [
+          {
+            "line": 0,
+            "utf16Character": 7,
+            "length": 14,
+            "red": 0.86,
+            "green": 0.22,
+            "blue": 0.23,
+            "alpha": 1
+          },
+          {
+            "line": 1,
+            "utf16Character": 8,
+            "length": 12,
+            "red": 0.2,
+            "green": 0.58,
+            "blue": 0.95,
+            "alpha": 1
+          },
+          {
+            "line": 4,
+            "utf16Character": 14,
+            "length": 12,
+            "red": 0.14,
+            "green": 0.74,
+            "blue": 0.45,
+            "alpha": 0.85
+          }
+        ]
+      },
+      "persistentPanel": "documentColorPanel",
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
     }
   ]
 }
