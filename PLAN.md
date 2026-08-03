@@ -2300,6 +2300,13 @@
     - `swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures`
     - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
     - `git diff --check`
+- 中间提交：`test(app): cover visual workspace edit dependency failure`
+  - 所属任务：阶段 13 的 macOS UI 自动化与视觉回归测试体系增量；把 WorkspaceEdit failure visual coverage 扩展到“前序 resource operation conflict 阻断后续同 URI text edit”的顺序依赖 preflight 触发链。
+  - 提交边界：`workspaceEditJSONApplySummary` manifest action 新增可选 `orderedChanges`，仅用于测试侧按 LSP `documentChanges` 顺序交错生成 text edits 和 resource operations；manifest 新增 dark resource dependency failure summary popover artifact case，真实执行同 URI `create` resource operation conflict 后的 text edit，断言打开 tab 文本保持原文，并捕获 core transaction 因 resource dependency skipped 生成的 summary popover。该提交不提交 golden PNG、不启用 strict 默认门禁、不改变产品 WorkspaceEdit dependency/preflight 语义，也不覆盖 rollback secondary failure 或专门的 global undo history UI。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures`
+    - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
+    - `git diff --check`
 
 ## 阶段 14: 外观、布局与 Sublime-like 操作打磨
 

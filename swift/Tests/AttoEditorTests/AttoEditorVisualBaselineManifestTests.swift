@@ -1777,6 +1777,7 @@ private struct AttoVisualWorkspaceEditJSONApplySummary: Decodable, Equatable {
     let expectedFileContentsAfterUndo: [AttoVisualWorkspaceEditExpectedFileContent]
     let documents: [AttoVisualWorkspaceEditJSONDocument]
     let resourceOperations: [AttoVisualWorkspaceEditJSONResourceOperation]
+    let orderedChanges: [AttoVisualWorkspaceEditJSONChange]?
 
     enum CodingKeys: String, CodingKey {
         case supportFiles
@@ -1791,6 +1792,7 @@ private struct AttoVisualWorkspaceEditJSONApplySummary: Decodable, Equatable {
         case expectedFileContentsAfterUndo
         case documents
         case resourceOperations
+        case orderedChanges
     }
 
     init(from decoder: Decoder) throws {
@@ -1831,6 +1833,10 @@ private struct AttoVisualWorkspaceEditJSONApplySummary: Decodable, Equatable {
             [AttoVisualWorkspaceEditJSONResourceOperation].self,
             forKey: .resourceOperations
         ) ?? []
+        orderedChanges = try container.decodeIfPresent(
+            [AttoVisualWorkspaceEditJSONChange].self,
+            forKey: .orderedChanges
+        )
     }
 
     func materializeSupportFiles(in tempDir: URL) throws {
@@ -1840,18 +1846,12 @@ private struct AttoVisualWorkspaceEditJSONApplySummary: Decodable, Equatable {
     }
 
     func resultJSON(tempDir: URL) throws -> String {
-        var documentChanges: [AttoVisualWorkspaceEditDocumentChangePayload] = documents.map { document in
-            .textDocumentEdit(AttoVisualWorkspaceEditTextDocumentChangePayload(
-                textDocument: AttoVisualWorkspaceEditTextDocumentPayload(
-                    uri: AttoVisualWorkspaceEditPreview.fileURI(document.fileName, tempDir: tempDir),
-                    version: document.version
-                ),
-                edits: document.edits.map(\.payload)
-            ))
-        }
-        documentChanges.append(contentsOf: resourceOperations.map { operation in
-            .resourceOperation(operation.payload(tempDir: tempDir))
-        })
+        let documentChanges = orderedChanges?.map { $0.payload(tempDir: tempDir) }
+            ?? Self.legacyDocumentChanges(
+                documents: documents,
+                resourceOperations: resourceOperations,
+                tempDir: tempDir
+            )
         return try encodeVisualJSON(
             AttoVisualWorkspaceEditDocumentChangesPayload(
                 applyMode: applyMode,
@@ -1859,6 +1859,20 @@ private struct AttoVisualWorkspaceEditJSONApplySummary: Decodable, Equatable {
             ),
             context: "WorkspaceEdit apply summary"
         )
+    }
+
+    private static func legacyDocumentChanges(
+        documents: [AttoVisualWorkspaceEditJSONDocument],
+        resourceOperations: [AttoVisualWorkspaceEditJSONResourceOperation],
+        tempDir: URL
+    ) -> [AttoVisualWorkspaceEditDocumentChangePayload] {
+        var documentChanges: [AttoVisualWorkspaceEditDocumentChangePayload] = documents.map { document in
+            document.payload(tempDir: tempDir)
+        }
+        documentChanges.append(contentsOf: resourceOperations.map { operation in
+            .resourceOperation(operation.payload(tempDir: tempDir))
+        })
+        return documentChanges
     }
 
     @MainActor
@@ -1960,6 +1974,16 @@ private struct AttoVisualWorkspaceEditJSONDocument: Decodable, Equatable {
     let fileName: String
     let version: Int?
     let edits: [AttoVisualWorkspaceEditTextEdit]
+
+    func payload(tempDir: URL) -> AttoVisualWorkspaceEditDocumentChangePayload {
+        .textDocumentEdit(AttoVisualWorkspaceEditTextDocumentChangePayload(
+            textDocument: AttoVisualWorkspaceEditTextDocumentPayload(
+                uri: AttoVisualWorkspaceEditPreview.fileURI(fileName, tempDir: tempDir),
+                version: version
+            ),
+            edits: edits.map(\.payload)
+        ))
+    }
 }
 
 private struct AttoVisualWorkspaceEditTextEdit: Decodable, Equatable {
@@ -2050,6 +2074,40 @@ private struct AttoVisualWorkspaceEditJSONResourceOperation: Decodable, Equatabl
             newURI: newFileName.map { AttoVisualWorkspaceEditPreview.fileURI($0, tempDir: tempDir) },
             options: options
         )
+    }
+}
+
+private enum AttoVisualWorkspaceEditJSONChange: Decodable, Equatable {
+    case document(AttoVisualWorkspaceEditJSONDocument)
+    case resourceOperation(AttoVisualWorkspaceEditJSONResourceOperation)
+
+    private enum CodingKeys: String, CodingKey {
+        case edits
+        case kind
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if container.contains(.edits) {
+            self = .document(try AttoVisualWorkspaceEditJSONDocument(from: decoder))
+            return
+        }
+        if container.contains(.kind) {
+            self = .resourceOperation(try AttoVisualWorkspaceEditJSONResourceOperation(from: decoder))
+            return
+        }
+        throw AttoVisualBaselineError.invalidManifest(
+            "ordered workspace edit change must contain either edits or kind"
+        )
+    }
+
+    func payload(tempDir: URL) -> AttoVisualWorkspaceEditDocumentChangePayload {
+        switch self {
+        case .document(let document):
+            return document.payload(tempDir: tempDir)
+        case .resourceOperation(let operation):
+            return .resourceOperation(operation.payload(tempDir: tempDir))
+        }
     }
 }
 
