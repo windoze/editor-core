@@ -2090,6 +2090,14 @@
   - 验证记录：
     - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests|AttoEditorVisualSnapshotHarnessTests'`
     - `git diff --check`
+- 中间提交：`test(app): add visual baseline update workflow`
+  - 所属任务：阶段 13 的 macOS UI 自动化与视觉回归测试体系增量；为 visual baseline manifest 增加受控记录/更新路径，让后续 PNG baselines 可以由同一 XCTest 用例生成并进入 code review。
+  - 提交边界：`AttoEditorVisualBaselineManifestTests` 新增 `ATTO_VISUAL_RECORD_BASELINE_DIR` record mode，并支持读取 `.build/atto-visual-baseline-record.json` 临时配置，把当前 snapshot 写入 manifest 指定的 baseline 相对路径；新增 `swift/scripts/update-visual-baselines.sh`，默认把 baseline 记录到 `swift/Tests/AttoEditorTests/Resources`、review artifacts 写到 `target/atto-visual-artifacts`，并允许环境变量或 `--baseline-root` / `--artifact-dir` 参数覆盖。该提交不提交新生成 PNG baseline、不改变普通测试默认非严格 baseline 行为、不新增 `XCUIApplication` 黑盒 target、不接 CI runner 固定字体/DPI/scale，也不改变产品 UI 或渲染行为。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests|AttoEditorVisualSnapshotHarnessTests'`
+    - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`（通过临时 `swift/.build/atto-visual-baseline-record.json` 指向 `/tmp/atto-visual-baselines-check` 和 `/tmp/atto-visual-artifacts-check` 验证 record mode）
+    - `bash -n swift/scripts/update-visual-baselines.sh`
+    - `git diff --check`
 
 ## 阶段 14: 外观、布局与 Sublime-like 操作打磨
 

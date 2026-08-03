@@ -67,6 +67,16 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
         try snapshot.writePNG(to: actualArtifact)
         XCTAssertTrue(try Data(contentsOf: actualArtifact).starts(with: [0x89, 0x50, 0x4E, 0x47]))
 
+        if let recordRoot = try recordBaselineRootURL() {
+            let baselineURL = recordRoot.appendingPathComponent(visualCase.baseline)
+            try FileManager.default.createDirectory(
+                at: baselineURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try snapshot.writePNG(to: baselineURL)
+            XCTAssertTrue(try Data(contentsOf: baselineURL).starts(with: [0x89, 0x50, 0x4E, 0x47]))
+        }
+
         guard let baselineRoot = externalBaselineRootURL() else {
             return
         }
@@ -119,6 +129,9 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
         if let configured = nonEmptyEnvironmentURL("ATTO_VISUAL_ARTIFACT_DIR") {
             return configured
         }
+        if let configured = try runtimeConfig()?.artifactRootURL {
+            return configured
+        }
         return fallbackRoot.appendingPathComponent("visual-artifacts", isDirectory: true)
     }
 
@@ -126,8 +139,51 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
         nonEmptyEnvironmentURL("ATTO_VISUAL_BASELINE_DIR")
     }
 
+    private func recordBaselineRootURL() throws -> URL? {
+        if let configured = nonEmptyEnvironmentURL("ATTO_VISUAL_RECORD_BASELINE_DIR") {
+            return configured
+        }
+        return try runtimeConfig()?.recordBaselineRootURL
+    }
+
     private func nonEmptyEnvironmentURL(_ key: String) -> URL? {
         guard let path = ProcessInfo.processInfo.environment[key], path.isEmpty == false else {
+            return nil
+        }
+        return URL(fileURLWithPath: path, isDirectory: true)
+    }
+
+    private func runtimeConfig() throws -> AttoVisualRuntimeConfig? {
+        let explicitConfigURL = ProcessInfo.processInfo.environment["ATTO_VISUAL_BASELINE_CONFIG"]
+            .flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
+        let defaultConfigURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent(".build/atto-visual-baseline-record.json")
+
+        for configURL in [explicitConfigURL, defaultConfigURL].compactMap({ $0 }) {
+            guard FileManager.default.fileExists(atPath: configURL.path) else {
+                continue
+            }
+            let data = try Data(contentsOf: configURL)
+            return try JSONDecoder().decode(AttoVisualRuntimeConfig.self, from: data)
+        }
+        return nil
+    }
+}
+
+private struct AttoVisualRuntimeConfig: Decodable {
+    let recordBaselineRoot: String?
+    let artifactRoot: String?
+
+    var recordBaselineRootURL: URL? {
+        nonEmptyURL(recordBaselineRoot)
+    }
+
+    var artifactRootURL: URL? {
+        nonEmptyURL(artifactRoot)
+    }
+
+    private func nonEmptyURL(_ path: String?) -> URL? {
+        guard let path, path.isEmpty == false else {
             return nil
         }
         return URL(fileURLWithPath: path, isDirectory: true)
