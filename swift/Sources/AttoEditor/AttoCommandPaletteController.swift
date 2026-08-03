@@ -80,6 +80,7 @@ final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTab
     private let commandsProvider: () -> [AttoCommandPaletteCommand]
     private let accessibilityPrefix: String
     private let filtersCommands: Bool
+    private let showsCommandGroups: Bool
     private let searchTextDidChange: ((String) -> Void)?
 
     private var panel: NSPanel?
@@ -93,11 +94,13 @@ final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTab
     init(
         accessibilityPrefix: String = "AttoEditor.CommandPalette",
         filtersCommands: Bool = true,
+        showsCommandGroups: Bool = false,
         searchTextDidChange: ((String) -> Void)? = nil,
         commandsProvider: @escaping () -> [AttoCommandPaletteCommand]
     ) {
         self.accessibilityPrefix = accessibilityPrefix
         self.filtersCommands = filtersCommands
+        self.showsCommandGroups = showsCommandGroups
         self.searchTextDidChange = searchTextDidChange
         self.commandsProvider = commandsProvider
         super.init()
@@ -246,13 +249,13 @@ final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTab
             filteredCommands = allCommands
         } else {
             let scored = allCommands.compactMap { cmd -> (AttoCommandPaletteCommand, Int)? in
-                guard let score = AttoFuzzy.score(candidate: cmd.title, query: q) else { return nil }
+                guard let score = AttoFuzzy.score(candidate: searchableText(for: cmd), query: q) else { return nil }
                 return (cmd, score)
             }
             filteredCommands = scored
                 .sorted { a, b in
                     if a.1 == b.1 {
-                        return a.0.title.localizedCaseInsensitiveCompare(b.0.title) == .orderedAscending
+                        return displayTitle(for: a.0).localizedCaseInsensitiveCompare(displayTitle(for: b.0)) == .orderedAscending
                     }
                     return a.1 > b.1
                 }
@@ -299,9 +302,10 @@ final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTab
             ])
         }
 
+        let title = displayTitle(for: cmd)
         if let swatchColor = cmd.swatchColor {
             let attributed = NSMutableAttributedString(
-                string: "■  \(cmd.title)",
+                string: "■  \(title)",
                 attributes: [
                     .font: rowFont,
                     .foregroundColor: label.textColor as Any,
@@ -310,9 +314,30 @@ final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTab
             attributed.addAttribute(.foregroundColor, value: swatchColor, range: NSRange(location: 0, length: 1))
             label.attributedStringValue = attributed
         } else {
-            label.stringValue = cmd.title
+            label.stringValue = title
         }
         return cell
+    }
+
+    private func displayTitle(for command: AttoCommandPaletteCommand) -> String {
+        guard showsCommandGroups, command.group.isEmpty == false, command.group != "General" else {
+            return command.title
+        }
+
+        let titlePrefix = "\(command.group):"
+        var title = command.title
+        if title.hasPrefix(titlePrefix) {
+            title = String(title.dropFirst(titlePrefix.count)).trimmingCharacters(in: .whitespaces)
+        }
+        return "\(command.group) - \(title)"
+    }
+
+    private func searchableText(for command: AttoCommandPaletteCommand) -> String {
+        [
+            command.title,
+            command.group,
+            command.id,
+        ].joined(separator: " ")
     }
 
     @objc private func doubleClicked(_ sender: Any?) {

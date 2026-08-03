@@ -1339,6 +1339,16 @@
 ### 提交
 
 - `feat(app): unify commands keymaps and palette`
+- 中间提交：`feat(app): show command palette categories`
+  - 所属任务：阶段 8 的 Command、menu、keymap、palette 与 Sublime 行为矩阵增量；让主命令 palette 不只展示裸标题，也展示 command registry 中已有的来源分组，并让 fuzzy 搜索能匹配命令 title、group 和 id。
+  - 提交边界：`AttoCommandPaletteController` 新增可选 `showsCommandGroups` 开关；主 command palette 开启后把 row 显示为 `Group - Title`，同时过滤时把 `title/group/id` 纳入搜索文本；LSP/Project/Quick Open 等复用同一 controller 的结果 palette 默认保持原有标题展示。本提交不改变 command registry schema、不实现 recent commands、不实现宏录制/回放、不改变 keymap resolver 或菜单 enablement。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoAccessibilityIdentifierTests.testCommandPaletteShowsCommandGroupsAndFiltersByMetadata`
+    - `swift test --package-path swift --filter AttoAccessibilityIdentifierTests.testCommandPalettePanelExposesStableIdentifiers`
+    - `swift test --package-path swift --filter AttoAccessibilityIdentifierTests.testCommandPaletteSupportsInitialQueryAndDynamicReload`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testCommandRegistryCarriesMetadataAndAvailability`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs`
+    - `git diff --check`
 
 ## 阶段 9: 配置、偏好与 capability DTO 完整性
 

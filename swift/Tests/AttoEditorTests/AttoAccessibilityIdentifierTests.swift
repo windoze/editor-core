@@ -168,6 +168,66 @@ final class AttoAccessibilityIdentifierTests: XCTestCase {
         XCTAssertEqual(table.numberOfRows, 1)
     }
 
+    func testCommandPaletteShowsCommandGroupsAndFiltersByMetadata() throws {
+        let prefix = "AttoEditor.GroupedPalette"
+        let controller = AttoCommandPaletteController(
+            accessibilityPrefix: prefix,
+            showsCommandGroups: true
+        ) {
+            [
+                AttoCommandPaletteCommand(
+                    id: "editor.duplicate_lines",
+                    title: "Duplicate Line",
+                    group: "Edit"
+                ) {},
+                AttoCommandPaletteCommand(
+                    id: "lsp.rename",
+                    title: "Rename Symbol",
+                    group: "LSP"
+                ) {},
+            ]
+        }
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        defer {
+            controller.hide()
+            window.close()
+        }
+
+        window.contentView = NSView(frame: NSRect(x: 0, y: 0, width: 640, height: 480))
+        window.makeKeyAndOrderFront(nil)
+        controller.show(relativeTo: window)
+
+        let panel = try XCTUnwrap(window.childWindows?.first)
+        let root = try XCTUnwrap(panel.contentView)
+        let searchField = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.commandPaletteSearchField(prefix: prefix), in: root) as? NSSearchField
+        )
+        let table = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.commandPaletteTable(prefix: prefix), in: root) as? NSTableView
+        )
+
+        XCTAssertEqual(table.numberOfRows, 2)
+        let firstCell = try XCTUnwrap(table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? NSTableCellView)
+        XCTAssertEqual(firstCell.textField?.stringValue, "Edit - Duplicate Line")
+
+        searchField.stringValue = "LSP"
+        controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: searchField))
+        XCTAssertEqual(table.numberOfRows, 1)
+        let groupCell = try XCTUnwrap(table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? NSTableCellView)
+        XCTAssertEqual(groupCell.textField?.stringValue, "LSP - Rename Symbol")
+
+        searchField.stringValue = "duplicate_lines"
+        controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: searchField))
+        XCTAssertEqual(table.numberOfRows, 1)
+        let idCell = try XCTUnwrap(table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? NSTableCellView)
+        XCTAssertEqual(idCell.textField?.stringValue, "Edit - Duplicate Line")
+    }
+
     func testLspLocationPanelExposesStableIdentifiersAndFiltersRows() throws {
         let fileURL = URL(fileURLWithPath: "/tmp/location-panel.swift")
         let snapshot = AttoEditorAreaViewController.LspLocationResultSnapshot(

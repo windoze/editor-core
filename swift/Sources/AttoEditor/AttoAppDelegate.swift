@@ -222,6 +222,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
 
         commandPaletteController = AttoCommandPaletteController(
             accessibilityPrefix: "AttoEditor.CommandPalette",
+            showsCommandGroups: true,
             commandsProvider: { [weak self] in
                 self?.defaultCommands() ?? []
             }
