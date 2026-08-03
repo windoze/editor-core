@@ -43,6 +43,8 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("editor.unfold"))
         XCTAssertTrue(ids.contains("editor.unfold_all"))
         XCTAssertTrue(ids.contains("workspace.undo_last_workspace_edit"))
+        XCTAssertTrue(ids.contains("macro.toggle_recording"))
+        XCTAssertTrue(ids.contains("macro.replay_last"))
         for command in AttoEditorAreaViewController.CursorMovementCommand.allCases {
             XCTAssertTrue(ids.contains(command.id), command.id)
         }
@@ -204,6 +206,11 @@ final class AttoEditorCommandTests: XCTestCase {
             workspaceUndo.requiredRuntimeFeatures,
             .workspaceEditTransactionUndoCommandRequirements
         )
+
+        let toggleMacro = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "macro.toggle_recording"))
+        XCTAssertEqual(toggleMacro.macroPolicy, .notRecordable)
+        let replayMacro = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "macro.replay_last"))
+        XCTAssertEqual(replayMacro.macroPolicy, .notRecordable)
 
         let openFile = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "file.open_file"))
         XCTAssertEqual(openFile.macroPolicy, .promptRequired)
@@ -1477,6 +1484,8 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(resolved["file.move_tab_left"], AttoKeymap.parseBinding("super+shift+["))
         XCTAssertEqual(resolved["file.move_tab_right"], AttoKeymap.parseBinding("super+shift+]"))
         XCTAssertEqual(resolved["go.line"], AttoKeymap.parseBinding("ctrl+g"))
+        XCTAssertEqual(resolved["macro.toggle_recording"], AttoKeymap.parseBinding("ctrl+q"))
+        XCTAssertEqual(resolved["macro.replay_last"], AttoKeymap.parseBinding("ctrl+shift+q"))
     }
 
     func testKeymapParsesExtendedSublimeStyleKeyNames() throws {
@@ -2031,6 +2040,11 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "editor.add_cursor_below", in: selectionMenu))
         XCTAssertNotNil(findMenuItem(commandID: "editor.add_next_occurrence", in: selectionMenu))
         XCTAssertNotNil(findMenuItem(commandID: "editor.add_all_occurrences", in: selectionMenu))
+
+        let toolsMenu = try XCTUnwrap(topLevelMenu(title: "Tools", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "macro.toggle_recording", in: toolsMenu))
+        XCTAssertNotNil(findMenuItem(commandID: "macro.replay_last", in: toolsMenu))
+
         XCTAssertNotNil(findMenuItem(commandID: "view.wrap.word", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "view.split_right", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "view.focus_next_pane", in: menu))
@@ -4869,6 +4883,46 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(recentCommand.id, "go.line")
         recentCommand.run()
         XCTAssertEqual(try editorView.editor.selectionOffsets().start, 6)
+    }
+
+    func testCommandMacroRecordsAndReplaysCommandSequence() throws {
+        let delegate = AttoAppDelegate(keyBindings: [:])
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("macro.txt")
+        try "abc\ndef\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let ctx = delegate._createWindowForTesting(workspaceRootURL: tempDir)
+        defer { ctx.window.close() }
+        ctx.editorAreaController.openFile(url: fileURL, mode: .pinned)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: ctx.editorAreaController.view))
+        XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "macro.replay_last"))
+
+        XCTAssertTrue(delegate.executeCommand(id: "macro.toggle_recording"))
+        XCTAssertTrue(delegate._isRecordingMacroForTesting())
+        XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "macro.replay_last"))
+
+        XCTAssertTrue(delegate.executeCommand(id: "go.line", arguments: ["line": .integer(2), "column": .integer(2)]))
+        XCTAssertTrue(delegate.executeCommand(id: "editor.find"))
+        XCTAssertTrue(delegate.executeCommand(id: "editor.duplicate_lines"))
+
+        XCTAssertTrue(delegate.executeCommand(id: "macro.toggle_recording"))
+        XCTAssertFalse(delegate._isRecordingMacroForTesting())
+
+        let recorded = delegate._lastMacroCommandsForTesting()
+        XCTAssertEqual(recorded.map(\.commandID), ["go.line", "editor.duplicate_lines"])
+        XCTAssertEqual(recorded.first?.arguments, ["line": .integer(2), "column": .integer(2)])
+        XCTAssertEqual(recorded.last?.arguments, [:])
+        XCTAssertEqual(try editorView.editor.text(), "abc\ndef\ndef\n")
+        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "macro.replay_last"))
+
+        XCTAssertTrue(delegate.executeCommand(id: "macro.replay_last"))
+        XCTAssertEqual(try editorView.editor.text(), "abc\ndef\ndef\ndef\n")
+        XCTAssertEqual(delegate._lastMacroCommandsForTesting(), recorded)
     }
 
     func testExecuteCommandAcceptsTypedArgumentsForParameterizedCommands() throws {

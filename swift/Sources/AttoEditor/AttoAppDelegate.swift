@@ -9,6 +9,11 @@ struct AttoRecentCommandRecord: Equatable {
     let arguments: AttoCommandArguments
 }
 
+struct AttoRecordedCommand: Equatable {
+    let commandID: String
+    let arguments: AttoCommandArguments
+}
+
 @MainActor
 struct AttoRecentCommandStore {
     private static let defaultRecordsKey = "AttoEditor.RecentCommandRecords"
@@ -168,8 +173,13 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     private var keyEventMonitor: Any?
     private var recentCommandRecords: [AttoRecentCommandRecord] = []
     private let recentCommandStore: AttoRecentCommandStore?
+    private var isRecordingMacro = false
+    private var isReplayingMacro = false
+    private var currentMacroCommands: [AttoRecordedCommand] = []
+    private var lastMacroCommands: [AttoRecordedCommand] = []
 
     private static let maxRecentCommandCount = 12
+    private static let maxRecordedMacroCommandCount = 512
 
     var ipcServer: AttoIpcServer?
     var createDefaultWindowOnLaunch: Bool = true
@@ -844,6 +854,12 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .init(id: "workbench.command_palette", title: "AttoEditor: Command Palette") { [weak self] in
                 self?.showCommandPalette()
             },
+            .init(id: "macro.toggle_recording", title: "Macro: Toggle Recording") { [weak self] in
+                self?.toggleMacroRecording()
+            },
+            .init(id: "macro.replay_last", title: "Macro: Replay Last Macro") { [weak self] in
+                self?.replayLastMacro()
+            },
             .init(id: "go.file", title: "Go: Go to File…") { [weak self] in
                 self?.showQuickOpen()
             },
@@ -1117,6 +1133,14 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         recentCommandRecords.first { $0.commandID == commandID }?.arguments
     }
 
+    func _isRecordingMacroForTesting() -> Bool {
+        isRecordingMacro
+    }
+
+    func _lastMacroCommandsForTesting() -> [AttoRecordedCommand] {
+        lastMacroCommands
+    }
+
     func _validateRuntimeCompatibilityForTesting() -> Bool {
         validateRuntimeCompatibilityBeforeLaunch(logSuccess: false)
     }
@@ -1229,18 +1253,20 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
 
     private func commandWithCurrentContext(_ command: AttoCommandPaletteCommand) -> AttoCommandPaletteCommand {
         let metadata = commandMetadata(commandID: command.id, title: command.title)
+        let schema = metadata.schema
         return AttoCommandPaletteCommand(
             id: command.id,
             title: command.title,
             group: metadata.group,
             swatchColor: command.swatchColor,
-            isEnabled: commandIsEnabled(requirement: metadata.requirement, schema: metadata.schema),
+            isEnabled: commandIsEnabled(commandID: command.id),
             requiresEditor: metadata.requirement.requiresEditor,
-            schema: metadata.schema,
-            promptsForArguments: metadata.schema.isParameterized,
+            schema: schema,
+            promptsForArguments: schema.isParameterized,
             initialArguments: command.initialArguments,
             runWithArguments: { [weak self] arguments in
                 command.runWithArguments(arguments)
+                self?.recordMacroCommandIfNeeded(commandID: command.id, schema: schema, arguments: arguments)
                 self?.rememberRecentCommand(command.id, arguments: arguments)
             }
         )
@@ -1302,7 +1328,72 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         recentCommandStore?.save(recentCommandRecords, maxCount: Self.maxRecentCommandCount)
     }
 
+    private func toggleMacroRecording() {
+        if isRecordingMacro {
+            stopMacroRecording()
+        } else {
+            startMacroRecording()
+        }
+    }
+
+    private func startMacroRecording() {
+        currentMacroCommands = []
+        isRecordingMacro = true
+    }
+
+    private func stopMacroRecording() {
+        guard isRecordingMacro else { return }
+        lastMacroCommands = currentMacroCommands
+        currentMacroCommands = []
+        isRecordingMacro = false
+    }
+
+    private func replayLastMacro() {
+        guard isRecordingMacro == false, lastMacroCommands.isEmpty == false else {
+            NSSound.beep()
+            return
+        }
+
+        isReplayingMacro = true
+        defer { isReplayingMacro = false }
+
+        for command in lastMacroCommands {
+            if command.arguments.isEmpty {
+                _ = executeCommand(id: command.commandID)
+            } else {
+                _ = executeCommand(id: command.commandID, arguments: command.arguments)
+            }
+        }
+    }
+
+    private func recordMacroCommandIfNeeded(commandID: String, schema: AttoCommandSchema, arguments: AttoCommandArguments) {
+        guard isRecordingMacro, isReplayingMacro == false else { return }
+
+        let recordedArguments: AttoCommandArguments
+        switch schema.macroPolicy {
+        case .recordable:
+            recordedArguments = [:]
+        case .recordableWithArguments:
+            guard arguments.isEmpty == false else { return }
+            recordedArguments = arguments
+        case .promptRequired, .notRecordable:
+            return
+        }
+
+        currentMacroCommands.append(AttoRecordedCommand(commandID: commandID, arguments: recordedArguments))
+        if currentMacroCommands.count > Self.maxRecordedMacroCommandCount {
+            currentMacroCommands.removeFirst(currentMacroCommands.count - Self.maxRecordedMacroCommandCount)
+        }
+    }
+
     private func commandIsEnabled(commandID: String) -> Bool {
+        switch commandID {
+        case "macro.replay_last":
+            return isRecordingMacro == false && lastMacroCommands.isEmpty == false
+        default:
+            break
+        }
+
         let metadata = commandMetadata(commandID: commandID, title: commandID)
         return commandIsEnabled(requirement: metadata.requirement, schema: metadata.schema)
     }
@@ -1425,6 +1516,8 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         case "file.open_folder", "file.open_file", "workbench.preferences", "go.file",
              "editor.find", "editor.replace", "workbench.command_palette":
             return AttoCommandSchema(macroPolicy: .promptRequired)
+        case "macro.toggle_recording", "macro.replay_last":
+            return AttoCommandSchema(macroPolicy: .notRecordable)
         case "file.new", "file.save", "file.close_tab", "file.close_all_tabs",
              "file.close_other_tabs", "file.close_tabs_to_right",
              "file.move_tab_left", "file.move_tab_right",

@@ -122,6 +122,8 @@ enum AttoKeymap {
         "view.close_pane": AttoKeyBinding(keyEquivalent: "w", modifiers: [.command, .option]),
         "view.wrap.word": AttoKeyBinding(keyEquivalent: "z", modifiers: [.option]),
         "workbench.command_palette": AttoKeyBinding(keyEquivalent: "p", modifiers: [.command, .shift]),
+        "macro.toggle_recording": AttoKeyBinding(keyEquivalent: "q", modifiers: [.control]),
+        "macro.replay_last": AttoKeyBinding(keyEquivalent: "q", modifiers: [.control, .shift]),
         "go.file": AttoKeyBinding(keyEquivalent: "p", modifiers: [.command]),
         "go.line": AttoKeyBinding(keyEquivalent: "g", modifiers: [.control]),
         "lsp.document_symbols": AttoKeyBinding(keyEquivalent: "r", modifiers: [.command]),

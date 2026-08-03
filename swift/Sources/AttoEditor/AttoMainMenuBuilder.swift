@@ -81,6 +81,14 @@ enum AttoMainMenuBuilder {
         selectionMenu.addItem(commandItem(title: "Add Next Occurrence", commandID: "editor.add_next_occurrence", appDelegate: appDelegate))
         selectionMenu.addItem(commandItem(title: "Add All Occurrences", commandID: "editor.add_all_occurrences", appDelegate: appDelegate))
 
+        let toolsMenuItem = NSMenuItem()
+        toolsMenuItem.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.menu("Tools"))
+        mainMenu.addItem(toolsMenuItem)
+        let toolsMenu = NSMenu(title: "Tools")
+        toolsMenuItem.submenu = toolsMenu
+        toolsMenu.addItem(commandItem(title: "Toggle Macro Recording", commandID: "macro.toggle_recording", appDelegate: appDelegate))
+        toolsMenu.addItem(commandItem(title: "Replay Last Macro", commandID: "macro.replay_last", appDelegate: appDelegate))
+
         let viewMenuItem = NSMenuItem()
         viewMenuItem.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.menu("View"))
         mainMenu.addItem(viewMenuItem)

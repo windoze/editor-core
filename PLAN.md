@@ -1380,6 +1380,13 @@
   - 验证记录：
     - `swift test --package-path swift --filter 'Atto(AccessibilityIdentifierTests.test(CommandPalettePromptsForParameterizedCommands|CommandPaletteShowsCommandGroupsAndFiltersByMetadata|CommandPalettePanelExposesStableIdentifiers)|EditorCommandTests.test(CommandPaletteReplaysRecentCommandArguments|CommandPalettePersistsRecentCommandArgumentsAcrossDelegates))'`
     - `git diff --check`
+- 中间提交：`feat(app): record command macros`
+  - 所属任务：阶段 8 的 Command、menu、keymap、palette 与 Sublime 行为矩阵增量；开始消费 command registry 里的 `macroPolicy`，为统一 command id 路径提供基础 sequence macro 录制/回放。
+  - 提交边界：AttoEditor App 新增 in-memory last macro buffer，`macro.toggle_recording` / `macro.replay_last` 命令、Tools 菜单和 `ctrl+q` / `ctrl+shift+q` 默认 keymap；录制只接收 `.recordable` 和带显式 typed arguments 的 `.recordableWithArguments` 命令，过滤 `.promptRequired` / `.notRecordable`，回放时不会递归录制。本提交不实现宏持久化文件、不实现命名/多宏管理、不实现 Sublime `.sublime-macro` 文件兼容、不实现 plugin/package command runtime，也不记录命令内部 modal prompt 产生的参数。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.test(CommandMacroRecordsAndReplaysCommandSequence|DefaultCommandPaletteIncludesCoreEditorCommandIDs|CommandRegistryCarriesParameterSchemasAndMacroPolicies|MainMenuItemsUseCommandIDsAndResolvedKeymap)'`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testKeymapParsesSublimeStyleBindingsAndOverridesDefaults`
+    - `git diff --check`
 
 ## 阶段 9: 配置、偏好与 capability DTO 完整性
 
