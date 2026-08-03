@@ -189,6 +189,38 @@ final class AttoEditorXCUIApplicationSmokeTests: XCTestCase {
         )
     }
 
+    func testOpenFileThroughIPCAndSaveKeyboardSmokeFlow() throws {
+        let launched = try launchAttoEditor()
+        defer { launched.cleanUp() }
+
+        XCTAssertTrue(launched.app.wait(for: .runningForeground, timeout: Self.timeout))
+        XCTAssertTrue(launched.app.windows.firstMatch.waitForExistence(timeout: Self.timeout))
+
+        let workspaceURL = launched.runtimeRoot.appendingPathComponent("workspace", isDirectory: true)
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        let fileURL = workspaceURL.appendingPathComponent("open-save-smoke.txt", isDirectory: false)
+        try "initial\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        try enqueueOpenFileRequest(fileURL, launched: launched)
+        assertElementCount(
+            atLeast: 1,
+            identifierPrefix: dynamicIdentifierPrefix(AttoAccessibilityID.tabChip),
+            in: launched.app
+        )
+        let editorView = try firstElement(
+            identifierPrefix: dynamicIdentifierPrefix(AttoAccessibilityID.editorView),
+            in: launched.app
+        )
+        editorView.click()
+        launched.app.typeText("saved via xcui\n")
+        launched.app.typeKey("s", modifierFlags: [.command])
+
+        XCTAssertNotNil(
+            waitForFileText(at: fileURL, contains: "saved via xcui"),
+            "expected cmd+s to persist editor text to \(fileURL.path)"
+        )
+    }
+
     private func launchAttoEditor() throws -> LaunchedAttoApp {
         guard Self.isEnabled else {
             throw XCTSkip(
@@ -204,6 +236,7 @@ final class AttoEditorXCUIApplicationSmokeTests: XCTestCase {
         let runtimeRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent("atto-xcui-smoke-\(UUID().uuidString)", isDirectory: true)
         let homeURL = runtimeRoot.appendingPathComponent("home", isDirectory: true)
+        let spoolDir = runtimeRoot.appendingPathComponent("spool", isDirectory: true)
         try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
 
         let app = XCUIApplication(url: appURL)
@@ -211,14 +244,12 @@ final class AttoEditorXCUIApplicationSmokeTests: XCTestCase {
         app.launchEnvironment[AttoIPC.socketPathEnvKey] = runtimeRoot
             .appendingPathComponent("atto.sock", isDirectory: false)
             .path
-        app.launchEnvironment[AttoIPC.spoolDirPathEnvKey] = runtimeRoot
-            .appendingPathComponent("spool", isDirectory: true)
-            .path
+        app.launchEnvironment[AttoIPC.spoolDirPathEnvKey] = spoolDir.path
         app.launchEnvironment["HOME"] = homeURL.path
         app.launchEnvironment["ATTO_EDITOR_THEME"] = "Atto Dark"
         app.launch()
 
-        return LaunchedAttoApp(app: app, runtimeRoot: runtimeRoot)
+        return LaunchedAttoApp(app: app, runtimeRoot: runtimeRoot, spoolDir: spoolDir)
     }
 
     private static var isEnabled: Bool {
@@ -285,6 +316,36 @@ final class AttoEditorXCUIApplicationSmokeTests: XCTestCase {
         app.typeText(query)
         assertElementExists(AttoAccessibilityID.commandPaletteTable(prefix: prefix), in: app)
         app.typeKey(.return, modifierFlags: [])
+    }
+
+    private func enqueueOpenFileRequest(_ fileURL: URL, launched: LaunchedAttoApp) throws {
+        try FileManager.default.createDirectory(at: launched.spoolDir, withIntermediateDirectories: true)
+        let requestID = UUID().uuidString
+        let request = AttoIpcOpenRequest(
+            requestID: requestID,
+            newWindow: false,
+            wait: false,
+            directories: [],
+            files: [
+                AttoIpcFileRequest(path: fileURL.path, line1: nil, column1: nil),
+            ]
+        )
+        let requestURL = launched.spoolDir.appendingPathComponent("req-\(requestID).json", isDirectory: false)
+        let data = try JSONEncoder().encode(request)
+        try data.write(to: requestURL, options: [.atomic])
+    }
+
+    private func waitForFileText(at url: URL, contains expected: String) -> String? {
+        let deadline = Date().addingTimeInterval(Self.timeout)
+        repeat {
+            if let text = try? String(contentsOf: url, encoding: .utf8),
+               text.contains(expected)
+            {
+                return text
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(Self.pollInterval))
+        } while Date() < deadline
+        return nil
     }
 
     private func waitForElementText(
@@ -373,6 +434,7 @@ final class AttoEditorXCUIApplicationSmokeTests: XCTestCase {
     private struct LaunchedAttoApp {
         let app: XCUIApplication
         let runtimeRoot: URL
+        let spoolDir: URL
 
         @MainActor
         func cleanUp() {

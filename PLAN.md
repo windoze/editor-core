@@ -2146,6 +2146,12 @@
   - 验证记录：
     - `swift test --package-path swift --filter 'AttoEditorXCUIApplicationSmokeTests|AttoIPCTests|AttoCommandLineTests'`
     - `git diff --check`
+- 中间提交：`test(app): cover xcui open save flow`
+  - 所属任务：阶段 13 的 macOS UI 自动化与视觉回归测试体系增量；继续扩展 opt-in `XCUIApplication` 黑盒操作流，覆盖真实文件打开和键盘保存路径。
+  - 提交边界：只扩展 `AttoEditorXCUIApplicationSmokeTests`，通过测试隔离 spool 目录写入 `AttoIpcOpenRequest` 打开临时文件，等待 tab/editor view AX 节点出现，输入文本后触发 `cmd+s`，并轮询磁盘内容确认保存成功。该提交不启用默认 CI GUI 测试、不依赖系统 Open/Save panel、不覆盖 Save As 或 unsaved buffer 保存，也不改变产品代码。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorXCUIApplicationSmokeTests|AttoIPCTests|AttoCommandLineTests'`
+    - `git diff --check`
 
 ## 阶段 14: 外观、布局与 Sublime-like 操作打磨
 
