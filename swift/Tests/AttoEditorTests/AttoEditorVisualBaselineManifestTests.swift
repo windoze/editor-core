@@ -298,6 +298,18 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
                 XCTAssertTrue(vc.showLspLocationPanel(), visualCase.id)
             }
         }
+        if let hierarchyResults = visualCase.hierarchyResults {
+            let tab = try XCTUnwrap(vc.activeTab, visualCase.id)
+            let documentURI = vc.projectedFileURL(for: tab).standardizedFileURL.absoluteString
+            XCTAssertTrue(
+                vc._showHierarchyResultJSONForTesting(
+                    try hierarchyResults.resultJSON(documentURI: documentURI),
+                    kind: hierarchyResults.kind.rawValue,
+                    showFeedback: false
+                ),
+                visualCase.id
+            )
+        }
         if let codeActionResults = visualCase.codeActionResults {
             XCTAssertTrue(
                 vc._showCodeActionResultJSONForTesting(
@@ -337,6 +349,8 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
                 XCTAssertTrue(vc.showWorkspaceProblemsPanelInActiveTab(), visualCase.id)
             case .lspWorkbenchPanel:
                 XCTAssertTrue(vc.showLspWorkbenchPanel(), visualCase.id)
+            case .hierarchyPanel:
+                XCTAssertTrue(vc.showHierarchyPanelInActiveTab(), visualCase.id)
             }
         }
     }
@@ -533,6 +547,7 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
     let workspaceDiagnostics: AttoVisualWorkspaceDiagnostics?
     let lspSymbolResults: AttoVisualLspSymbolResults?
     let lspLocationResults: AttoVisualLspLocationResults?
+    let hierarchyResults: AttoVisualHierarchyResults?
     let codeActionResults: AttoVisualCodeActionResults?
     let completionPopup: AttoVisualCompletionPopup?
     let hoverPopover: AttoVisualHoverPopover?
@@ -576,6 +591,7 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
         case workspaceDiagnostics
         case lspSymbolResults
         case lspLocationResults
+        case hierarchyResults
         case codeActionResults
         case completionPopup
         case hoverPopover
@@ -627,6 +643,10 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
         lspLocationResults = try container.decodeIfPresent(
             AttoVisualLspLocationResults.self,
             forKey: .lspLocationResults
+        )
+        hierarchyResults = try container.decodeIfPresent(
+            AttoVisualHierarchyResults.self,
+            forKey: .hierarchyResults
         )
         codeActionResults = try container.decodeIfPresent(AttoVisualCodeActionResults.self, forKey: .codeActionResults)
         completionPopup = try container.decodeIfPresent(AttoVisualCompletionPopup.self, forKey: .completionPopup)
@@ -914,6 +934,7 @@ private enum AttoVisualPersistentPanel: String, Decodable, Equatable {
     case problemsPanel
     case workspaceProblemsPanel
     case lspWorkbenchPanel
+    case hierarchyPanel
 }
 
 private struct AttoVisualLspSymbolResults: Decodable, Equatable {
@@ -1093,6 +1114,134 @@ private struct AttoVisualLspRange: Codable, Equatable {
 private struct AttoVisualLspPosition: Codable, Equatable {
     let line: UInt32
     let character: UInt32
+}
+
+private struct AttoVisualHierarchyResults: Decodable, Equatable {
+    let kind: AttoVisualHierarchyKind
+    let entries: [AttoVisualHierarchyEntry]
+
+    enum CodingKeys: String, CodingKey {
+        case kind
+        case entries
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try container.decodeIfPresent(AttoVisualHierarchyKind.self, forKey: .kind) ?? .callIncoming
+        entries = try container.decode([AttoVisualHierarchyEntry].self, forKey: .entries)
+    }
+
+    func resultJSON(documentURI: String) throws -> String {
+        switch kind {
+        case .callIncoming:
+            return try encodeVisualJSON(
+                entries.map { $0.incomingCallPayload(documentURI: documentURI) },
+                context: "incoming call hierarchy"
+            )
+        case .callOutgoing:
+            return try encodeVisualJSON(
+                entries.map { $0.outgoingCallPayload(documentURI: documentURI) },
+                context: "outgoing call hierarchy"
+            )
+        case .typeSupertypes, .typeSubtypes:
+            return try encodeVisualJSON(
+                entries.map { $0.itemPayload(documentURI: documentURI) },
+                context: "type hierarchy"
+            )
+        }
+    }
+}
+
+private enum AttoVisualHierarchyKind: String, Decodable, Equatable {
+    case callIncoming
+    case callOutgoing
+    case typeSupertypes
+    case typeSubtypes
+}
+
+private struct AttoVisualHierarchyEntry: Decodable, Equatable {
+    let name: String
+    let detail: String?
+    let lspKind: Int?
+    let line: UInt32
+    let utf16Character: UInt32
+    let length: UInt32
+    let relatedRangeCount: Int
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case detail
+        case lspKind
+        case line
+        case utf16Character
+        case length
+        case relatedRangeCount
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        detail = try container.decodeIfPresent(String.self, forKey: .detail)
+        lspKind = try container.decodeIfPresent(Int.self, forKey: .lspKind)
+        line = try container.decode(UInt32.self, forKey: .line)
+        utf16Character = try container.decode(UInt32.self, forKey: .utf16Character)
+        length = try container.decodeIfPresent(UInt32.self, forKey: .length) ?? 1
+        relatedRangeCount = try container.decodeIfPresent(Int.self, forKey: .relatedRangeCount) ?? 1
+    }
+
+    func incomingCallPayload(documentURI: String) -> AttoVisualIncomingCallHierarchyPayload {
+        AttoVisualIncomingCallHierarchyPayload(
+            from: itemPayload(documentURI: documentURI),
+            fromRanges: relatedRanges
+        )
+    }
+
+    func outgoingCallPayload(documentURI: String) -> AttoVisualOutgoingCallHierarchyPayload {
+        AttoVisualOutgoingCallHierarchyPayload(
+            to: itemPayload(documentURI: documentURI),
+            fromRanges: relatedRanges
+        )
+    }
+
+    func itemPayload(documentURI: String) -> AttoVisualHierarchyItemPayload {
+        AttoVisualHierarchyItemPayload(
+            name: name,
+            kind: lspKind,
+            detail: detail,
+            uri: documentURI,
+            selectionRange: primaryRange
+        )
+    }
+
+    private var primaryRange: AttoVisualLspRange {
+        AttoVisualLspRange(
+            start: AttoVisualLspPosition(line: line, character: utf16Character),
+            end: AttoVisualLspPosition(line: line, character: utf16Character + length)
+        )
+    }
+
+    private var relatedRanges: [AttoVisualLspRange] {
+        let count = max(relatedRangeCount, 1)
+        return (0..<count).map { _ in primaryRange }
+    }
+}
+
+private struct AttoVisualIncomingCallHierarchyPayload: Encodable {
+    let from: AttoVisualHierarchyItemPayload
+    let fromRanges: [AttoVisualLspRange]
+}
+
+private struct AttoVisualOutgoingCallHierarchyPayload: Encodable {
+    let to: AttoVisualHierarchyItemPayload
+    let fromRanges: [AttoVisualLspRange]
+}
+
+private struct AttoVisualHierarchyItemPayload: Encodable {
+    let name: String
+    let kind: Int?
+    let detail: String?
+    let uri: String
+    let selectionRange: AttoVisualLspRange
 }
 
 private struct AttoVisualCodeActionResults: Codable, Equatable {

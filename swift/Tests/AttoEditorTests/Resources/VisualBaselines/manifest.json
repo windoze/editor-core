@@ -816,6 +816,60 @@
       "persistentPanel": "lspWorkbenchPanel",
       "perChannelTolerance": 2,
       "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "persistent-hierarchy-panel-dark",
+      "description": "Dark Hierarchy panel with incoming call results and related range counts.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/persistent-hierarchy-panel-dark.png",
+      "artifactName": "persistent-hierarchy-panel-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 900,
+        "height": 560
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.LSP.HierarchyPanel.Panel",
+        "width": 760,
+        "height": 400
+      },
+      "hierarchyResults": {
+        "kind": "callIncoming",
+        "entries": [
+          {
+            "name": "renderPreview",
+            "detail": "PalettePreview.swift",
+            "lspKind": 12,
+            "line": 3,
+            "utf16Character": 9,
+            "length": 10,
+            "relatedRangeCount": 2
+          },
+          {
+            "name": "refreshPalette",
+            "detail": "PaletteController.swift",
+            "lspKind": 6,
+            "line": 4,
+            "utf16Character": 8,
+            "length": 12,
+            "relatedRangeCount": 1
+          },
+          {
+            "name": "applyTheme",
+            "detail": "ThemePipeline.swift",
+            "lspKind": 6,
+            "line": 0,
+            "utf16Character": 7,
+            "length": 14,
+            "relatedRangeCount": 3
+          }
+        ]
+      },
+      "persistentPanel": "hierarchyPanel",
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
     }
   ]
 }
