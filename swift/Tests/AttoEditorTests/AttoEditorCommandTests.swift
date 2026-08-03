@@ -53,6 +53,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("macro.undo_delete"))
         XCTAssertTrue(ids.contains("macro.show_delete_history"))
         XCTAssertTrue(ids.contains("macro.remove_delete_history_entry"))
+        XCTAssertTrue(ids.contains("macro.remove_delete_history_entries"))
         XCTAssertTrue(ids.contains("macro.clear_delete_history"))
         XCTAssertTrue(ids.contains("macro.import_file"))
         XCTAssertTrue(ids.contains("macro.export_named"))
@@ -254,6 +255,10 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(removeDeleteHistoryEntry.parameters.map(\.name), ["index"])
         XCTAssertEqual(removeDeleteHistoryEntry.parameters.first?.kind, .integer)
         XCTAssertEqual(removeDeleteHistoryEntry.parameters.first?.minimumInteger, 1)
+        let removeDeleteHistoryEntries = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "macro.remove_delete_history_entries"))
+        XCTAssertEqual(removeDeleteHistoryEntries.macroPolicy, .notRecordable)
+        XCTAssertEqual(removeDeleteHistoryEntries.parameters.map(\.name), ["indices"])
+        XCTAssertEqual(removeDeleteHistoryEntries.parameters.first?.kind, .json)
         let clearDeleteHistory = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "macro.clear_delete_history"))
         XCTAssertEqual(clearDeleteHistory.macroPolicy, .notRecordable)
         XCTAssertFalse(clearDeleteHistory.isParameterized)
@@ -2106,6 +2111,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "macro.undo_delete", in: toolsMenu))
         XCTAssertNotNil(findMenuItem(commandID: "macro.show_delete_history", in: toolsMenu))
         XCTAssertNotNil(findMenuItem(commandID: "macro.remove_delete_history_entry", in: toolsMenu))
+        XCTAssertNotNil(findMenuItem(commandID: "macro.remove_delete_history_entries", in: toolsMenu))
         XCTAssertNotNil(findMenuItem(commandID: "macro.clear_delete_history", in: toolsMenu))
         XCTAssertNotNil(findMenuItem(commandID: "macro.import_file", in: toolsMenu))
         XCTAssertNotNil(findMenuItem(commandID: "macro.export_named", in: toolsMenu))
@@ -5521,6 +5527,69 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(macroStore.namedMacroNames(), ["Beta", "Gamma"])
         XCTAssertFalse(thirdDelegate._commandIsEnabledForTesting(commandID: "macro.undo_delete"))
         XCTAssertFalse(thirdDelegate._commandIsEnabledForTesting(commandID: "macro.remove_delete_history_entry"))
+    }
+
+    func testCommandMacroRemoveDeleteHistoryEntriesRemovesPersistentSelectedRecords() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let macroStore = AttoMacroStore(macroFileURL: tempDir.appendingPathComponent("Last Macro.sublime-macro"))
+        let commands = [AttoRecordedCommand(commandID: "editor.duplicate_lines", arguments: [:])]
+        try macroStore.save(commands, named: "Alpha", maxCount: 20)
+        try macroStore.save(commands, named: "Beta", maxCount: 20)
+        try macroStore.save(commands, named: "Gamma", maxCount: 20)
+        try macroStore.save(commands, named: "Delta", maxCount: 20)
+
+        let firstDelegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
+        firstDelegate._setMacroDeleteBatchConfirmationProviderForTesting { _ in true }
+        XCTAssertTrue(firstDelegate.executeCommand(
+            id: "macro.delete_named",
+            arguments: ["name": .string("Alpha")]
+        ))
+        XCTAssertTrue(firstDelegate.executeCommand(
+            id: "macro.delete_named",
+            arguments: ["name": .string("Beta")]
+        ))
+        XCTAssertTrue(firstDelegate.executeCommand(
+            id: "macro.delete_named_batch",
+            arguments: ["names": .json("[\"Gamma\", \"Delta\"]")]
+        ))
+        XCTAssertEqual(macroStore.namedMacroNames(), [])
+        XCTAssertTrue(firstDelegate._commandIsEnabledForTesting(commandID: "macro.remove_delete_history_entries"))
+
+        var removalAttempts: [[(displayIndex: Int, title: String)]] = []
+        firstDelegate._setMacroDeleteHistoryEntriesRemovalConfirmationProviderForTesting { items in
+            removalAttempts.append(items)
+            return false
+        }
+        XCTAssertTrue(firstDelegate.executeCommand(
+            id: "macro.remove_delete_history_entries",
+            arguments: ["indices": .json("[1, 3, 1]")]
+        ))
+        XCTAssertEqual(removalAttempts.count, 1)
+        XCTAssertEqual(removalAttempts.first?.map(\.displayIndex), [1, 3])
+        XCTAssertEqual(removalAttempts.first?.map(\.title), ["Gamma, Delta (2 macros)", "Alpha"])
+        XCTAssertTrue(firstDelegate._commandIsEnabledForTesting(commandID: "macro.undo_delete"))
+
+        let secondDelegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
+        secondDelegate._setMacroDeleteHistoryEntriesRemovalConfirmationProviderForTesting { items in
+            XCTAssertEqual(items.map(\.displayIndex), [1, 3])
+            XCTAssertEqual(items.map(\.title), ["Gamma, Delta (2 macros)", "Alpha"])
+            return true
+        }
+        XCTAssertTrue(secondDelegate.executeCommand(
+            id: "macro.remove_delete_history_entries",
+            arguments: ["indices": .json("[1, 3]")]
+        ))
+        XCTAssertTrue(secondDelegate._commandIsEnabledForTesting(commandID: "macro.undo_delete"))
+
+        let thirdDelegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
+        XCTAssertTrue(thirdDelegate.executeCommand(id: "macro.undo_delete"))
+        XCTAssertEqual(macroStore.namedMacroNames(), ["Beta"])
+        XCTAssertFalse(thirdDelegate._commandIsEnabledForTesting(commandID: "macro.undo_delete"))
+        XCTAssertFalse(thirdDelegate._commandIsEnabledForTesting(commandID: "macro.remove_delete_history_entries"))
     }
 
     func testCommandMacroImportsAndExportsSublimeMacroFiles() throws {
