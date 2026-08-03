@@ -1848,6 +1848,20 @@
     - `swift test --package-path swift --filter 'AttoRuntimeCompatibilityTests/test(MissingOptionalFeaturesDoNotBlockLaunchCompatibility|ReportsMissingRequiredFeatures)'`
     - `cargo fmt --check`
     - `git diff --check`
+- 中间提交：`feat(ffi): envelope editor minimap snapshots`
+  - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；把 per-`EditorUi` minimap snapshot JSON result 面纳入统一结构化 envelope。
+  - 提交边界：新增 `editor_core_ui_ffi_editor_ui_minimap_envelope_json(EditorUi*, start_visual_row, count)` 和 `ECU_FEATURE_EDITOR_UI_MINIMAP_ENVELOPE` feature bit；legacy `editor_core_ui_ffi_editor_ui_minimap_json(...)` 保持 raw JSON/null+last_error 语义；Swift `EditorUI` 新增 raw/typed envelope accessor 与 `EcuMinimapEnvelope`，runtime compatibility 和 Atto optional capability report 同步新增该能力。该提交不切换 App minimap 主路径，不替换 renderer RGBA/Metal/blob 查询，不改变 minimap JSON schema，也不完成完整外部 capability negotiation protocol。
+  - 验证记录：
+    - `cargo test -p editor-core-ui-ffi --release ffi_minimap_envelope_json_reports_success_and_errors`
+    - `cargo test -p editor-core-ui-ffi --release ffi_runtime_info_json_reports_version_and_feature_descriptors`
+    - `cargo test -p editor-core-ui-ffi --release ffi_feature_flags_include_semantic_tokens_requests`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFITests/testMinimapEnvelope'`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFITests/testLoadsLibraryAndVersion'`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFIRuntimeCompatibilityTests/testReportsMissingRequiredFeatures'`
+    - `swift test --package-path swift --filter 'AttoRuntimeCompatibilityTests/test(MissingOptionalFeaturesDoNotBlockLaunchCompatibility|ReportsMissingRequiredFeatures)'`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 11: Tree-sitter 与 LSP 主路线产品化
 

@@ -94,6 +94,11 @@ public enum EditorCoreUIFFIRuntimeCompatibility {
             reason: "Swift hosts can read per-editor derived-state snapshots through structured result envelopes."
         ),
         EditorCoreUIFFIRuntimeFeature(
+            feature: .editorUIMinimapEnvelope,
+            name: "editor UI minimap envelope",
+            reason: "Swift hosts can read per-editor minimap snapshots through structured result envelopes."
+        ),
+        EditorCoreUIFFIRuntimeFeature(
             feature: .lspInteractiveRequests,
             name: "LSP interactive requests",
             reason: "Swift hosts can issue request/take LSP flows for interactive editor commands."

@@ -1,4 +1,5 @@
 use super::*;
+use serde_json::{Value, json};
 
 /// Render the current visible viewport into an RGBA buffer.
 ///
@@ -131,4 +132,71 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_minimap_json(
             default
         }
     }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_minimap_envelope_json(
+    ui: *mut EditorUi,
+    start_visual_row: u32,
+    count: u32,
+) -> *mut c_char {
+    let envelope = match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let value = minimap_value(ui.minimap_json(
+            u32_to_usize(start_visual_row, "start_visual_row")?,
+            u32_to_usize(count, "count")?,
+        ))?;
+        Ok(minimap_envelope_success(start_visual_row, count, value))
+    }) {
+        Ok(envelope) => {
+            clear_last_error();
+            envelope
+        }
+        Err(err) => {
+            let (status, message) = classify_error(err);
+            set_last_error(message.clone());
+            minimap_envelope_error(start_visual_row, count, status, message)
+        }
+    };
+    make_c_string_ptr(envelope)
+}
+
+fn minimap_value(result_json: String) -> Result<Value, String> {
+    serde_json::from_str::<Value>(&result_json)
+        .map_err(|err| format!("minimap returned invalid JSON: {err}"))
+}
+
+fn minimap_envelope_success(start_visual_row: u32, count: u32, value: Value) -> String {
+    json!({
+        "ok": true,
+        "status": "success",
+        "start_visual_row": start_visual_row,
+        "count": count,
+        "value": value,
+        "error": Value::Null,
+        "version": ECU_ABI_VERSION,
+    })
+    .to_string()
+}
+
+fn minimap_envelope_error(
+    start_visual_row: u32,
+    count: u32,
+    status: c_int,
+    message: String,
+) -> String {
+    json!({
+        "ok": false,
+        "status": "error",
+        "start_visual_row": start_visual_row,
+        "count": count,
+        "value": Value::Null,
+        "error": {
+            "code": status_code_name(status),
+            "status": status,
+            "message": message,
+        },
+        "version": ECU_ABI_VERSION,
+    })
+    .to_string()
 }

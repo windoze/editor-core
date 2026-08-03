@@ -304,6 +304,7 @@ Guidelines:
   `ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_ROOTS_CHANGE_ENVELOPE` /
   `ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_SERVERS_ENVELOPE` /
   `ECU_FEATURE_EDITOR_UI_DERIVED_SNAPSHOT_ENVELOPE` /
+  `ECU_FEATURE_EDITOR_UI_MINIMAP_ENVELOPE` /
   `ECU_FEATURE_LSP_STATUS_ENVELOPE` /
   `ECU_FEATURE_LSP_WORKSPACE_EDIT_APPLICATION_ENVELOPE` mark availability of the corresponding
   JSON envelope symbols and stream/result coverage.
@@ -384,6 +385,7 @@ EditorUi* editor_core_ui_ffi_editor_ui_clone_view(EditorUi* ui, uint32_t viewpor
 char* editor_core_ui_ffi_editor_ui_execute_command_envelope_json(EditorUi* ui, const char* command_json_utf8);
 char* editor_core_ui_ffi_editor_ui_lsp_take_last_result_envelope_json(EditorUi* ui, const char* slot_utf8);
 char* editor_core_ui_ffi_editor_ui_lsp_apply_workspace_edit_envelope_json(EditorUi* ui, const char* workspace_edit_json_utf8, const char* document_uri_utf8);
+char* editor_core_ui_ffi_editor_ui_minimap_envelope_json(EditorUi* ui, uint32_t start_visual_row, uint32_t count);
 char* editor_core_ui_ffi_editor_ui_event_stream_envelope_json(EditorUi* ui, const char* stream_utf8, uint64_t after_sequence);
 char* editor_core_ui_ffi_multi_document_snapshot_envelope_json(MultiDocumentEditorUi* multi);
 char* editor_core_ui_ffi_multi_document_search_all_tabs_envelope_json(MultiDocumentEditorUi* multi, const char* query_utf8, uint8_t case_sensitive, uint8_t whole_word, uint8_t regex);

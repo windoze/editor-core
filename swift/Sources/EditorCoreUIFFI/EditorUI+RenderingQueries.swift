@@ -2,6 +2,96 @@ import CEditorCoreUIFFI
 import Foundation
 import Metal
 
+public enum EcuMinimapEnvelopeStatus: Hashable, Sendable {
+    case success
+    case error
+    case unknown(String)
+
+    public init(rawValue: String) {
+        switch rawValue {
+        case "success":
+            self = .success
+        case "error":
+            self = .error
+        default:
+            self = .unknown(rawValue)
+        }
+    }
+
+    public var rawValue: String {
+        switch self {
+        case .success:
+            return "success"
+        case .error:
+            return "error"
+        case let .unknown(rawValue):
+            return rawValue
+        }
+    }
+}
+
+public struct EcuMinimapEnvelope: Decodable, Equatable, Sendable {
+    public let ok: Bool
+    public let status: String
+    public let startVisualRow: UInt32
+    public let count: UInt32
+    public let value: EcuJSONValue?
+    public let error: EcuMinimapEnvelopeError?
+    public let version: UInt32
+
+    public var statusKind: EcuMinimapEnvelopeStatus {
+        EcuMinimapEnvelopeStatus(rawValue: status)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case ok
+        case status
+        case startVisualRow = "start_visual_row"
+        case count
+        case value
+        case error
+        case version
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        ok = try container.decode(Bool.self, forKey: .ok)
+        status = try container.decodeIfPresent(String.self, forKey: .status) ?? "unknown"
+        startVisualRow = try container.decodeIfPresent(UInt32.self, forKey: .startVisualRow) ?? 0
+        count = try container.decodeIfPresent(UInt32.self, forKey: .count) ?? 0
+        if container.contains(.value) {
+            value = try container.decode(EcuJSONValue.self, forKey: .value)
+        } else {
+            value = nil
+        }
+        error = try container.decodeIfPresent(EcuMinimapEnvelopeError.self, forKey: .error)
+        version = try container.decodeIfPresent(UInt32.self, forKey: .version) ?? 0
+    }
+}
+
+public struct EcuMinimapEnvelopeError: Decodable, Equatable, Sendable {
+    public let code: String
+    public let status: EcuStatus?
+    public let message: String
+
+    private enum CodingKeys: String, CodingKey {
+        case code
+        case status
+        case message
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        code = try container.decodeIfPresent(String.self, forKey: .code) ?? "unknown"
+        message = try container.decodeIfPresent(String.self, forKey: .message) ?? ""
+        if let rawStatus = try container.decodeIfPresent(Int32.self, forKey: .status) {
+            status = EcuStatus(rawValue: rawStatus)
+        } else {
+            status = nil
+        }
+    }
+}
+
 extension EditorUI {
     public func renderRGBA(into buffer: inout [UInt8]) throws -> Int {
         var required: UInt32 = 0
@@ -75,6 +165,22 @@ extension EditorUI {
         }
         defer { editor_core_ui_ffi_string_free(ptr) }
         return String(cString: ptr)
+    }
+
+    public func minimapEnvelopeJSON(startVisualRow: UInt32, rowCount: UInt32) throws -> String {
+        guard let ptr = editor_core_ui_ffi_editor_ui_minimap_envelope_json(handle, startVisualRow, rowCount) else {
+            throw EditorCoreUIFFIError.ffiStatus(code: .internal, context: "editor_ui_minimap_envelope_json", message: library.lastErrorMessageString())
+        }
+        defer { editor_core_ui_ffi_string_free(ptr) }
+        return String(cString: ptr)
+    }
+
+    public func minimapEnvelope(startVisualRow: UInt32, rowCount: UInt32) throws -> EcuMinimapEnvelope {
+        try Self.decodeSnapshot(
+            EcuMinimapEnvelope.self,
+            from: minimapEnvelopeJSON(startVisualRow: startVisualRow, rowCount: rowCount),
+            context: "editor_ui_minimap_envelope_decode"
+        )
     }
 
     public func selectionOffsets() throws -> (start: UInt32, end: UInt32) {

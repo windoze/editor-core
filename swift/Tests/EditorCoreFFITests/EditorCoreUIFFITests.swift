@@ -114,6 +114,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(info.supports(.editorUIDerivedSnapshotEnvelope))
         XCTAssertTrue(info.supports(.lspStatusEnvelope))
         XCTAssertTrue(info.supports(.lspWorkspaceEditApplicationEnvelope))
+        XCTAssertTrue(info.supports(.editorUIMinimapEnvelope))
 
         let runtimeJSON = try JSONTestHelpers.object(try lib.runtimeInfoJSON())
         XCTAssertEqual(runtimeJSON["kind"] as? String, "editor-core-ui-ffi")
@@ -194,6 +195,12 @@ final class EditorCoreUIFFITests: XCTestCase {
                 && (feature["bit"] as? NSNumber)?.uint8Value == 38
                 && (feature["flag"] as? NSNumber)?.uint64Value
                     == EditorCoreUIFFIFeatures.lspWorkspaceEditApplicationEnvelope.rawValue
+        })
+        XCTAssertTrue(features.contains { feature in
+            feature["name"] as? String == "editor_ui_minimap_envelope"
+                && (feature["bit"] as? NSNumber)?.uint8Value == 39
+                && (feature["flag"] as? NSNumber)?.uint64Value
+                    == EditorCoreUIFFIFeatures.editorUIMinimapEnvelope.rawValue
         })
     }
 
@@ -3325,6 +3332,90 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(minimap["start_visual_row"] as? Int, 0)
         XCTAssertEqual(minimap["count"] as? Int, 20)
         XCTAssertEqual(minimap["actual_line_count"] as? Int, 3)
+    }
+
+    func testMinimapEnvelopeReportsSuccess() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui = try EditorUI(library: lib, initialText: "a\nb\nc", viewportWidthCells: 80)
+
+        let envelope = try ui.minimapEnvelope(startVisualRow: 0, rowCount: 20)
+        XCTAssertTrue(envelope.ok)
+        XCTAssertEqual(envelope.statusKind, .success)
+        XCTAssertEqual(envelope.startVisualRow, 0)
+        XCTAssertEqual(envelope.count, 20)
+        XCTAssertEqual(envelope.version, lib.abiVersion)
+        XCTAssertNil(envelope.error)
+        guard case .object(let value)? = envelope.value else {
+            XCTFail("expected minimap value object")
+            return
+        }
+        XCTAssertEqual(value["start_visual_row"], .number(0))
+        XCTAssertEqual(value["count"], .number(20))
+        XCTAssertEqual(value["actual_line_count"], .number(3))
+        guard case .array(let lines)? = value["lines"] else {
+            XCTFail("expected minimap lines array")
+            return
+        }
+        XCTAssertFalse(lines.isEmpty)
+    }
+
+    func testMinimapEnvelopeDecodesFutureFieldsAndUnknownStatus() throws {
+        let successJSON = """
+        {
+          "ok": true,
+          "status": "future_status",
+          "start_visual_row": 3,
+          "count": 7,
+          "value": {
+            "start_visual_row": 3,
+            "count": 7,
+            "actual_line_count": 1,
+            "lines": [],
+            "future": true
+          },
+          "error": null,
+          "version": 15,
+          "futureTopLevel": true
+        }
+        """
+        let success = try JSONDecoder().decode(EcuMinimapEnvelope.self, from: Data(successJSON.utf8))
+        XCTAssertTrue(success.ok)
+        XCTAssertEqual(success.statusKind, .unknown("future_status"))
+        XCTAssertEqual(success.startVisualRow, 3)
+        XCTAssertEqual(success.count, 7)
+        XCTAssertEqual(success.version, 15)
+        XCTAssertNil(success.error)
+        guard case .object(let value)? = success.value else {
+            XCTFail("expected future minimap value object")
+            return
+        }
+        XCTAssertEqual(value["future"], .bool(true))
+
+        let failureJSON = """
+        {
+          "ok": false,
+          "status": "error",
+          "start_visual_row": 4,
+          "count": 8,
+          "value": null,
+          "error": {
+            "code": "future_error",
+            "status": 135790,
+            "message": "future failure",
+            "futureErrorMetadata": true
+          },
+          "version": 16
+        }
+        """
+        let failure = try JSONDecoder().decode(EcuMinimapEnvelope.self, from: Data(failureJSON.utf8))
+        XCTAssertFalse(failure.ok)
+        XCTAssertEqual(failure.statusKind, .error)
+        XCTAssertEqual(failure.startVisualRow, 4)
+        XCTAssertEqual(failure.count, 8)
+        XCTAssertEqual(failure.value, .null)
+        XCTAssertEqual(failure.error?.code, "future_error")
+        XCTAssertEqual(failure.error?.message, "future failure")
+        XCTAssertNil(failure.error?.status)
     }
 
     func testSmoothScrollByPixelsAffectsHitTestingAndViewPointMapping() throws {

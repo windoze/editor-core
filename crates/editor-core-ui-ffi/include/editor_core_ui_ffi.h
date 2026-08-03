@@ -175,6 +175,7 @@ uint32_t editor_core_ui_ffi_abi_version(void);
 #define ECU_FEATURE_EDITOR_UI_DERIVED_SNAPSHOT_ENVELOPE (1ull << 36)
 #define ECU_FEATURE_LSP_STATUS_ENVELOPE (1ull << 37)
 #define ECU_FEATURE_LSP_WORKSPACE_EDIT_APPLICATION_ENVELOPE (1ull << 38)
+#define ECU_FEATURE_EDITOR_UI_MINIMAP_ENVELOPE (1ull << 39)
 uint64_t editor_core_ui_ffi_feature_flags(void);
 char* editor_core_ui_ffi_runtime_info_json(void);
 
@@ -1031,6 +1032,16 @@ char* editor_core_ui_ffi_editor_ui_get_selected_text(EditorUi* ui);
 char* editor_core_ui_ffi_editor_ui_minimap_json(EditorUi* ui,
                                                 uint32_t start_visual_row,
                                                 uint32_t count);
+// Minimap snapshot through a stable envelope:
+//
+// Success: {"ok":true,"status":"success","start_visual_row":...,"count":...,"value":<minimap snapshot>,"error":null,"version":<abi>}
+// Failure: {"ok":false,"status":"error","start_visual_row":...,"count":...,"value":null,"error":{"code":...,"status":...,"message":...},"version":<abi>}
+//
+// The returned string is owned by the caller and must be freed with
+// `editor_core_ui_ffi_string_free`.
+char* editor_core_ui_ffi_editor_ui_minimap_envelope_json(EditorUi* ui,
+                                                         uint32_t start_visual_row,
+                                                         uint32_t count);
 
 int32_t editor_core_ui_ffi_editor_ui_get_selection_offsets(EditorUi* ui,
                                                            uint32_t* out_start,

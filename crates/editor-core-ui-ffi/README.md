@@ -27,7 +27,7 @@ char* editor_core_ui_ffi_runtime_info_json(void);
   "kind": "editor-core-ui-ffi",
   "abi_version": 1,
   "version": "0.5.0",
-  "feature_flags": 549755813887,
+  "feature_flags": 1099511627775,
   "features": [
     { "bit": 0, "flag": 1, "name": "json_command_dispatch", "description": "..." }
   ]
@@ -806,3 +806,62 @@ Failure:
 The returned string is owned by the caller and must be freed with
 `editor_core_ui_ffi_string_free`. Availability is advertised by
 `ECU_FEATURE_EDITOR_UI_DERIVED_SNAPSHOT_ENVELOPE`.
+
+## EditorUi Minimap Envelope
+
+The legacy per-editor minimap snapshot API remains available as a raw JSON string function:
+
+```c
+char* editor_core_ui_ffi_editor_ui_minimap_json(
+    EditorUi* ui,
+    uint32_t start_visual_row,
+    uint32_t count
+);
+```
+
+Hosts that want the stage-10 structured error model can call the envelope entry point:
+
+```c
+char* editor_core_ui_ffi_editor_ui_minimap_envelope_json(
+    EditorUi* ui,
+    uint32_t start_visual_row,
+    uint32_t count
+);
+```
+
+Success:
+
+```json
+{
+  "ok": true,
+  "status": "success",
+  "start_visual_row": 0,
+  "count": 20,
+  "value": {
+    "start_visual_row": 0,
+    "count": 20,
+    "actual_line_count": 3,
+    "lines": []
+  },
+  "error": null,
+  "version": 1
+}
+```
+
+Failure:
+
+```json
+{
+  "ok": false,
+  "status": "error",
+  "start_visual_row": 0,
+  "count": 20,
+  "value": null,
+  "error": { "code": "invalid_argument", "status": 1, "message": "ui is null" },
+  "version": 1
+}
+```
+
+The returned string is owned by the caller and must be freed with
+`editor_core_ui_ffi_string_free`. Availability is advertised by
+`ECU_FEATURE_EDITOR_UI_MINIMAP_ENVELOPE`.
