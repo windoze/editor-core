@@ -1,5 +1,9 @@
 import Foundation
 
+enum AttoMacroStoreError: Error, Equatable {
+    case invalidMacroName(String)
+}
+
 struct AttoMacroStore {
     let macroFileURL: URL
 
@@ -24,25 +28,83 @@ struct AttoMacroStore {
     }
 
     func load(maxCount: Int) -> [AttoRecordedCommand] {
-        guard FileManager.default.fileExists(atPath: macroFileURL.path),
-              let data = try? Data(contentsOf: macroFileURL),
+        load(from: macroFileURL, maxCount: maxCount) ?? []
+    }
+
+    func loadNamedMacro(_ name: String, maxCount: Int) -> [AttoRecordedCommand]? {
+        guard let fileURL = namedMacroFileURL(name) else { return nil }
+        return load(from: fileURL, maxCount: maxCount)
+    }
+
+    func namedMacroNames() -> [String] {
+        let directoryURL = macroFileURL.deletingLastPathComponent()
+        guard let urls = try? FileManager.default.contentsOfDirectory(
+            at: directoryURL,
+            includingPropertiesForKeys: nil
+        ) else {
+            return []
+        }
+
+        return urls
+            .filter { $0.pathExtension == "sublime-macro" }
+            .filter { $0.standardizedFileURL != macroFileURL.standardizedFileURL }
+            .map { $0.deletingPathExtension().lastPathComponent }
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
+    func save(_ commands: [AttoRecordedCommand], named name: String, maxCount: Int) throws {
+        guard let fileURL = namedMacroFileURL(name) else {
+            throw AttoMacroStoreError.invalidMacroName(name)
+        }
+        try save(commands, to: fileURL, maxCount: maxCount)
+    }
+
+    func save(_ commands: [AttoRecordedCommand], maxCount: Int) throws {
+        try save(commands, to: macroFileURL, maxCount: maxCount)
+    }
+
+    private func load(from fileURL: URL, maxCount: Int) -> [AttoRecordedCommand]? {
+        guard FileManager.default.fileExists(atPath: fileURL.path),
+              let data = try? Data(contentsOf: fileURL),
               let stored = try? JSONDecoder().decode([StoredCommand].self, from: data)
         else {
-            return []
+            return nil
         }
         return sanitize(stored.map(\.record), maxCount: maxCount)
     }
 
-    func save(_ commands: [AttoRecordedCommand], maxCount: Int) throws {
+    private func save(_ commands: [AttoRecordedCommand], to fileURL: URL, maxCount: Int) throws {
         let sanitized = sanitize(commands, maxCount: maxCount)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(sanitized.map(StoredCommand.init(record:)))
         try FileManager.default.createDirectory(
-            at: macroFileURL.deletingLastPathComponent(),
+            at: fileURL.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
-        try data.write(to: macroFileURL, options: [.atomic])
+        try data.write(to: fileURL, options: [.atomic])
+    }
+
+    private func namedMacroFileURL(_ rawName: String) -> URL? {
+        guard let name = normalizedMacroName(rawName) else { return nil }
+        let fileURL = macroFileURL
+            .deletingLastPathComponent()
+            .appendingPathComponent(name, isDirectory: false)
+            .appendingPathExtension("sublime-macro")
+            .standardizedFileURL
+        guard fileURL != macroFileURL.standardizedFileURL else { return nil }
+        return fileURL
+    }
+
+    private func normalizedMacroName(_ rawName: String) -> String? {
+        var name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if name.lowercased().hasSuffix(".sublime-macro") {
+            name.removeLast(".sublime-macro".count)
+            name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        guard name.isEmpty == false, name != ".", name != ".." else { return nil }
+        guard name.rangeOfCharacter(from: CharacterSet(charactersIn: "/\\:")) == nil else { return nil }
+        return name
     }
 
     private func sanitize(_ commands: [AttoRecordedCommand], maxCount: Int) -> [AttoRecordedCommand] {

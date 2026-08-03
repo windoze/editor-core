@@ -45,6 +45,8 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("workspace.undo_last_workspace_edit"))
         XCTAssertTrue(ids.contains("macro.toggle_recording"))
         XCTAssertTrue(ids.contains("macro.replay_last"))
+        XCTAssertTrue(ids.contains("macro.save_named"))
+        XCTAssertTrue(ids.contains("macro.replay_named"))
         for command in AttoEditorAreaViewController.CursorMovementCommand.allCases {
             XCTAssertTrue(ids.contains(command.id), command.id)
         }
@@ -211,6 +213,15 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(toggleMacro.macroPolicy, .notRecordable)
         let replayMacro = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "macro.replay_last"))
         XCTAssertEqual(replayMacro.macroPolicy, .notRecordable)
+        let saveNamedMacro = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "macro.save_named"))
+        XCTAssertEqual(saveNamedMacro.macroPolicy, .notRecordable)
+        XCTAssertEqual(saveNamedMacro.parameters.map(\.name), ["name"])
+        XCTAssertEqual(saveNamedMacro.parameters.first?.kind, .string)
+        XCTAssertTrue(saveNamedMacro.parameters.first?.isRequired == true)
+        XCTAssertEqual(saveNamedMacro.parameters.first?.allowsEmptyString, false)
+        let replayNamedMacro = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "macro.replay_named"))
+        XCTAssertEqual(replayNamedMacro.macroPolicy, .notRecordable)
+        XCTAssertEqual(replayNamedMacro.parameters.map(\.name), ["name"])
 
         let openFile = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "file.open_file"))
         XCTAssertEqual(openFile.macroPolicy, .promptRequired)
@@ -2044,6 +2055,8 @@ final class AttoEditorCommandTests: XCTestCase {
         let toolsMenu = try XCTUnwrap(topLevelMenu(title: "Tools", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "macro.toggle_recording", in: toolsMenu))
         XCTAssertNotNil(findMenuItem(commandID: "macro.replay_last", in: toolsMenu))
+        XCTAssertNotNil(findMenuItem(commandID: "macro.save_named", in: toolsMenu))
+        XCTAssertNotNil(findMenuItem(commandID: "macro.replay_named", in: toolsMenu))
 
         XCTAssertNotNil(findMenuItem(commandID: "view.wrap.word", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "view.split_right", in: menu))
@@ -4972,6 +4985,58 @@ final class AttoEditorCommandTests: XCTestCase {
         let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: secondContext.editorAreaController.view))
         XCTAssertTrue(secondDelegate._commandIsEnabledForTesting(commandID: "macro.replay_last"))
         XCTAssertTrue(secondDelegate.executeCommand(id: "macro.replay_last"))
+        XCTAssertEqual(try editorView.editor.text(), "abc\ndef\ndef\n")
+    }
+
+    func testCommandMacroSavesAndReplaysNamedSublimeMacroFiles() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let macroURL = tempDir.appendingPathComponent("Last Macro.sublime-macro")
+        let macroStore = AttoMacroStore(macroFileURL: macroURL)
+        let firstDelegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
+
+        let firstFileURL = tempDir.appendingPathComponent("macro-named-record.txt")
+        try "abc\ndef\n".write(to: firstFileURL, atomically: true, encoding: .utf8)
+
+        let firstContext = firstDelegate._createWindowForTesting(workspaceRootURL: tempDir)
+        defer { firstContext.window.close() }
+        firstContext.editorAreaController.openFile(url: firstFileURL, mode: .pinned)
+
+        XCTAssertFalse(firstDelegate._commandIsEnabledForTesting(commandID: "macro.save_named"))
+        XCTAssertTrue(firstDelegate.executeCommand(id: "macro.toggle_recording"))
+        XCTAssertTrue(firstDelegate.executeCommand(id: "go.line", arguments: ["line": .integer(2), "column": .integer(2)]))
+        XCTAssertTrue(firstDelegate.executeCommand(id: "editor.duplicate_lines"))
+        XCTAssertTrue(firstDelegate.executeCommand(id: "macro.toggle_recording"))
+        XCTAssertTrue(firstDelegate._commandIsEnabledForTesting(commandID: "macro.save_named"))
+
+        XCTAssertTrue(firstDelegate.executeCommand(
+            id: "macro.save_named",
+            arguments: ["name": .string("Duplicate Current Line")]
+        ))
+        let namedMacroURL = tempDir.appendingPathComponent("Duplicate Current Line.sublime-macro")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: namedMacroURL.path))
+        XCTAssertEqual(macroStore.namedMacroNames(), ["Duplicate Current Line"])
+
+        let secondDelegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
+        XCTAssertTrue(secondDelegate._commandIsEnabledForTesting(commandID: "macro.replay_named"))
+        let replayNamedSchema = try XCTUnwrap(secondDelegate._commandSchemaForTesting(commandID: "macro.replay_named"))
+        XCTAssertEqual(replayNamedSchema.parameters.first?.choices.map(\.title), ["Duplicate Current Line"])
+        XCTAssertThrowsError(try replayNamedSchema.normalizedArguments(["name": .string("Missing Macro")]))
+
+        let replayFileURL = tempDir.appendingPathComponent("macro-named-replay.txt")
+        try "abc\ndef\n".write(to: replayFileURL, atomically: true, encoding: .utf8)
+        let secondContext = secondDelegate._createWindowForTesting(workspaceRootURL: tempDir)
+        defer { secondContext.window.close() }
+        secondContext.editorAreaController.openFile(url: replayFileURL, mode: .pinned)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: secondContext.editorAreaController.view))
+        XCTAssertTrue(secondDelegate.executeCommand(
+            id: "macro.replay_named",
+            arguments: ["name": .string("Duplicate Current Line")]
+        ))
         XCTAssertEqual(try editorView.editor.text(), "abc\ndef\ndef\n")
     }
 

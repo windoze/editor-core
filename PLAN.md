@@ -1395,6 +1395,13 @@
     - `swift test --package-path swift --filter 'AttoEditorCommandTests.test(CommandMacroRecordsAndReplaysCommandSequence|DefaultCommandPaletteIncludesCoreEditorCommandIDs|CommandRegistryCarriesParameterSchemasAndMacroPolicies)'`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testKeymapParsesSublimeStyleBindingsAndOverridesDefaults`
     - `git diff --check`
+- 中间提交：`feat(app): save named command macros`
+  - 所属任务：阶段 8 的 Command、menu、keymap、palette 与 Sublime 行为矩阵增量；在 last macro 持久化基础上提供命名 `.sublime-macro` 文件的保存、枚举和按名称回放起点。
+  - 提交边界：`AttoMacroStore` 新增命名 macro 文件 URL 校验、保存、读取和名称列表；AttoEditor 新增 `macro.save_named` / `macro.replay_named` 参数化命令和 Tools 菜单入口，命令 palette 可通过 `name` 参数 prompt 保存当前 last macro 或选择已有命名 macro 回放；`macro.replay_named` 的 schema choices 来自当前宏目录，直接参数执行会拒绝未知命名宏。本提交不实现宏重命名/删除 UI、导入导出 UI、完整 Sublime package/plugin command runtime、完整 `.sublime-macro` 扩展语义，也不捕获命令内部 modal prompt 产生的参数。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testCommandMacroSavesAndReplaysNamedSublimeMacroFiles`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.test(DefaultCommandPaletteIncludesCoreEditorCommandIDs|CommandRegistryCarriesParameterSchemasAndMacroPolicies|MainMenuItemsUseCommandIDsAndResolvedKeymap|CommandMacroPersistsSublimeMacroFileAcrossDelegates|CommandMacroRecordsAndReplaysCommandSequence)'`
+    - `git diff --check`
 
 ## 阶段 9: 配置、偏好与 capability DTO 完整性
 

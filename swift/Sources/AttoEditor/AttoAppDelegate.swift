@@ -353,6 +353,23 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         requiredRuntimeFeatures: .lspWorkspaceEditCommandRequirements
     )
 
+    private static func macroNameCommandSchema(choices: [String] = []) -> AttoCommandSchema {
+        AttoCommandSchema(
+            parameters: [
+                AttoCommandParameterSchema(
+                    name: "name",
+                    title: "Macro Name",
+                    kind: .string,
+                    isRequired: true,
+                    choices: choices.map { AttoCommandArgumentChoice(title: $0, value: .string($0)) },
+                    allowsEmptyString: false,
+                    help: "Name of a .sublime-macro file in AttoEditor's macro directory."
+                ),
+            ],
+            macroPolicy: .notRecordable
+        )
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NotificationCenter.default.addObserver(
             self,
@@ -866,6 +883,20 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .init(id: "macro.replay_last", title: "Macro: Replay Last Macro") { [weak self] in
                 self?.replayLastMacro()
             },
+            .init(
+                id: "macro.save_named",
+                title: "Macro: Save Last Macro As…",
+                schema: Self.macroNameCommandSchema()
+            ) { [weak self] arguments in
+                self?.saveNamedMacro(arguments: arguments)
+            },
+            .init(
+                id: "macro.replay_named",
+                title: "Macro: Replay Named Macro…",
+                schema: Self.macroNameCommandSchema()
+            ) { [weak self] arguments in
+                self?.replayNamedMacro(arguments: arguments)
+            },
             .init(id: "go.file", title: "Go: Go to File…") { [weak self] in
                 self?.showQuickOpen()
             },
@@ -1361,6 +1392,64 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             return
         }
 
+        replayMacroCommands(lastMacroCommands)
+    }
+
+    private func saveNamedMacro(arguments: AttoCommandArguments) {
+        guard let name = arguments.string("name") ?? promptMacroName(commandID: "macro.save_named", title: "Macro: Save Last Macro As…") else {
+            return
+        }
+        _ = saveLastMacro(named: name)
+    }
+
+    private func replayNamedMacro(arguments: AttoCommandArguments) {
+        guard let name = arguments.string("name") ?? promptMacroName(commandID: "macro.replay_named", title: "Macro: Replay Named Macro…") else {
+            return
+        }
+        _ = replayNamedMacro(named: name)
+    }
+
+    private func saveLastMacro(named name: String) -> Bool {
+        guard isRecordingMacro == false, lastMacroCommands.isEmpty == false, let macroStore else {
+            NSSound.beep()
+            return false
+        }
+
+        do {
+            try macroStore.save(lastMacroCommands, named: name, maxCount: Self.maxRecordedMacroCommandCount)
+            return true
+        } catch {
+            NSSound.beep()
+            NSLog("AttoEditor: failed to save macro %@: %@", name, String(describing: error))
+            return false
+        }
+    }
+
+    private func replayNamedMacro(named name: String) -> Bool {
+        guard isRecordingMacro == false,
+              let commands = macroStore?.loadNamedMacro(name, maxCount: Self.maxRecordedMacroCommandCount),
+              commands.isEmpty == false
+        else {
+            NSSound.beep()
+            return false
+        }
+
+        replayMacroCommands(commands)
+        return true
+    }
+
+    private func promptMacroName(commandID: String, title: String) -> String? {
+        let schema = commandSchema(commandID: commandID)
+        let promptCommand = AttoCommandPaletteCommand(
+            id: commandID,
+            title: title,
+            schema: schema,
+            promptsForArguments: true
+        ) { _ in }
+        return AttoCommandArgumentPrompt.promptArguments(for: promptCommand)?.string("name")
+    }
+
+    private func replayMacroCommands(_ commands: [AttoRecordedCommand]) {
         isReplayingMacro = true
         defer { isReplayingMacro = false }
 
@@ -1397,6 +1486,10 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         switch commandID {
         case "macro.replay_last":
             return isRecordingMacro == false && lastMacroCommands.isEmpty == false
+        case "macro.save_named":
+            return isRecordingMacro == false && lastMacroCommands.isEmpty == false && macroStore != nil
+        case "macro.replay_named":
+            return isRecordingMacro == false && (macroStore?.namedMacroNames().isEmpty == false)
         default:
             break
         }
@@ -1523,6 +1616,10 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         case "file.open_folder", "file.open_file", "workbench.preferences", "go.file",
              "editor.find", "editor.replace", "workbench.command_palette":
             return AttoCommandSchema(macroPolicy: .promptRequired)
+        case "macro.save_named":
+            return Self.macroNameCommandSchema()
+        case "macro.replay_named":
+            return Self.macroNameCommandSchema(choices: macroStore?.namedMacroNames() ?? [])
         case "macro.toggle_recording", "macro.replay_last":
             return AttoCommandSchema(macroPolicy: .notRecordable)
         case "file.new", "file.save", "file.close_tab", "file.close_all_tabs",
