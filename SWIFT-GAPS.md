@@ -1611,6 +1611,7 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 ### P2：视觉回归和黑盒自动化
 
 - 已完成：主菜单、核心 editor chrome、tab bar、find/replace、status bar、sidebar、quick panel 和 completion popup 已有基础稳定 AppKit identifiers，并有组件测试覆盖。
+- 已完成：阶段 13 已新增 AppKit component layout invariant 起点，固定窗口尺寸下覆盖 empty/open document、find/replace bar、窄窗口和 split pane 的 tab bar/status bar/content host 高度、相邻关系、填充和非重叠断言。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): assert editor chrome layout invariants` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
 - 建立 golden screenshot 测试工具。
 - 引入 fixtures，覆盖主题、字体、Unicode、多光标、折叠、diagnostics、minimap。
 - 补 `XCUIApplication` smoke tests。

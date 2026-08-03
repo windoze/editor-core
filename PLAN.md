@@ -2072,6 +2072,12 @@
 ### 提交
 
 - `test(app): add native ui visual regression harness`
+- 中间提交：`test(app): assert editor chrome layout invariants`
+  - 所属任务：阶段 13 的 macOS UI 自动化与视觉回归测试体系增量；先用 AppKit component test 建立固定窗口尺寸下的主 editor chrome 布局 invariant，覆盖 tab bar、find/replace bar、content host、status bar 和 split pane 的相邻关系、固定高度、填充和非重叠。
+  - 提交边界：新增 `AttoEditorVisualLayoutTests` 结构化布局测试；通过 `NSWindow` 包装真实 `AttoEditorAreaViewController`，断言 empty/open document、find/replace、窄窗口和 split pane 布局。该提交不新增 screenshot golden baseline、不引入 `XCUIApplication` 黑盒 target、不改变产品 UI 约束和渲染行为。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorVisualLayoutTests'`
+    - `git diff --check`
 
 ## 阶段 14: 外观、布局与 Sublime-like 操作打磨
 
