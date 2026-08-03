@@ -325,6 +325,7 @@ extension AttoEditorAreaViewController {
             payload: .locations(kind: snapshot.kind.lifecycleKind, itemCount: snapshot.items.count)
         )
         lspLocationPanelController?.update(entry: entry)
+        updateVisibleLspWorkbenchPanel()
     }
 
     @discardableResult

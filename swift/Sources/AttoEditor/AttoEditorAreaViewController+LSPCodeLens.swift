@@ -452,7 +452,9 @@ extension AttoEditorAreaViewController {
     }
 
     private func updateVisibleCodeLensPanel(for tab: AttoEditorTab) {
-        guard let controller = codeLensPanelController, controller.isVisible else { return }
-        controller.update(items: currentCodeLensItems(in: tab))
+        if let controller = codeLensPanelController, controller.isVisible {
+            controller.update(items: currentCodeLensItems(in: tab))
+        }
+        updateVisibleLspWorkbenchPanel()
     }
 }

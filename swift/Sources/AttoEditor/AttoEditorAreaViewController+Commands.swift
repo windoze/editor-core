@@ -1156,6 +1156,7 @@ extension AttoEditorAreaViewController {
         }
 
         recordDocumentColorResultLifecycle(items: items, mode: mode)
+        lastDocumentColorItems = items
         switch mode {
         case .presentations:
             updateVisibleDocumentColorPanel(items: items)
@@ -1166,6 +1167,7 @@ extension AttoEditorAreaViewController {
         case .panel:
             showDocumentColorPanel(items, tabID: tab.id)
         }
+        updateVisibleLspWorkbenchPanel()
         return true
     }
 

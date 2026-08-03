@@ -1214,6 +1214,15 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs`
     - `swift test --package-path swift --filter AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap`
     - `git diff --check`
+- 中间提交：`feat(app): add lsp workbench panel index`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量；建立跨 result family 的统一 LSP Workbench 入口，把各独立持久在线 panel 先编排到一个可过滤、可键盘打开的目录面板。
+  - 提交边界：新增 `AttoLspWorkbenchPanelController`，汇总 Problems、Workspace Problems、Locations、Symbols、Workspace Outline、Code Lens、Inlay Hints、Document Links、Document Colors 和 Hierarchy 的当前状态/数量/可用性；AttoEditor 新增 `lsp.show_workbench_panel` command、Go 菜单入口、VC 测试钩子和具体 panel 打开分发。该提交不把各 panel 迁入真正内嵌 dock，不改变具体 LSP request/result 协议，也不实现 pin/history/stale/error 的统一数据模型。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoAccessibilityIdentifierTests.testLspWorkbenchPanelExposesStableIdentifiersAndFiltersRows`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testLspWorkbenchPanelSummarizesResultFamilies`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap`
+    - `git diff --check`
 
 ## 阶段 8: Command、menu、keymap、palette 与 Sublime 行为矩阵
 

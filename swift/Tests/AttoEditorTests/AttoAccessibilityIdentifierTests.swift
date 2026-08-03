@@ -664,6 +664,80 @@ final class AttoAccessibilityIdentifierTests: XCTestCase {
         XCTAssertTrue(controller.isVisible)
     }
 
+    func testLspWorkbenchPanelExposesStableIdentifiersAndFiltersRows() throws {
+        let items = [
+            AttoLspWorkbenchPanelController.Item(
+                id: "problems",
+                title: "Problems",
+                detail: "Active document diagnostics",
+                status: "2 problems",
+                isEnabled: true
+            ),
+            AttoLspWorkbenchPanelController.Item(
+                id: "symbols",
+                title: "Symbols",
+                detail: "Latest symbol result",
+                status: "0 symbols",
+                isEnabled: false
+            ),
+        ]
+
+        var openedItems: [AttoLspWorkbenchPanelController.Item] = []
+        let controller = AttoLspWorkbenchPanelController { openedItems.append($0) }
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 900, height: 560),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        defer {
+            controller.hide()
+            window.close()
+        }
+
+        window.contentView = NSView(frame: NSRect(x: 0, y: 0, width: 900, height: 560))
+        window.makeKeyAndOrderFront(nil)
+
+        XCTAssertTrue(controller.show(relativeTo: window, items: items))
+        let panel = try XCTUnwrap(window.childWindows?.first)
+        XCTAssertEqual(panel.identifier?.rawValue, AttoAccessibilityID.lspWorkbenchPanel)
+        XCTAssertEqual(panel.title, "LSP Workbench (2)")
+
+        let root = try XCTUnwrap(panel.contentView)
+        XCTAssertNotNil(findView(identifier: AttoAccessibilityID.lspWorkbenchPanelRoot, in: root))
+        let searchField = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.lspWorkbenchPanelSearchField, in: root) as? NSSearchField
+        )
+        let metadataLabel = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.lspWorkbenchPanelMetadataLabel, in: root) as? NSTextField
+        )
+        let table = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.lspWorkbenchPanelTable, in: root) as? NSTableView
+        )
+        XCTAssertNotNil(findView(identifier: AttoAccessibilityID.lspWorkbenchPanelScrollView, in: root))
+        XCTAssertEqual(searchField.placeholderString, "Filter LSP workbench panels...")
+        XCTAssertEqual(metadataLabel.stringValue, "1 available | 2 result families")
+        XCTAssertEqual(table.numberOfRows, 2)
+
+        let row = try XCTUnwrap(table.view(atColumn: 0, row: 0, makeIfNecessary: true))
+        XCTAssertNotNil(findView(identifier: AttoAccessibilityID.lspWorkbenchPanelRowTitle, in: row))
+        XCTAssertNotNil(findView(identifier: AttoAccessibilityID.lspWorkbenchPanelRowDetail, in: row))
+        XCTAssertNotNil(findView(identifier: AttoAccessibilityID.lspWorkbenchPanelRowStatus, in: row))
+
+        searchField.stringValue = "symbols"
+        controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: searchField))
+        XCTAssertEqual(table.numberOfRows, 1)
+        XCTAssertTrue(controller.control(searchField, textView: NSTextView(), doCommandBy: #selector(NSResponder.insertNewline(_:))))
+        XCTAssertTrue(openedItems.isEmpty)
+
+        searchField.stringValue = "problems"
+        controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: searchField))
+        XCTAssertEqual(table.numberOfRows, 1)
+        XCTAssertTrue(controller.control(searchField, textView: NSTextView(), doCommandBy: #selector(NSResponder.insertNewline(_:))))
+        XCTAssertEqual(openedItems, [items[0]])
+        XCTAssertTrue(controller.isVisible)
+    }
+
     func testProblemsPanelExposesStableIdentifiersAndFiltersRows() throws {
         let diagnostics = [
             EcuDiagnostic(

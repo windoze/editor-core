@@ -62,6 +62,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.show_last_locations"))
         XCTAssertTrue(ids.contains("lsp.show_location_history"))
         XCTAssertTrue(ids.contains("lsp.show_locations_panel"))
+        XCTAssertTrue(ids.contains("lsp.show_workbench_panel"))
         XCTAssertTrue(ids.contains("lsp.show_problems_panel"))
         XCTAssertTrue(ids.contains("lsp.call_hierarchy_incoming"))
         XCTAssertTrue(ids.contains("lsp.call_hierarchy_outgoing"))
@@ -550,6 +551,60 @@ final class AttoEditorCommandTests: XCTestCase {
             nil,
         ])
         XCTAssertTrue(vc._documentLinkPanelIsVisibleForTesting())
+    }
+
+    func testLspWorkbenchPanelSummarizesResultFamilies() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("workbench.txt")
+        try "docs\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let window = attachToWindow(vc)
+        defer { window.close() }
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        try editorView.editor.lspApplyDocumentLinksJSON("""
+        [
+          {
+            "range": {
+              "start": { "line": 0, "character": 0 },
+              "end": { "line": 0, "character": 4 }
+            },
+            "target": "https://example.com/docs",
+            "tooltip": "Open docs"
+          }
+        ]
+        """)
+
+        XCTAssertTrue(vc.showLspWorkbenchPanel())
+        let panel = try XCTUnwrap(window.childWindows?.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.lspWorkbenchPanel
+        })
+        XCTAssertEqual(panel.title, "LSP Workbench (10)")
+
+        let root = try XCTUnwrap(panel.contentView)
+        let metadata = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.lspWorkbenchPanelMetadataLabel, in: root) as? NSTextField
+        )
+        let table = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.lspWorkbenchPanelTable, in: root) as? NSTableView
+        )
+        XCTAssertEqual(metadata.stringValue, "4 available | 10 result families")
+        XCTAssertEqual(table.numberOfRows, 10)
+        XCTAssertEqual(vc._lspWorkbenchPanelRowCountForTesting(), 10)
+
+        let statuses = Dictionary(uniqueKeysWithValues: vc._lspWorkbenchPanelItemsForTesting().map {
+            ($0.title, $0.status)
+        })
+        XCTAssertEqual(statuses["Document Links"], "1 link")
+        XCTAssertEqual(statuses["Document Colors"], "request on open")
+        XCTAssertEqual(statuses["Locations"], "0 locations")
+        XCTAssertTrue(vc._lspWorkbenchPanelIsVisibleForTesting())
     }
 
     func testInlayHintClickUsesResolveFeedbackWhenLspDisabled() throws {
@@ -1618,6 +1673,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "lsp.find_references", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_last_locations", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_location_history", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.show_workbench_panel", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_problems_panel", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.call_hierarchy_incoming", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.call_hierarchy_outgoing", in: menu))

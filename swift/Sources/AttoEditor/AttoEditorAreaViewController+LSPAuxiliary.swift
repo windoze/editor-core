@@ -617,8 +617,10 @@ extension AttoEditorAreaViewController {
     }
 
     private func updateVisibleInlayHintPanel(for tab: AttoEditorTab) {
-        guard let controller = inlayHintPanelController, controller.isVisible else { return }
-        controller.update(items: currentInlayHintItems(in: tab))
+        if let controller = inlayHintPanelController, controller.isVisible {
+            controller.update(items: currentInlayHintItems(in: tab))
+        }
+        updateVisibleLspWorkbenchPanel()
     }
 
     private func currentDocumentLinkItems(in tab: AttoEditorTab) -> [AttoLspDocumentLinkParser.Item] {
@@ -664,7 +666,9 @@ extension AttoEditorAreaViewController {
     }
 
     private func updateVisibleDocumentLinkPanel(for tab: AttoEditorTab) {
-        guard let controller = documentLinkPanelController, controller.isVisible else { return }
-        controller.update(items: currentDocumentLinkItems(in: tab))
+        if let controller = documentLinkPanelController, controller.isVisible {
+            controller.update(items: currentDocumentLinkItems(in: tab))
+        }
+        updateVisibleLspWorkbenchPanel()
     }
 }

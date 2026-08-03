@@ -450,6 +450,7 @@ extension AttoEditorAreaViewController {
         if hierarchyPanelController?.isVisible == true {
             hierarchyPanelController?.update(snapshot: snapshot)
         }
+        updateVisibleLspWorkbenchPanel()
     }
 
     func makeHierarchyPanelController() -> AttoHierarchyPanelController {

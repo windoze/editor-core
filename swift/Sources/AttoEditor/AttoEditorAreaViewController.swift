@@ -263,6 +263,18 @@ final class AttoEditorAreaViewController: NSViewController {
         hierarchyPanelController?.isVisible == true
     }
 
+    func _lspWorkbenchPanelItemsForTesting() -> [AttoLspWorkbenchPanelController.Item] {
+        lspWorkbenchPanelController?.currentItems ?? []
+    }
+
+    func _lspWorkbenchPanelRowCountForTesting() -> Int {
+        lspWorkbenchPanelController?.rowCount ?? 0
+    }
+
+    func _lspWorkbenchPanelIsVisibleForTesting() -> Bool {
+        lspWorkbenchPanelController?.isVisible == true
+    }
+
     func _workspaceOutlineSnapshotForTesting() -> AttoWorkspaceOutlineSnapshot {
         workspaceOutlineStore.snapshot
     }
@@ -1012,6 +1024,7 @@ final class AttoEditorAreaViewController: NSViewController {
     var hierarchyResultsController: AttoCommandPaletteController?
     var hierarchyPanelSnapshot: AttoHierarchyPanelController.Snapshot?
     var hierarchyPanelController: AttoHierarchyPanelController?
+    var lspWorkbenchPanelController: AttoLspWorkbenchPanelController?
     var problemsResultsController: AttoCommandPaletteController?
     var problemsPanelController: AttoProblemsPanelController?
     let diagnosticsLifecycleStore = AttoLspResultLifecycleStore<AttoDiagnosticsLifecycleSnapshot>(
@@ -1100,6 +1113,7 @@ final class AttoEditorAreaViewController: NSViewController {
     var colorPresentationContext: ColorPresentationRequestContext?
     var colorPresentationPollTimer: DispatchSourceTimer?
     var documentColorPanelContext: DocumentColorPanelContext?
+    var lastDocumentColorItems: [AttoLspDocumentColorParser.Item] = []
     var documentColorPanelController: AttoDocumentColorPanelController?
     var documentColorPickerForTesting: ((NSColor) -> NSColor?)?
     var lspEnvironmentProvider: () -> [String: String] = {

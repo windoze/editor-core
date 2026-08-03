@@ -397,6 +397,7 @@ extension AttoEditorAreaViewController {
             title: workspaceOutlineHistoryTitle(for: workspaceOutlineStore.snapshot)
         )
         lspSymbolPanelController?.update(entry: entry)
+        updateVisibleLspWorkbenchPanel()
 
         guard let window = view.window else {
             navigateToLspTarget(snapshot.symbols[0].target)
@@ -567,6 +568,7 @@ extension AttoEditorAreaViewController {
             payload: .symbols(title: snapshot.title, itemCount: snapshot.symbols.count)
         )
         lspSymbolPanelController?.update(entry: entry)
+        updateVisibleLspWorkbenchPanel()
     }
 
     @discardableResult

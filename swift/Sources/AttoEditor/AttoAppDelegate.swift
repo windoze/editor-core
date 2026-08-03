@@ -744,6 +744,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .init(id: "lsp.show_locations_panel", title: "LSP: Show Locations Panel") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showLspLocationPanel()
             },
+            .init(id: "lsp.show_workbench_panel", title: "LSP: Show Workbench Panel") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showLspWorkbenchPanel()
+            },
             .init(id: "lsp.call_hierarchy_incoming", title: "LSP: Incoming Calls") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showIncomingCallsInActiveTab()
             },
