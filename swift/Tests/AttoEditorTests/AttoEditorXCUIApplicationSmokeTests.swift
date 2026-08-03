@@ -142,6 +142,53 @@ final class AttoEditorXCUIApplicationSmokeTests: XCTestCase {
         assertElementExists(AttoAccessibilityID.workspaceProblemsPanelTable, in: launched.app)
     }
 
+    func testSelectionAndMulticursorCommandPaletteSmokeFlow() throws {
+        let launched = try launchAttoEditor()
+        defer { launched.cleanUp() }
+
+        XCTAssertTrue(launched.app.wait(for: .runningForeground, timeout: Self.timeout))
+        XCTAssertTrue(launched.app.windows.firstMatch.waitForExistence(timeout: Self.timeout))
+
+        launched.app.typeKey("n", modifierFlags: [.command])
+        let editorView = try firstElement(
+            identifierPrefix: dynamicIdentifierPrefix(AttoAccessibilityID.editorView),
+            in: launched.app
+        )
+        editorView.click()
+        launched.app.typeText("alpha beta alpha\nalpha beta\n")
+
+        try runCommandPaletteCommand("cursor.document_start", in: launched.app)
+        try runCommandPaletteCommand("editor.select_word", in: launched.app)
+        XCTAssertNotNil(
+            waitForElementText(
+                identifier: AttoAccessibilityID.statusBarSelectionLabel,
+                contains: "Sel ",
+                in: launched.app
+            ),
+            "expected selecting a word to update the status bar selection label"
+        )
+
+        try runCommandPaletteCommand("editor.add_next_occurrence", in: launched.app)
+        XCTAssertNotNil(
+            waitForElementText(
+                identifier: AttoAccessibilityID.statusBarSelectionLabel,
+                contains: "cursors",
+                in: launched.app
+            ),
+            "expected adding the next occurrence to create a multi-cursor selection"
+        )
+
+        try runCommandPaletteCommand("editor.add_all_occurrences", in: launched.app)
+        XCTAssertNotNil(
+            waitForElementText(
+                identifier: AttoAccessibilityID.statusBarSelectionLabel,
+                contains: "cursors",
+                in: launched.app
+            ),
+            "expected selecting all occurrences to keep a multi-cursor selection"
+        )
+    }
+
     private func launchAttoEditor() throws -> LaunchedAttoApp {
         guard Self.isEnabled else {
             throw XCTSkip(
@@ -238,6 +285,32 @@ final class AttoEditorXCUIApplicationSmokeTests: XCTestCase {
         app.typeText(query)
         assertElementExists(AttoAccessibilityID.commandPaletteTable(prefix: prefix), in: app)
         app.typeKey(.return, modifierFlags: [])
+    }
+
+    private func waitForElementText(
+        identifier: String,
+        contains expected: String,
+        in app: XCUIApplication
+    ) -> String? {
+        let deadline = Date().addingTimeInterval(Self.timeout)
+        repeat {
+            let candidate = element(identifier: identifier, in: app)
+            if candidate.exists {
+                let text = text(from: candidate)
+                if text.contains(expected) {
+                    return text
+                }
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(Self.pollInterval))
+        } while Date() < deadline
+        return nil
+    }
+
+    private func text(from element: XCUIElement) -> String {
+        if let value = element.value as? String, value.isEmpty == false {
+            return value
+        }
+        return element.label
     }
 
     private func assertElementCount(

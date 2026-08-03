@@ -2140,6 +2140,12 @@
   - 验证记录：
     - `swift test --package-path swift --filter 'AttoEditorXCUIApplicationSmokeTests|AttoIPCTests|AttoCommandLineTests'`
     - `git diff --check`
+- 中间提交：`test(app): cover xcui selection multicursor commands`
+  - 所属任务：阶段 13 的 macOS UI 自动化与视觉回归测试体系增量；继续扩展 opt-in `XCUIApplication` 黑盒操作流，覆盖 selection 和 multi-cursor command palette 主路径。
+  - 提交边界：只扩展 `AttoEditorXCUIApplicationSmokeTests`，在新建 buffer 中输入重复词，通过 command palette 执行 `cursor.document_start`、`editor.select_word`、`editor.add_next_occurrence` 和 `editor.add_all_occurrences`，并断言 status bar selection label 从单选区反馈更新为包含 `cursors` 的多光标反馈。该提交不启用默认 CI GUI 测试、不覆盖鼠标多光标、打开文件/保存或需要真实 LSP result fixture 的面板，也不改变产品代码。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorXCUIApplicationSmokeTests|AttoIPCTests|AttoCommandLineTests'`
+    - `git diff --check`
 
 ## 阶段 14: 外观、布局与 Sublime-like 操作打磨
 
