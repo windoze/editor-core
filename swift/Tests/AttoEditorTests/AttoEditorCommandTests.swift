@@ -2186,6 +2186,8 @@ final class AttoEditorCommandTests: XCTestCase {
 
         XCTAssertNotNil(findMenuItem(commandID: "editor.format_document", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "editor.format_selection", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "settings.open_user_settings", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "settings.open_workspace_settings", in: menu))
         let workspaceUndo = try XCTUnwrap(findMenuItem(commandID: "workspace.undo_last_workspace_edit", in: menu))
         XCTAssertEqual(workspaceUndo.keyEquivalent, "z")
         XCTAssertEqual(
@@ -4933,6 +4935,60 @@ final class AttoEditorCommandTests: XCTestCase {
 
         let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: ctx.editorAreaController.view))
         XCTAssertEqual(try editorView.editor.text(), "a\na\n")
+    }
+
+    func testSettingsCommandsCreateAndOpenSettingsFiles() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        let workspaceRootURL = tempDir.appendingPathComponent("Workspace", isDirectory: true)
+        try FileManager.default.createDirectory(at: workspaceRootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let settingsStore = AttoConfigurationSettingsStore(
+            userSettingsURL: tempDir.appendingPathComponent("user-settings.json")
+        )
+        let delegate = AttoAppDelegate(
+            keyBindings: [:],
+            configurationSettingsStore: settingsStore
+        )
+        let ctx = delegate._createWindowForTesting(workspaceRootURL: workspaceRootURL)
+        defer { ctx.window.close() }
+
+        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "settings.open_workspace_settings"))
+        XCTAssertTrue(delegate.executeCommand(id: "settings.open_workspace_settings"))
+
+        let workspaceSettingsURL = AttoConfigurationSettingsStore.workspaceSettingsURL(
+            forWorkspaceRootURL: workspaceRootURL
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: workspaceSettingsURL.path))
+        var settingsText = try String(contentsOf: workspaceSettingsURL, encoding: .utf8)
+        XCTAssertTrue(settingsText.contains(#""_examples""#), settingsText)
+        XCTAssertTrue(settingsText.contains(#""scoped_settings""#), settingsText)
+        let workspaceSettings = try XCTUnwrap(
+            settingsStore.loadWorkspaceSettings(workspaceRootURL: workspaceRootURL)
+        )
+        XCTAssertEqual(workspaceSettings.schemaVersion, AttoConfigurationSettings.currentSchemaVersion)
+        XCTAssertEqual(workspaceSettings.scopedSettings, [])
+        XCTAssertEqual(
+            ctx.editorAreaController.activeTab?.fileURL.standardizedFileURL,
+            workspaceSettingsURL.standardizedFileURL
+        )
+        XCTAssertEqual(ctx.editorAreaController._transientStatusTextForTesting(), "Opened Workspace Settings")
+
+        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "settings.open_user_settings"))
+        XCTAssertTrue(delegate.executeCommand(id: "settings.open_user_settings"))
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: settingsStore.userSettingsURL.path))
+        settingsText = try String(contentsOf: settingsStore.userSettingsURL, encoding: .utf8)
+        XCTAssertTrue(settingsText.contains(#""_examples""#), settingsText)
+        let userSettings = try XCTUnwrap(settingsStore.loadUserSettings())
+        XCTAssertEqual(userSettings.schemaVersion, AttoConfigurationSettings.currentSchemaVersion)
+        XCTAssertEqual(userSettings.scopedSettings, [])
+        XCTAssertEqual(
+            ctx.editorAreaController.activeTab?.fileURL.standardizedFileURL,
+            settingsStore.userSettingsURL.standardizedFileURL
+        )
+        XCTAssertEqual(ctx.editorAreaController._transientStatusTextForTesting(), "Opened User Settings")
     }
 
     func testReloadFileCommandReloadsActiveTabFromDisk() throws {

@@ -14,6 +14,8 @@ enum AttoMainMenuBuilder {
         appMenu.addItem(withTitle: "About AttoEditor", action: nil, keyEquivalent: "")
         appMenu.addItem(.separator())
         appMenu.addItem(commandItem(title: "Preferences...", commandID: "workbench.preferences", appDelegate: appDelegate))
+        appMenu.addItem(commandItem(title: "Open User Settings", commandID: "settings.open_user_settings", appDelegate: appDelegate))
+        appMenu.addItem(commandItem(title: "Open Workspace Settings", commandID: "settings.open_workspace_settings", appDelegate: appDelegate))
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Quit AttoEditor", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 

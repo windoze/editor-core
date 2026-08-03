@@ -1763,6 +1763,13 @@
   - 验证记录：
     - `swift test --package-path swift --filter AttoEditorPreferencesApplicationTests`
     - `git diff --check`
+- 中间提交：`feat(app): open scoped settings files`
+  - 所属任务：阶段 9 的配置、偏好与 capability DTO 完整性增量；为 user settings 和当前 workspace settings 提供命令/菜单入口，用户可以直接打开或创建现有 `AttoConfigurationSettings` JSON，并编辑 `scoped_settings`。
+  - 提交边界：新增 `settings.open_user_settings` 与 `settings.open_workspace_settings` 命令；缺失 settings 文件时创建非侵入式 scaffold，实际配置保持空，示例放在 decoder 会忽略的 `_examples` 字段；打开文件复用现有 tab/core mirror 路径。该提交不新增 Rust/FFI ABI，不实现 schema-aware 表单编辑器、settings 校验/补全、runtime override UI/持久化、完整 Sublime settings selector grammar、跨 schema 字段语义迁移、自定义 word boundary 规则或 core/headless capability negotiation。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests/testSettingsCommandsCreateAndOpenSettingsFiles`
+    - `swift test --package-path swift --filter AttoEditorCommandTests/testMainMenuItemsUseCommandIDsAndResolvedKeymap`
+    - `git diff --check`
 
 ## 阶段 10: ABI 版本、错误模型与兼容性门禁
 

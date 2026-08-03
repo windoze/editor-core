@@ -1155,6 +1155,12 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .init(id: "workbench.preferences", title: "AttoEditor: Preferences…") { [weak self] in
                 self?.showPreferencesWindow()
             },
+            .init(id: "settings.open_user_settings", title: "Settings: Open User Settings") { [weak self] in
+                self?.openUserSettingsFile()
+            },
+            .init(id: "settings.open_workspace_settings", title: "Settings: Open Workspace Settings") { [weak self] in
+                self?.openWorkspaceSettingsFile()
+            },
             .init(id: "go.back", title: "Go: Back") { [weak self] in
                 self?.activeWindow()?.editorAreaController.jumpBackInActiveTab()
             },
@@ -2521,6 +2527,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             if commandID.hasPrefix("view.") { return "View" }
             if commandID.hasPrefix("go.") { return "Go" }
             if commandID.hasPrefix("search.") { return "Search" }
+            if commandID.hasPrefix("settings.") { return "Settings" }
             if commandID.hasPrefix("lsp.") { return "LSP" }
             if commandID.hasPrefix("workspace.") { return "Workspace" }
             if commandID.hasPrefix("workbench.") { return "AttoEditor" }
@@ -2613,6 +2620,8 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         case "file.open_folder", "file.open_file", "workbench.preferences", "go.file",
              "editor.find", "editor.replace", "workbench.command_palette":
             return AttoCommandSchema(macroPolicy: .promptRequired)
+        case "settings.open_user_settings", "settings.open_workspace_settings":
+            return AttoCommandSchema(macroPolicy: .notRecordable)
         case "macro.save_named":
             return Self.macroNameCommandSchema()
         case "macro.replay_named":
@@ -2689,6 +2698,90 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         preferencesWindowController?.showWindow(nil)
         preferencesWindowController?.window?.makeKeyAndOrderFront(nil)
         NSApplication.shared.activate(ignoringOtherApps: true)
+    }
+
+    private func openUserSettingsFile() {
+        guard let ctx = ensureActiveWindowForMenuActions() else { return }
+        openSettingsFile(
+            settingsStore.userSettingsURL,
+            displayName: "User Settings",
+            in: ctx
+        )
+    }
+
+    private func openWorkspaceSettingsFile() {
+        guard let ctx = ensureActiveWindowForMenuActions() else { return }
+        let url = AttoConfigurationSettingsStore.workspaceSettingsURL(
+            forWorkspaceRootURL: ctx.workspaceRootURL
+        )
+        openSettingsFile(
+            url,
+            displayName: "Workspace Settings",
+            in: ctx
+        )
+    }
+
+    private func openSettingsFile(
+        _ url: URL,
+        displayName: String,
+        in ctx: AttoWindowContext
+    ) {
+        do {
+            try ensureSettingsScaffoldExists(at: url)
+        } catch {
+            NSSound.beep()
+            NSLog("AttoEditor: failed to create %@ file %@: %@", displayName, url.path, String(describing: error))
+            ctx.editorAreaController.setTransientStatusText("Failed to create \(displayName)")
+            return
+        }
+
+        ctx.rememberRecentFile(url)
+        if ctx.editorAreaController.openFile(url: url, mode: .pinned) {
+            ctx.fileExplorerController.revealFile(url)
+            ctx.editorAreaController.setTransientStatusText("Opened \(displayName)")
+        } else {
+            ctx.editorAreaController.setTransientStatusText("Failed to open \(displayName)")
+        }
+    }
+
+    private func ensureSettingsScaffoldExists(at url: URL) throws {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: url.path) == false else { return }
+
+        try fm.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let data = try JSONSerialization.data(
+            withJSONObject: Self.settingsScaffoldJSONObject(),
+            options: [.prettyPrinted, .sortedKeys]
+        )
+        try data.write(to: url, options: [.atomic])
+    }
+
+    private static func settingsScaffoldJSONObject() -> [String: Any] {
+        [
+            "_examples": [
+                "scoped_settings": [
+                    [
+                        "selectors": ["*.swift", "source.swift"],
+                        "editor": [
+                            "font_size_points": 14,
+                            "wrap_mode": "char",
+                        ],
+                        "rendering": [
+                            "theme_name": AttoThemeManager.defaultThemeName,
+                        ],
+                        "language": [
+                            "format_on_save": true,
+                            "semantic_highlighting_enabled": true,
+                        ],
+                    ],
+                ],
+            ],
+            "schema_version": AttoConfigurationSettings.currentSchemaVersion,
+            "scoped_settings": [],
+        ]
     }
 
     private func applyEditorPreferencesToAllWindows() {
