@@ -33,7 +33,8 @@ void editor_core_ffi_string_free(char* ptr);
 
 - On failure:
   - typed ABI returns non-zero `EcfStatus`
-  - JSON APIs return `NULL` / `false` / `0`
+  - legacy JSON APIs return `NULL` / `false` / `0`
+  - JSON command envelope APIs return an allocated `{ "ok": false, ... }` JSON string
 - In all cases, thread-local last error is retrievable via:
 
 ```c
@@ -138,6 +139,39 @@ Auto-indent / indentation config:
   "op": "fold",
   "start_line": 10,
   "end_line": 20
+}
+```
+
+Legacy command bridge functions return the raw command result JSON on success and `NULL` on
+failure:
+
+```c
+char* editor_core_ffi_editor_state_execute_json(EcfEditorState* state, const char* command_json);
+char* editor_core_ffi_workspace_execute_json(EcfWorkspace* workspace, uint64_t view_id, const char* command_json);
+```
+
+Envelope command bridge functions keep the legacy entry points intact while returning a stable
+success/error wrapper:
+
+```c
+char* editor_core_ffi_editor_state_execute_envelope_json(EcfEditorState* state, const char* command_json);
+char* editor_core_ffi_workspace_execute_envelope_json(EcfWorkspace* workspace, uint64_t view_id, const char* command_json);
+```
+
+```json
+{ "ok": true, "value": { "kind": "success" }, "error": null, "version": 1 }
+```
+
+```json
+{
+  "ok": false,
+  "value": null,
+  "error": {
+    "code": "command_failed",
+    "status": 6,
+    "message": "command execution failed: ..."
+  },
+  "version": 1
 }
 ```
 

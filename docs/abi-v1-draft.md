@@ -84,8 +84,8 @@ Companion APIs:
 - `const char* ecf_last_error_message(void)` style or allocated string variant.
 - JSON control-plane calls may expose a structured envelope:
   `{ "ok": bool, "value": <json-or-null>, "error": { "code": string, "status": int32, "message": string } | null, "version": abi_version }`.
-  The UI FFI command dispatcher has this as an additive API while the legacy null-pointer +
-  `last_error_message` symbol remains available for compatibility.
+  The headless and UI FFI command dispatchers have this as an additive API while the legacy
+  null-pointer + `last_error_message` symbols remain available for compatibility.
 
 Proposed error codes:
 
@@ -338,11 +338,13 @@ EcfEditorState* editor_core_ffi_editor_state_new(const char* initial_text, uint3
 char* editor_core_ffi_editor_state_viewport_styled_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
 char* editor_core_ffi_editor_state_minimap_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
 char* editor_core_ffi_editor_state_viewport_composed_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
+char* editor_core_ffi_editor_state_execute_envelope_json(EcfEditorState* state, const char* command_json);
 
 int32_t editor_core_ffi_workspace_open_buffer_typed(EcfWorkspace* workspace, const char* uri, const char* text, uint32_t viewport_width, EcfOpenBufferResult* out_result);
 int32_t editor_core_ffi_workspace_create_view_typed(EcfWorkspace* workspace, uint64_t buffer_id, uint32_t viewport_width, EcfCreateViewResult* out_result);
 bool editor_core_ffi_workspace_set_viewport_height(EcfWorkspace* workspace, uint64_t view_id, uint32_t height);
 bool editor_core_ffi_workspace_set_smooth_scroll_state(EcfWorkspace* workspace, uint64_t view_id, uint32_t top_visual_row, uint16_t sub_row_offset, uint32_t overscan_rows);
+char* editor_core_ffi_workspace_execute_envelope_json(EcfWorkspace* workspace, uint64_t view_id, const char* command_json);
 
 uint64_t editor_core_ffi_lsp_char_offset_to_utf16(const char* line_text, uint64_t char_offset);
 uint64_t editor_core_ffi_lsp_utf16_to_char_offset(const char* line_text, uint64_t utf16_offset);

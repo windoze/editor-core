@@ -4,19 +4,20 @@ use editor_core_ffi::{
     ecf_editor_backspace, ecf_editor_get_viewport_blob, ecf_editor_insert_text_utf8,
     ecf_editor_move_to, editor_core_ffi_editor_get_document_stats,
     editor_core_ffi_editor_get_viewport_blob, editor_core_ffi_editor_insert_text_utf8,
-    editor_core_ffi_editor_state_free, editor_core_ffi_editor_state_minimap_json,
-    editor_core_ffi_editor_state_new, editor_core_ffi_editor_state_viewport_composed_json,
+    editor_core_ffi_editor_state_execute_envelope_json, editor_core_ffi_editor_state_free,
+    editor_core_ffi_editor_state_minimap_json, editor_core_ffi_editor_state_new,
+    editor_core_ffi_editor_state_viewport_composed_json,
     editor_core_ffi_editor_state_viewport_styled_json, editor_core_ffi_last_error_message,
     editor_core_ffi_lsp_char_offset_to_utf16,
     editor_core_ffi_lsp_completion_item_to_text_edits_json,
     editor_core_ffi_lsp_formatting_options_json, editor_core_ffi_lsp_utf16_to_char_offset,
     editor_core_ffi_string_free, editor_core_ffi_workspace_backspace,
-    editor_core_ffi_workspace_create_view_typed, editor_core_ffi_workspace_free,
-    editor_core_ffi_workspace_get_info, editor_core_ffi_workspace_get_viewport_blob,
-    editor_core_ffi_workspace_get_viewport_state, editor_core_ffi_workspace_insert_text_utf8,
-    editor_core_ffi_workspace_minimap_json, editor_core_ffi_workspace_move_to,
-    editor_core_ffi_workspace_new, editor_core_ffi_workspace_open_buffer_typed,
-    editor_core_ffi_workspace_set_smooth_scroll_state,
+    editor_core_ffi_workspace_create_view_typed, editor_core_ffi_workspace_execute_envelope_json,
+    editor_core_ffi_workspace_free, editor_core_ffi_workspace_get_info,
+    editor_core_ffi_workspace_get_viewport_blob, editor_core_ffi_workspace_get_viewport_state,
+    editor_core_ffi_workspace_insert_text_utf8, editor_core_ffi_workspace_minimap_json,
+    editor_core_ffi_workspace_move_to, editor_core_ffi_workspace_new,
+    editor_core_ffi_workspace_open_buffer_typed, editor_core_ffi_workspace_set_smooth_scroll_state,
     editor_core_ffi_workspace_set_viewport_height,
     editor_core_ffi_workspace_viewport_composed_json,
     editor_core_ffi_workspace_viewport_styled_json,
@@ -56,6 +57,8 @@ fn public_abi_scalar_signatures_are_fixed_width() {
         editor_core_ffi_editor_state_minimap_json;
     let _: extern "C" fn(*const EcfEditorState, u32, u32) -> *mut std::ffi::c_char =
         editor_core_ffi_editor_state_viewport_composed_json;
+    let _: extern "C" fn(*mut EcfEditorState, *const std::ffi::c_char) -> *mut std::ffi::c_char =
+        editor_core_ffi_editor_state_execute_envelope_json;
 
     let _: unsafe extern "C" fn(
         *mut EcfWorkspace,
@@ -76,6 +79,8 @@ fn public_abi_scalar_signatures_are_fixed_width() {
         editor_core_ffi_workspace_minimap_json;
     let _: extern "C" fn(*mut EcfWorkspace, u64, u32, u32) -> *mut std::ffi::c_char =
         editor_core_ffi_workspace_viewport_composed_json;
+    let _: extern "C" fn(*mut EcfWorkspace, u64, *const std::ffi::c_char) -> *mut std::ffi::c_char =
+        editor_core_ffi_workspace_execute_envelope_json;
 
     let _: extern "C" fn(*const std::ffi::c_char, u64) -> u64 =
         editor_core_ffi_lsp_char_offset_to_utf16;
@@ -129,6 +134,65 @@ fn typed_editor_commands_and_stats_work() {
     assert_eq!(st, status(EcfStatus::Ok));
     assert!(stats.char_count >= 6);
     assert_eq!(stats.is_modified, 1);
+
+    unsafe { editor_core_ffi_editor_state_free(state) };
+}
+
+#[test]
+fn editor_state_execute_envelope_json_reports_success_and_errors() {
+    let initial = CString::new("abc\n").expect("cstring");
+    let state = editor_core_ffi_editor_state_new(initial.as_ptr(), 80);
+    assert!(!state.is_null());
+
+    let command = CString::new(r#"{"kind":"edit","op":"insert_text","text":"!"}"#).unwrap();
+    let ok_json = take_string(editor_core_ffi_editor_state_execute_envelope_json(
+        state,
+        command.as_ptr(),
+    ));
+    let ok: serde_json::Value = serde_json::from_str(&ok_json).unwrap();
+    assert_eq!(ok["ok"], true);
+    assert_eq!(ok["version"], ECF_ABI_VERSION);
+    assert_eq!(ok["value"]["kind"], "success");
+    assert!(ok["error"].is_null());
+
+    let bad_json = CString::new("{this is not json").unwrap();
+    let parse_json = take_string(editor_core_ffi_editor_state_execute_envelope_json(
+        state,
+        bad_json.as_ptr(),
+    ));
+    let parse: serde_json::Value = serde_json::from_str(&parse_json).unwrap();
+    assert_eq!(parse["ok"], false);
+    assert_eq!(parse["error"]["code"], "parse");
+    assert_eq!(parse["error"]["status"], status(EcfStatus::Parse));
+
+    let command = CString::new(r#"{"kind":"view","op":"set_viewport_width","width":0}"#).unwrap();
+    let failed_json = take_string(editor_core_ffi_editor_state_execute_envelope_json(
+        state,
+        command.as_ptr(),
+    ));
+    let failed: serde_json::Value = serde_json::from_str(&failed_json).unwrap();
+    assert_eq!(failed["ok"], false);
+    assert_eq!(failed["error"]["code"], "command_failed");
+    assert_eq!(failed["error"]["status"], status(EcfStatus::CommandFailed));
+    assert!(
+        failed["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("command execution failed")
+    );
+
+    let null_arg_json = take_string(editor_core_ffi_editor_state_execute_envelope_json(
+        state,
+        std::ptr::null(),
+    ));
+    let null_arg: serde_json::Value = serde_json::from_str(&null_arg_json).unwrap();
+    assert_eq!(null_arg["ok"], false);
+    assert_eq!(null_arg["error"]["code"], "invalid_argument");
+    assert_eq!(
+        null_arg["error"]["status"],
+        status(EcfStatus::InvalidArgument)
+    );
+    assert_eq!(null_arg["error"]["message"], "command_json is null");
 
     unsafe { editor_core_ffi_editor_state_free(state) };
 }
@@ -399,6 +463,71 @@ fn workspace_typed_commands_and_blob_work() {
         &mut out_len,
     );
     assert_eq!(st, status(EcfStatus::Ok));
+
+    unsafe { editor_core_ffi_workspace_free(workspace) };
+}
+
+#[test]
+fn workspace_execute_envelope_json_reports_success_and_errors() {
+    let workspace = editor_core_ffi_workspace_new();
+    assert!(!workspace.is_null());
+
+    let text = CString::new("abc\n").expect("cstring");
+    let mut opened = EcfOpenBufferResult {
+        abi_version: 0,
+        struct_size: 0,
+        buffer_id: 0,
+        view_id: 0,
+    };
+    let st = unsafe {
+        editor_core_ffi_workspace_open_buffer_typed(
+            workspace,
+            std::ptr::null(),
+            text.as_ptr(),
+            80,
+            &mut opened,
+        )
+    };
+    assert_eq!(st, status(EcfStatus::Ok));
+
+    let command = CString::new(r#"{"kind":"edit","op":"insert_text","text":"!"}"#).unwrap();
+    let ok_json = take_string(editor_core_ffi_workspace_execute_envelope_json(
+        workspace,
+        opened.view_id,
+        command.as_ptr(),
+    ));
+    let ok: serde_json::Value = serde_json::from_str(&ok_json).unwrap();
+    assert_eq!(ok["ok"], true);
+    assert_eq!(ok["version"], ECF_ABI_VERSION);
+    assert_eq!(ok["value"]["kind"], "success");
+
+    let bad_json = CString::new("{this is not json").unwrap();
+    let parse_json = take_string(editor_core_ffi_workspace_execute_envelope_json(
+        workspace,
+        opened.view_id,
+        bad_json.as_ptr(),
+    ));
+    let parse: serde_json::Value = serde_json::from_str(&parse_json).unwrap();
+    assert_eq!(parse["ok"], false);
+    assert_eq!(parse["error"]["code"], "parse");
+    assert_eq!(parse["error"]["status"], status(EcfStatus::Parse));
+
+    let command = CString::new(r#"{"kind":"cursor","op":"move_to","line":0,"column":0}"#).unwrap();
+    let failed_json = take_string(editor_core_ffi_workspace_execute_envelope_json(
+        workspace,
+        999_999,
+        command.as_ptr(),
+    ));
+    let failed: serde_json::Value = serde_json::from_str(&failed_json).unwrap();
+    assert_eq!(failed["ok"], false);
+    assert_eq!(failed["error"]["code"], "command_failed");
+    assert_eq!(failed["error"]["status"], status(EcfStatus::CommandFailed));
+    assert!(
+        failed["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("workspace execute failed")
+    );
 
     unsafe { editor_core_ffi_workspace_free(workspace) };
 }

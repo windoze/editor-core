@@ -1635,6 +1635,16 @@
     - `swift test --package-path swift --filter 'EditorCoreUIFFITests/test(LoadsLibraryAndVersion|ExecuteCommandEnvelopeJSONReportsSuccessAndError)'`
     - `cargo fmt --check`
     - `git diff --check`
+- 中间提交：`feat(ffi): envelope headless command json results`
+  - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；把兼容的结构化 result envelope 起点扩展到 headless `editor-core-ffi` JSON command bridge。
+  - 提交边界：新增 `editor_core_ffi_editor_state_execute_envelope_json(...)` 和 `editor_core_ffi_workspace_execute_envelope_json(...)` C ABI；legacy `editor_core_ffi_editor_state_execute_json(...)` / `editor_core_ffi_workspace_execute_json(...)` 保持原来的 command-result JSON / null pointer + last_error 行为；Swift `EditorCoreFFI` 新增 raw/typed envelope API 与 `EcfJSONCommandEnvelope` / `EcfJSONCommandError` / `EcfJSONValue`；`docs/abi-v1-draft.md` 和 `crates/editor-core-ffi/README.md` 记录 headless envelope schema。该提交不新增 headless feature flags，不切换现有 typed convenience 主路径，不移除 legacy JSON API，不统一 LSP/helper JSON API，也不完成第三方 host 的完整 capability negotiation。
+  - 验证记录：
+    - `cargo test -p editor-core-ffi --test abi_v1 editor_state_execute_envelope_json_reports_success_and_errors`
+    - `cargo test -p editor-core-ffi --test abi_v1 workspace_execute_envelope_json_reports_success_and_errors`
+    - `swift test --package-path swift --filter 'EditorStateJSONCommandBridgeTests/testExecuteEnvelopeReportsSuccessParseAndCommandErrors'`
+    - `swift test --package-path swift --filter 'WorkspaceAdditionalTests/testWorkspaceExecuteEnvelopeReportsSuccessParseAndCommandErrors'`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 11: Tree-sitter 与 LSP 主路线产品化
 

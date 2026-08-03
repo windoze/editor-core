@@ -1495,14 +1495,14 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - LSP interactive request 已覆盖一批 raw JSON result API；LSP status/capabilities 已有 typed snapshot，`EditorUi` request lifecycle event stream 起点、Swift event metadata typed accessor、completion result/resolve item typed payload wrapper、location family result typed payload wrapper、rename/WorkspaceEdit typed payload wrapper、code action result/resolve typed payload wrapper、symbols/color/hierarchy/diagnostics/selection range/linked editing/code lens/folding ranges/semantic tokens typed payload wrapper 已补齐。
 - 长任务、异步请求、取消、错误、诊断日志没有统一 Swift 事件流。
 - 配置 DTO 已有 `AttoConfigurationSnapshot` / `AttoCapabilitySnapshot` 起点，覆盖当前有效 editor/rendering/language/workspace 偏好、UI FFI ABI/features、LSP capability 摘要和 platform/App capability；`AttoConfigurationSettings` 已提供 user/workspace/runtime partial overlay 合并和 settings JSON store 起点；AttoEditor App 创建窗口和偏好重应用路径已消费 user/workspace/runtime settings 的 resolved snapshot；损坏 settings 文件会备份为 `*.invalid` 后被忽略；legacy v0 settings 会备份并写回 current schema；Find bar 默认大小写、整词和 regex 搜索选项、Find in Files 默认 scope、workspace search include/exclude glob 已纳入配置并应用到 Swift UI；全局 Preferences UI 已覆盖默认 Find 选项、Find in Files 默认 scope 和 workspace search include/exclude glob。但 Sublime settings scope selector、workspace/project scoped settings 编辑 UI、runtime override UI/持久化、跨 schema 字段语义迁移、自定义 word boundary 规则等仍不完整。
-- headless Swift FFI 已有 ABI version；阶段 69 已补齐 UI FFI 的 ABI version / feature flags C ABI 和 Swift `runtimeInfo()` typed facade，阶段 80 已新增 multi-document UI feature flag，阶段 81 已把该 feature 纳入 AttoEditor 启动期必需能力；阶段 70 已补 AttoEditor 启动期最低 ABI/必需 feature compatibility gate，阶段 105 已补基础逐命令可选 feature 降级；阶段 10 已为 UI FFI JSON command dispatcher 增加 `{ ok, value, error, version }` envelope API 和 Swift typed wrapper 起点。后续仍缺 headless/UI 全面一致的 JSON envelope 覆盖、更细粒度的逐面板降级策略和面向第三方 host 的 ABI capability negotiation。
+- headless Swift FFI 已有 ABI version；阶段 69 已补齐 UI FFI 的 ABI version / feature flags C ABI 和 Swift `runtimeInfo()` typed facade，阶段 80 已新增 multi-document UI feature flag，阶段 81 已把该 feature 纳入 AttoEditor 启动期必需能力；阶段 70 已补 AttoEditor 启动期最低 ABI/必需 feature compatibility gate，阶段 105 已补基础逐命令可选 feature 降级；阶段 10 已为 UI FFI JSON command dispatcher 以及 headless `EditorState` / `Workspace` JSON command bridge 增加 `{ ok, value, error, version }` envelope API 和 Swift typed wrapper 起点。后续仍缺其他 JSON result 面的统一 envelope 覆盖、更细粒度的逐面板降级策略和面向第三方 host 的 ABI capability negotiation。
 
 建议演进方向：
 
 - 继续使用 `editor_core_ui_ffi_editor_ui_execute_command_json(editor, command_json)` 作为 UI escape hatch。
 - Swift `EditorUI.executeCommandJSON(_:)` 作为低频/迁移命令入口。
 - 已有高频命令 typed convenience API；新增或低频命令按产品化需要继续补 typed API。
-- FFI 返回统一 `{ ok, value, error, version }` 风格；UI command JSON 已有兼容 envelope 起点，后续继续扩到 headless/core 与其他 JSON 结果面。
+- FFI 返回统一 `{ ok, value, error, version }` 风格；UI command JSON 和 headless command JSON 已有兼容 envelope 起点，后续继续扩到其他 core/helper JSON 结果面。
 - Swift 层封装稳定 enum/struct，但保留 unknown command 的转发能力。
 - LSP raw result API 后续应收敛到 typed model / result panel model，而不是让 App 层到处解析临时 JSON。
 - App 命令系统只依赖 Swift command abstraction，不直接散落调用 FFI 函数。

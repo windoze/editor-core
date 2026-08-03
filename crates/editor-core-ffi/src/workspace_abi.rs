@@ -280,6 +280,34 @@ pub extern "C" fn editor_core_ffi_workspace_execute_json(
     })
 }
 
+/// Execute one command against a view and return a stable result envelope.
+///
+/// Caller owns returned string and must free it with `editor_core_ffi_string_free`.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_workspace_execute_envelope_json(
+    workspace: *mut EcfWorkspace,
+    view_id: u64,
+    command_json: *const c_char,
+) -> *mut c_char {
+    result_envelope_json_ptr(|| {
+        let workspace = require_mut(workspace, "workspace")
+            .map_err(|message| (EcfStatus::InvalidArgument, message))?;
+        let command_json = require_string_status(command_json, "command_json")?;
+        let command = parse_command_from_json(&command_json)
+            .map_err(|message| (EcfStatus::Parse, message))?;
+        let result = workspace
+            .inner
+            .execute(ViewId::from_raw(view_id), command)
+            .map_err(|err| {
+                (
+                    EcfStatus::CommandFailed,
+                    format!("workspace execute failed: {err:?}"),
+                )
+            })?;
+        Ok(value_command_result(result))
+    })
+}
+
 /// Apply one or more processing edits to a workspace buffer.
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ffi_workspace_apply_processing_edits_json(

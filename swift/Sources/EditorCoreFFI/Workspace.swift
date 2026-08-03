@@ -53,6 +53,21 @@ public final class Workspace {
         return try ffi.takeOwnedCString(ptr, context: "workspace_execute_json")
     }
 
+    public func executeEnvelopeJSON(viewId: UInt64, commandJSON: String) throws -> String {
+        let ptr: UnsafeMutablePointer<CChar>? = commandJSON.withCString { jsonPtr in
+            editor_core_ffi_workspace_execute_envelope_json(handle, viewId, jsonPtr)
+        }
+        return try ffi.takeOwnedCString(ptr, context: "workspace_execute_envelope_json")
+    }
+
+    public func executeEnvelope(viewId: UInt64, commandJSON: String) throws -> EcfJSONCommandEnvelope {
+        try JSON.decode(
+            EcfJSONCommandEnvelope.self,
+            from: executeEnvelopeJSON(viewId: viewId, commandJSON: commandJSON),
+            context: "workspace_execute_envelope"
+        )
+    }
+
     @discardableResult
     private func executeCommandObject(viewId: UInt64, _ object: [String: Any]) throws -> String {
         let data = try JSONSerialization.data(withJSONObject: object, options: [])

@@ -130,6 +130,7 @@ void editor_core_ffi_string_free(char* ptr);
 EcfEditorState* editor_core_ffi_editor_state_new(const char* initial_text, uint32_t viewport_width);
 void editor_core_ffi_editor_state_free(EcfEditorState* state);
 char* editor_core_ffi_editor_state_execute_json(EcfEditorState* state, const char* command_json);
+char* editor_core_ffi_editor_state_execute_envelope_json(EcfEditorState* state, const char* command_json);
 bool editor_core_ffi_editor_state_apply_processing_edits_json(EcfEditorState* state, const char* edits_json);
 char* editor_core_ffi_editor_state_full_state_json(const EcfEditorState* state);
 char* editor_core_ffi_editor_state_text(const EcfEditorState* state);
@@ -189,6 +190,7 @@ bool editor_core_ffi_workspace_set_active_view(EcfWorkspace* workspace, uint64_t
 char* editor_core_ffi_workspace_info_json(const EcfWorkspace* workspace);
 int32_t editor_core_ffi_workspace_get_info(const EcfWorkspace* workspace, EcfWorkspaceInfo* out_info);
 char* editor_core_ffi_workspace_execute_json(EcfWorkspace* workspace, uint64_t view_id, const char* command_json);
+char* editor_core_ffi_workspace_execute_envelope_json(EcfWorkspace* workspace, uint64_t view_id, const char* command_json);
 bool editor_core_ffi_workspace_apply_processing_edits_json(EcfWorkspace* workspace, uint64_t buffer_id, const char* edits_json);
 char* editor_core_ffi_workspace_buffer_text_json(const EcfWorkspace* workspace, uint64_t buffer_id);
 char* editor_core_ffi_workspace_viewport_state_json(EcfWorkspace* workspace, uint64_t view_id);

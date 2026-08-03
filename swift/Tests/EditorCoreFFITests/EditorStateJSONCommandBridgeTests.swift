@@ -568,4 +568,35 @@ final class EditorStateJSONCommandBridgeTests: XCTestCase {
             XCTAssertTrue(library.lastErrorMessage().contains("exactly one character"))
         }
     }
+
+    func testExecuteEnvelopeReportsSuccessParseAndCommandErrors() throws {
+        let library = try EditorCoreFFITestSupport.shared.loadLibrary()
+        let state = try EditorState(library: library, initialText: "abc\n", viewportWidth: 80)
+
+        let success = try state.executeEnvelope(#"{"kind":"edit","op":"insert_text","text":"!"}"#)
+        XCTAssertTrue(success.ok)
+        XCTAssertEqual(success.version, library.abiVersion)
+        XCTAssertNil(success.error)
+        guard case .object(let successValue)? = success.value else {
+            XCTFail("expected command result object")
+            return
+        }
+        XCTAssertEqual(successValue["kind"], .string("success"))
+
+        let parse = try state.executeEnvelope("{this is not json")
+        XCTAssertFalse(parse.ok)
+        XCTAssertNil(parse.value)
+        XCTAssertEqual(parse.version, library.abiVersion)
+        XCTAssertEqual(parse.error?.code, "parse")
+        XCTAssertEqual(parse.error?.status, .parse)
+        XCTAssertFalse(parse.error?.message.isEmpty ?? false)
+
+        let failure = try state.executeEnvelope(#"{"kind":"view","op":"set_viewport_width","width":0}"#)
+        XCTAssertFalse(failure.ok)
+        XCTAssertNil(failure.value)
+        XCTAssertEqual(failure.version, library.abiVersion)
+        XCTAssertEqual(failure.error?.code, "command_failed")
+        XCTAssertEqual(failure.error?.status, .commandFailed)
+        XCTAssertTrue(failure.error?.message.contains("command execution failed") ?? false)
+    }
 }

@@ -90,6 +90,75 @@ public struct EcfTextEdit: Equatable, Sendable {
     }
 }
 
+public indirect enum EcfJSONValue: Equatable, Sendable, Decodable {
+    case null
+    case bool(Bool)
+    case number(Double)
+    case string(String)
+    case array([EcfJSONValue])
+    case object([String: EcfJSONValue])
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() {
+            self = .null
+        } else if let value = try? container.decode(Bool.self) {
+            self = .bool(value)
+        } else if let value = try? container.decode(Double.self) {
+            self = .number(value)
+        } else if let value = try? container.decode(String.self) {
+            self = .string(value)
+        } else if let value = try? container.decode([EcfJSONValue].self) {
+            self = .array(value)
+        } else {
+            self = .object(try container.decode([String: EcfJSONValue].self))
+        }
+    }
+}
+
+public struct EcfJSONCommandEnvelope: Equatable, Sendable, Decodable {
+    public var ok: Bool
+    public var value: EcfJSONValue?
+    public var error: EcfJSONCommandError?
+    public var version: UInt32
+
+    public init(ok: Bool, value: EcfJSONValue?, error: EcfJSONCommandError?, version: UInt32) {
+        self.ok = ok
+        self.value = value
+        self.error = error
+        self.version = version
+    }
+}
+
+public struct EcfJSONCommandError: Equatable, Sendable, Decodable {
+    public var code: String
+    public var status: EcfStatus?
+    public var message: String
+
+    public init(code: String, status: EcfStatus?, message: String) {
+        self.code = code
+        self.status = status
+        self.message = message
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case code
+        case status
+        case message
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        code = try container.decodeIfPresent(String.self, forKey: .code) ?? "unknown"
+        message = try container.decodeIfPresent(String.self, forKey: .message) ?? ""
+        if let rawStatus = try container.decodeIfPresent(Int32.self, forKey: .status) {
+            status = EcfStatus(rawValue: rawStatus)
+        } else {
+            status = nil
+        }
+    }
+}
+
 public struct EcfAutoPair: Equatable, Sendable {
     public let open: String
     public let close: String

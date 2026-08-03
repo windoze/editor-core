@@ -58,6 +58,84 @@ where
     }
 }
 
+pub(crate) fn result_envelope_json_ptr<F>(f: F) -> *mut c_char
+where
+    F: FnOnce() -> Result<Value, (EcfStatus, String)>,
+{
+    let envelope = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+        Ok(Ok(value)) => {
+            clear_last_error();
+            json!({
+                "ok": true,
+                "value": value,
+                "error": null,
+                "version": ECF_ABI_VERSION,
+            })
+        }
+        Ok(Err((status, message))) => {
+            set_last_error(message.clone());
+            json!({
+                "ok": false,
+                "value": null,
+                "error": {
+                    "code": ecf_status_label(status),
+                    "status": status.code(),
+                    "message": message,
+                },
+                "version": ECF_ABI_VERSION,
+            })
+        }
+        Err(_) => {
+            let message = "panic across FFI boundary".to_string();
+            set_last_error(message.clone());
+            json!({
+                "ok": false,
+                "value": null,
+                "error": {
+                    "code": ecf_status_label(EcfStatus::Internal),
+                    "status": EcfStatus::Internal.code(),
+                    "message": message,
+                },
+                "version": ECF_ABI_VERSION,
+            })
+        }
+    };
+
+    json_ptr(envelope)
+}
+
+pub(crate) fn ecf_status_label(status: EcfStatus) -> &'static str {
+    match status {
+        EcfStatus::Ok => "ok",
+        EcfStatus::InvalidArgument => "invalid_argument",
+        EcfStatus::InvalidUtf8 => "invalid_utf8",
+        EcfStatus::NotFound => "not_found",
+        EcfStatus::BufferTooSmall => "buffer_too_small",
+        EcfStatus::Parse => "parse",
+        EcfStatus::CommandFailed => "command_failed",
+        EcfStatus::Internal => "internal",
+        EcfStatus::Unsupported => "unsupported",
+        EcfStatus::VersionMismatch => "version_mismatch",
+    }
+}
+
+pub(crate) fn require_string_status(
+    ptr: *const c_char,
+    name: &str,
+) -> Result<String, (EcfStatus, String)> {
+    if ptr.is_null() {
+        return Err((EcfStatus::InvalidArgument, format!("{name} is null")));
+    }
+    // SAFETY: checked for null; caller provides NUL-terminated string.
+    let cstr = unsafe { CStr::from_ptr(ptr) };
+    cstr.to_str().map(|s| s.to_string()).map_err(|err| {
+        (
+            EcfStatus::InvalidUtf8,
+            format!("{name} is not valid UTF-8: {err}"),
+        )
+    })
+}
+
 pub(crate) fn result_ptr<T, F>(default: *mut T, f: F) -> *mut T
 where
     F: FnOnce() -> Result<*mut T, String>,

@@ -96,6 +96,33 @@ pub extern "C" fn editor_core_ffi_editor_state_execute_json(
     })
 }
 
+/// Execute one command encoded as JSON and return a stable result envelope.
+///
+/// Success: `{ "ok": true, "value": <command result>, "error": null, "version": ECF_ABI_VERSION }`
+/// Failure: `{ "ok": false, "value": null, "error": { "code": "...", "status": N, "message": "..." }, "version": ECF_ABI_VERSION }`
+///
+/// Caller owns returned string and must free it with `editor_core_ffi_string_free`.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_editor_state_execute_envelope_json(
+    state: *mut EcfEditorState,
+    command_json: *const c_char,
+) -> *mut c_char {
+    result_envelope_json_ptr(|| {
+        let state =
+            require_mut(state, "state").map_err(|message| (EcfStatus::InvalidArgument, message))?;
+        let command_json = require_string_status(command_json, "command_json")?;
+        let command = parse_command_from_json(&command_json)
+            .map_err(|message| (EcfStatus::Parse, message))?;
+        let result = state.inner.execute(command).map_err(|err| {
+            (
+                EcfStatus::CommandFailed,
+                format!("command execution failed: {err}"),
+            )
+        })?;
+        Ok(value_command_result(result))
+    })
+}
+
 /// Apply one or more processing edits encoded as JSON.
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ffi_editor_state_apply_processing_edits_json(

@@ -43,6 +43,21 @@ public final class EditorState {
         return try ffi.takeOwnedCString(ptr, context: "editor_state_execute_json")
     }
 
+    public func executeEnvelopeJSON(_ commandJSON: String) throws -> String {
+        let ptr: UnsafeMutablePointer<CChar>? = commandJSON.withCString { jsonPtr in
+            editor_core_ffi_editor_state_execute_envelope_json(handle, jsonPtr)
+        }
+        return try ffi.takeOwnedCString(ptr, context: "editor_state_execute_envelope_json")
+    }
+
+    public func executeEnvelope(_ commandJSON: String) throws -> EcfJSONCommandEnvelope {
+        try JSON.decode(
+            EcfJSONCommandEnvelope.self,
+            from: executeEnvelopeJSON(commandJSON),
+            context: "editor_state_execute_envelope"
+        )
+    }
+
     @discardableResult
     private func executeCommandObject(_ object: [String: Any]) throws -> String {
         let data = try JSONSerialization.data(withJSONObject: object, options: [])

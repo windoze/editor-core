@@ -130,4 +130,42 @@ final class WorkspaceAdditionalTests: XCTestCase {
             XCTAssertFalse(library.lastErrorMessage().isEmpty)
         }
     }
+
+    func testWorkspaceExecuteEnvelopeReportsSuccessParseAndCommandErrors() throws {
+        let library = try EditorCoreFFITestSupport.shared.loadLibrary()
+        let ws = try Workspace(library: library)
+        let opened = try ws.openBuffer(uri: "file:///ws-envelope.txt", text: "abc\n", viewportWidth: 80)
+
+        let success = try ws.executeEnvelope(
+            viewId: opened.viewId,
+            commandJSON: #"{"kind":"edit","op":"insert_text","text":"!"}"#
+        )
+        XCTAssertTrue(success.ok)
+        XCTAssertEqual(success.version, library.abiVersion)
+        XCTAssertNil(success.error)
+        guard case .object(let successValue)? = success.value else {
+            XCTFail("expected command result object")
+            return
+        }
+        XCTAssertEqual(successValue["kind"], .string("success"))
+
+        let parse = try ws.executeEnvelope(viewId: opened.viewId, commandJSON: "{this is not json")
+        XCTAssertFalse(parse.ok)
+        XCTAssertNil(parse.value)
+        XCTAssertEqual(parse.version, library.abiVersion)
+        XCTAssertEqual(parse.error?.code, "parse")
+        XCTAssertEqual(parse.error?.status, .parse)
+        XCTAssertFalse(parse.error?.message.isEmpty ?? false)
+
+        let failure = try ws.executeEnvelope(
+            viewId: 999_999,
+            commandJSON: #"{"kind":"cursor","op":"move_to","line":0,"column":0}"#
+        )
+        XCTAssertFalse(failure.ok)
+        XCTAssertNil(failure.value)
+        XCTAssertEqual(failure.version, library.abiVersion)
+        XCTAssertEqual(failure.error?.code, "command_failed")
+        XCTAssertEqual(failure.error?.status, .commandFailed)
+        XCTAssertTrue(failure.error?.message.contains("workspace execute failed") ?? false)
+    }
 }
