@@ -1529,6 +1529,12 @@
   - 验证记录：
     - `swift test --package-path swift --filter 'Atto(Preferences|RuntimeCompatibility)Tests'`
     - `git diff --check`
+- 中间提交：`feat(app): persist scoped editor settings`
+  - 所属任务：阶段 9 的配置、偏好与 capability DTO 完整性增量；把完整 snapshot 起点推进到可持久化的 partial settings overlay，让 user/workspace/runtime 三层设置可以按优先级合并。
+  - 提交边界：新增 `AttoConfigurationSettings` partial DTO、`AttoConfigurationSettingsStore` 和 `AttoConfigurationResolution`；支持 user settings 默认路径、workspace `.attoeditor/settings.json` 路径、JSON 保存/加载、unknown future fields 兼容，以及 base → user → workspace → runtime 的合并顺序；字典型 comment/LSP server policy 会按 key 覆盖合并。该提交不改变 App 启动时的偏好加载行为，不实现 Sublime settings scope selector 规则、不接 Preferences UI、不实现迁移/损坏文件备份、不新增 Rust/FFI ABI，也不完成 core/headless capability negotiation。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'Atto(ConfigurationSettings|Preferences|RuntimeCompatibility)Tests'`
+    - `git diff --check`
 
 ## 阶段 10: ABI 版本、错误模型与兼容性门禁
 
