@@ -1,5 +1,22 @@
 # PLAN: 完整实现 SWIFT-GAPS.md
 
+## TODO
+
+| 状态 | 任务 | 阶段 |
+| --- | --- | --- |
+| 待办 | 完成 WorkspaceEdit 更深层 conflict 检测、解决语义和跨请求/跨 project 的重试归属。 | 阶段 4 |
+| 待办 | 完成 tab、split、project、session 和 LSP ownership 向 core workspace 模型的剩余迁移。 | 阶段 5 |
+| 待办 | 完成 core-owned project/LSP lifecycle schema、server ownership、恢复策略和 dashboard 产品化。 | 阶段 6 |
+| 待办 | 完成跨 tab/project 的 result panels、统一 dock/workbench 容器和刷新/过期策略。 | 阶段 7 |
+| 待办 | 完成 Sublime-like command/keymap 行为矩阵、keymap 文件兼容和 snippets/macros/build systems 边界。 | 阶段 8 |
+| 待办 | 完成 settings selector、schema-aware settings UI、runtime override 持久化、迁移和自定义 word boundary。 | 阶段 9 |
+| 待办 | 完成剩余 JSON result envelope 覆盖、错误模型统一和第三方 host capability negotiation。 | 阶段 10 |
+| 待办 | 产品化 Tree-sitter + LSP 主路线的高亮/outline/folding 合并、语言模式控制和降级体验。 | 阶段 11 |
+| 待办 | 完成 core-backed workspace search、project index、replace-in-files、recent 和 session 工作流。 | 阶段 12 |
+| 待办 | 合入首批审核过的 PNG baselines，并把 strict visual comparison 升级为默认 CI 门禁。 | 阶段 13 |
+| 待办 | 在测试保护下打磨 Sublime-like chrome、minimap、gutter、overlay、focus 和编辑交互。 | 阶段 14 |
+| 待办 | 完成最终文档审计、ABI/README 更新、过渡 API 清理和全量验证。 | 阶段 15 |
+
 本文是执行 `SWIFT-GAPS.md` 中所有剩余目标的工程计划。目标不是一次性堆功能，而是把 Swift/AppKit/Skia 产品层、Swift FFI binding、`editor-core-ui`、`editor-core-ui-ffi`、`editor-core-ffi` 与 `editor-core-*` 的能力边界逐步收敛到同一个模型中，并在每个阶段留下可验证、可回滚、可审计的提交。
 
 ## 总目标
