@@ -89,6 +89,11 @@ public enum EditorCoreUIFFIRuntimeCompatibility {
             reason: "Swift hosts can read typed diagnostics, decorations, symbols, folding ranges, and related derived snapshots."
         ),
         EditorCoreUIFFIRuntimeFeature(
+            feature: .editorUIDerivedSnapshotEnvelope,
+            name: "editor UI derived snapshot envelope",
+            reason: "Swift hosts can read per-editor derived-state snapshots through structured result envelopes."
+        ),
+        EditorCoreUIFFIRuntimeFeature(
             feature: .lspInteractiveRequests,
             name: "LSP interactive requests",
             reason: "Swift hosts can issue request/take LSP flows for interactive editor commands."

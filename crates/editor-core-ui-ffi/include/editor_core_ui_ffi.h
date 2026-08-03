@@ -172,6 +172,7 @@ uint32_t editor_core_ui_ffi_abi_version(void);
 #define ECU_FEATURE_MULTI_DOCUMENT_SEARCH_ENVELOPE (1ull << 33)
 #define ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_ROOTS_CHANGE_ENVELOPE (1ull << 34)
 #define ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_SERVERS_ENVELOPE (1ull << 35)
+#define ECU_FEATURE_EDITOR_UI_DERIVED_SNAPSHOT_ENVELOPE (1ull << 36)
 uint64_t editor_core_ui_ffi_feature_flags(void);
 char* editor_core_ui_ffi_runtime_info_json(void);
 
@@ -841,6 +842,20 @@ char* editor_core_ui_ffi_editor_ui_folding_regions_json(EditorUi* ui);
 char* editor_core_ui_ffi_editor_ui_style_intervals_json(EditorUi* ui,
                                                         uint32_t start,
                                                         uint32_t end);
+// Derived state snapshots through a stable envelope.
+//
+// `snapshot_utf8` accepts diagnostics, decorations, document_symbols, folding_regions, and
+// style_intervals. `start` / `end` are used by style_intervals and ignored by other snapshots.
+//
+// Success: {"ok":true,"snapshot":...,"range":{"start":...,"end":...},"status":"success","value":...,"error":null,"version":<abi>}
+// Failure: {"ok":false,"snapshot":...,"range":{"start":...,"end":...},"status":"error","value":null,"error":{"code":...,"status":...,"message":...},"version":<abi>}
+//
+// The returned string is owned by the caller and must be freed with
+// `editor_core_ui_ffi_string_free`.
+char* editor_core_ui_ffi_editor_ui_derived_snapshot_envelope_json(EditorUi* ui,
+                                                                  const char* snapshot_utf8,
+                                                                  uint32_t start,
+                                                                  uint32_t end);
 int32_t editor_core_ui_ffi_editor_ui_insert_tab(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_insert_backtab(EditorUi* ui);
 int32_t editor_core_ui_ffi_editor_ui_has_active_snippet_session(EditorUi* ui,

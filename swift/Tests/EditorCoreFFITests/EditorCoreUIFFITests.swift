@@ -111,6 +111,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(info.supports(.multiDocumentSearchEnvelope))
         XCTAssertTrue(info.supports(.multiDocumentWorkspaceRootsChangeEnvelope))
         XCTAssertTrue(info.supports(.multiDocumentProjectLSPServersEnvelope))
+        XCTAssertTrue(info.supports(.editorUIDerivedSnapshotEnvelope))
 
         let runtimeJSON = try JSONTestHelpers.object(try lib.runtimeInfoJSON())
         XCTAssertEqual(runtimeJSON["kind"] as? String, "editor-core-ui-ffi")
@@ -173,6 +174,12 @@ final class EditorCoreUIFFITests: XCTestCase {
                 && (feature["bit"] as? NSNumber)?.uint8Value == 35
                 && (feature["flag"] as? NSNumber)?.uint64Value
                     == EditorCoreUIFFIFeatures.multiDocumentProjectLSPServersEnvelope.rawValue
+        })
+        XCTAssertTrue(features.contains { feature in
+            feature["name"] as? String == "editor_ui_derived_snapshot_envelope"
+                && (feature["bit"] as? NSNumber)?.uint8Value == 36
+                && (feature["flag"] as? NSNumber)?.uint64Value
+                    == EditorCoreUIFFIFeatures.editorUIDerivedSnapshotEnvelope.rawValue
         })
     }
 
@@ -253,6 +260,93 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(failure.error?.code, "future_error")
         XCTAssertNil(failure.error?.status)
         XCTAssertEqual(failure.error?.message, "future failure")
+    }
+
+    func testEditorUIDerivedSnapshotEnvelopeReportsSuccessAndError() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui = try EditorUI(library: lib, initialText: "fn main() {}\n", viewportWidthCells: 80)
+
+        let diagnostics = try ui.derivedSnapshotEnvelope(snapshot: .diagnostics)
+        XCTAssertTrue(diagnostics.ok)
+        XCTAssertEqual(diagnostics.version, lib.abiVersion)
+        XCTAssertEqual(diagnostics.snapshot, EcuDerivedSnapshotName.diagnostics.rawValue)
+        XCTAssertEqual(diagnostics.statusKind, .success)
+        XCTAssertEqual(diagnostics.range, EcuDerivedSnapshotEnvelopeRange(start: 0, end: 0))
+        XCTAssertNotNil(diagnostics.value)
+        XCTAssertNil(diagnostics.error)
+
+        let styles = try ui.derivedSnapshotEnvelope(snapshot: .styleIntervals, start: 0, end: 4)
+        XCTAssertTrue(styles.ok)
+        XCTAssertEqual(styles.snapshot, EcuDerivedSnapshotName.styleIntervals.rawValue)
+        XCTAssertEqual(styles.statusKind, .success)
+        XCTAssertEqual(styles.range, EcuDerivedSnapshotEnvelopeRange(start: 0, end: 4))
+        XCTAssertNotNil(styles.value)
+
+        let unknown = try ui.derivedSnapshotEnvelope(snapshotRawValue: "future_snapshot", start: 1, end: 2)
+        XCTAssertFalse(unknown.ok)
+        XCTAssertEqual(unknown.version, lib.abiVersion)
+        XCTAssertEqual(unknown.snapshot, "future_snapshot")
+        XCTAssertEqual(unknown.statusKind, .error)
+        XCTAssertEqual(unknown.range, EcuDerivedSnapshotEnvelopeRange(start: 1, end: 2))
+        XCTAssertEqual(unknown.value, .null)
+        XCTAssertEqual(unknown.error?.code, "invalid_argument")
+        XCTAssertEqual(unknown.error?.status, .invalidArgument)
+        XCTAssertEqual(unknown.error?.message, #"unknown derived snapshot "future_snapshot""#)
+    }
+
+    func testEditorUIDerivedSnapshotEnvelopeDecodesFutureFieldsAndUnknownStatus() throws {
+        let successJSON = """
+        {
+          "ok": true,
+          "snapshot": "future_snapshot",
+          "range": { "start": 3, "end": 7, "futureRangeField": true },
+          "status": "future_status",
+          "value": {
+            "items": [],
+            "future": true
+          },
+          "error": null,
+          "version": 9,
+          "futureTopLevel": true
+        }
+        """
+        let success = try JSONTestHelpers.decode(EcuDerivedSnapshotEnvelope.self, from: successJSON)
+        XCTAssertTrue(success.ok)
+        XCTAssertEqual(success.snapshot, "future_snapshot")
+        XCTAssertEqual(success.range, EcuDerivedSnapshotEnvelopeRange(start: 3, end: 7))
+        XCTAssertEqual(success.statusKind, .unknown("future_status"))
+        XCTAssertNil(success.error)
+        guard case .object(let value)? = success.value else {
+            XCTFail("expected future derived snapshot value")
+            return
+        }
+        XCTAssertEqual(value["items"], .array([]))
+        XCTAssertEqual(value["future"], .bool(true))
+
+        let failureJSON = """
+        {
+          "ok": false,
+          "snapshot": "future_snapshot",
+          "range": { "start": 0, "end": 0 },
+          "status": "error",
+          "value": null,
+          "error": {
+            "code": "future_error",
+            "status": 654321,
+            "message": "future failure",
+            "futureErrorMetadata": true
+          },
+          "version": 10
+        }
+        """
+        let failure = try JSONTestHelpers.decode(EcuDerivedSnapshotEnvelope.self, from: failureJSON)
+        XCTAssertFalse(failure.ok)
+        XCTAssertEqual(failure.snapshot, "future_snapshot")
+        XCTAssertEqual(failure.statusKind, .error)
+        XCTAssertEqual(failure.value, .null)
+        XCTAssertEqual(failure.error?.code, "future_error")
+        XCTAssertEqual(failure.error?.message, "future failure")
+        XCTAssertNil(failure.error?.status)
     }
 
     func testLSPTakeLastResultEnvelopeReportsEmptyAndError() throws {

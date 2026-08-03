@@ -43,6 +43,7 @@ final class EditorCoreUIFFIRuntimeCompatibilityTests: XCTestCase {
         XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .multiDocumentUI })
         XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .multiDocumentSnapshotEnvelope })
         XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .jsonCommandEnvelope })
+        XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .editorUIDerivedSnapshotEnvelope })
         XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .lspResultEnvelope })
         XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .eventStreamEnvelope })
         XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .multiDocumentSpecialEventStreamEnvelope })

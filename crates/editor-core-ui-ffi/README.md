@@ -27,7 +27,7 @@ char* editor_core_ui_ffi_runtime_info_json(void);
   "kind": "editor-core-ui-ffi",
   "abi_version": 1,
   "version": "0.5.0",
-  "feature_flags": 68719476735,
+  "feature_flags": 137438953471,
   "features": [
     { "bit": 0, "flag": 1, "name": "json_command_dispatch", "description": "..." }
   ]
@@ -630,3 +630,70 @@ Error:
 The returned string is owned by the caller and must be freed with
 `editor_core_ui_ffi_string_free`. Availability is advertised by
 `ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_SERVERS_ENVELOPE`.
+
+## EditorUi Derived Snapshot Envelope
+
+The legacy per-editor derived-state snapshot APIs remain available:
+
+```c
+char* editor_core_ui_ffi_editor_ui_diagnostics_json(EditorUi* ui);
+char* editor_core_ui_ffi_editor_ui_decorations_json(EditorUi* ui);
+char* editor_core_ui_ffi_editor_ui_document_symbols_json(EditorUi* ui);
+char* editor_core_ui_ffi_editor_ui_folding_regions_json(EditorUi* ui);
+char* editor_core_ui_ffi_editor_ui_style_intervals_json(
+    EditorUi* ui,
+    uint32_t start,
+    uint32_t end
+);
+```
+
+Hosts that want the stage-10 structured error model can call the envelope entry point:
+
+```c
+char* editor_core_ui_ffi_editor_ui_derived_snapshot_envelope_json(
+    EditorUi* ui,
+    const char* snapshot_utf8,
+    uint32_t start,
+    uint32_t end
+);
+```
+
+`snapshot_utf8` accepts `diagnostics`, `decorations`, `document_symbols`,
+`folding_regions`, and `style_intervals`. `start` / `end` are used by
+`style_intervals` and ignored by the other snapshot names.
+
+Success:
+
+```json
+{
+  "ok": true,
+  "snapshot": "diagnostics",
+  "range": { "start": 0, "end": 0 },
+  "status": "success",
+  "value": { "diagnostics": [] },
+  "error": null,
+  "version": 1
+}
+```
+
+Failure:
+
+```json
+{
+  "ok": false,
+  "snapshot": "future_snapshot",
+  "range": { "start": 0, "end": 0 },
+  "status": "error",
+  "value": null,
+  "error": {
+    "code": "invalid_argument",
+    "status": 1,
+    "message": "unknown derived snapshot \"future_snapshot\""
+  },
+  "version": 1
+}
+```
+
+The returned string is owned by the caller and must be freed with
+`editor_core_ui_ffi_string_free`. Availability is advertised by
+`ECU_FEATURE_EDITOR_UI_DERIVED_SNAPSHOT_ENVELOPE`.

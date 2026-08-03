@@ -51,6 +51,7 @@ final class AttoRuntimeCompatibilityTests: XCTestCase {
         XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .multiDocumentLSPRequestEvents })
         XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .lspRequestCancelTimeoutEvents })
         XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .lspSemanticTokensRequests })
+        XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .editorUIDerivedSnapshotEnvelope })
         XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .editorUIStateEvents })
         XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .multiDocumentStateEvents })
         XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .multiDocumentSnapshotEnvelope })
@@ -94,6 +95,7 @@ final class AttoRuntimeCompatibilityTests: XCTestCase {
                 EditorCoreUIFFIFeatures.multiDocumentLSPRequestEvents.rawValue,
                 EditorCoreUIFFIFeatures.lspRequestCancelTimeoutEvents.rawValue,
                 EditorCoreUIFFIFeatures.lspSemanticTokensRequests.rawValue,
+                EditorCoreUIFFIFeatures.editorUIDerivedSnapshotEnvelope.rawValue,
                 EditorCoreUIFFIFeatures.editorUIStateEvents.rawValue,
                 EditorCoreUIFFIFeatures.multiDocumentStateEvents.rawValue,
                 EditorCoreUIFFIFeatures.multiDocumentSnapshotEnvelope.rawValue,

@@ -145,6 +145,10 @@ fn ffi_feature_flags_include_semantic_tokens_requests() {
             & ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_SERVERS_ENVELOPE,
         0
     );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags() & ECU_FEATURE_EDITOR_UI_DERIVED_SNAPSHOT_ENVELOPE,
+        0
+    );
 }
 
 #[test]
@@ -214,6 +218,11 @@ fn ffi_runtime_info_json_reports_version_and_feature_descriptors() {
             && feature["flag"] == ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_SERVERS_ENVELOPE
     }));
     assert!(features.iter().any(|feature| {
+        feature["name"] == "editor_ui_derived_snapshot_envelope"
+            && feature["bit"] == 36
+            && feature["flag"] == ECU_FEATURE_EDITOR_UI_DERIVED_SNAPSHOT_ENVELOPE
+    }));
+    assert!(features.iter().any(|feature| {
         feature["name"] == "multi_document_workspace_edit_transaction"
             && feature["flag"].as_u64().unwrap()
                 & ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION
@@ -264,6 +273,72 @@ fn ffi_editor_ui_execute_command_envelope_json_reports_success_and_errors() {
     assert_eq!(null_arg["error"]["code"], "invalid_argument");
     assert_eq!(null_arg["error"]["status"], ECU_ERR_INVALID_ARGUMENT);
     assert_eq!(null_arg["error"]["message"], "command_json_utf8 is null");
+
+    unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
+}
+
+#[test]
+fn ffi_editor_ui_derived_snapshot_envelope_json_reports_success_and_errors() {
+    let initial = CString::new("fn main() {}\n").unwrap();
+    let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+    assert!(!ui.is_null());
+
+    let diagnostics = CString::new("diagnostics").unwrap();
+    let ok_json = take_owned_string(editor_core_ui_ffi_editor_ui_derived_snapshot_envelope_json(
+        ui,
+        diagnostics.as_ptr(),
+        0,
+        0,
+    ));
+    let ok: serde_json::Value = serde_json::from_str(&ok_json).unwrap();
+    assert_eq!(ok["ok"], true);
+    assert_eq!(ok["snapshot"], "diagnostics");
+    assert_eq!(ok["status"], "success");
+    assert_eq!(ok["range"]["start"], 0);
+    assert_eq!(ok["range"]["end"], 0);
+    assert_eq!(ok["version"], ECU_ABI_VERSION);
+    assert!(!ok["value"].is_null());
+    assert!(ok["error"].is_null());
+
+    let styles = CString::new("style_intervals").unwrap();
+    let style_json = take_owned_string(
+        editor_core_ui_ffi_editor_ui_derived_snapshot_envelope_json(ui, styles.as_ptr(), 0, 4),
+    );
+    let style: serde_json::Value = serde_json::from_str(&style_json).unwrap();
+    assert_eq!(style["ok"], true);
+    assert_eq!(style["snapshot"], "style_intervals");
+    assert_eq!(style["status"], "success");
+    assert_eq!(style["range"]["start"], 0);
+    assert_eq!(style["range"]["end"], 4);
+    assert!(!style["value"].is_null());
+
+    let unknown = CString::new("future_snapshot").unwrap();
+    let error_json = take_owned_string(
+        editor_core_ui_ffi_editor_ui_derived_snapshot_envelope_json(ui, unknown.as_ptr(), 1, 2),
+    );
+    let error: serde_json::Value = serde_json::from_str(&error_json).unwrap();
+    assert_eq!(error["ok"], false);
+    assert_eq!(error["snapshot"], "future_snapshot");
+    assert_eq!(error["status"], "error");
+    assert_eq!(error["range"]["start"], 1);
+    assert_eq!(error["range"]["end"], 2);
+    assert_eq!(error["value"], serde_json::Value::Null);
+    assert_eq!(error["error"]["code"], "invalid_argument");
+    assert_eq!(error["error"]["status"], ECU_ERR_INVALID_ARGUMENT);
+    assert_eq!(
+        error["error"]["message"],
+        "unknown derived snapshot \"future_snapshot\""
+    );
+    assert_eq!(error["version"], ECU_ABI_VERSION);
+
+    let null_snapshot_json = take_owned_string(
+        editor_core_ui_ffi_editor_ui_derived_snapshot_envelope_json(ui, ptr::null(), 0, 0),
+    );
+    let null_snapshot: serde_json::Value = serde_json::from_str(&null_snapshot_json).unwrap();
+    assert_eq!(null_snapshot["ok"], false);
+    assert!(null_snapshot["snapshot"].is_null());
+    assert_eq!(null_snapshot["error"]["code"], "invalid_argument");
+    assert_eq!(null_snapshot["error"]["message"], "snapshot_utf8 is null");
 
     unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
 }

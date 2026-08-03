@@ -133,6 +133,11 @@ struct AttoRuntimeCompatibility {
             reason: "Semantic highlighting refresh can consume typed semantic tokens full/delta/range payloads; Swift falls back to automatic processing when unavailable."
         ),
         RuntimeFeature(
+            feature: .editorUIDerivedSnapshotEnvelope,
+            name: "editor UI derived snapshot envelope",
+            reason: "Active editor diagnostics, decorations, symbols, folding and style snapshots can use structured envelopes; Swift falls back to legacy typed snapshot wrappers when unavailable."
+        ),
+        RuntimeFeature(
             feature: .editorUIStateEvents,
             name: "Editor UI state events",
             reason: "Host UI can drain per-editor state changes through one cursor; Swift falls back to family-specific event streams when unavailable."

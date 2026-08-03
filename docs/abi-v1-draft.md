@@ -302,7 +302,8 @@ Guidelines:
   `ECU_FEATURE_MULTI_DOCUMENT_SNAPSHOT_ENVELOPE` /
   `ECU_FEATURE_MULTI_DOCUMENT_SEARCH_ENVELOPE` /
   `ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_ROOTS_CHANGE_ENVELOPE` /
-  `ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_SERVERS_ENVELOPE` mark availability of the corresponding
+  `ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_SERVERS_ENVELOPE` /
+  `ECU_FEATURE_EDITOR_UI_DERIVED_SNAPSHOT_ENVELOPE` mark availability of the corresponding
   JSON envelope symbols and stream/result coverage.
 - The current cycle is still pre-v1; breaking fixed-width cleanup is allowed before tagging v1, and `editor_core_ffi.h` is the authoritative declaration of the current C surface.
 - Compatible additions:
