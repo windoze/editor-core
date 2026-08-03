@@ -168,7 +168,7 @@ pub use commands::{
     CursorCommand, EditCommand, EditorCore, ExpandSelectionDirection, ExpandSelectionUnit,
     Position, Selection, SelectionDirection, StyleCommand, TabKeyBehavior, TextEditSpec,
     UndoHistoryRestoreError, UndoHistorySelectionSet, UndoHistorySnapshot, UndoHistoryStep,
-    UndoHistoryTextEdit, ViewCommand,
+    UndoHistoryTextEdit, ViewCommand, WordBoundaryConfig,
 };
 pub use decorations::{
     Decoration, DecorationKind, DecorationLayerId, DecorationPlacement, DecorationRange,

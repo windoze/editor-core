@@ -69,6 +69,7 @@ final class AttoPreferences: NSObject {
         static let findCaseSensitive = "AttoEditor.preferences.findCaseSensitive"
         static let findWholeWord = "AttoEditor.preferences.findWholeWord"
         static let findRegex = "AttoEditor.preferences.findRegex"
+        static let wordBoundaryAsciiBoundaryChars = "AttoEditor.preferences.wordBoundaryAsciiBoundaryChars"
         static let findInFilesDefaultScope = "AttoEditor.preferences.findInFilesDefaultScope"
         static let workspaceSearchIncludeGlobs = "AttoEditor.preferences.workspaceSearchIncludeGlobs"
         static let workspaceSearchExcludeGlobs = "AttoEditor.preferences.workspaceSearchExcludeGlobs"
@@ -312,6 +313,14 @@ final class AttoPreferences: NSObject {
         defaults.object(forKey: Keys.findRegex) as? Bool
     }
 
+    var storedWordBoundaryAsciiBoundaryChars: String? {
+        Self.normalizedOptionalString(defaults.string(forKey: Keys.wordBoundaryAsciiBoundaryChars))
+    }
+
+    var effectiveWordBoundaryAsciiBoundaryChars: String? {
+        storedWordBoundaryAsciiBoundaryChars
+    }
+
     var storedFindInFilesDefaultScope: String? {
         Self.normalizeFindInFilesDefaultScope(defaults.string(forKey: Keys.findInFilesDefaultScope))
     }
@@ -450,6 +459,15 @@ final class AttoPreferences: NSObject {
 
     func setFindRegex(_ enabled: Bool) {
         defaults.set(enabled, forKey: Keys.findRegex)
+        postDidChange()
+    }
+
+    func setWordBoundaryAsciiBoundaryChars(_ boundaryChars: String?) {
+        if let value = Self.normalizedOptionalString(boundaryChars) {
+            defaults.set(value, forKey: Keys.wordBoundaryAsciiBoundaryChars)
+        } else {
+            defaults.removeObject(forKey: Keys.wordBoundaryAsciiBoundaryChars)
+        }
         postDidChange()
     }
 
@@ -723,6 +741,10 @@ final class AttoPreferences: NSObject {
     }
 
     // MARK: - Normalization
+
+    private static func normalizedOptionalString(_ raw: String?) -> String? {
+        raw?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+    }
 
     private static func normalizeFontFaces(_ faces: [String]) -> [String] {
         var out: [String] = []

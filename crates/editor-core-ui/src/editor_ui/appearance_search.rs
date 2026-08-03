@@ -129,17 +129,29 @@ impl EditorUi {
             return Ok(0);
         };
 
-        let text = {
-            let doc = self.lock_doc();
-            doc.ws
-                .buffer_text(self.buffer_id)
-                .map_err(|e| UiError::Processor(format!("{e:?}")))?
-        };
-        let matches = editor_core::search::find_all(&text, q.query.as_str(), q.options)
-            .map_err(|e| UiError::Processor(e.to_string()))?;
+        let matches = self.search_matches(q.query.as_str(), q.options)?;
         let ranges: Vec<(usize, usize)> = matches.iter().map(|m| (m.start, m.end)).collect();
         self.set_match_highlights_offsets(&ranges);
         Ok(matches.len())
+    }
+
+    /// Find all matches in this editor view using its configured word-boundary semantics.
+    pub fn search_matches(
+        &self,
+        query: &str,
+        options: SearchOptions,
+    ) -> Result<Vec<editor_core::SearchMatch>, UiError> {
+        let doc = self.lock_doc();
+        let text = doc
+            .ws
+            .buffer_text(self.buffer_id)
+            .map_err(|e| UiError::Processor(format!("{e:?}")))?;
+        let word_boundary = doc
+            .ws
+            .word_boundary_config_for_view(self.view_id)
+            .map_err(|e| UiError::Processor(format!("{e:?}")))?;
+        editor_core::search::find_all_with_word_boundary(&text, query, options, word_boundary)
+            .map_err(|e| UiError::Processor(e.to_string()))
     }
 
     /// Find next match and select it (primary selection only).

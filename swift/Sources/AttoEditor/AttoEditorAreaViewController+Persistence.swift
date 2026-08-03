@@ -75,6 +75,7 @@ extension AttoEditorAreaViewController {
         _ = try editCore.editor.setWrapIndent(configuredWrapIndentForApplying(snapshot))
         try editCore.editor.setAutoPairsEnabled(configuredAutoPairsEnabledForApplying(snapshot))
         try editCore.editor.setLspOnTypeFormattingEnabled(configuredFormatOnTypeEnabledForApplying(snapshot))
+        try applyWordBoundaryConfiguration(to: editCore.editor, configurationSnapshot: snapshot)
         try editCore.editor.setBracketMatchHighlightsEnabled(true)
     }
 

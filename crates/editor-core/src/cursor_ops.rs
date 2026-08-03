@@ -67,7 +67,7 @@ impl WordBoundaryConfig {
         !self.ascii_is_boundary[ch as usize]
     }
 
-    pub(super) fn is_word_token_char(&self, ch: char) -> bool {
+    pub(crate) fn is_word_token_char(&self, ch: char) -> bool {
         if ch.is_whitespace() {
             return false;
         }
@@ -664,8 +664,14 @@ impl CommandExecutor {
         let mut found: Option<SearchMatch> = None;
 
         loop {
-            let next = find_next(&text, &query, options, search_from)
-                .map_err(|err| CommandError::Other(err.to_string()))?;
+            let next = find_next_with_word_boundary(
+                &text,
+                &query,
+                options,
+                search_from,
+                self.editor.word_boundary_config(),
+            )
+            .map_err(|err| CommandError::Other(err.to_string()))?;
 
             let Some(m) = next else {
                 if wrapped {
@@ -729,7 +735,8 @@ impl CommandExecutor {
 
         let text = self.editor.get_text();
         let matches =
-            find_all(&text, &query, options).map_err(|err| CommandError::Other(err.to_string()))?;
+            find_all_with_word_boundary(&text, &query, options, self.editor.word_boundary_config())
+                .map_err(|err| CommandError::Other(err.to_string()))?;
 
         if matches.is_empty() {
             return Ok(CommandResult::Success);

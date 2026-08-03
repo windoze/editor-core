@@ -16,7 +16,7 @@ final class AttoEditorPreferencesApplicationTests: XCTestCase {
         }
 
         let fileURL = workspaceRootURL.appendingPathComponent("wrap.txt")
-        try "abcdefghijklmnop\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        try "foo-bar bar abcdefghijklmnop\n".write(to: fileURL, atomically: true, encoding: .utf8)
         let sourcesURL = workspaceRootURL.appendingPathComponent("Sources", isDirectory: true)
         let vendorURL = workspaceRootURL.appendingPathComponent("Vendor", isDirectory: true)
         try FileManager.default.createDirectory(at: sourcesURL, withIntermediateDirectories: true)
@@ -51,7 +51,8 @@ final class AttoEditorPreferencesApplicationTests: XCTestCase {
                 wrapIndent: "fixed_cells:2",
                 findCaseSensitive: false,
                 findWholeWord: true,
-                findRegex: true
+                findRegex: true,
+                wordBoundaryAsciiBoundaryChars: "."
             ),
             rendering: AttoRenderingPreferenceSettings(themeName: "Atto Dark"),
             workspace: AttoWorkspacePreferenceSettings(
@@ -79,6 +80,7 @@ final class AttoEditorPreferencesApplicationTests: XCTestCase {
         XCTAssertFalse(snapshot.editor.findCaseSensitive)
         XCTAssertTrue(snapshot.editor.findWholeWord)
         XCTAssertTrue(snapshot.editor.findRegex)
+        XCTAssertEqual(snapshot.editor.wordBoundaryAsciiBoundaryChars, ".")
         XCTAssertEqual(snapshot.rendering.themeName, "Atto Dark")
         XCTAssertTrue(snapshot.rendering.fontLigaturesEnabled)
         XCTAssertEqual(snapshot.workspace.rootPath, workspaceRootURL.path)
@@ -102,6 +104,13 @@ final class AttoEditorPreferencesApplicationTests: XCTestCase {
         try editorView.editor.setViewportWidthCells(4)
         XCTAssertFalse(try viewportLines(editorView.editor).contains { ($0["is_wrapped_part"] as? Bool) == true })
         XCTAssertEqual(editorView.fontSizePoints, CGFloat(19))
+        XCTAssertEqual(
+            try editorView.editor.setSearchQuery(
+                "bar",
+                options: EcuSearchOptions(caseSensitive: true, wholeWord: true)
+            ),
+            1
+        )
 
         try settingsStore.saveWorkspaceSettings(AttoConfigurationSettings(
             editor: AttoEditorPreferenceSettings(wrapMode: "char"),
@@ -114,6 +123,7 @@ final class AttoEditorPreferencesApplicationTests: XCTestCase {
         XCTAssertTrue(snapshot.editor.findCaseSensitive)
         XCTAssertFalse(snapshot.editor.findWholeWord)
         XCTAssertFalse(snapshot.editor.findRegex)
+        XCTAssertNil(snapshot.editor.wordBoundaryAsciiBoundaryChars)
         XCTAssertEqual(snapshot.workspace.findInFilesDefaultScope, "opened_files")
         XCTAssertEqual(snapshot.workspace.workspaceSearchIncludeGlobs, [])
         XCTAssertEqual(snapshot.workspace.workspaceSearchExcludeGlobs, [])
@@ -129,6 +139,13 @@ final class AttoEditorPreferencesApplicationTests: XCTestCase {
 
         try editorView.editor.setViewportWidthCells(4)
         XCTAssertTrue(try viewportLines(editorView.editor).contains { ($0["is_wrapped_part"] as? Bool) == true })
+        XCTAssertEqual(
+            try editorView.editor.setSearchQuery(
+                "bar",
+                options: EcuSearchOptions(caseSensitive: true, wholeWord: true)
+            ),
+            2
+        )
     }
 
     func testDocumentScopedConfigurationSettingsApplyPerOpenTabAndReapply() throws {

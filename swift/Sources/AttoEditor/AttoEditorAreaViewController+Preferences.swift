@@ -88,6 +88,12 @@ extension AttoEditorAreaViewController {
             NSLog("AttoEditor: setWrapIndent failed: %@", String(describing: error))
         }
 
+        do {
+            try applyWordBoundaryConfiguration(to: editCore.editor, configurationSnapshot: snapshot)
+        } catch {
+            NSLog("AttoEditor: applyWordBoundaryConfiguration failed: %@", String(describing: error))
+        }
+
         editCore.editorView.fontSizePoints = CGFloat(configuredFontSizePointsForApplying(snapshot))
     }
 
@@ -162,6 +168,21 @@ extension AttoEditorAreaViewController {
             wholeWord: snapshot.editor.findWholeWord,
             regex: snapshot.editor.findRegex
         )
+    }
+
+    func configuredWordBoundaryAsciiBoundaryCharsForApplying(_ snapshot: AttoConfigurationSnapshot? = nil) -> String? {
+        (snapshot ?? configurationSnapshot).editor.wordBoundaryAsciiBoundaryChars
+    }
+
+    func applyWordBoundaryConfiguration(
+        to editor: EditorUI,
+        configurationSnapshot snapshot: AttoConfigurationSnapshot
+    ) throws {
+        if let boundaryChars = configuredWordBoundaryAsciiBoundaryCharsForApplying(snapshot) {
+            try editor.setWordBoundaryAsciiBoundaryChars(boundaryChars)
+        } else {
+            try editor.resetWordBoundaryDefaults()
+        }
     }
 
     func applyFindPreferences() {

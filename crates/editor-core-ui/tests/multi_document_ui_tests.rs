@@ -186,6 +186,33 @@ fn multi_document_ui_can_search_across_tabs() {
 }
 
 #[test]
+fn multi_document_ui_search_uses_tab_word_boundary_config() {
+    let mut ui = MultiDocumentEditorUi::new();
+    let tab = ui.open_tab("foo-bar bar\n", 80);
+    let options = SearchOptions {
+        case_sensitive: true,
+        whole_word: true,
+        regex: false,
+    };
+
+    let default_results = ui.search_all_tabs("bar", options).unwrap();
+    assert_eq!(default_results.len(), 1);
+    assert_eq!(default_results[0].tab_id, tab);
+    assert_eq!(default_results[0].matches.len(), 2);
+
+    ui.editor_for_tab_mut(tab)
+        .unwrap()
+        .set_word_boundary_ascii_boundary_chars(".")
+        .unwrap();
+
+    let configured_results = ui.search_all_tabs("bar", options).unwrap();
+    assert_eq!(configured_results.len(), 1);
+    assert_eq!(configured_results[0].tab_id, tab);
+    assert_eq!(configured_results[0].matches.len(), 1);
+    assert_eq!(configured_results[0].matches[0].start, 8);
+}
+
+#[test]
 fn multi_document_ui_exports_workspace_outline_snapshot() {
     let mut ui = MultiDocumentEditorUi::new();
     let app = ui.open_tab("struct App {\n  func run() {}\n}\n", 80);

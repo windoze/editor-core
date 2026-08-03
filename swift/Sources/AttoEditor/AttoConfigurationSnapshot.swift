@@ -42,6 +42,7 @@ struct AttoEditorPreferenceSnapshot: Codable, Equatable {
     var findCaseSensitive: Bool
     var findWholeWord: Bool
     var findRegex: Bool
+    var wordBoundaryAsciiBoundaryChars: String?
 
     init(
         fontFamilies: [String],
@@ -51,7 +52,8 @@ struct AttoEditorPreferenceSnapshot: Codable, Equatable {
         wrapIndent: String,
         findCaseSensitive: Bool = true,
         findWholeWord: Bool = false,
-        findRegex: Bool = false
+        findRegex: Bool = false,
+        wordBoundaryAsciiBoundaryChars: String? = nil
     ) {
         self.fontFamilies = fontFamilies
         self.fontSizePoints = fontSizePoints
@@ -61,6 +63,7 @@ struct AttoEditorPreferenceSnapshot: Codable, Equatable {
         self.findCaseSensitive = findCaseSensitive
         self.findWholeWord = findWholeWord
         self.findRegex = findRegex
+        self.wordBoundaryAsciiBoundaryChars = wordBoundaryAsciiBoundaryChars
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -72,6 +75,7 @@ struct AttoEditorPreferenceSnapshot: Codable, Equatable {
         case findCaseSensitive = "find_case_sensitive"
         case findWholeWord = "find_whole_word"
         case findRegex = "find_regex"
+        case wordBoundaryAsciiBoundaryChars = "word_boundary_ascii_boundary_chars"
     }
 
     init(from decoder: Decoder) throws {
@@ -84,7 +88,8 @@ struct AttoEditorPreferenceSnapshot: Codable, Equatable {
             wrapIndent: try container.decode(String.self, forKey: .wrapIndent),
             findCaseSensitive: try container.decodeIfPresent(Bool.self, forKey: .findCaseSensitive) ?? true,
             findWholeWord: try container.decodeIfPresent(Bool.self, forKey: .findWholeWord) ?? false,
-            findRegex: try container.decodeIfPresent(Bool.self, forKey: .findRegex) ?? false
+            findRegex: try container.decodeIfPresent(Bool.self, forKey: .findRegex) ?? false,
+            wordBoundaryAsciiBoundaryChars: try container.decodeIfPresent(String.self, forKey: .wordBoundaryAsciiBoundaryChars)
         )
     }
 }
@@ -451,7 +456,8 @@ extension AttoPreferences {
                 wrapIndent: Self.wrapIndentStorageString(effectiveWrapIndent),
                 findCaseSensitive: effectiveFindCaseSensitive,
                 findWholeWord: effectiveFindWholeWord,
-                findRegex: effectiveFindRegex
+                findRegex: effectiveFindRegex,
+                wordBoundaryAsciiBoundaryChars: effectiveWordBoundaryAsciiBoundaryChars
             ),
             rendering: AttoRenderingPreferenceSnapshot(
                 themeName: effectiveThemeName,

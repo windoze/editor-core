@@ -23,7 +23,7 @@ use crate::delta::TextDelta;
 use crate::diagnostics::Diagnostic;
 use crate::intervals::{FoldRegion, Interval, StyleLayerId};
 use crate::processing::ProcessingEdit;
-use crate::search::{SearchError, SearchMatch, SearchOptions, find_all};
+use crate::search::{SearchError, SearchMatch, SearchOptions, find_all_with_word_boundary};
 use crate::selection_set::selection_direction;
 use crate::snippets::SnippetSession;
 use crate::state::CursorState;
@@ -31,7 +31,7 @@ use crate::symbols::DocumentOutline;
 use crate::{AnchorBias, TextAnchor};
 use crate::{
     IndentationConfig, LineEnding, LineIndex, Position, Selection, SelectionDirection,
-    TabKeyBehavior, ViewCommand,
+    TabKeyBehavior, ViewCommand, WordBoundaryConfig,
 };
 use crate::{StateChange, StateChangeCallback, StateChangeType, WrapIndent, WrapMode};
 use std::collections::{BTreeMap, HashMap};
@@ -1114,6 +1114,18 @@ impl Workspace {
             .get(&id)
             .map(|v| v.core.auto_pairs.clone())
             .ok_or(WorkspaceError::ViewNotFound(id))
+    }
+
+    /// Get the current word-boundary configuration for a view's underlying buffer.
+    pub fn word_boundary_config_for_view(
+        &self,
+        id: ViewId,
+    ) -> Result<&WordBoundaryConfig, WorkspaceError> {
+        let buffer_id = self.buffer_id_for_view(id)?;
+        let Some(buffer) = self.buffers.get(&buffer_id) else {
+            return Err(WorkspaceError::BufferNotFound(buffer_id));
+        };
+        Ok(buffer.executor.editor().word_boundary_config())
     }
 
     /// Get a view's normalized cursor/selection snapshot.
@@ -2409,7 +2421,12 @@ impl Workspace {
 
         for (id, entry) in &self.buffers {
             let text = entry.executor.editor().get_text();
-            let matches = find_all(&text, query, options)?;
+            let matches = find_all_with_word_boundary(
+                &text,
+                query,
+                options,
+                entry.executor.editor().word_boundary_config(),
+            )?;
             if matches.is_empty() {
                 continue;
             }

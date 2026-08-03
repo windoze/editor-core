@@ -3559,6 +3559,24 @@ fn ui_word_boundary_config_affects_select_word() {
 }
 
 #[test]
+fn ui_word_boundary_config_affects_whole_word_search_highlights() {
+    let mut ui = EditorUi::new("foo-bar bar", 80);
+    let options = SearchOptions {
+        case_sensitive: true,
+        whole_word: true,
+        regex: false,
+    };
+
+    assert_eq!(ui.search_set_query("bar", options).unwrap(), 2);
+
+    ui.set_word_boundary_ascii_boundary_chars(".").unwrap();
+    assert_eq!(ui.search_set_query("bar", options).unwrap(), 1);
+
+    ui.reset_word_boundary_defaults().unwrap();
+    assert_eq!(ui.search_set_query("bar", options).unwrap(), 2);
+}
+
+#[test]
 fn ui_marked_text_replace_and_commit() {
     let mut ui = EditorUi::new("", 80);
     ui.set_marked_text("你").unwrap();

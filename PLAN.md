@@ -9,7 +9,7 @@
 | 待办 | 完成 core-owned project/LSP lifecycle schema、server ownership、恢复策略和 dashboard 产品化。 | 阶段 6 |
 | 待办 | 完成跨 tab/project 的 result panels、统一 dock/workbench 容器和刷新/过期策略。 | 阶段 7 |
 | 待办 | 完成 Sublime-like command/keymap 行为矩阵、keymap 文件兼容和 snippets/macros/build systems 边界。 | 阶段 8 |
-| 待办 | 完成 settings selector、schema-aware settings UI、runtime override 持久化、迁移和自定义 word boundary。 | 阶段 9 |
+| 待办 | 完成 settings selector、schema-aware settings UI、runtime override 持久化和跨 schema 字段语义迁移。 | 阶段 9 |
 | 待办 | 完成剩余 JSON result envelope 覆盖、错误模型统一和第三方 host capability negotiation。 | 阶段 10 |
 | 待办 | 产品化 Tree-sitter + LSP 主路线的高亮/outline/folding 合并、语言模式控制和降级体验。 | 阶段 11 |
 | 待办 | 完成 core-backed workspace search、project index、replace-in-files、recent 和 session 工作流。 | 阶段 12 |
@@ -1786,6 +1786,19 @@
   - 验证记录：
     - `swift test --package-path swift --filter AttoEditorCommandTests/testSettingsCommandsCreateAndOpenSettingsFiles`
     - `swift test --package-path swift --filter AttoEditorCommandTests/testMainMenuItemsUseCommandIDsAndResolvedKeymap`
+    - `git diff --check`
+- 中间提交：`feat(app): configure search word boundaries`
+  - 所属任务：阶段 9 的配置、偏好与 capability DTO 完整性增量；把已有 Rust/Swift FFI word-boundary 配置接入 Swift settings snapshot，并让 whole-word search/find/replace/highlight 路径消费同一套 editor word-boundary 语义。
+  - 提交边界：`editor-core::search` 保留既有默认 free function 行为，同时新增带 `WordBoundaryConfig` 的 whole-word 搜索路径；`CommandExecutor` find/replace/add occurrence、workspace open-buffer search、`EditorUi` search highlights 和 `MultiDocumentEditorUi.search_all_tabs` 改为使用当前 editor/view 的 word-boundary 配置；Swift `AttoConfigurationSnapshot` / `AttoConfigurationSettings` / `AttoPreferences` 新增 `word_boundary_ascii_boundary_chars`，AttoEditor 创建 tab、split pane 和偏好重应用时调用现有 `EditorUI.setWordBoundaryAsciiBoundaryChars`，字段缺省时显式 reset 为 core default。该提交不新增新的 C ABI，不实现 Preferences UI 中的可视化 word-separator 编辑器、不实现完整 Sublime settings selector grammar、不实现 schema-aware 表单/校验/补全 UI、不实现 runtime override UI/持久化、跨 schema 字段语义迁移或完整 core/headless capability negotiation。
+  - 验证记录：
+    - `cargo test -p editor-core --test word_boundary_config`
+    - `cargo test -p editor-core-ui ui_word_boundary_config_affects_whole_word_search_highlights`
+    - `cargo test -p editor-core-ui multi_document_ui_search_uses_tab_word_boundary_config`
+    - `cargo test -p editor-core-ui-ffi multi_document_search`
+    - `cargo build -p editor-core-ui-ffi`
+    - `swift test --package-path swift --filter AttoConfigurationSettingsTests`
+    - `swift test --package-path swift --filter AttoPreferencesTests`
+    - `swift test --package-path swift --filter AttoEditorPreferencesApplicationTests`
     - `git diff --check`
 
 ## 阶段 10: ABI 版本、错误模型与兼容性门禁

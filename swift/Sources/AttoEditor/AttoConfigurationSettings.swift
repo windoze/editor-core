@@ -344,6 +344,7 @@ struct AttoEditorPreferenceSettings: Codable, Equatable {
     var findCaseSensitive: Bool?
     var findWholeWord: Bool?
     var findRegex: Bool?
+    var wordBoundaryAsciiBoundaryChars: String?
 
     init(
         fontFamilies: [String]? = nil,
@@ -353,7 +354,8 @@ struct AttoEditorPreferenceSettings: Codable, Equatable {
         wrapIndent: String? = nil,
         findCaseSensitive: Bool? = nil,
         findWholeWord: Bool? = nil,
-        findRegex: Bool? = nil
+        findRegex: Bool? = nil,
+        wordBoundaryAsciiBoundaryChars: String? = nil
     ) {
         self.fontFamilies = fontFamilies
         self.fontSizePoints = fontSizePoints
@@ -363,6 +365,7 @@ struct AttoEditorPreferenceSettings: Codable, Equatable {
         self.findCaseSensitive = findCaseSensitive
         self.findWholeWord = findWholeWord
         self.findRegex = findRegex
+        self.wordBoundaryAsciiBoundaryChars = wordBoundaryAsciiBoundaryChars
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -374,6 +377,7 @@ struct AttoEditorPreferenceSettings: Codable, Equatable {
         case findCaseSensitive = "find_case_sensitive"
         case findWholeWord = "find_whole_word"
         case findRegex = "find_regex"
+        case wordBoundaryAsciiBoundaryChars = "word_boundary_ascii_boundary_chars"
     }
 }
 
@@ -709,6 +713,9 @@ extension AttoConfigurationSnapshot {
         }
         if let findRegex = settings.findRegex {
             editor.findRegex = findRegex
+        }
+        if let wordBoundaryAsciiBoundaryChars = settings.wordBoundaryAsciiBoundaryChars {
+            editor.wordBoundaryAsciiBoundaryChars = wordBoundaryAsciiBoundaryChars
         }
     }
 

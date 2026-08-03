@@ -635,7 +635,7 @@ impl MultiDocumentEditorUi {
         &self,
         query: &str,
         options: SearchOptions,
-    ) -> Result<Vec<TabSearchResult>, editor_core::SearchError> {
+    ) -> Result<Vec<TabSearchResult>, UiError> {
         let mut out = Vec::new();
         for tab_id in self.tab_ids() {
             let Some(tab) = self.tabs.get(&tab_id) else {
@@ -644,7 +644,7 @@ impl MultiDocumentEditorUi {
             let Some(view) = tab.active_view() else {
                 continue;
             };
-            let matches = editor_core::search::find_all(view.text().as_str(), query, options)?;
+            let matches = view.search_matches(query, options)?;
             if matches.is_empty() {
                 continue;
             }

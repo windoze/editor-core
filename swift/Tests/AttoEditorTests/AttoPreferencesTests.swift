@@ -467,6 +467,7 @@ final class AttoPreferencesTests: XCTestCase {
         prefs.setFindCaseSensitive(false)
         prefs.setFindWholeWord(true)
         prefs.setFindRegex(true)
+        prefs.setWordBoundaryAsciiBoundaryChars(" . ")
         prefs.setFindInFilesDefaultScope("workspace")
         prefs.setWorkspaceSearchIncludeGlobs(["Sources/**/*.swift", "README.md"])
         prefs.setWorkspaceSearchExcludeGlobs(["**/*.generated.swift", "Vendor/"])
@@ -489,6 +490,7 @@ final class AttoPreferencesTests: XCTestCase {
         XCTAssertFalse(snapshot.editor.findCaseSensitive)
         XCTAssertTrue(snapshot.editor.findWholeWord)
         XCTAssertTrue(snapshot.editor.findRegex)
+        XCTAssertEqual(snapshot.editor.wordBoundaryAsciiBoundaryChars, ".")
         XCTAssertEqual(snapshot.rendering.themeName, "Atto Light")
         XCTAssertTrue(snapshot.rendering.fontLigaturesEnabled)
         XCTAssertEqual(

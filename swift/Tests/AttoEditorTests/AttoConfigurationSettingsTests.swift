@@ -12,7 +12,8 @@ final class AttoConfigurationSettingsTests: XCTestCase {
                 fontFamilies: ["User Mono"],
                 fontSizePoints: 15,
                 wrapMode: "word",
-                findCaseSensitive: false
+                findCaseSensitive: false,
+                wordBoundaryAsciiBoundaryChars: ","
             ),
             rendering: AttoRenderingPreferenceSettings(themeName: "User Theme"),
             language: AttoLanguagePreferenceSettings(
@@ -36,7 +37,8 @@ final class AttoConfigurationSettingsTests: XCTestCase {
             editor: AttoEditorPreferenceSettings(
                 wrapMode: "none",
                 wrapIndent: "same_as_line_indent",
-                findWholeWord: true
+                findWholeWord: true,
+                wordBoundaryAsciiBoundaryChars: "."
             ),
             rendering: AttoRenderingPreferenceSettings(themeName: "Workspace Theme"),
             language: AttoLanguagePreferenceSettings(
@@ -61,7 +63,8 @@ final class AttoConfigurationSettingsTests: XCTestCase {
         let runtime = AttoConfigurationSettings(
             editor: AttoEditorPreferenceSettings(
                 autoPairsEnabled: false,
-                findRegex: true
+                findRegex: true,
+                wordBoundaryAsciiBoundaryChars: "/"
             ),
             rendering: AttoRenderingPreferenceSettings(themeName: "Runtime Theme"),
             language: AttoLanguagePreferenceSettings(
@@ -90,6 +93,7 @@ final class AttoConfigurationSettingsTests: XCTestCase {
         XCTAssertFalse(snapshot.editor.findCaseSensitive)
         XCTAssertTrue(snapshot.editor.findWholeWord)
         XCTAssertTrue(snapshot.editor.findRegex)
+        XCTAssertEqual(snapshot.editor.wordBoundaryAsciiBoundaryChars, "/")
         XCTAssertEqual(snapshot.rendering.themeName, "Runtime Theme")
         XCTAssertEqual(snapshot.language.commentConfigurations["rust"], .line("//"))
         XCTAssertEqual(snapshot.language.commentConfigurations["python"], .line("#"))
@@ -336,6 +340,7 @@ final class AttoConfigurationSettingsTests: XCTestCase {
             "find_case_sensitive": false,
             "find_whole_word": true,
             "find_regex": true,
+            "word_boundary_ascii_boundary_chars": ".",
             "future_editor_field": "ignored"
           },
           "workspace": {
@@ -385,6 +390,7 @@ final class AttoConfigurationSettingsTests: XCTestCase {
         XCTAssertEqual(settings.editor?.findCaseSensitive, false)
         XCTAssertEqual(settings.editor?.findWholeWord, true)
         XCTAssertEqual(settings.editor?.findRegex, true)
+        XCTAssertEqual(settings.editor?.wordBoundaryAsciiBoundaryChars, ".")
         XCTAssertEqual(settings.workspace?.findInFilesDefaultScope, "workspace")
         XCTAssertEqual(settings.workspace?.workspaceSearchIncludeGlobs, ["Sources/**/*.swift"])
         XCTAssertEqual(settings.workspace?.workspaceSearchExcludeGlobs, ["**/*.generated.swift"])
