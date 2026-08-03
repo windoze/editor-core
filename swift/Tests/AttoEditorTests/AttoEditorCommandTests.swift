@@ -51,6 +51,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("macro.delete_named"))
         XCTAssertTrue(ids.contains("macro.delete_named_batch"))
         XCTAssertTrue(ids.contains("macro.undo_delete"))
+        XCTAssertTrue(ids.contains("macro.show_delete_history"))
         XCTAssertTrue(ids.contains("macro.import_file"))
         XCTAssertTrue(ids.contains("macro.export_named"))
         for command in AttoEditorAreaViewController.CursorMovementCommand.allCases {
@@ -243,6 +244,9 @@ final class AttoEditorCommandTests: XCTestCase {
         let undoDeleteMacro = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "macro.undo_delete"))
         XCTAssertEqual(undoDeleteMacro.macroPolicy, .notRecordable)
         XCTAssertFalse(undoDeleteMacro.isParameterized)
+        let showDeleteHistory = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "macro.show_delete_history"))
+        XCTAssertEqual(showDeleteHistory.macroPolicy, .notRecordable)
+        XCTAssertFalse(showDeleteHistory.isParameterized)
         let importMacro = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "macro.import_file"))
         XCTAssertEqual(importMacro.macroPolicy, .notRecordable)
         XCTAssertEqual(importMacro.parameters.map(\.name), ["path", "name"])
@@ -2090,6 +2094,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "macro.delete_named", in: toolsMenu))
         XCTAssertNotNil(findMenuItem(commandID: "macro.delete_named_batch", in: toolsMenu))
         XCTAssertNotNil(findMenuItem(commandID: "macro.undo_delete", in: toolsMenu))
+        XCTAssertNotNil(findMenuItem(commandID: "macro.show_delete_history", in: toolsMenu))
         XCTAssertNotNil(findMenuItem(commandID: "macro.import_file", in: toolsMenu))
         XCTAssertNotNil(findMenuItem(commandID: "macro.export_named", in: toolsMenu))
 
@@ -5299,6 +5304,93 @@ final class AttoEditorCommandTests: XCTestCase {
 
         let fourthDelegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
         XCTAssertFalse(fourthDelegate._commandIsEnabledForTesting(commandID: "macro.undo_delete"))
+    }
+
+    func testCommandMacroDeleteHistoryPanelRestoresSelectedEntry() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let macroStore = AttoMacroStore(macroFileURL: tempDir.appendingPathComponent("Last Macro.sublime-macro"))
+        let delegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
+        let context = delegate._createWindowForTesting(workspaceRootURL: tempDir)
+        defer { context.window.close() }
+
+        let commands = [AttoRecordedCommand(commandID: "editor.duplicate_lines", arguments: [:])]
+        try macroStore.save(commands, named: "Alpha", maxCount: 20)
+        try macroStore.save(commands, named: "Beta", maxCount: 20)
+        try macroStore.save(commands, named: "Gamma", maxCount: 20)
+
+        delegate._setMacroDeleteBatchConfirmationProviderForTesting { _ in true }
+        XCTAssertTrue(delegate.executeCommand(
+            id: "macro.delete_named",
+            arguments: ["name": .string("Alpha")]
+        ))
+        XCTAssertTrue(delegate.executeCommand(
+            id: "macro.delete_named_batch",
+            arguments: ["names": .json("[\"Beta\", \"Gamma\"]")]
+        ))
+        XCTAssertEqual(macroStore.namedMacroNames(), [])
+
+        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "macro.show_delete_history"))
+        XCTAssertTrue(delegate.executeCommand(id: "macro.show_delete_history"))
+
+        let historyPanel = try XCTUnwrap(context.window.childWindows?.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.commandPalettePanel(prefix: "AttoEditor.Macro.DeleteHistory")
+        })
+        let root = try XCTUnwrap(historyPanel.contentView)
+        let searchField = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.commandPaletteSearchField(prefix: "AttoEditor.Macro.DeleteHistory"),
+                in: root
+            ) as? NSSearchField
+        )
+        XCTAssertEqual(searchField.placeholderString, "Filter deleted macros...")
+
+        let table = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.commandPaletteTable(prefix: "AttoEditor.Macro.DeleteHistory"),
+                in: root
+            ) as? NSTableView
+        )
+        XCTAssertEqual(table.numberOfRows, 2)
+        let firstCell = try XCTUnwrap(table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? NSTableCellView)
+        XCTAssertEqual(firstCell.textField?.stringValue, "1. Beta, Gamma (2 macros)")
+        let secondCell = try XCTUnwrap(table.view(atColumn: 0, row: 1, makeIfNecessary: true) as? NSTableCellView)
+        XCTAssertEqual(secondCell.textField?.stringValue, "2. Alpha")
+
+        XCTAssertTrue(delegate._restoreDeletedMacroHistoryEntryForTesting(displayIndex: 1))
+        XCTAssertEqual(macroStore.namedMacroNames(), ["Alpha"])
+        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "macro.show_delete_history"))
+
+        XCTAssertTrue(delegate.executeCommand(id: "macro.undo_delete"))
+        XCTAssertEqual(macroStore.namedMacroNames(), ["Alpha", "Beta", "Gamma"])
+        XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "macro.show_delete_history"))
+    }
+
+    func testCommandMacroDeleteHistoryWithoutWindowDoesNotRestoreEntry() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let macroStore = AttoMacroStore(macroFileURL: tempDir.appendingPathComponent("Last Macro.sublime-macro"))
+        let delegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
+        let commands = [AttoRecordedCommand(commandID: "editor.duplicate_lines", arguments: [:])]
+        try macroStore.save(commands, named: "Alpha", maxCount: 20)
+
+        delegate._setMacroDeleteConfirmationProviderForTesting { _ in true }
+        XCTAssertTrue(delegate.executeCommand(
+            id: "macro.delete_named",
+            arguments: ["name": .string("Alpha")]
+        ))
+        XCTAssertEqual(macroStore.namedMacroNames(), [])
+        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "macro.show_delete_history"))
+
+        XCTAssertTrue(delegate.executeCommand(id: "macro.show_delete_history"))
+        XCTAssertEqual(macroStore.namedMacroNames(), [])
+        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "macro.undo_delete"))
     }
 
     func testCommandMacroImportsAndExportsSublimeMacroFiles() throws {
