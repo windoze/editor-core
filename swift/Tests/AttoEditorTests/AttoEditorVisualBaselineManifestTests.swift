@@ -392,6 +392,22 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
             )
             XCTAssertTrue(didShowPreview, visualCase.id)
         }
+        if let workspaceEditJSONApplySummary = visualCase.workspaceEditJSONApplySummary {
+            try workspaceEditJSONApplySummary.materializeSupportFiles(in: tempDir)
+            if workspaceEditJSONApplySummary.makeActiveDocumentDirty {
+                XCTAssertTrue(
+                    vc.executeActiveEditorCommandJSON(#"{"kind":"edit","op":"insert_text","text":"!"}"#),
+                    visualCase.id
+                )
+            }
+            vc._setWorkspaceEditPreviewDecisionProviderForTesting { _ in .apply }
+            defer { vc._setWorkspaceEditPreviewDecisionProviderForTesting(nil) }
+            XCTAssertEqual(
+                vc.applyWorkspaceEditJSONToActiveTab(try workspaceEditJSONApplySummary.resultJSON(tempDir: tempDir)),
+                workspaceEditJSONApplySummary.expectedApplied,
+                visualCase.id
+            )
+        }
         if let workspaceEditPreview = visualCase.workspaceEditPreview {
             let panelController = AttoWorkspaceEditPreviewPanelController()
             let preview = try workspaceEditPreview.preview(tempDir: tempDir)
@@ -631,6 +647,7 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
     let signatureHelpPopover: AttoVisualSignatureHelpPopover?
     let failurePopover: AttoVisualFailurePopover?
     let workspaceEditJSONPreview: AttoVisualWorkspaceEditJSONPreview?
+    let workspaceEditJSONApplySummary: AttoVisualWorkspaceEditJSONApplySummary?
     let workspaceEditPreview: AttoVisualWorkspaceEditPreview?
     let persistentPanel: AttoVisualPersistentPanel?
     let captureTarget: AttoVisualCaptureTarget
@@ -682,6 +699,7 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
         case signatureHelpPopover
         case failurePopover
         case workspaceEditJSONPreview
+        case workspaceEditJSONApplySummary
         case workspaceEditPreview
         case persistentPanel
         case captureTarget
@@ -759,6 +777,10 @@ private struct AttoVisualBaselineCase: Decodable, Equatable {
         workspaceEditJSONPreview = try container.decodeIfPresent(
             AttoVisualWorkspaceEditJSONPreview.self,
             forKey: .workspaceEditJSONPreview
+        )
+        workspaceEditJSONApplySummary = try container.decodeIfPresent(
+            AttoVisualWorkspaceEditJSONApplySummary.self,
+            forKey: .workspaceEditJSONApplySummary
         )
         workspaceEditPreview = try container.decodeIfPresent(
             AttoVisualWorkspaceEditPreview.self,
@@ -1738,6 +1760,72 @@ private struct AttoVisualWorkspaceEditJSONPreview: Decodable, Equatable {
     }
 }
 
+private struct AttoVisualWorkspaceEditJSONApplySummary: Decodable, Equatable {
+    let supportFiles: [AttoVisualWorkspaceEditSupportFile]
+    let makeActiveDocumentDirty: Bool
+    let expectedApplied: Bool
+    let documents: [AttoVisualWorkspaceEditJSONDocument]
+    let resourceOperations: [AttoVisualWorkspaceEditJSONResourceOperation]
+
+    enum CodingKeys: String, CodingKey {
+        case supportFiles
+        case makeActiveDocumentDirty
+        case expectedApplied
+        case documents
+        case resourceOperations
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        supportFiles = try container.decodeIfPresent(
+            [AttoVisualWorkspaceEditSupportFile].self,
+            forKey: .supportFiles
+        ) ?? []
+        makeActiveDocumentDirty = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .makeActiveDocumentDirty
+        ) ?? false
+        expectedApplied = try container.decodeIfPresent(Bool.self, forKey: .expectedApplied) ?? false
+        documents = try container.decodeIfPresent(
+            [AttoVisualWorkspaceEditJSONDocument].self,
+            forKey: .documents
+        ) ?? []
+        resourceOperations = try container.decodeIfPresent(
+            [AttoVisualWorkspaceEditJSONResourceOperation].self,
+            forKey: .resourceOperations
+        ) ?? []
+    }
+
+    func materializeSupportFiles(in tempDir: URL) throws {
+        for file in supportFiles {
+            let url = tempDir.appendingPathComponent(file.fileName)
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try file.text.write(to: url, atomically: true, encoding: .utf8)
+        }
+    }
+
+    func resultJSON(tempDir: URL) throws -> String {
+        var documentChanges: [AttoVisualWorkspaceEditDocumentChangePayload] = documents.map { document in
+            .textDocumentEdit(AttoVisualWorkspaceEditTextDocumentChangePayload(
+                textDocument: AttoVisualWorkspaceEditTextDocumentPayload(
+                    uri: AttoVisualWorkspaceEditPreview.fileURI(document.fileName, tempDir: tempDir)
+                ),
+                edits: document.edits.map(\.payload)
+            ))
+        }
+        documentChanges.append(contentsOf: resourceOperations.map { operation in
+            .resourceOperation(operation.payload(tempDir: tempDir))
+        })
+        return try encodeVisualJSON(
+            AttoVisualWorkspaceEditDocumentChangesPayload(documentChanges: documentChanges),
+            context: "WorkspaceEdit apply summary"
+        )
+    }
+}
+
 private struct AttoVisualWorkspaceEditSupportFile: Decodable, Equatable {
     let fileName: String
     let text: String
@@ -1787,9 +1875,77 @@ private struct AttoVisualWorkspaceEditJSONPayload: Encodable {
     let changes: [String: [AttoVisualWorkspaceEditTextEditPayload]]
 }
 
+private struct AttoVisualWorkspaceEditDocumentChangesPayload: Encodable {
+    let documentChanges: [AttoVisualWorkspaceEditDocumentChangePayload]
+}
+
+private enum AttoVisualWorkspaceEditDocumentChangePayload: Encodable {
+    case textDocumentEdit(AttoVisualWorkspaceEditTextDocumentChangePayload)
+    case resourceOperation(AttoVisualWorkspaceEditResourceOperationPayload)
+
+    func encode(to encoder: Encoder) throws {
+        switch self {
+        case .textDocumentEdit(let payload):
+            try payload.encode(to: encoder)
+        case .resourceOperation(let payload):
+            try payload.encode(to: encoder)
+        }
+    }
+}
+
+private struct AttoVisualWorkspaceEditTextDocumentChangePayload: Encodable {
+    let textDocument: AttoVisualWorkspaceEditTextDocumentPayload
+    let edits: [AttoVisualWorkspaceEditTextEditPayload]
+}
+
+private struct AttoVisualWorkspaceEditTextDocumentPayload: Encodable {
+    let uri: String
+}
+
 private struct AttoVisualWorkspaceEditTextEditPayload: Encodable {
     let range: AttoVisualLspRange
     let newText: String
+}
+
+private struct AttoVisualWorkspaceEditJSONResourceOperation: Decodable, Equatable {
+    let kind: String
+    let fileName: String?
+    let oldFileName: String?
+    let newFileName: String?
+    let options: AttoVisualWorkspaceEditResourceOperationOptions?
+
+    func payload(tempDir: URL) -> AttoVisualWorkspaceEditResourceOperationPayload {
+        AttoVisualWorkspaceEditResourceOperationPayload(
+            kind: kind,
+            uri: fileName.map { AttoVisualWorkspaceEditPreview.fileURI($0, tempDir: tempDir) },
+            oldURI: oldFileName.map { AttoVisualWorkspaceEditPreview.fileURI($0, tempDir: tempDir) },
+            newURI: newFileName.map { AttoVisualWorkspaceEditPreview.fileURI($0, tempDir: tempDir) },
+            options: options
+        )
+    }
+}
+
+private struct AttoVisualWorkspaceEditResourceOperationOptions: Codable, Equatable {
+    let overwrite: Bool?
+    let ignoreIfExists: Bool?
+    let recursive: Bool?
+    let ignoreIfNotExists: Bool?
+}
+
+private struct AttoVisualWorkspaceEditResourceOperationPayload: Encodable {
+    let kind: String
+    let uri: String?
+    let oldURI: String?
+    let newURI: String?
+    let options: AttoVisualWorkspaceEditResourceOperationOptions?
+
+    private enum CodingKeys: String, CodingKey {
+        case kind
+        case uri
+        case oldURI = "oldUri"
+        case newURI = "newUri"
+        case options
+    }
 }
 
 private struct AttoVisualWorkspaceEditPreview: Decodable, Equatable {

@@ -2251,6 +2251,13 @@
     - `swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures`
     - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
     - `git diff --check`
+- 中间提交：`test(app): cover visual workspace edit failure summary`
+  - 所属任务：阶段 13 的 macOS UI 自动化与视觉回归测试体系增量；把 WorkspaceEdit failure popover 视觉覆盖从手工文案推进到 App WorkspaceEdit JSON apply helper 的真实失败 summary 触发链。
+  - 提交边界：visual manifest harness 新增结构化 `workspaceEditJSONApplySummary` action，可写入支持文件、可把 active tab 标脏、生成 `documentChanges` text edits/resource operations、自动确认 preview，并断言 `applyWorkspaceEditJSONToActiveTab(...)` 的实际返回值；manifest 新增 dark dirty-open-tab delete failure summary popover artifact case。该提交不提交 golden PNG、不启用 strict 默认门禁、不改变产品 WorkspaceEdit apply/confirm/rollback 语义，也不覆盖 atomic rollback 或 transaction undo UI。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures`
+    - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
+    - `git diff --check`
 
 ## 阶段 14: 外观、布局与 Sublime-like 操作打磨
 
