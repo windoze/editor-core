@@ -153,6 +153,11 @@ struct AttoRuntimeCompatibility {
             reason: "Find in open tabs can read core search results through structured envelopes; Swift falls back to the legacy typed search wrapper when unavailable."
         ),
         RuntimeFeature(
+            feature: .multiDocumentWorkspaceRootsChangeEnvelope,
+            name: "multi-document workspace roots change envelope",
+            reason: "Workspace root sync can read core folder diffs through structured envelopes; Swift falls back to the legacy typed change wrapper when unavailable."
+        ),
+        RuntimeFeature(
             feature: .eventStreamEnvelope,
             name: "event stream envelope",
             reason: "Host UI can drain editor and project event streams through structured envelopes; Swift falls back to legacy raw event stream JSON when unavailable."

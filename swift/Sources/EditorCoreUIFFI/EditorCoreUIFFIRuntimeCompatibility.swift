@@ -119,6 +119,11 @@ public enum EditorCoreUIFFIRuntimeCompatibility {
             reason: "Swift hosts can read all-tabs search results through structured result envelopes."
         ),
         EditorCoreUIFFIRuntimeFeature(
+            feature: .multiDocumentWorkspaceRootsChangeEnvelope,
+            name: "multi-document workspace roots change envelope",
+            reason: "Swift hosts can update workspace roots and read folder diffs through structured result envelopes."
+        ),
+        EditorCoreUIFFIRuntimeFeature(
             feature: .workspaceDiagnosticsStore,
             name: "workspace diagnostics store",
             reason: "Swift hosts can use the core-owned workspace diagnostics snapshot."

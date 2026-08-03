@@ -170,6 +170,7 @@ uint32_t editor_core_ui_ffi_abi_version(void);
 #define ECU_FEATURE_WORKSPACE_OUTLINE_SNAPSHOT_ENVELOPE (1ull << 31)
 #define ECU_FEATURE_MULTI_DOCUMENT_SNAPSHOT_ENVELOPE (1ull << 32)
 #define ECU_FEATURE_MULTI_DOCUMENT_SEARCH_ENVELOPE (1ull << 33)
+#define ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_ROOTS_CHANGE_ENVELOPE (1ull << 34)
 uint64_t editor_core_ui_ffi_feature_flags(void);
 char* editor_core_ui_ffi_runtime_info_json(void);
 
@@ -209,6 +210,9 @@ int32_t editor_core_ui_ffi_multi_document_set_workspace_roots_json(
     MultiDocumentEditorUi* multi,
     const char* roots_json_utf8);
 char* editor_core_ui_ffi_multi_document_set_workspace_roots_with_change_json(
+    MultiDocumentEditorUi* multi,
+    const char* roots_json_utf8);
+char* editor_core_ui_ffi_multi_document_set_workspace_roots_with_change_envelope_json(
     MultiDocumentEditorUi* multi,
     const char* roots_json_utf8);
 int32_t editor_core_ui_ffi_multi_document_set_project_lsp_servers_json(

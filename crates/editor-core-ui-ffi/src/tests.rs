@@ -135,6 +135,11 @@ fn ffi_feature_flags_include_semantic_tokens_requests() {
         editor_core_ui_ffi_feature_flags() & ECU_FEATURE_MULTI_DOCUMENT_SEARCH_ENVELOPE,
         0
     );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags()
+            & ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_ROOTS_CHANGE_ENVELOPE,
+        0
+    );
 }
 
 #[test]
@@ -192,6 +197,11 @@ fn ffi_runtime_info_json_reports_version_and_feature_descriptors() {
         feature["name"] == "multi_document_search_envelope"
             && feature["bit"] == 33
             && feature["flag"] == ECU_FEATURE_MULTI_DOCUMENT_SEARCH_ENVELOPE
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "multi_document_workspace_roots_change_envelope"
+            && feature["bit"] == 34
+            && feature["flag"] == ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_ROOTS_CHANGE_ENVELOPE
     }));
     assert!(features.iter().any(|feature| {
         feature["name"] == "multi_document_workspace_edit_transaction"
@@ -546,6 +556,69 @@ fn ffi_multi_document_search_envelope_json_reports_success_and_errors() {
     assert_eq!(error["error"]["code"], "invalid_argument");
     assert_eq!(error["error"]["status"], ECU_ERR_INVALID_ARGUMENT);
     assert_eq!(error["error"]["message"], "query_utf8 is null");
+    assert_eq!(error["version"], ECU_ABI_VERSION);
+
+    unsafe { editor_core_ui_ffi_multi_document_free(multi) };
+}
+
+#[test]
+fn ffi_workspace_roots_change_envelope_json_reports_success_and_errors() {
+    let multi = editor_core_ui_ffi_multi_document_new();
+    assert!(!multi.is_null());
+
+    let roots = CString::new(r#"["file:///project/Alpha","file:///project/Beta"]"#).unwrap();
+    let envelope_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_set_workspace_roots_with_change_envelope_json(
+            multi,
+            roots.as_ptr(),
+        ),
+    );
+    let envelope: serde_json::Value = serde_json::from_str(&envelope_json).unwrap();
+    assert_eq!(envelope["ok"], true);
+    assert_eq!(envelope["status"], "success");
+    assert!(envelope["error"].is_null());
+    assert_eq!(envelope["version"], ECU_ABI_VERSION);
+    let added = envelope["value"]["added"].as_array().unwrap();
+    assert_eq!(added.len(), 2);
+    assert_eq!(added[0]["uri"], "file:///project/Alpha");
+    assert_eq!(added[0]["name"], "Alpha");
+    assert_eq!(added[1]["uri"], "file:///project/Beta");
+    assert_eq!(envelope["value"]["removed"].as_array().unwrap().len(), 0);
+
+    let replacement = CString::new(r#"["file:///project/Beta"]"#).unwrap();
+    let replacement_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_set_workspace_roots_with_change_envelope_json(
+            multi,
+            replacement.as_ptr(),
+        ),
+    );
+    let replacement_envelope: serde_json::Value = serde_json::from_str(&replacement_json).unwrap();
+    assert_eq!(replacement_envelope["ok"], true);
+    assert_eq!(
+        replacement_envelope["value"]["added"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+    let removed = replacement_envelope["value"]["removed"].as_array().unwrap();
+    assert_eq!(removed.len(), 1);
+    assert_eq!(removed[0]["uri"], "file:///project/Alpha");
+    assert_eq!(removed[0]["name"], "Alpha");
+
+    let error_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_set_workspace_roots_with_change_envelope_json(
+            multi,
+            ptr::null(),
+        ),
+    );
+    let error: serde_json::Value = serde_json::from_str(&error_json).unwrap();
+    assert_eq!(error["ok"], false);
+    assert_eq!(error["status"], "error");
+    assert!(error["value"].is_null());
+    assert_eq!(error["error"]["code"], "invalid_argument");
+    assert_eq!(error["error"]["status"], ECU_ERR_INVALID_ARGUMENT);
+    assert_eq!(error["error"]["message"], "roots_json_utf8 is null");
     assert_eq!(error["version"], ECU_ABI_VERSION);
 
     unsafe { editor_core_ui_ffi_multi_document_free(multi) };

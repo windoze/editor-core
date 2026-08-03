@@ -109,6 +109,7 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(info.supports(.workspaceOutlineSnapshotEnvelope))
         XCTAssertTrue(info.supports(.multiDocumentSnapshotEnvelope))
         XCTAssertTrue(info.supports(.multiDocumentSearchEnvelope))
+        XCTAssertTrue(info.supports(.multiDocumentWorkspaceRootsChangeEnvelope))
 
         let runtimeJSON = try JSONTestHelpers.object(try lib.runtimeInfoJSON())
         XCTAssertEqual(runtimeJSON["kind"] as? String, "editor-core-ui-ffi")
@@ -159,6 +160,12 @@ final class EditorCoreUIFFITests: XCTestCase {
             feature["name"] as? String == "multi_document_search_envelope"
                 && (feature["bit"] as? NSNumber)?.uint8Value == 33
                 && (feature["flag"] as? NSNumber)?.uint64Value == EditorCoreUIFFIFeatures.multiDocumentSearchEnvelope.rawValue
+        })
+        XCTAssertTrue(features.contains { feature in
+            feature["name"] as? String == "multi_document_workspace_roots_change_envelope"
+                && (feature["bit"] as? NSNumber)?.uint8Value == 34
+                && (feature["flag"] as? NSNumber)?.uint64Value
+                    == EditorCoreUIFFIFeatures.multiDocumentWorkspaceRootsChangeEnvelope.rawValue
         })
     }
 
@@ -526,6 +533,92 @@ final class EditorCoreUIFFITests: XCTestCase {
         }
         """
         let failure = try JSONTestHelpers.decode(EcuMultiDocumentSnapshotEnvelope.self, from: failureJSON)
+        XCTAssertFalse(failure.ok)
+        XCTAssertEqual(failure.statusKind, .error)
+        XCTAssertEqual(failure.value, .null)
+        XCTAssertEqual(failure.error?.code, "future_error")
+        XCTAssertEqual(failure.error?.message, "future failure")
+        XCTAssertNil(failure.error?.status)
+    }
+
+    func testWorkspaceRootsChangeEnvelopeReportsSuccess() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let multi = try MultiDocumentEditorUI(library: lib)
+
+        let envelope = try multi.setWorkspaceRootsReturningChangeEnvelope([
+            "file:///project/Alpha",
+            "file:///project/Beta",
+        ])
+        XCTAssertTrue(envelope.ok)
+        XCTAssertEqual(envelope.version, lib.abiVersion)
+        XCTAssertEqual(envelope.statusKind, .success)
+        XCTAssertNil(envelope.error)
+        guard case .object(let value)? = envelope.value,
+              case .array(let added)? = value["added"],
+              case .object(let firstAdded)? = added.first
+        else {
+            XCTFail("expected workspace roots change object")
+            return
+        }
+        XCTAssertEqual(firstAdded["uri"], .string("file:///project/Alpha"))
+        XCTAssertEqual(firstAdded["name"], .string("Alpha"))
+        XCTAssertEqual(value["removed"], .array([]))
+
+        let replacement = try multi.setWorkspaceRootsReturningChangeEnvelope(["file:///project/Beta"])
+        guard case .object(let replacementValue)? = replacement.value,
+              case .array(let removed)? = replacementValue["removed"],
+              case .object(let firstRemoved)? = removed.first
+        else {
+            XCTFail("expected workspace roots replacement object")
+            return
+        }
+        XCTAssertEqual(replacementValue["added"], .array([]))
+        XCTAssertEqual(firstRemoved["uri"], .string("file:///project/Alpha"))
+        XCTAssertEqual(firstRemoved["name"], .string("Alpha"))
+    }
+
+    func testWorkspaceRootsChangeEnvelopeDecodesFutureFieldsAndUnknownStatus() throws {
+        let successJSON = """
+        {
+          "ok": true,
+          "status": "future_status",
+          "value": {
+            "added": [],
+            "removed": [],
+            "future": true
+          },
+          "error": null,
+          "version": 11,
+          "futureTopLevel": true
+        }
+        """
+        let success = try JSONTestHelpers.decode(EcuWorkspaceRootsChangeEnvelope.self, from: successJSON)
+        XCTAssertTrue(success.ok)
+        XCTAssertEqual(success.statusKind, .unknown("future_status"))
+        XCTAssertNil(success.error)
+        guard case .object(let value)? = success.value else {
+            XCTFail("expected future workspace roots change value")
+            return
+        }
+        XCTAssertEqual(value["added"], .array([]))
+        XCTAssertEqual(value["removed"], .array([]))
+        XCTAssertEqual(value["future"], .bool(true))
+
+        let failureJSON = """
+        {
+          "ok": false,
+          "status": "error",
+          "value": null,
+          "error": {
+            "code": "future_error",
+            "status": 1000001,
+            "message": "future failure",
+            "futureErrorMetadata": true
+          },
+          "version": 12
+        }
+        """
+        let failure = try JSONTestHelpers.decode(EcuWorkspaceRootsChangeEnvelope.self, from: failureJSON)
         XCTAssertFalse(failure.ok)
         XCTAssertEqual(failure.statusKind, .error)
         XCTAssertEqual(failure.value, .null)

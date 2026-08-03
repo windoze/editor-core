@@ -27,7 +27,7 @@ char* editor_core_ui_ffi_runtime_info_json(void);
   "kind": "editor-core-ui-ffi",
   "abi_version": 1,
   "version": "0.5.0",
-  "feature_flags": 17179869183,
+  "feature_flags": 34359738367,
   "features": [
     { "bit": 0, "flag": 1, "name": "json_command_dispatch", "description": "..." }
   ]
@@ -75,6 +75,50 @@ or:
 
 Both strings are owned by the caller and must be freed with `editor_core_ui_ffi_string_free`.
 Availability is advertised by `ECU_FEATURE_JSON_COMMAND_ENVELOPE`.
+
+## MultiDocument Workspace Roots Change Envelope
+
+The legacy workspace roots change API remains available as a raw JSON string function:
+`editor_core_ui_ffi_multi_document_set_workspace_roots_with_change_json(...)`. Hosts that want a
+single JSON result/error shape can use the additive envelope variant:
+
+```c
+char* editor_core_ui_ffi_multi_document_set_workspace_roots_with_change_envelope_json(
+    MultiDocumentEditorUi* multi,
+    const char* roots_json_utf8
+);
+```
+
+Success:
+
+```json
+{
+  "ok": true,
+  "status": "success",
+  "value": {
+    "added": [{ "uri": "file:///project/Alpha", "name": "Alpha" }],
+    "removed": []
+  },
+  "error": null,
+  "version": 1
+}
+```
+
+Error:
+
+```json
+{
+  "ok": false,
+  "status": "error",
+  "value": null,
+  "error": { "code": "invalid_argument", "status": 1, "message": "roots_json_utf8 is null" },
+  "version": 1
+}
+```
+
+The returned string is owned by the caller and must be freed with
+`editor_core_ui_ffi_string_free`. Availability is advertised by
+`ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_ROOTS_CHANGE_ENVELOPE`.
 
 ## MultiDocument Snapshot Envelope
 

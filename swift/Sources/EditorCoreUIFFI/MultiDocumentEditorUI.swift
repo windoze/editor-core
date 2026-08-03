@@ -200,6 +200,90 @@ public struct EcuWorkspaceRootsChange: Decodable, Equatable, Sendable {
     }
 }
 
+public enum EcuWorkspaceRootsChangeEnvelopeStatus: Hashable, Sendable {
+    case success
+    case error
+    case unknown(String)
+
+    public init(rawValue: String) {
+        switch rawValue {
+        case "success":
+            self = .success
+        case "error":
+            self = .error
+        default:
+            self = .unknown(rawValue)
+        }
+    }
+
+    public var rawValue: String {
+        switch self {
+        case .success:
+            return "success"
+        case .error:
+            return "error"
+        case let .unknown(rawValue):
+            return rawValue
+        }
+    }
+}
+
+public struct EcuWorkspaceRootsChangeEnvelope: Decodable, Equatable, Sendable {
+    public let ok: Bool
+    public let status: String
+    public let value: EcuJSONValue?
+    public let error: EcuWorkspaceRootsChangeEnvelopeError?
+    public let version: UInt32
+
+    public var statusKind: EcuWorkspaceRootsChangeEnvelopeStatus {
+        EcuWorkspaceRootsChangeEnvelopeStatus(rawValue: status)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case ok
+        case status
+        case value
+        case error
+        case version
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        ok = try container.decode(Bool.self, forKey: .ok)
+        status = try container.decodeIfPresent(String.self, forKey: .status) ?? "unknown"
+        if container.contains(.value) {
+            value = try container.decode(EcuJSONValue.self, forKey: .value)
+        } else {
+            value = nil
+        }
+        error = try container.decodeIfPresent(EcuWorkspaceRootsChangeEnvelopeError.self, forKey: .error)
+        version = try container.decodeIfPresent(UInt32.self, forKey: .version) ?? 0
+    }
+}
+
+public struct EcuWorkspaceRootsChangeEnvelopeError: Decodable, Equatable, Sendable {
+    public let code: String
+    public let status: EcuStatus?
+    public let message: String
+
+    private enum CodingKeys: String, CodingKey {
+        case code
+        case status
+        case message
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        code = try container.decodeIfPresent(String.self, forKey: .code) ?? "unknown"
+        message = try container.decodeIfPresent(String.self, forKey: .message) ?? ""
+        if let rawStatus = try container.decodeIfPresent(Int32.self, forKey: .status) {
+            status = EcuStatus(rawValue: rawStatus)
+        } else {
+            status = nil
+        }
+    }
+}
+
 public struct EcuTabSearchMatch: Decodable, Equatable, Sendable {
     public let start: UInt32
     public let end: UInt32
@@ -1134,6 +1218,30 @@ public final class MultiDocumentEditorUI {
             EcuWorkspaceRootsChange.self,
             from: changeJSON,
             context: "multi_document_set_workspace_roots_with_change_decode"
+        )
+    }
+
+    public func setWorkspaceRootsReturningChangeEnvelopeJSON(_ roots: [String]) throws -> String {
+        let data = try JSONEncoder().encode(roots)
+        guard let json = String(data: data, encoding: .utf8) else {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .internal,
+                context: "multi_document_set_workspace_roots_with_change_envelope_encode",
+                message: "failed to encode workspace roots JSON"
+            )
+        }
+        return try ffiStringResult(context: "multi_document_set_workspace_roots_with_change_envelope_json") {
+            json.withCString { rootsPtr in
+                editor_core_ui_ffi_multi_document_set_workspace_roots_with_change_envelope_json(handle, rootsPtr)
+            }
+        }
+    }
+
+    public func setWorkspaceRootsReturningChangeEnvelope(_ roots: [String]) throws -> EcuWorkspaceRootsChangeEnvelope {
+        try decode(
+            EcuWorkspaceRootsChangeEnvelope.self,
+            from: setWorkspaceRootsReturningChangeEnvelopeJSON(roots),
+            context: "multi_document_set_workspace_roots_with_change_envelope_decode"
         )
     }
 

@@ -1778,6 +1778,20 @@
     - `swift test --package-path swift --filter 'AttoRuntimeCompatibilityTests/test(MissingOptionalFeaturesDoNotBlockLaunchCompatibility|ReportsMissingRequiredFeatures)'`
     - `cargo fmt --check`
     - `git diff --check`
+- 中间提交：`feat(ffi): envelope workspace roots changes`
+  - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；把 MultiDocument workspace roots change JSON result 面纳入统一结构化 envelope。
+  - 提交边界：新增 `editor_core_ui_ffi_multi_document_set_workspace_roots_with_change_envelope_json(MultiDocumentEditorUi*, const char*)` 和 `ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_ROOTS_CHANGE_ENVELOPE` feature bit；legacy `multi_document_set_workspace_roots_with_change_json` 保持 raw JSON/null+last_error 语义，status 型 `set_workspace_roots_json` 保持不变；Swift `MultiDocumentEditorUI` 新增 raw/typed envelope accessor 与 `EcuWorkspaceRootsChangeEnvelope`，runtime compatibility 和 Atto optional capability report 同步新增该能力。该提交不切换 App workspace root sync 主路径，不替换现有 typed `setWorkspaceRootsReturningChange(...)` wrapper，不改变 LSP didChange workspace folders 策略，也不完成完整外部 capability negotiation protocol。
+  - 验证记录：
+    - `cargo test -p editor-core-ui-ffi --release ffi_workspace_roots_change_envelope_json_reports_success_and_errors`
+    - `cargo test -p editor-core-ui-ffi --release ffi_runtime_info_json_reports_version_and_feature_descriptors`
+    - `cargo test -p editor-core-ui-ffi --release ffi_feature_flags_include_semantic_tokens_requests`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFITests/testWorkspaceRootsChangeEnvelope'`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFITests/testLoadsLibraryAndVersion'`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFIRuntimeCompatibilityTests/testReportsMissingRequiredFeatures'`
+    - `swift test --package-path swift --filter 'AttoRuntimeCompatibilityTests/test(MissingOptionalFeaturesDoNotBlockLaunchCompatibility|ReportsMissingRequiredFeatures)'`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 11: Tree-sitter 与 LSP 主路线产品化
 
