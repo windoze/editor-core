@@ -149,6 +149,7 @@ enum AttoMainMenuBuilder {
         goMenu.addItem(commandItem(title: "Code Actions", commandID: "lsp.code_actions", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Code Lens Actions", commandID: "lsp.code_lens_actions", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Code Lens at Cursor", commandID: "lsp.code_lens_at_cursor", appDelegate: appDelegate))
+        goMenu.addItem(commandItem(title: "Show Code Lens Panel", commandID: "lsp.show_code_lens_panel", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Refresh Code Lens", commandID: "lsp.refresh_code_lens", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Refresh Inlay Hints", commandID: "lsp.refresh_inlay_hints", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Refresh Document Links", commandID: "lsp.refresh_document_links", appDelegate: appDelegate))

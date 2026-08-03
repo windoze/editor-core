@@ -203,6 +203,18 @@ final class AttoEditorAreaViewController: NSViewController {
         lspSymbolPanelController?.isVisible == true
     }
 
+    func _codeLensPanelItemsForTesting() -> [AttoLspCodeLensParser.Item] {
+        codeLensPanelController?.currentItems ?? []
+    }
+
+    func _codeLensPanelRowCountForTesting() -> Int {
+        codeLensPanelController?.rowCount ?? 0
+    }
+
+    func _codeLensPanelIsVisibleForTesting() -> Bool {
+        codeLensPanelController?.isVisible == true
+    }
+
     func _workspaceOutlineSnapshotForTesting() -> AttoWorkspaceOutlineSnapshot {
         workspaceOutlineStore.snapshot
     }
@@ -1011,6 +1023,7 @@ final class AttoEditorAreaViewController: NSViewController {
     var codeLensRefreshContext: CodeLensRefreshContext?
     var codeLensRefreshPollTimer: DispatchSourceTimer?
     var codeLensResultsController: AttoCommandPaletteController?
+    var codeLensPanelController: AttoCodeLensPanelController?
     var auxiliaryRefreshContext: AuxiliaryRefreshContext?
     var auxiliaryRefreshPollTimer: DispatchSourceTimer?
     var inlayHintResolveContext: InlayHintResolveContext?

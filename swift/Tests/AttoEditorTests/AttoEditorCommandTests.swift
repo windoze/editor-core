@@ -79,6 +79,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.code_actions"))
         XCTAssertTrue(ids.contains("lsp.code_lens_actions"))
         XCTAssertTrue(ids.contains("lsp.code_lens_at_cursor"))
+        XCTAssertTrue(ids.contains("lsp.show_code_lens_panel"))
         XCTAssertTrue(ids.contains("lsp.refresh_code_lens"))
         XCTAssertTrue(ids.contains("lsp.refresh_inlay_hints"))
         XCTAssertTrue(ids.contains("lsp.refresh_document_links"))
@@ -572,6 +573,63 @@ final class AttoEditorCommandTests: XCTestCase {
         let cell = try XCTUnwrap(table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? NSTableCellView)
         XCTAssertTrue(cell.textField?.stringValue.contains("Run Two") == true)
         XCTAssertFalse(cell.textField?.stringValue.contains("Run One") == true)
+    }
+
+    func testCodeLensPanelUsesDerivedDecorations() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("lens-panel.swift")
+        let text = """
+        func one() {}
+        func two() {}
+        """
+        try text.write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let window = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        try editorView.editor.lspApplyCodeLensJSON("""
+        [
+          {
+            "range": {
+              "start": { "line": 0, "character": 0 },
+              "end": { "line": 0, "character": 0 }
+            },
+            "command": { "title": "Run One", "command": "test.runOne" }
+          },
+          {
+            "range": {
+              "start": { "line": 1, "character": 0 },
+              "end": { "line": 1, "character": 0 }
+            },
+            "command": { "title": "Run Two", "command": "test.runTwo" }
+          }
+        ]
+        """)
+
+        XCTAssertTrue(vc.showCodeLensPanelInActiveTab())
+        let panel = try XCTUnwrap(window.childWindows?.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.codeLensPanel
+        })
+        XCTAssertEqual(panel.title, "Code Lens (2)")
+
+        let root = try XCTUnwrap(panel.contentView)
+        let searchField = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.codeLensPanelSearchField, in: root) as? NSSearchField
+        )
+        let table = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.codeLensPanelTable, in: root) as? NSTableView
+        )
+        XCTAssertEqual(searchField.placeholderString, "Filter code lens actions...")
+        XCTAssertEqual(table.numberOfRows, 2)
+        XCTAssertEqual(vc._codeLensPanelRowCountForTesting(), 2)
+        XCTAssertEqual(vc._codeLensPanelItemsForTesting().map(\.title), ["Run One", "Run Two"])
+        XCTAssertTrue(vc._codeLensPanelIsVisibleForTesting())
     }
 
     func testCodeLensActionTitlesUseCoreDocumentURIProjection() throws {
@@ -1450,6 +1508,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "lsp.code_actions", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.code_lens_actions", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.code_lens_at_cursor", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.show_code_lens_panel", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.refresh_code_lens", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.refresh_inlay_hints", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.refresh_document_links", in: menu))

@@ -1167,6 +1167,15 @@
 ### 提交
 
 - `feat(app): add persistent lsp workbench panels`
+- 中间提交：`feat(app): add code lens workbench panel`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量；把 Code Lens 从状态栏数量和 transient command palette 操作推进到可保持打开、可过滤、可键盘执行的持久 panel。
+  - 提交边界：新增 `AttoCodeLensPanelController`，为 Code Lens panel 提供稳定 AppKit identifiers、filter/search、row selection、Enter 执行和关闭行为；AttoEditor 新增 `lsp.show_code_lens_panel` command、Go 菜单入口、VC 测试钩子，并在 Code Lens refresh 后同步更新已打开的持久 panel。该提交不改变 LSP Code Lens request/resolve 协议、renderer inline decorations、executeCommand 语义，也不实现统一多 panel dock/workbench 容器。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoAccessibilityIdentifierTests.testCodeLensPanelExposesStableIdentifiersAndFiltersRows`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testCodeLensPanelUsesDerivedDecorations`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap`
+    - `git diff --check`
 
 ## 阶段 8: Command、menu、keymap、palette 与 Sublime 行为矩阵
 

@@ -309,6 +309,80 @@ final class AttoAccessibilityIdentifierTests: XCTestCase {
         XCTAssertTrue(controller.isVisible)
     }
 
+    func testCodeLensPanelExposesStableIdentifiersAndFiltersRows() throws {
+        let range = EcuOffsetRange(start: 0, end: 0)
+        let items = [
+            AttoLspCodeLensParser.Item(
+                title: "Run Tests",
+                range: range,
+                lensJSON: #"{"command":{"command":"test.run","title":"Run Tests"}}"#,
+                command: AttoLspCodeLensParser.Command(
+                    title: "Run Tests",
+                    command: "test.run",
+                    commandJSON: #"{"command":"test.run","title":"Run Tests"}"#
+                )
+            ),
+            AttoLspCodeLensParser.Item(
+                title: "Preview Documentation",
+                range: range,
+                lensJSON: #"{"command":{"command":"doc.preview","title":"Preview Documentation"}}"#,
+                command: AttoLspCodeLensParser.Command(
+                    title: "Preview Documentation",
+                    command: "doc.preview",
+                    commandJSON: #"{"command":"doc.preview","title":"Preview Documentation"}"#
+                )
+            ),
+        ]
+
+        var appliedItems: [AttoLspCodeLensParser.Item] = []
+        let controller = AttoCodeLensPanelController(
+            titleForItem: { "\($0.title) - sample.swift:1:1" },
+            onApply: { appliedItems.append($0) }
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 520),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        defer {
+            controller.hide()
+            window.close()
+        }
+
+        window.contentView = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 520))
+        window.makeKeyAndOrderFront(nil)
+
+        XCTAssertTrue(controller.show(relativeTo: window, items: items))
+        let panel = try XCTUnwrap(window.childWindows?.first)
+        XCTAssertEqual(panel.identifier?.rawValue, AttoAccessibilityID.codeLensPanel)
+        XCTAssertEqual(panel.title, "Code Lens (2)")
+
+        let root = try XCTUnwrap(panel.contentView)
+        XCTAssertNotNil(findView(identifier: AttoAccessibilityID.codeLensPanelRoot, in: root))
+        let searchField = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.codeLensPanelSearchField, in: root) as? NSSearchField
+        )
+        let metadataLabel = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.codeLensPanelMetadataLabel, in: root) as? NSTextField
+        )
+        let table = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.codeLensPanelTable, in: root) as? NSTableView
+        )
+        XCTAssertNotNil(findView(identifier: AttoAccessibilityID.codeLensPanelScrollView, in: root))
+        XCTAssertEqual(searchField.placeholderString, "Filter code lens actions...")
+        XCTAssertEqual(metadataLabel.stringValue, "Active Tab | 2 actions")
+        XCTAssertEqual(table.numberOfRows, 2)
+
+        searchField.stringValue = "Preview"
+        controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: searchField))
+        XCTAssertEqual(table.numberOfRows, 1)
+
+        XCTAssertTrue(controller.control(searchField, textView: NSTextView(), doCommandBy: #selector(NSResponder.insertNewline(_:))))
+        XCTAssertEqual(appliedItems, [items[1]])
+        XCTAssertTrue(controller.isVisible)
+    }
+
     func testProblemsPanelExposesStableIdentifiersAndFiltersRows() throws {
         let diagnostics = [
             EcuDiagnostic(

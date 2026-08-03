@@ -117,6 +117,38 @@ extension AttoEditorAreaViewController {
         return true
     }
 
+    @discardableResult
+    func showCodeLensPanelInActiveTab() -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        cancelHoverUI()
+        cancelDefinitionUI()
+        cancelSymbolUI()
+        cancelHierarchyUI()
+        cancelSignatureHelpUI()
+        cancelCompletionUI()
+        cancelRenameUI()
+        cancelCodeActionUI()
+        cancelCodeLensUI()
+
+        let items = currentCodeLensItems(in: tab)
+        guard items.isEmpty == false else {
+            NSSound.beep()
+            return false
+        }
+
+        guard let window = view.window else {
+            return applyCodeLens(items[0])
+        }
+
+        let controller = codeLensPanelController ?? makeCodeLensPanelController()
+        codeLensPanelController = controller
+        return controller.show(relativeTo: window, items: items)
+    }
+
     func codeLensItemsOnPrimaryCaretLine(
         _ items: [AttoLspCodeLensParser.Item],
         in tab: AttoEditorTab
@@ -329,6 +361,7 @@ extension AttoEditorAreaViewController {
             tab.editCore.editorView.needsDisplay = true
             tab.editCore.needsDisplay = true
             self.derivedStateStore.refreshActive(editor: tab.editCore.editor)
+            self.updateVisibleCodeLensPanel(for: tab)
             self.updateStatusBar()
 
             guard showFeedback else { return }
@@ -399,5 +432,27 @@ extension AttoEditorAreaViewController {
             }
         }()
         return AttoLspCodeLensParser.displayTitle(for: item, location: location)
+    }
+
+    private func currentCodeLensItems(in tab: AttoEditorTab) -> [AttoLspCodeLensParser.Item] {
+        derivedStateStore.refreshActive(editor: tab.editCore.editor)
+        return AttoLspCodeLensParser.items(fromDecorationsSnapshot: derivedStateStore.active.decorations)
+    }
+
+    private func makeCodeLensPanelController() -> AttoCodeLensPanelController {
+        AttoCodeLensPanelController(
+            titleForItem: { [weak self] item in
+                guard let self, let tab = self.activeTab else { return item.title }
+                return self.displayTitle(for: item, in: tab)
+            },
+            onApply: { [weak self] item in
+                _ = self?.applyCodeLens(item)
+            }
+        )
+    }
+
+    private func updateVisibleCodeLensPanel(for tab: AttoEditorTab) {
+        guard let controller = codeLensPanelController, controller.isVisible else { return }
+        controller.update(items: currentCodeLensItems(in: tab))
     }
 }
