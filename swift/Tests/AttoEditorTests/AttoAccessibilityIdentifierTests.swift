@@ -451,6 +451,76 @@ final class AttoAccessibilityIdentifierTests: XCTestCase {
         XCTAssertTrue(controller.isVisible)
     }
 
+    func testDocumentLinkPanelExposesStableIdentifiersAndFiltersRows() throws {
+        let range = EcuOffsetRange(start: 0, end: 4)
+        let items = [
+            AttoLspDocumentLinkParser.Item(
+                title: "https://example.com/docs",
+                target: "https://example.com/docs",
+                tooltip: "Open docs",
+                range: range,
+                linkJSON: #"{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":4}},"target":"https://example.com/docs","tooltip":"Open docs"}"#,
+                link: nil
+            ),
+            AttoLspDocumentLinkParser.Item(
+                title: "Resolve project link",
+                target: nil,
+                tooltip: "Resolve project link",
+                range: range,
+                linkJSON: #"{"range":{"start":{"line":1,"character":0},"end":{"line":1,"character":4}},"tooltip":"Resolve project link","data":{"id":1}}"#,
+                link: nil
+            ),
+        ]
+
+        var openedItems: [AttoLspDocumentLinkParser.Item] = []
+        let controller = AttoDocumentLinkPanelController(
+            titleForItem: { "\($0.title) - sample.swift:1:1" },
+            onOpen: { openedItems.append($0) }
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 860, height: 540),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        defer {
+            controller.hide()
+            window.close()
+        }
+
+        window.contentView = NSView(frame: NSRect(x: 0, y: 0, width: 860, height: 540))
+        window.makeKeyAndOrderFront(nil)
+
+        XCTAssertTrue(controller.show(relativeTo: window, items: items))
+        let panel = try XCTUnwrap(window.childWindows?.first)
+        XCTAssertEqual(panel.identifier?.rawValue, AttoAccessibilityID.documentLinkPanel)
+        XCTAssertEqual(panel.title, "Document Links (2)")
+
+        let root = try XCTUnwrap(panel.contentView)
+        XCTAssertNotNil(findView(identifier: AttoAccessibilityID.documentLinkPanelRoot, in: root))
+        let searchField = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.documentLinkPanelSearchField, in: root) as? NSSearchField
+        )
+        let metadataLabel = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.documentLinkPanelMetadataLabel, in: root) as? NSTextField
+        )
+        let table = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.documentLinkPanelTable, in: root) as? NSTableView
+        )
+        XCTAssertNotNil(findView(identifier: AttoAccessibilityID.documentLinkPanelScrollView, in: root))
+        XCTAssertEqual(searchField.placeholderString, "Filter document links...")
+        XCTAssertEqual(metadataLabel.stringValue, "Active Tab | 2 links")
+        XCTAssertEqual(table.numberOfRows, 2)
+
+        searchField.stringValue = "Resolve"
+        controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: searchField))
+        XCTAssertEqual(table.numberOfRows, 1)
+
+        XCTAssertTrue(controller.control(searchField, textView: NSTextView(), doCommandBy: #selector(NSResponder.insertNewline(_:))))
+        XCTAssertEqual(openedItems, [items[1]])
+        XCTAssertTrue(controller.isVisible)
+    }
+
     func testProblemsPanelExposesStableIdentifiersAndFiltersRows() throws {
         let diagnostics = [
             EcuDiagnostic(

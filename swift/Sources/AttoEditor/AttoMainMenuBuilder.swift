@@ -154,6 +154,7 @@ enum AttoMainMenuBuilder {
         goMenu.addItem(commandItem(title: "Refresh Inlay Hints", commandID: "lsp.refresh_inlay_hints", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Show Inlay Hints Panel", commandID: "lsp.show_inlay_hints_panel", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Refresh Document Links", commandID: "lsp.refresh_document_links", appDelegate: appDelegate))
+        goMenu.addItem(commandItem(title: "Show Document Links Panel", commandID: "lsp.show_document_links_panel", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Quick Fixes", commandID: "lsp.quick_fix", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Refactor Actions", commandID: "lsp.refactor", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Source Actions", commandID: "lsp.source_actions", appDelegate: appDelegate))

@@ -791,6 +791,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .init(id: "lsp.refresh_document_links", title: "LSP: Refresh Document Links") { [weak self] in
                 self?.activeWindow()?.editorAreaController.refreshDocumentLinksInActiveTab()
             },
+            .init(id: "lsp.show_document_links_panel", title: "LSP: Show Document Links Panel") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showDocumentLinksPanelInActiveTab()
+            },
             .init(id: "lsp.quick_fix", title: "LSP: Quick Fixes") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showQuickFixesInActiveTab()
             },

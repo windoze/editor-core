@@ -143,6 +143,15 @@ enum AttoAccessibilityID {
     static let inlayHintPanelRow = "AttoEditor.LSP.InlayHintPanel.Row"
     static let inlayHintPanelRowTitle = "AttoEditor.LSP.InlayHintPanel.RowTitle"
 
+    static let documentLinkPanel = "AttoEditor.LSP.DocumentLinkPanel.Panel"
+    static let documentLinkPanelRoot = "AttoEditor.LSP.DocumentLinkPanel.Root"
+    static let documentLinkPanelSearchField = "AttoEditor.LSP.DocumentLinkPanel.SearchField"
+    static let documentLinkPanelMetadataLabel = "AttoEditor.LSP.DocumentLinkPanel.Metadata"
+    static let documentLinkPanelTable = "AttoEditor.LSP.DocumentLinkPanel.Table"
+    static let documentLinkPanelScrollView = "AttoEditor.LSP.DocumentLinkPanel.ScrollView"
+    static let documentLinkPanelRow = "AttoEditor.LSP.DocumentLinkPanel.Row"
+    static let documentLinkPanelRowTitle = "AttoEditor.LSP.DocumentLinkPanel.RowTitle"
+
     static let workspaceEditPreviewPanel = "AttoEditor.WorkspaceEditPreview.Panel"
     static let workspaceEditPreviewRoot = "AttoEditor.WorkspaceEditPreview.Root"
     static let workspaceEditPreviewSummary = "AttoEditor.WorkspaceEditPreview.Summary"

@@ -53,6 +53,41 @@ extension AttoEditorAreaViewController {
     }
 
     @discardableResult
+    func showDocumentLinksPanelInActiveTab() -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        cancelHoverUI()
+        cancelDefinitionUI()
+        cancelSymbolUI()
+        cancelHierarchyUI()
+        cancelSignatureHelpUI()
+        cancelCompletionUI()
+        cancelRenameUI()
+        cancelCodeActionUI()
+        cancelCodeLensUI()
+        cancelAuxiliaryRefreshUI()
+        cancelInlayHintResolveUI()
+        cancelDocumentLinkResolveUI()
+
+        let items = currentDocumentLinkItems(in: tab)
+        guard items.isEmpty == false else {
+            NSSound.beep()
+            return false
+        }
+
+        guard let window = view.window else {
+            return openDocumentLinkPanelItem(items[0])
+        }
+
+        let controller = documentLinkPanelController ?? makeDocumentLinkPanelController()
+        documentLinkPanelController = controller
+        return controller.show(relativeTo: window, items: items)
+    }
+
+    @discardableResult
     func refreshAuxiliaryLspDecorationsInActiveTab(
         kind: AuxiliaryRefreshKind,
         showFeedback: Bool = true
@@ -236,6 +271,8 @@ extension AttoEditorAreaViewController {
             self.derivedStateStore.refreshActive(editor: tab.editCore.editor)
             if kind == .inlayHints {
                 self.updateVisibleInlayHintPanel(for: tab)
+            } else if kind == .documentLinks {
+                self.updateVisibleDocumentLinkPanel(for: tab)
             }
             self.updateStatusBar()
 
@@ -582,5 +619,52 @@ extension AttoEditorAreaViewController {
     private func updateVisibleInlayHintPanel(for tab: AttoEditorTab) {
         guard let controller = inlayHintPanelController, controller.isVisible else { return }
         controller.update(items: currentInlayHintItems(in: tab))
+    }
+
+    private func currentDocumentLinkItems(in tab: AttoEditorTab) -> [AttoLspDocumentLinkParser.Item] {
+        derivedStateStore.refreshActive(editor: tab.editCore.editor)
+        return AttoLspDocumentLinkParser.items(fromDecorationsSnapshot: derivedStateStore.active.decorations)
+    }
+
+    private func makeDocumentLinkPanelController() -> AttoDocumentLinkPanelController {
+        AttoDocumentLinkPanelController(
+            titleForItem: { [weak self] item in
+                guard let self, let tab = self.activeTab else { return item.title }
+                return self.displayTitle(for: item, in: tab)
+            },
+            onOpen: { [weak self] item in
+                _ = self?.openDocumentLinkPanelItem(item)
+            }
+        )
+    }
+
+    private func displayTitle(for item: AttoLspDocumentLinkParser.Item, in tab: AttoEditorTab) -> String {
+        let documentURL = projectedFileURL(for: tab)
+        let location: String? = {
+            do {
+                let pos = try tab.editCore.editor.charOffsetToLogicalPosition(offset: item.range.start)
+                return "\(documentURL.lastPathComponent):\(pos.line + 1):\(pos.column + 1)"
+            } catch {
+                return documentURL.lastPathComponent
+            }
+        }()
+        return AttoLspDocumentLinkParser.displayTitle(for: item, location: location)
+    }
+
+    private func openDocumentLinkPanelItem(_ item: AttoLspDocumentLinkParser.Item) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+        return handleDocumentLinkClick(
+            json: item.linkJSON,
+            tabID: tab.id,
+            editorView: tab.editCore.editorView
+        )
+    }
+
+    private func updateVisibleDocumentLinkPanel(for tab: AttoEditorTab) {
+        guard let controller = documentLinkPanelController, controller.isVisible else { return }
+        controller.update(items: currentDocumentLinkItems(in: tab))
     }
 }

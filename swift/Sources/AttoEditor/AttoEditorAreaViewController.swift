@@ -227,6 +227,18 @@ final class AttoEditorAreaViewController: NSViewController {
         inlayHintPanelController?.isVisible == true
     }
 
+    func _documentLinkPanelItemsForTesting() -> [AttoLspDocumentLinkParser.Item] {
+        documentLinkPanelController?.currentItems ?? []
+    }
+
+    func _documentLinkPanelRowCountForTesting() -> Int {
+        documentLinkPanelController?.rowCount ?? 0
+    }
+
+    func _documentLinkPanelIsVisibleForTesting() -> Bool {
+        documentLinkPanelController?.isVisible == true
+    }
+
     func _workspaceOutlineSnapshotForTesting() -> AttoWorkspaceOutlineSnapshot {
         workspaceOutlineStore.snapshot
     }
@@ -1043,6 +1055,7 @@ final class AttoEditorAreaViewController: NSViewController {
     var inlayHintPanelController: AttoInlayHintPanelController?
     var documentLinkResolveContext: DocumentLinkResolveContext?
     var documentLinkResolvePollTimer: DispatchSourceTimer?
+    var documentLinkPanelController: AttoDocumentLinkPanelController?
     var executeCommandContext: ExecuteCommandRequestContext?
     var executeCommandPollTimer: DispatchSourceTimer?
 

@@ -84,6 +84,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.refresh_inlay_hints"))
         XCTAssertTrue(ids.contains("lsp.show_inlay_hints_panel"))
         XCTAssertTrue(ids.contains("lsp.refresh_document_links"))
+        XCTAssertTrue(ids.contains("lsp.show_document_links_panel"))
         XCTAssertTrue(ids.contains("lsp.quick_fix"))
         XCTAssertTrue(ids.contains("lsp.refactor"))
         XCTAssertTrue(ids.contains("lsp.source_actions"))
@@ -480,6 +481,73 @@ final class AttoEditorCommandTests: XCTestCase {
         let point = try editorView.editor.charOffsetToViewPoint(offset: 1)
         XCTAssertFalse(editorView.openDocumentLinkIfPresent(xPx: point.xPx + 1, yPx: point.yPx + 1))
         XCTAssertEqual(vc._transientStatusTextForTesting(), "Document link resolve: unavailable")
+    }
+
+    func testDocumentLinkPanelUsesDerivedDecorations() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("links-panel.txt")
+        let text = """
+        docs
+        local
+        """
+        try text.write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let window = attachToWindow(vc)
+        defer { window.close() }
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        try editorView.editor.lspApplyDocumentLinksJSON("""
+        [
+          {
+            "range": {
+              "start": { "line": 0, "character": 0 },
+              "end": { "line": 0, "character": 4 }
+            },
+            "target": "https://example.com/docs",
+            "tooltip": "Open docs"
+          },
+          {
+            "range": {
+              "start": { "line": 1, "character": 0 },
+              "end": { "line": 1, "character": 5 }
+            },
+            "tooltip": "Resolve local link",
+            "data": { "id": 7 }
+          }
+        ]
+        """)
+
+        XCTAssertTrue(vc.showDocumentLinksPanelInActiveTab())
+        let panel = try XCTUnwrap(window.childWindows?.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.documentLinkPanel
+        })
+        XCTAssertEqual(panel.title, "Document Links (2)")
+
+        let root = try XCTUnwrap(panel.contentView)
+        let searchField = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.documentLinkPanelSearchField, in: root) as? NSSearchField
+        )
+        let table = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.documentLinkPanelTable, in: root) as? NSTableView
+        )
+        XCTAssertEqual(searchField.placeholderString, "Filter document links...")
+        XCTAssertEqual(table.numberOfRows, 2)
+        XCTAssertEqual(vc._documentLinkPanelRowCountForTesting(), 2)
+        XCTAssertEqual(vc._documentLinkPanelItemsForTesting().map(\.title), [
+            "https://example.com/docs",
+            "Resolve local link",
+        ])
+        XCTAssertEqual(vc._documentLinkPanelItemsForTesting().map(\.target), [
+            "https://example.com/docs",
+            nil,
+        ])
+        XCTAssertTrue(vc._documentLinkPanelIsVisibleForTesting())
     }
 
     func testInlayHintClickUsesResolveFeedbackWhenLspDisabled() throws {
@@ -1569,6 +1637,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "lsp.refresh_inlay_hints", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_inlay_hints_panel", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.refresh_document_links", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.show_document_links_panel", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.quick_fix", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.refactor", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.source_actions", in: menu))
