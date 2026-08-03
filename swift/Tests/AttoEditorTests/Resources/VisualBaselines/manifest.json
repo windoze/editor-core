@@ -483,6 +483,99 @@
       },
       "perChannelTolerance": 2,
       "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "persistent-locations-panel-dark",
+      "description": "Dark persistent Locations panel with metadata and multiple references.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/persistent-locations-panel-dark.png",
+      "artifactName": "persistent-locations-panel-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 860,
+        "height": 540
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.LSP.LocationPanel.Panel",
+        "width": 700,
+        "height": 360
+      },
+      "lspLocationResults": {
+        "kind": "references",
+        "presentation": "persistentPanel",
+        "targets": [
+          {
+            "line": 0,
+            "utf16Character": 7,
+            "length": 14
+          },
+          {
+            "line": 1,
+            "utf16Character": 8,
+            "length": 12
+          },
+          {
+            "line": 4,
+            "utf16Character": 8,
+            "length": 5
+          }
+        ]
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "persistent-symbols-panel-dark",
+      "description": "Dark persistent Symbols panel with metadata and nested document symbols.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/persistent-symbols-panel-dark.png",
+      "artifactName": "persistent-symbols-panel-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 900,
+        "height": 560
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.LSP.SymbolPanel.Panel",
+        "width": 760,
+        "height": 420
+      },
+      "lspSymbolResults": {
+        "title": "Document Symbols",
+        "placeholder": "Filter document symbols...",
+        "presentation": "persistentPanel",
+        "symbols": [
+          {
+            "name": "PaletteFixture",
+            "kindLabel": "Struct",
+            "line": 0,
+            "utf16Character": 7
+          },
+          {
+            "name": "primaryValue",
+            "kindLabel": "Property",
+            "containerName": "PaletteFixture",
+            "line": 1,
+            "utf16Character": 8,
+            "depth": 1
+          },
+          {
+            "name": "renderLine",
+            "detail": "() -> String",
+            "kindLabel": "Method",
+            "containerName": "PaletteFixture",
+            "line": 3,
+            "utf16Character": 9,
+            "depth": 1
+          }
+        ]
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
     }
   ]
 }

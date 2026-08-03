@@ -2195,6 +2195,13 @@
     - `swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures`
     - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
     - `git diff --check`
+- 中间提交：`test(app): cover visual persistent result panels`
+  - 所属任务：阶段 13 的 macOS UI 自动化与视觉回归测试体系增量；继续扩展 result panel 视觉矩阵，把持久在线 Locations/Symbols panels 纳入可记录 artifact。
+  - 提交边界：测试 harness 为 `lspLocationResults` / `lspSymbolResults` 新增 `presentation: persistentPanel` 场景，记录 result lifecycle store 后打开持久在线 panel；manifest 新增 dark persistent Locations panel 和 dark persistent Symbols panel 两个 artifact case。该提交不提交 golden PNG、不启用 strict 默认门禁、不改变产品 UI 或运行时代码，也不覆盖 Problems/Workbench/Code Lens/Inlay/Document Links/Colors/Hierarchy 等其它持久在线 panels。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures`
+    - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
+    - `git diff --check`
 
 ## 阶段 14: 外观、布局与 Sublime-like 操作打磨
 

@@ -243,10 +243,18 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
         if let symbolResults = visualCase.lspSymbolResults {
             let tab = try XCTUnwrap(vc.activeTab, visualCase.id)
             let documentURI = vc.projectedFileURL(for: tab).standardizedFileURL.absoluteString
-            vc.showLspSymbolResults(
-                symbolResults.symbols(documentURI: documentURI),
-                placeholder: symbolResults.placeholder
-            )
+            let symbols = symbolResults.symbols(documentURI: documentURI)
+            switch symbolResults.presentation {
+            case .quickPanel:
+                vc.showLspSymbolResults(symbols, placeholder: symbolResults.placeholder)
+            case .persistentPanel:
+                vc.recordLspSymbolResultSnapshot(AttoEditorAreaViewController.LspSymbolResultSnapshot(
+                    title: symbolResults.title,
+                    symbols: symbols,
+                    placeholder: symbolResults.placeholder
+                ))
+                XCTAssertTrue(vc.showLspSymbolPanel(), visualCase.id)
+            }
         }
         if let locationResults = visualCase.lspLocationResults {
             let tab = try XCTUnwrap(vc.activeTab, visualCase.id)
@@ -258,6 +266,9 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
                 ),
                 visualCase.id
             )
+            if locationResults.presentation == .persistentPanel {
+                XCTAssertTrue(vc.showLspLocationPanel(), visualCase.id)
+            }
         }
         if let codeActionResults = visualCase.codeActionResults {
             XCTAssertTrue(
@@ -613,12 +624,34 @@ private struct AttoVisualDiagnosticMarker: Decodable, Equatable {
 }
 
 private struct AttoVisualLspSymbolResults: Decodable, Equatable {
+    let title: String
     let placeholder: String
+    let presentation: AttoVisualPanelPresentation
     let symbols: [AttoVisualLspSymbol]
+
+    enum CodingKeys: String, CodingKey {
+        case title
+        case placeholder
+        case presentation
+        case symbols
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        title = try container.decodeIfPresent(String.self, forKey: .title) ?? "Document Symbols"
+        placeholder = try container.decode(String.self, forKey: .placeholder)
+        presentation = try container.decodeIfPresent(AttoVisualPanelPresentation.self, forKey: .presentation) ?? .quickPanel
+        symbols = try container.decode([AttoVisualLspSymbol].self, forKey: .symbols)
+    }
 
     func symbols(documentURI: String) -> [AttoLspSymbolParser.Symbol] {
         symbols.map { $0.symbol(documentURI: documentURI) }
     }
+}
+
+private enum AttoVisualPanelPresentation: String, Codable, Equatable {
+    case quickPanel
+    case persistentPanel
 }
 
 private struct AttoVisualLspSymbol: Decodable, Equatable {
@@ -667,9 +700,23 @@ private struct AttoVisualLspSymbol: Decodable, Equatable {
     }
 }
 
-private struct AttoVisualLspLocationResults: Codable, Equatable {
+private struct AttoVisualLspLocationResults: Decodable, Equatable {
     let kind: AttoVisualLspLocationKind
+    let presentation: AttoVisualPanelPresentation
     let targets: [AttoVisualLspLocationTarget]
+
+    enum CodingKeys: String, CodingKey {
+        case kind
+        case presentation
+        case targets
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try container.decode(AttoVisualLspLocationKind.self, forKey: .kind)
+        presentation = try container.decodeIfPresent(AttoVisualPanelPresentation.self, forKey: .presentation) ?? .quickPanel
+        targets = try container.decode([AttoVisualLspLocationTarget].self, forKey: .targets)
+    }
 
     var requestKind: AttoEditorAreaViewController.LspLocationRequestKind {
         switch kind {
