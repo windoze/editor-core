@@ -304,17 +304,23 @@ final class AttoWorkspaceEditSummaryTests: XCTestCase {
         let preview = AttoWorkspaceEditPreview(result: result, parsedWorkspaceEdit: workspaceEdit)
 
         XCTAssertTrue(preview.requiresConfirmation)
+        XCTAssertEqual(preview.applyButtonTitle, "Apply Non-Conflicting Changes")
+        XCTAssertEqual(preview.conflictGroups.count, 1)
+        XCTAssertEqual(preview.conflictGroups[0].kind, "dirty_document")
+        XCTAssertEqual(preview.conflictGroups[0].operation, "delete")
         XCTAssertEqual(
             preview.displayText,
             """
             Workspace edit preview.
             Will apply 1 edit across 2 documents.
+            1 conflict will be skipped; non-conflicting changes remain applicable.
 
             Will affect:
             - main.swift (1 edit, open)
 
             Conflicts:
-            - dirty.swift [dirty_document: delete: resource_operation_dirty_target]
+            - Dirty document delete: 1 conflict
+              - dirty.swift [resource_operation_dirty_target]
             """
         )
 
@@ -327,9 +333,77 @@ final class AttoWorkspaceEditSummaryTests: XCTestCase {
 
         XCTAssertEqual(sections.count, 2)
         XCTAssertEqual(sections[1].title, "dirty.swift")
-        XCTAssertEqual(sections[1].subtitle, "dirty_document: delete: resource_operation_dirty_target")
+        XCTAssertEqual(sections[1].subtitle, "Dirty document: delete: resource_operation_dirty_target")
+        XCTAssertTrue(sections[1].detailText.contains("Category: Dirty document"))
         XCTAssertTrue(sections[1].detailText.contains("Kind: dirty_document"))
         XCTAssertTrue(sections[1].detailText.contains("Message: delete targets a modified open tab"))
+        XCTAssertTrue(sections[1].detailText.contains("Impact: This change will be skipped before apply."))
+        XCTAssertTrue(sections[1].detailText.contains("Suggested action: Save or discard the open tab changes"))
+    }
+
+    func testWorkspaceEditPreviewGroupsMultipleConflictKinds() throws {
+        let result = try decodeTransactionResult("""
+        {
+          "mode": "preview",
+          "apply_mode": "partial",
+          "applied": true,
+          "applied_uris": ["file:///project/main.swift"],
+          "applied_edit_count": 1,
+          "applied_resource_operation_count": 0,
+          "conflicts": [
+            {
+              "uri": "file:///project/second.swift",
+              "kind": "version",
+              "reason": "version_mismatch",
+              "operation": "text_edit",
+              "message": "document version changed"
+            },
+            {
+              "uri": "file:///project/dirty.swift",
+              "kind": "dirty_document",
+              "reason": "resource_operation_dirty_target",
+              "operation": "delete",
+              "message": "delete targets a modified open tab"
+            },
+            {
+              "uri": "file:///project/third.swift",
+              "kind": "version",
+              "reason": "version_mismatch",
+              "operation": "text_edit",
+              "message": "document version changed"
+            }
+          ],
+          "skipped_uris": [
+            "file:///project/dirty.swift",
+            "file:///project/second.swift",
+            "file:///project/third.swift"
+          ],
+          "documents": [
+            {
+              "uri": "file:///project/main.swift",
+              "edit_count": 1,
+              "is_open": true
+            }
+          ]
+        }
+        """)
+
+        let preview = AttoWorkspaceEditPreview(result: result)
+
+        XCTAssertEqual(preview.applyButtonTitle, "Apply Non-Conflicting Changes")
+        XCTAssertEqual(preview.conflictGroups.count, 2)
+        XCTAssertEqual(preview.conflictGroups[0].kind, "dirty_document")
+        XCTAssertEqual(preview.conflictGroups[0].conflicts.map(\.uri), ["file:///project/dirty.swift"])
+        XCTAssertEqual(preview.conflictGroups[1].kind, "version")
+        XCTAssertEqual(preview.conflictGroups[1].conflicts.map(\.uri), [
+            "file:///project/second.swift",
+            "file:///project/third.swift",
+        ])
+        XCTAssertTrue(preview.displayText.contains("3 conflicts will be skipped; non-conflicting changes remain applicable."))
+        XCTAssertTrue(preview.displayText.contains("- Dirty document delete: 1 conflict"))
+        XCTAssertTrue(preview.displayText.contains("- Version mismatch text edit: 2 conflicts"))
+        XCTAssertTrue(preview.displayText.contains("  - second.swift [version_mismatch]"))
+        XCTAssertTrue(preview.displayText.contains("  - third.swift [version_mismatch]"))
     }
 
     func testWorkspaceEditPreviewDetailBuilderBuildsTextDiffSections() throws {

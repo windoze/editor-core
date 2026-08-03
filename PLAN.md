@@ -446,6 +446,14 @@
 - 中间提交：`feat(ui): redo workspace edit transactions`
   - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；把 core-owned WorkspaceEdit transaction undo stack 后的 redo 能力从缺口推进到 Rust core、C ABI、Swift typed wrapper、AttoEditor command/menu/keymap、AppKit `UndoManager` redo 和 history panel 可见路径。
   - 提交边界：新增 `MultiDocumentEditorUi.redo_last_workspace_edit_transaction(...)` 和 UI FFI `editor_core_ui_ffi_multi_document_redo_last_workspace_edit_transaction_json(...)`；redo record 复用原始 WorkspaceEdit transaction JSON 重新走 core apply 路径，并移除 redo 用 `TextDocumentEdit.version` 以避免 undo 后 document version 变化误阻断 redo；新增 `ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_REDO`、Swift `MultiDocumentEditorUI.redoLastWorkspaceEditTransaction()`、`workspace.redo_last_workspace_edit` command、Edit 菜单项、`cmd+option+shift+z` 默认 binding、AppKit redo action 和 history panel redo event 展示。本提交不实现更深层 conflict resolution UI，不改变普通 editor buffer undo/redo 语义。
+
+- 中间提交：`feat(app): group workspace edit conflict previews`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；把 AttoEditor WorkspaceEdit preview panel 的 typed conflicts 从逐条平铺推进到按 conflict kind/operation 分组展示，并在确认动作上明确 partial apply 只应用非冲突变更。
+  - 提交边界：只调整 Swift/App preview display model、preview panel Apply 按钮标题和 detail section 文案；新增 conflict group、human-readable conflict category、partial/atomic conflict summary 和按 kind 的 suggested action；不新增 Rust/FFI ABI，不改变 core transaction apply/preview/undo/redo 语义，不实现跨 transaction conflict resolution、自动修复或更深层 core conflict 检测。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoWorkspaceEditSummaryTests`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEditPreviewConfirmationCanCancelCoreTransaction`
+    - `git diff --check`
   - 验证记录：
     - `cargo fmt --package editor-core-ui --package editor-core-ui-ffi`
     - `cargo test -p editor-core-ui multi_document_ui_redoes_last_workspace_edit_transaction`

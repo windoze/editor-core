@@ -92,7 +92,7 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
         summaryLabel.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.workspaceEditPreviewSummary)
         summaryLabel.font = NSFont.systemFont(ofSize: 12)
         summaryLabel.textColor = NSColor(attoHex: 0xD4D4D4)
-        summaryLabel.maximumNumberOfLines = 2
+        summaryLabel.maximumNumberOfLines = 3
         summaryLabel.lineBreakMode = .byTruncatingTail
         summaryLabel.translatesAutoresizingMaskIntoConstraints = false
 
@@ -185,6 +185,7 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
         cancelButton.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.workspaceEditPreviewCancelButton)
         cancelButton.translatesAutoresizingMaskIntoConstraints = false
 
+        applyButton.title = preview?.applyButtonTitle ?? "Apply"
         applyButton.target = self
         applyButton.action = #selector(applyClicked(_:))
         applyButton.bezelStyle = .rounded

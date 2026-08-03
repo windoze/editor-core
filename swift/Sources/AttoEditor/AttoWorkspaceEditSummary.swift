@@ -38,6 +38,13 @@ struct AttoWorkspaceEditPreview: Equatable {
         let message: String
     }
 
+    struct ConflictGroup: Equatable {
+        let kind: String
+        let operation: String?
+        let conflicts: [Conflict]
+    }
+
+    let applyMode: String
     let applied: Bool
     let appliedEditCount: Int
     let appliedResourceOperationCount: Int
@@ -52,6 +59,7 @@ struct AttoWorkspaceEditPreview: Equatable {
         result: EcuWorkspaceEditTransactionResult,
         parsedWorkspaceEdit: AttoWorkspaceEditParser.ParseResult? = nil
     ) {
+        applyMode = result.applyMode
         applied = result.applied
         let parsedEditCount = parsedWorkspaceEdit?.documents.reduce(0) { $0 + $1.edits.count } ?? 0
         appliedEditCount = max(result.appliedEditCount, parsedEditCount)
@@ -141,6 +149,36 @@ struct AttoWorkspaceEditPreview: Equatable {
         return false
     }
 
+    var applyButtonTitle: String {
+        guard conflicts.isEmpty == false else { return "Apply" }
+        if applyMode == "atomic" {
+            return "Apply Atomically"
+        }
+        return "Apply Non-Conflicting Changes"
+    }
+
+    var conflictGroups: [ConflictGroup] {
+        var groupsByKey: [String: [Conflict]] = [:]
+        var groupMetadata: [String: (kind: String, operation: String?)] = [:]
+        for conflict in conflicts {
+            let key = Self.conflictGroupKey(kind: conflict.kind, operation: conflict.operation)
+            groupsByKey[key, default: []].append(conflict)
+            groupMetadata[key] = (conflict.kind, conflict.operation)
+        }
+        return groupsByKey.keys.sorted { lhs, rhs in
+            let lhsMetadata = groupMetadata[lhs] ?? ("", nil)
+            let rhsMetadata = groupMetadata[rhs] ?? ("", nil)
+            return Self.conflictGroupSortKey(kind: lhsMetadata.kind, operation: lhsMetadata.operation)
+                < Self.conflictGroupSortKey(kind: rhsMetadata.kind, operation: rhsMetadata.operation)
+        }.map { key in
+            let metadata = groupMetadata[key] ?? ("", nil)
+            let conflicts = (groupsByKey[key] ?? []).sorted {
+                Self.conflictSortKey($0) < Self.conflictSortKey($1)
+            }
+            return ConflictGroup(kind: metadata.kind, operation: metadata.operation, conflicts: conflicts)
+        }
+    }
+
     var panelSections: [Section] {
         if sections.isEmpty == false {
             return sections
@@ -159,6 +197,10 @@ struct AttoWorkspaceEditPreview: Equatable {
         var lines: [String] = []
         lines.append("Workspace edit preview.")
         lines.append(summaryLine)
+
+        if let conflictSummaryLine {
+            lines.append(conflictSummaryLine)
+        }
 
         let documentRows = previewRows()
         if documentRows.isEmpty == false {
@@ -192,6 +234,15 @@ struct AttoWorkspaceEditPreview: Equatable {
             return "Will apply \(editText) and \(resourceText) across \(documentText)."
         }
         return "Will apply \(editText) across \(documentText)."
+    }
+
+    private var conflictSummaryLine: String? {
+        guard conflicts.isEmpty == false else { return nil }
+        let countText = Self.conflictCountText(conflicts.count)
+        if applyMode == "atomic" {
+            return "\(countText) will block atomic apply until resolved."
+        }
+        return "\(countText) will be skipped; non-conflicting changes remain applicable."
     }
 
     private func previewRows() -> [String] {
@@ -232,20 +283,20 @@ struct AttoWorkspaceEditPreview: Equatable {
     }
 
     private func conflictPreviewRows() -> [String] {
-        conflicts.map { conflict in
-            var details: [String] = []
-            if conflict.kind.isEmpty == false {
-                details.append(conflict.kind)
+        var rows: [String] = []
+        for group in conflictGroups {
+            let groupTitle = Self.conflictGroupTitle(kind: group.kind, operation: group.operation)
+            rows.append("- \(groupTitle): \(Self.conflictCountText(group.conflicts.count))")
+            for conflict in group.conflicts {
+                var details: [String] = []
+                if conflict.reason.isEmpty == false {
+                    details.append(conflict.reason)
+                }
+                let suffix = details.isEmpty ? "" : " [\(details.joined(separator: ": "))]"
+                rows.append("  - \(Self.displayName(for: conflict.uri))\(suffix)")
             }
-            if let operation = conflict.operation, operation.isEmpty == false {
-                details.append(operation)
-            }
-            if conflict.reason.isEmpty == false {
-                details.append(conflict.reason)
-            }
-            let suffix = details.isEmpty ? "" : " [\(details.joined(separator: ": "))]"
-            return "- \(Self.displayName(for: conflict.uri))\(suffix)"
-        }.sorted()
+        }
+        return rows
     }
 
     private func skippedPreviewRows(excluding excludedIdentities: Set<String>) -> [String] {
@@ -287,6 +338,10 @@ struct AttoWorkspaceEditPreview: Equatable {
         count == 1 ? "1 resource operation" : "\(count) resource operations"
     }
 
+    fileprivate static func conflictCountText(_ count: Int) -> String {
+        count == 1 ? "1 conflict" : "\(count) conflicts"
+    }
+
     private static func documentCountText(_ count: Int) -> String {
         count == 1 ? "1 document" : "\(count) documents"
     }
@@ -309,6 +364,123 @@ struct AttoWorkspaceEditPreview: Equatable {
 
     fileprivate static func detailIdentity(uri: String, reason: String, operation: String?) -> String {
         "\(uri)\u{1F}\(reason)\u{1F}\(operation ?? "")"
+    }
+
+    fileprivate static func conflictKindDisplayName(_ kind: String) -> String {
+        switch kind {
+        case "dirty_document":
+            return "Dirty document"
+        case "version":
+            return "Version mismatch"
+        case "overlap":
+            return "Overlapping text edits"
+        case "resource_dependency":
+            return "Resource dependency"
+        case "resource_target":
+            return "Resource target"
+        case "missing_resource":
+            return "Missing resource"
+        case "workspace_boundary":
+            return "Workspace boundary"
+        case "unsupported_uri":
+            return "Unsupported URI"
+        case "resource_options":
+            return "Resource options"
+        case "apply_failure":
+            return "Apply failure"
+        case "", "other":
+            return "Other conflict"
+        default:
+            return conflictTokenDisplayName(kind)
+        }
+    }
+
+    fileprivate static func conflictGroupTitle(kind: String, operation: String?) -> String {
+        let kindTitle = conflictKindDisplayName(kind)
+        guard let operation, operation.isEmpty == false else {
+            return kindTitle
+        }
+        return "\(kindTitle) \(conflictOperationDisplayName(operation))"
+    }
+
+    fileprivate static func conflictOperationDisplayName(_ operation: String) -> String {
+        operation.replacingOccurrences(of: "_", with: " ")
+    }
+
+    fileprivate static func conflictResolutionHint(kind: String) -> String {
+        switch kind {
+        case "dirty_document":
+            return "Save or discard the open tab changes, then run the action again."
+        case "version":
+            return "Refresh the language-server result or re-run the action against the current document version."
+        case "overlap":
+            return "Request a new edit or apply smaller non-overlapping changes."
+        case "resource_dependency":
+            return "Resolve the earlier resource operation conflict before applying dependent text edits."
+        case "resource_target":
+            return "Rename, close, or remove the target file before retrying."
+        case "missing_resource":
+            return "Restore or open the target resource, then re-run the action."
+        case "workspace_boundary":
+            return "Keep the operation inside the configured workspace root."
+        case "unsupported_uri":
+            return "Only local file:// WorkspaceEdit resources are supported by this App path."
+        case "resource_options":
+            return "Adjust the resource operation options before retrying."
+        case "apply_failure":
+            return "Review the failure and retry after the file can be read or written."
+        default:
+            return "Review this conflict before retrying the WorkspaceEdit."
+        }
+    }
+
+    private static func conflictGroupKey(kind: String, operation: String?) -> String {
+        "\(kind)\u{1F}\(operation ?? "")"
+    }
+
+    private static func conflictGroupSortKey(kind: String, operation: String?) -> String {
+        let rank = conflictKindRank(kind)
+        return "\(String(format: "%02d", rank))|\(operation ?? "")|\(kind)"
+    }
+
+    private static func conflictSortKey(_ conflict: Conflict) -> String {
+        "\(displayName(for: conflict.uri))|\(conflict.reason)|\(conflict.operation ?? "")"
+    }
+
+    private static func conflictKindRank(_ kind: String) -> Int {
+        switch kind {
+        case "dirty_document":
+            return 0
+        case "version":
+            return 1
+        case "overlap":
+            return 2
+        case "resource_dependency":
+            return 3
+        case "resource_target":
+            return 4
+        case "missing_resource":
+            return 5
+        case "workspace_boundary":
+            return 6
+        case "unsupported_uri":
+            return 7
+        case "resource_options":
+            return 8
+        case "apply_failure":
+            return 9
+        default:
+            return 10
+        }
+    }
+
+    private static func conflictTokenDisplayName(_ token: String) -> String {
+        token
+            .split(separator: "_")
+            .map { part in
+                part.prefix(1).uppercased() + part.dropFirst()
+            }
+            .joined(separator: " ")
     }
 }
 
@@ -492,17 +664,24 @@ enum AttoWorkspaceEditPreviewDetailBuilder {
         _ conflict: AttoWorkspaceEditPreview.Conflict
     ) -> AttoWorkspaceEditPreview.Section {
         let title = AttoWorkspaceEditPreview.displayName(for: conflict.uri)
-        let subtitle = [conflict.kind, conflict.operation, conflict.reason]
+        let subtitle = [
+            AttoWorkspaceEditPreview.conflictKindDisplayName(conflict.kind),
+            conflict.operation.map { AttoWorkspaceEditPreview.conflictOperationDisplayName($0) },
+            conflict.reason,
+        ]
             .compactMap { value in
                 guard let value, value.isEmpty == false else { return nil }
                 return value
             }
             .joined(separator: ": ")
         let detailLines = detailHeader(title: title, uri: conflict.uri, subtitle: "conflict") + [
+            "Category: \(AttoWorkspaceEditPreview.conflictKindDisplayName(conflict.kind))",
             "Kind: \(conflict.kind.isEmpty ? "other" : conflict.kind)",
             "Operation: \(conflict.operation ?? "unknown")",
             "Reason: \(conflict.reason.isEmpty ? "unknown" : conflict.reason)",
             "Message: \(conflict.message.isEmpty ? "No detail." : conflict.message)",
+            "Impact: This change will be skipped before apply.",
+            "Suggested action: \(AttoWorkspaceEditPreview.conflictResolutionHint(kind: conflict.kind))",
         ]
         return AttoWorkspaceEditPreview.Section(
             uri: conflict.uri,
