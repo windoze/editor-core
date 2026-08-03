@@ -63,6 +63,7 @@ include:
 - `ECF_FEATURE_SUBLIME_PROCESSOR`
 - `ECF_FEATURE_TREESITTER_PROCESSOR`
 - `ECF_FEATURE_JSON_COMMAND_ENVELOPE`
+- `ECF_FEATURE_RENDERING_SNAPSHOT_ENVELOPE`
 
 `editor_core_ffi_runtime_info_json()` returns a caller-owned one-call capability snapshot for
 C/non-Swift hosts:
@@ -72,7 +73,7 @@ C/non-Swift hosts:
   "kind": "editor-core-ffi",
   "abi_version": 1,
   "version": "0.5.0",
-  "feature_flags": 511,
+  "feature_flags": 1023,
   "features": [
     { "bit": 0, "flag": 1, "name": "json_command_dispatch", "description": "..." }
   ]
@@ -200,6 +201,62 @@ char* editor_core_ffi_workspace_execute_envelope_json(EcfWorkspace* workspace, u
     "code": "command_failed",
     "status": 6,
     "message": "command execution failed: ..."
+  },
+  "version": 1
+}
+```
+
+## Rendering Snapshot Envelopes
+
+Legacy headless rendering snapshot helpers keep returning raw JSON on success and `NULL` on
+failure. Hosts that need non-null structured success/error results can use the envelope variants
+guarded by `ECF_FEATURE_RENDERING_SNAPSHOT_ENVELOPE`:
+
+```c
+char* editor_core_ffi_editor_state_minimap_envelope_json(
+    const EcfEditorState* state,
+    uint32_t start_visual_row,
+    uint32_t count);
+
+char* editor_core_ffi_workspace_minimap_envelope_json(
+    EcfWorkspace* workspace,
+    uint64_t view_id,
+    uint32_t start_visual_row,
+    uint32_t count);
+```
+
+Success envelopes preserve the legacy minimap payload under `value` and include stable query
+metadata:
+
+```json
+{
+  "ok": true,
+  "status": "success",
+  "surface": "workspace_minimap",
+  "view_id": 42,
+  "start_visual_row": 0,
+  "count": 20,
+  "value": { "lines": [] },
+  "error": null,
+  "version": 1
+}
+```
+
+Failure envelopes keep the same metadata and report a structured `EcfStatus`:
+
+```json
+{
+  "ok": false,
+  "status": "error",
+  "surface": "workspace_minimap",
+  "view_id": 999999,
+  "start_visual_row": 0,
+  "count": 20,
+  "value": null,
+  "error": {
+    "code": "internal",
+    "status": 7,
+    "message": "get_minimap_content failed: ..."
   },
   "version": 1
 }

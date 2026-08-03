@@ -505,6 +505,40 @@ pub extern "C" fn editor_core_ffi_workspace_minimap_json(
     })
 }
 
+/// Get minimap snapshot for a view as a stable JSON result envelope.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_workspace_minimap_envelope_json(
+    workspace: *mut EcfWorkspace,
+    view_id: u64,
+    start_visual_row: u32,
+    count: u32,
+) -> *mut c_char {
+    minimap_envelope_json_ptr(
+        "workspace_minimap",
+        Some(view_id),
+        start_visual_row,
+        count,
+        || {
+            let workspace = require_mut(workspace, "workspace")
+                .map_err(|message| (EcfStatus::InvalidArgument, message))?;
+            let start_visual_row = usize_from_u32(start_visual_row, "start_visual_row")
+                .map_err(|message| (EcfStatus::InvalidArgument, message))?;
+            let count = usize_from_u32(count, "count")
+                .map_err(|message| (EcfStatus::InvalidArgument, message))?;
+            let grid = workspace
+                .inner
+                .get_minimap_content(ViewId::from_raw(view_id), start_visual_row, count)
+                .map_err(|err| {
+                    (
+                        EcfStatus::Internal,
+                        format!("get_minimap_content failed: {err:?}"),
+                    )
+                })?;
+            Ok(value_minimap_grid(&grid))
+        },
+    )
+}
+
 /// Get composed viewport snapshot for a view as JSON.
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ffi_workspace_viewport_composed_json(

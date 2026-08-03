@@ -185,6 +185,23 @@ public final class Workspace {
         )
     }
 
+    public func minimapEnvelopeJSON(viewId: UInt64, startVisualRow: UInt, rowCount: UInt) throws -> String {
+        let start = try checkedFFIUInt32(startVisualRow, context: "workspace_minimap_envelope_json.start_visual_row")
+        let count = try checkedFFIUInt32(rowCount, context: "workspace_minimap_envelope_json.count")
+        return try ffi.takeOwnedCString(
+            editor_core_ffi_workspace_minimap_envelope_json(handle, viewId, start, count),
+            context: "workspace_minimap_envelope_json"
+        )
+    }
+
+    public func minimapEnvelope(viewId: UInt64, startVisualRow: UInt, rowCount: UInt) throws -> EcfMinimapEnvelope {
+        try JSON.decode(
+            EcfMinimapEnvelope.self,
+            from: minimapEnvelopeJSON(viewId: viewId, startVisualRow: startVisualRow, rowCount: rowCount),
+            context: "workspace_minimap_envelope"
+        )
+    }
+
     public func viewportComposedJSON(viewId: UInt64, startVisualRow: UInt, rowCount: UInt) throws -> String {
         let start = try checkedFFIUInt32(startVisualRow, context: "workspace_viewport_composed_json.start_visual_row")
         let count = try checkedFFIUInt32(rowCount, context: "workspace_viewport_composed_json.count")

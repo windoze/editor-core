@@ -19,6 +19,8 @@ pub const ECF_FEATURE_SUBLIME_PROCESSOR: u64 = 1 << 6;
 pub const ECF_FEATURE_TREESITTER_PROCESSOR: u64 = 1 << 7;
 /// Feature bit: JSON command dispatcher can return `{ ok, value, error, version }` envelopes.
 pub const ECF_FEATURE_JSON_COMMAND_ENVELOPE: u64 = 1 << 8;
+/// Feature bit: headless rendering snapshot query APIs can return structured envelopes.
+pub const ECF_FEATURE_RENDERING_SNAPSHOT_ENVELOPE: u64 = 1 << 9;
 
 pub const ECF_FEATURE_FLAGS: u64 = ECF_FEATURE_JSON_COMMAND_DISPATCH
     | ECF_FEATURE_TYPED_HOT_PATH
@@ -28,7 +30,8 @@ pub const ECF_FEATURE_FLAGS: u64 = ECF_FEATURE_JSON_COMMAND_DISPATCH
     | ECF_FEATURE_LSP_HELPERS
     | ECF_FEATURE_SUBLIME_PROCESSOR
     | ECF_FEATURE_TREESITTER_PROCESSOR
-    | ECF_FEATURE_JSON_COMMAND_ENVELOPE;
+    | ECF_FEATURE_JSON_COMMAND_ENVELOPE
+    | ECF_FEATURE_RENDERING_SNAPSHOT_ENVELOPE;
 
 struct FeatureDescriptor {
     bit: u8,
@@ -91,6 +94,12 @@ const FEATURE_DESCRIPTORS: &[FeatureDescriptor] = &[
         flag: ECF_FEATURE_JSON_COMMAND_ENVELOPE,
         name: "json_command_envelope",
         description: "JSON command dispatcher can return structured result envelopes.",
+    },
+    FeatureDescriptor {
+        bit: 9,
+        flag: ECF_FEATURE_RENDERING_SNAPSHOT_ENVELOPE,
+        name: "rendering_snapshot_envelope",
+        description: "Headless rendering snapshot query APIs can return structured result envelopes.",
     },
 ];
 

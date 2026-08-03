@@ -159,6 +159,107 @@ public struct EcfJSONCommandError: Equatable, Sendable, Decodable {
     }
 }
 
+public enum EcfMinimapEnvelopeStatus: Hashable, Sendable {
+    case success
+    case error
+    case unknown(String)
+
+    public init(rawValue: String) {
+        switch rawValue {
+        case "success":
+            self = .success
+        case "error":
+            self = .error
+        default:
+            self = .unknown(rawValue)
+        }
+    }
+
+    public var rawValue: String {
+        switch self {
+        case .success:
+            return "success"
+        case .error:
+            return "error"
+        case let .unknown(rawValue):
+            return rawValue
+        }
+    }
+}
+
+public struct EcfMinimapEnvelope: Equatable, Sendable, Decodable {
+    public let ok: Bool
+    public let status: String
+    public let surface: String
+    public let viewId: UInt64?
+    public let startVisualRow: UInt32
+    public let count: UInt32
+    public let value: EcfJSONValue?
+    public let error: EcfMinimapEnvelopeError?
+    public let version: UInt32
+
+    public var statusKind: EcfMinimapEnvelopeStatus {
+        EcfMinimapEnvelopeStatus(rawValue: status)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case ok
+        case status
+        case surface
+        case viewId
+        case viewIdSnake = "view_id"
+        case startVisualRow
+        case startVisualRowSnake = "start_visual_row"
+        case count
+        case value
+        case error
+        case version
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        ok = try container.decode(Bool.self, forKey: .ok)
+        status = try container.decodeIfPresent(String.self, forKey: .status) ?? "unknown"
+        surface = try container.decodeIfPresent(String.self, forKey: .surface) ?? "unknown"
+        viewId = try container.decodeIfPresent(UInt64.self, forKey: .viewId)
+            ?? container.decodeIfPresent(UInt64.self, forKey: .viewIdSnake)
+        startVisualRow = try container.decodeIfPresent(UInt32.self, forKey: .startVisualRow)
+            ?? container.decodeIfPresent(UInt32.self, forKey: .startVisualRowSnake)
+            ?? 0
+        count = try container.decodeIfPresent(UInt32.self, forKey: .count) ?? 0
+        if container.contains(.value) {
+            value = try container.decode(EcfJSONValue.self, forKey: .value)
+        } else {
+            value = nil
+        }
+        error = try container.decodeIfPresent(EcfMinimapEnvelopeError.self, forKey: .error)
+        version = try container.decodeIfPresent(UInt32.self, forKey: .version) ?? 0
+    }
+}
+
+public struct EcfMinimapEnvelopeError: Equatable, Sendable, Decodable {
+    public let code: String
+    public let status: EcfStatus?
+    public let message: String
+
+    private enum CodingKeys: String, CodingKey {
+        case code
+        case status
+        case message
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        code = try container.decodeIfPresent(String.self, forKey: .code) ?? "unknown"
+        message = try container.decodeIfPresent(String.self, forKey: .message) ?? ""
+        if let rawStatus = try container.decodeIfPresent(Int32.self, forKey: .status) {
+            status = EcfStatus(rawValue: rawStatus)
+        } else {
+            status = nil
+        }
+    }
+}
+
 public struct EcfAutoPair: Equatable, Sendable {
     public let open: String
     public let close: String

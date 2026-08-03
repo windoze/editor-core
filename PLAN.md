@@ -1862,6 +1862,21 @@
     - `swift test --package-path swift --filter 'AttoRuntimeCompatibilityTests/test(MissingOptionalFeaturesDoNotBlockLaunchCompatibility|ReportsMissingRequiredFeatures)'`
     - `cargo fmt --check`
     - `git diff --check`
+- 中间提交：`feat(ffi): envelope headless minimap snapshots`
+  - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；把 headless `EditorState` / `Workspace` minimap snapshot JSON result 面纳入统一结构化 envelope。
+  - 提交边界：新增 `editor_core_ffi_editor_state_minimap_envelope_json(...)`、`editor_core_ffi_workspace_minimap_envelope_json(...)` 和 `ECF_FEATURE_RENDERING_SNAPSHOT_ENVELOPE` feature bit；legacy `editor_core_ffi_editor_state_minimap_json(...)` / `editor_core_ffi_workspace_minimap_json(...)` 保持 raw JSON/null+last_error 语义；Swift `EditorState` / `Workspace` 新增 raw/typed envelope accessor 与 `EcfMinimapEnvelope`，runtime compatibility 同步新增该能力。该提交不切换 App minimap 主路径，不替换 viewport styled/composed/blob 查询，不改变 minimap JSON schema，也不完成完整外部 capability negotiation protocol。
+  - 验证记录：
+    - `cargo test -p editor-core-ffi --test abi_v1 editor_state_minimap_envelope_json_reports_success_and_errors`
+    - `cargo test -p editor-core-ffi --test abi_v1 workspace_minimap_envelope_json_reports_success_and_errors`
+    - `cargo test -p editor-core-ffi --test abi_v1 runtime_info_json_reports_version_and_feature_descriptors`
+    - `cargo test -p editor-core-ffi --test abi_v1 feature_flags_and_alias_work`
+    - `cargo build -p editor-core-ffi --release`
+    - `swift test --package-path swift --filter 'EditorStateCoreTests/testMinimapEnvelope'`
+    - `swift test --package-path swift --filter 'WorkspaceTests/testWorkspaceMinimapEnvelope'`
+    - `swift test --package-path swift --filter 'FFILibrarySmokeTests/testLoadsLibraryAndVersion'`
+    - `swift test --package-path swift --filter 'EditorCoreFFIRuntimeCompatibilityTests/testReportsMissingRequiredFeatures'`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 11: Tree-sitter 与 LSP 主路线产品化
 

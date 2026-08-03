@@ -293,6 +293,31 @@ pub extern "C" fn editor_core_ffi_editor_state_minimap_json(
     })
 }
 
+/// Get minimap snapshot as a stable JSON result envelope.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ffi_editor_state_minimap_envelope_json(
+    state: *const EcfEditorState,
+    start_visual_row: u32,
+    count: u32,
+) -> *mut c_char {
+    minimap_envelope_json_ptr(
+        "editor_state_minimap",
+        None,
+        start_visual_row,
+        count,
+        || {
+            let state = require_ref(state, "state")
+                .map_err(|message| (EcfStatus::InvalidArgument, message))?;
+            let start_visual_row = usize_from_u32(start_visual_row, "start_visual_row")
+                .map_err(|message| (EcfStatus::InvalidArgument, message))?;
+            let count = usize_from_u32(count, "count")
+                .map_err(|message| (EcfStatus::InvalidArgument, message))?;
+            let grid = state.inner.get_minimap_content(start_visual_row, count);
+            Ok(value_minimap_grid(&grid))
+        },
+    )
+}
+
 /// Get decoration-aware composed snapshot as JSON.
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ffi_editor_state_viewport_composed_json(

@@ -132,6 +132,23 @@ public final class EditorState {
         )
     }
 
+    public func minimapEnvelopeJSON(startVisualRow: UInt, rowCount: UInt) throws -> String {
+        let start = try checkedFFIUInt32(startVisualRow, context: "editor_state_minimap_envelope_json.start_visual_row")
+        let count = try checkedFFIUInt32(rowCount, context: "editor_state_minimap_envelope_json.count")
+        return try ffi.takeOwnedCString(
+            editor_core_ffi_editor_state_minimap_envelope_json(handle, start, count),
+            context: "editor_state_minimap_envelope_json"
+        )
+    }
+
+    public func minimapEnvelope(startVisualRow: UInt, rowCount: UInt) throws -> EcfMinimapEnvelope {
+        try JSON.decode(
+            EcfMinimapEnvelope.self,
+            from: minimapEnvelopeJSON(startVisualRow: startVisualRow, rowCount: rowCount),
+            context: "editor_state_minimap_envelope"
+        )
+    }
+
     public func viewportComposedJSON(startVisualRow: UInt, rowCount: UInt) throws -> String {
         let start = try checkedFFIUInt32(startVisualRow, context: "editor_state_viewport_composed_json.start_visual_row")
         let count = try checkedFFIUInt32(rowCount, context: "editor_state_viewport_composed_json.count")

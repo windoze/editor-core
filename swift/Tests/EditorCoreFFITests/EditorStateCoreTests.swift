@@ -53,6 +53,30 @@ final class EditorStateCoreTests: XCTestCase {
         XCTAssertNotNil(minimap["lines"])
     }
 
+    func testMinimapEnvelope() throws {
+        let library = try EditorCoreFFITestSupport.shared.loadLibrary()
+        let state = try EditorState(library: library, initialText: "hello\nworld\n", viewportWidth: 80)
+
+        let envelope = try state.minimapEnvelope(startVisualRow: 0, rowCount: 20)
+        XCTAssertTrue(envelope.ok)
+        XCTAssertEqual(envelope.statusKind, .success)
+        XCTAssertEqual(envelope.surface, "editor_state_minimap")
+        XCTAssertNil(envelope.viewId)
+        XCTAssertEqual(envelope.startVisualRow, 0)
+        XCTAssertEqual(envelope.count, 20)
+        XCTAssertNil(envelope.error)
+        XCTAssertEqual(envelope.version, library.abiVersion)
+        guard case let .object(value)? = envelope.value else {
+            return XCTFail("expected object minimap value")
+        }
+        XCTAssertNotNil(value["lines"])
+
+        let rawJSON = try state.minimapEnvelopeJSON(startVisualRow: 1, rowCount: 2)
+        let direct = try JSONDecoder().decode(EcfMinimapEnvelope.self, from: Data(rawJSON.utf8))
+        XCTAssertEqual(direct.startVisualRow, 1)
+        XCTAssertEqual(direct.count, 2)
+    }
+
     func testApplyProcessingEditsAffectsStylesFoldsDecorationsDiagnostics() throws {
         let library = try EditorCoreFFITestSupport.shared.loadLibrary()
         let state = try EditorState(library: library, initialText: "let value = 1\nsecond line\n", viewportWidth: 80)
@@ -155,4 +179,3 @@ final class EditorStateCoreTests: XCTestCase {
         XCTAssertTrue(foundVirtualCell)
     }
 }
-

@@ -123,6 +123,11 @@ public enum EditorCoreFFIRuntimeCompatibility {
             name: "JSON command envelope",
             reason: "Swift command envelope APIs require structured `{ ok, value, error, version }` command results."
         ),
+        EditorCoreFFIRuntimeFeature(
+            feature: .renderingSnapshotEnvelope,
+            name: "rendering snapshot envelope",
+            reason: "Swift rendering snapshot envelope APIs require structured minimap query results and errors."
+        ),
     ]
 
     public static let requiredFeatures: [EditorCoreFFIRuntimeFeature] = knownFeatures

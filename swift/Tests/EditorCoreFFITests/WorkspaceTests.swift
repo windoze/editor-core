@@ -107,4 +107,34 @@ final class WorkspaceTests: XCTestCase {
         XCTAssertEqual(info2["buffer_count"] as? Int, 0)
         XCTAssertEqual(info2["is_empty"] as? Bool, true)
     }
+
+    func testWorkspaceMinimapEnvelope() throws {
+        let library = try EditorCoreFFITestSupport.shared.loadLibrary()
+        let ws = try Workspace(library: library)
+        let opened = try ws.openBuffer(uri: "file:///demo.txt", text: "hello\nworld\n", viewportWidth: 80)
+
+        let envelope = try ws.minimapEnvelope(viewId: opened.viewId, startVisualRow: 0, rowCount: 20)
+        XCTAssertTrue(envelope.ok)
+        XCTAssertEqual(envelope.statusKind, .success)
+        XCTAssertEqual(envelope.surface, "workspace_minimap")
+        XCTAssertEqual(envelope.viewId, opened.viewId)
+        XCTAssertEqual(envelope.startVisualRow, 0)
+        XCTAssertEqual(envelope.count, 20)
+        XCTAssertNil(envelope.error)
+        XCTAssertEqual(envelope.version, library.abiVersion)
+        guard case let .object(value)? = envelope.value else {
+            return XCTFail("expected object minimap value")
+        }
+        XCTAssertNotNil(value["lines"])
+
+        let failure = try ws.minimapEnvelope(viewId: 999_999, startVisualRow: 0, rowCount: 20)
+        XCTAssertFalse(failure.ok)
+        XCTAssertEqual(failure.statusKind, .error)
+        XCTAssertEqual(failure.surface, "workspace_minimap")
+        XCTAssertEqual(failure.viewId, 999_999)
+        XCTAssertEqual(failure.error?.code, "internal")
+        XCTAssertEqual(failure.error?.status, .internal)
+        XCTAssertTrue(failure.error?.message.contains("get_minimap_content failed") ?? false)
+        XCTAssertEqual(failure.value, .null)
+    }
 }
