@@ -1301,6 +1301,70 @@
       },
       "perChannelTolerance": 2,
       "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "workspace-edit-multifile-undo-status-dark",
+      "description": "Dark editor chrome after a multi-file WorkspaceEdit transaction is undone.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/workspace-edit-multifile-undo-status-dark.png",
+      "artifactName": "workspace-edit-multifile-undo-status-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 760,
+        "height": 420
+      },
+      "scale": 1.0,
+      "workspaceEditJSONApplySummary": {
+        "supportFiles": [
+          {
+            "fileName": "workspace-edit-undo-other.swift",
+            "text": "let other = \"old\"\n"
+          }
+        ],
+        "expectedApplied": true,
+        "undoAfterApply": true,
+        "expectedUndo": true,
+        "expectedActiveTextAfterApply": "struct PaletteFixture {\n    let primaryValue: Int\n\n    func renderLine() -> String {\n        print(primaryValue)\n        return \"multi\"\n    }\n}\n",
+        "expectedActiveTextAfterUndo": "struct PaletteFixture {\n    let primaryValue: Int\n\n    func renderLine() -> String {\n        print(primaryValue)\n        return \"primary\"\n    }\n}\n",
+        "expectedFileContentsAfterApply": [
+          {
+            "fileName": "workspace-edit-undo-other.swift",
+            "text": "let other = \"new\"\n"
+          }
+        ],
+        "expectedFileContentsAfterUndo": [
+          {
+            "fileName": "workspace-edit-undo-other.swift",
+            "text": "let other = \"old\"\n"
+          }
+        ],
+        "documents": [
+          {
+            "fileName": "floating-panels.swift",
+            "edits": [
+              {
+                "startLine": 5,
+                "startUTF16Character": 16,
+                "endUTF16Character": 23,
+                "newText": "multi"
+              }
+            ]
+          },
+          {
+            "fileName": "workspace-edit-undo-other.swift",
+            "edits": [
+              {
+                "startLine": 0,
+                "startUTF16Character": 13,
+                "endUTF16Character": 16,
+                "newText": "new"
+              }
+            ]
+          }
+        ]
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
     }
   ]
 }

@@ -2265,6 +2265,13 @@
     - `swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures`
     - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
     - `git diff --check`
+- 中间提交：`test(app): cover visual workspace edit multifile undo`
+  - 所属任务：阶段 13 的 macOS UI 自动化与视觉回归测试体系增量；把 WorkspaceEdit transaction undo 的 visual coverage 从单文档状态反馈扩展到打开文档 + 未打开本地文件的多文件恢复场景。
+  - 提交边界：`workspaceEditJSONApplySummary` manifest action 新增 apply/undo 后 active editor text 和 file content 断言；manifest 新增 dark multi-file WorkspaceEdit undo status artifact case，真实执行跨打开 tab 与未打开文件的 WorkspaceEdit apply，断言 apply 后两边内容变化，执行 core transaction undo 后断言两边内容恢复，并捕获 undo status bar 反馈。该提交不提交 golden PNG、不启用 strict 默认门禁、不改变产品 WorkspaceEdit apply/undo 语义，也不覆盖专门的 global undo history UI 或 rollback failure UI。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures`
+    - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
+    - `git diff --check`
 
 ## 阶段 14: 外观、布局与 Sublime-like 操作打磨
 

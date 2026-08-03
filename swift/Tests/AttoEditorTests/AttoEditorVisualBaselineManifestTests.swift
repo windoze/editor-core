@@ -407,12 +407,14 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
                 workspaceEditJSONApplySummary.expectedApplied,
                 visualCase.id
             )
+            try workspaceEditJSONApplySummary.assertApplyState(in: vc, tempDir: tempDir, caseID: visualCase.id)
             if workspaceEditJSONApplySummary.undoAfterApply {
                 XCTAssertEqual(
                     vc._undoLastCoreWorkspaceEditTransactionForTesting(),
                     workspaceEditJSONApplySummary.expectedUndo,
                     visualCase.id
                 )
+                try workspaceEditJSONApplySummary.assertUndoState(in: vc, tempDir: tempDir, caseID: visualCase.id)
             }
         }
         if let workspaceEditPreview = visualCase.workspaceEditPreview {
@@ -1773,6 +1775,10 @@ private struct AttoVisualWorkspaceEditJSONApplySummary: Decodable, Equatable {
     let expectedApplied: Bool
     let undoAfterApply: Bool
     let expectedUndo: Bool
+    let expectedActiveTextAfterApply: String?
+    let expectedActiveTextAfterUndo: String?
+    let expectedFileContentsAfterApply: [AttoVisualWorkspaceEditExpectedFileContent]
+    let expectedFileContentsAfterUndo: [AttoVisualWorkspaceEditExpectedFileContent]
     let documents: [AttoVisualWorkspaceEditJSONDocument]
     let resourceOperations: [AttoVisualWorkspaceEditJSONResourceOperation]
 
@@ -1782,6 +1788,10 @@ private struct AttoVisualWorkspaceEditJSONApplySummary: Decodable, Equatable {
         case expectedApplied
         case undoAfterApply
         case expectedUndo
+        case expectedActiveTextAfterApply
+        case expectedActiveTextAfterUndo
+        case expectedFileContentsAfterApply
+        case expectedFileContentsAfterUndo
         case documents
         case resourceOperations
     }
@@ -1799,6 +1809,22 @@ private struct AttoVisualWorkspaceEditJSONApplySummary: Decodable, Equatable {
         expectedApplied = try container.decodeIfPresent(Bool.self, forKey: .expectedApplied) ?? false
         undoAfterApply = try container.decodeIfPresent(Bool.self, forKey: .undoAfterApply) ?? false
         expectedUndo = try container.decodeIfPresent(Bool.self, forKey: .expectedUndo) ?? undoAfterApply
+        expectedActiveTextAfterApply = try container.decodeIfPresent(
+            String.self,
+            forKey: .expectedActiveTextAfterApply
+        )
+        expectedActiveTextAfterUndo = try container.decodeIfPresent(
+            String.self,
+            forKey: .expectedActiveTextAfterUndo
+        )
+        expectedFileContentsAfterApply = try container.decodeIfPresent(
+            [AttoVisualWorkspaceEditExpectedFileContent].self,
+            forKey: .expectedFileContentsAfterApply
+        ) ?? []
+        expectedFileContentsAfterUndo = try container.decodeIfPresent(
+            [AttoVisualWorkspaceEditExpectedFileContent].self,
+            forKey: .expectedFileContentsAfterUndo
+        ) ?? []
         documents = try container.decodeIfPresent(
             [AttoVisualWorkspaceEditJSONDocument].self,
             forKey: .documents
@@ -1837,9 +1863,61 @@ private struct AttoVisualWorkspaceEditJSONApplySummary: Decodable, Equatable {
             context: "WorkspaceEdit apply summary"
         )
     }
+
+    @MainActor
+    func assertApplyState(
+        in vc: AttoEditorAreaViewController,
+        tempDir: URL,
+        caseID: String
+    ) throws {
+        try assertActiveText(expectedActiveTextAfterApply, in: vc, caseID: caseID)
+        try assertFileContents(expectedFileContentsAfterApply, tempDir: tempDir, caseID: caseID)
+    }
+
+    @MainActor
+    func assertUndoState(
+        in vc: AttoEditorAreaViewController,
+        tempDir: URL,
+        caseID: String
+    ) throws {
+        try assertActiveText(expectedActiveTextAfterUndo, in: vc, caseID: caseID)
+        try assertFileContents(expectedFileContentsAfterUndo, tempDir: tempDir, caseID: caseID)
+    }
+
+    @MainActor
+    private func assertActiveText(
+        _ expectedText: String?,
+        in vc: AttoEditorAreaViewController,
+        caseID: String
+    ) throws {
+        guard let expectedText else { return }
+        guard let tab = vc.activeTab else {
+            XCTFail(caseID)
+            return
+        }
+        let actualText = try tab.editCore.editor.text()
+        XCTAssertEqual(actualText, expectedText, caseID)
+    }
+
+    private func assertFileContents(
+        _ expectedContents: [AttoVisualWorkspaceEditExpectedFileContent],
+        tempDir: URL,
+        caseID: String
+    ) throws {
+        for expected in expectedContents {
+            let url = tempDir.appendingPathComponent(expected.fileName)
+            let actualText = try String(contentsOf: url, encoding: .utf8)
+            XCTAssertEqual(actualText, expected.text, caseID)
+        }
+    }
 }
 
 private struct AttoVisualWorkspaceEditSupportFile: Decodable, Equatable {
+    let fileName: String
+    let text: String
+}
+
+private struct AttoVisualWorkspaceEditExpectedFileContent: Decodable, Equatable {
     let fileName: String
     let text: String
 }

@@ -1639,8 +1639,9 @@ Swift UI 当前可以应用多种派生状态，尤其是 LSP diagnostics、sema
 - 已完成：阶段 13 已扩展 WorkspaceEdit 真实 preview 触发链 visual matrix，manifest 可结构化写入支持文件、生成 LSP `changes` WorkspaceEdit JSON、调用 App `applyWorkspaceEditJSONToActiveTab(...)`，并捕获产品路径生成的 preview panel，新增 dark WorkspaceEdit JSON preview panel artifact case。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): cover visual workspace edit json preview` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
 - 已完成：阶段 13 已扩展 WorkspaceEdit 真实 failure summary 触发链 visual matrix，manifest 可结构化生成 `documentChanges` resource operation、把 active tab 标脏、自动确认 preview，并捕获 App `applyWorkspaceEditJSONToActiveTab(...)` 因 dirty open-tab delete 被 core transaction 拒绝后生成的 summary popover，新增 dark dirty-delete failure artifact case。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): cover visual workspace edit failure summary` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
 - 已完成：阶段 13 已扩展 WorkspaceEdit transaction undo visual matrix，manifest 可在真实 App WorkspaceEdit JSON apply 成功后执行 core transaction undo hook，并捕获 status bar 的 `Workspace edit undone` 用户反馈，新增 dark WorkspaceEdit undo status artifact case。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): cover visual workspace edit undo status` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
+- 已完成：阶段 13 已扩展 WorkspaceEdit 多文件 transaction undo visual matrix，manifest 可在真实 App WorkspaceEdit JSON apply 成功后断言打开文档和未打开本地文件内容变化，执行 core transaction undo hook 后断言两边内容恢复，并捕获 status bar undo 反馈，新增 dark multi-file WorkspaceEdit undo status artifact case。该完成项属于 `PLAN.md` 阶段 13 的 `test(app): cover visual workspace edit multifile undo` 增量；`SWIFT-GAPS.md` 仅作为任务范围参考。
 - 仍缺提交首批经批准机器生成的 PNG golden baselines，并在首批 PNG 合入后把 strict visual comparison 提升为默认必过门禁。
-- 继续扩展 fixtures，覆盖更多 WorkspaceEdit rollback 场景、多文件/global undo UI 形态和更多 failure 变体，以及经审核的跨 theme/window-size 真实 baseline 场景。
+- 继续扩展 fixtures，覆盖更多 WorkspaceEdit rollback 场景、专门的 global undo history UI 形态和更多 failure 变体，以及经审核的跨 theme/window-size 真实 baseline 场景。
 - 继续扩展 `XCUIApplication` smoke tests，覆盖真实 LSP server 驱动的 Locations/Symbols/Workspace Outline 结果生成、panel row navigation 和打开目标行为。
 - 仍缺把 CI strict visual comparison 升级为首批 PNG baseline 合入后的默认必过门禁。
 
