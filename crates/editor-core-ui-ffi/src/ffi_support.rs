@@ -32,11 +32,8 @@ fn strip_invalid_argument_prefix(err: &str) -> Option<&str> {
 }
 
 pub(crate) fn set_last_error_from_error(err: String) {
-    if let Some(msg) = strip_invalid_argument_prefix(&err) {
-        set_last_error(msg.to_string());
-    } else {
-        set_last_error(err);
-    }
+    let (_, msg) = classify_error(err);
+    set_last_error(msg);
 }
 
 pub(crate) fn ffi_catch<T, F>(f: F) -> Result<T, String>
@@ -164,13 +161,17 @@ pub(crate) unsafe fn ffi_slice_from_raw_parts_mut<'a, T>(
 }
 
 pub(crate) fn status_from_error(err: String) -> c_int {
-    let status = if strip_invalid_argument_prefix(&err).is_some() {
-        ECU_ERR_INVALID_ARGUMENT
-    } else {
-        ECU_ERR_INTERNAL
-    };
-    set_last_error_from_error(err);
+    let (status, msg) = classify_error(err);
+    set_last_error(msg);
     status
+}
+
+pub(crate) fn classify_error(err: String) -> (c_int, String) {
+    if let Some(msg) = strip_invalid_argument_prefix(&err) {
+        (ECU_ERR_INVALID_ARGUMENT, msg.to_string())
+    } else {
+        (ECU_ERR_INTERNAL, err)
+    }
 }
 
 pub(crate) const ECU_OK: c_int = 0;

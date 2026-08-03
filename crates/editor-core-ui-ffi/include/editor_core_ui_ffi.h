@@ -161,6 +161,7 @@ uint32_t editor_core_ui_ffi_abi_version(void);
 #define ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_ROOTS (1ull << 22)
 #define ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_UNDO (1ull << 23)
 #define ECU_FEATURE_MULTI_DOCUMENT_TAB_LANGUAGE_ID (1ull << 24)
+#define ECU_FEATURE_JSON_COMMAND_ENVELOPE    (1ull << 25)
 uint64_t editor_core_ui_ffi_feature_flags(void);
 
 MultiDocumentEditorUi* editor_core_ui_ffi_multi_document_new(void);
@@ -779,6 +780,15 @@ int32_t editor_core_ui_ffi_editor_ui_insert_text(EditorUi* ui, const char* text_
 // `editor_core_ui_ffi_string_free`.
 char* editor_core_ui_ffi_editor_ui_execute_command_json(EditorUi* ui,
                                                         const char* command_json_utf8);
+// Execute one editor command encoded as JSON and return a stable envelope:
+//
+// Success: {"ok":true,"value":<command result>,"error":null,"version":<abi>}
+// Failure: {"ok":false,"value":null,"error":{"code":...,"status":...,"message":...},"version":<abi>}
+//
+// The returned string is owned by the caller and must be freed with
+// `editor_core_ui_ffi_string_free`.
+char* editor_core_ui_ffi_editor_ui_execute_command_envelope_json(EditorUi* ui,
+                                                                 const char* command_json_utf8);
 // Derived state snapshots as JSON.
 //
 // The returned strings are owned by the caller and must be freed with

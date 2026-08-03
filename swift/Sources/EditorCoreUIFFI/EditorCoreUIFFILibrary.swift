@@ -85,6 +85,7 @@ public struct EditorCoreUIFFIFeatures: OptionSet, Equatable, Sendable {
     public static let multiDocumentWorkspaceRoots = Self(rawValue: 1 << 22)
     public static let multiDocumentWorkspaceEditTransactionUndo = Self(rawValue: 1 << 23)
     public static let multiDocumentTabLanguageID = Self(rawValue: 1 << 24)
+    public static let jsonCommandEnvelope = Self(rawValue: 1 << 25)
 }
 
 public struct EditorCoreUIFFIRuntimeInfo: Equatable, Sendable {

@@ -50,6 +50,15 @@ fn set_test_treesitter_registry(ui: *mut EditorUi) {
     );
 }
 
+fn take_owned_string(ptr: *mut libc::c_char) -> String {
+    assert!(!ptr.is_null());
+    let value = unsafe { std::ffi::CStr::from_ptr(ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(ptr) };
+    value
+}
+
 #[test]
 fn ffi_feature_flags_include_semantic_tokens_requests() {
     assert_ne!(
@@ -89,6 +98,57 @@ fn ffi_feature_flags_include_semantic_tokens_requests() {
         editor_core_ui_ffi_feature_flags() & ECU_FEATURE_MULTI_DOCUMENT_TAB_LANGUAGE_ID,
         0
     );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags() & ECU_FEATURE_JSON_COMMAND_ENVELOPE,
+        0
+    );
+}
+
+#[test]
+fn ffi_editor_ui_execute_command_envelope_json_reports_success_and_errors() {
+    let initial = CString::new("abc").unwrap();
+    let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+    assert!(!ui.is_null());
+
+    let command = CString::new(r#"{"kind":"edit","op":"type_char","ch":"!"}"#).unwrap();
+    let ok_json = take_owned_string(editor_core_ui_ffi_editor_ui_execute_command_envelope_json(
+        ui,
+        command.as_ptr(),
+    ));
+    let ok: serde_json::Value = serde_json::from_str(&ok_json).unwrap();
+    assert_eq!(ok["ok"], true);
+    assert_eq!(ok["version"], ECU_ABI_VERSION);
+    assert_eq!(ok["value"]["kind"], "success");
+    assert!(ok["error"].is_null());
+
+    let command = CString::new(r#"{"kind":"edit","op":"type_char","ch":"too long"}"#).unwrap();
+    let err_json = take_owned_string(editor_core_ui_ffi_editor_ui_execute_command_envelope_json(
+        ui,
+        command.as_ptr(),
+    ));
+    let err: serde_json::Value = serde_json::from_str(&err_json).unwrap();
+    assert_eq!(err["ok"], false);
+    assert_eq!(err["version"], ECU_ABI_VERSION);
+    assert!(err["value"].is_null());
+    assert_eq!(err["error"]["code"], "internal");
+    assert_eq!(err["error"]["status"], ECU_ERR_INTERNAL);
+    assert!(
+        err["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("ch must be exactly one character")
+    );
+
+    let null_arg_json = take_owned_string(
+        editor_core_ui_ffi_editor_ui_execute_command_envelope_json(ui, ptr::null()),
+    );
+    let null_arg: serde_json::Value = serde_json::from_str(&null_arg_json).unwrap();
+    assert_eq!(null_arg["ok"], false);
+    assert_eq!(null_arg["error"]["code"], "invalid_argument");
+    assert_eq!(null_arg["error"]["status"], ECU_ERR_INVALID_ARGUMENT);
+    assert_eq!(null_arg["error"]["message"], "command_json_utf8 is null");
+
+    unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
 }
 
 #[test]

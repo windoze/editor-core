@@ -1625,6 +1625,16 @@
 ### 提交
 
 - `feat(ffi): standardize abi capability errors`
+- 中间提交：`feat(ffi): envelope ui command json results`
+  - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；为 UI FFI JSON command dispatcher 增加兼容的结构化 result envelope 起点。
+  - 提交边界：新增 `editor_core_ui_ffi_editor_ui_execute_command_envelope_json(...)` C ABI 和 `ECU_FEATURE_JSON_COMMAND_ENVELOPE` feature bit；legacy `editor_core_ui_ffi_editor_ui_execute_command_json(...)` 保持原来的 command-result JSON / null pointer + last_error 行为；Swift wrapper 新增 raw/typed envelope API 与 `EcuJSONCommandEnvelope` / `EcuJSONCommandError`；`docs/abi-v1-draft.md` 记录 envelope schema 和最新 feature bit。该提交不切换 App 主路径，不移除 legacy JSON API，不覆盖 headless `editor-core-ffi` command envelope，不统一所有 LSP/result JSON API，也不完成第三方 host 的完整 capability negotiation。
+  - 验证记录：
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `cargo test -p editor-core-ui-ffi --release ffi_editor_ui_execute_command_envelope_json_reports_success_and_errors`
+    - `cargo test -p editor-core-ui-ffi --release ffi_feature_flags_include_semantic_tokens_requests`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFITests/test(LoadsLibraryAndVersion|ExecuteCommandEnvelopeJSONReportsSuccessAndError)'`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 11: Tree-sitter 与 LSP 主路线产品化
 

@@ -7,6 +7,48 @@ header through `swift/Sources/CEditorCoreUIFFI/include/editor_core_ui_ffi.h`, so
 functions must be added to the Rust `extern "C"` implementation and to the header in the same
 change.
 
+## JSON Command Envelope
+
+The legacy JSON command dispatcher remains available:
+
+```c
+char* editor_core_ui_ffi_editor_ui_execute_command_json(
+    EditorUi* ui,
+    const char* command_json_utf8
+);
+```
+
+It returns command-result JSON on success and null on failure, with details in
+`editor_core_ui_ffi_last_error_message()`. New hosts that want structured errors can use the
+additive envelope variant:
+
+```c
+char* editor_core_ui_ffi_editor_ui_execute_command_envelope_json(
+    EditorUi* ui,
+    const char* command_json_utf8
+);
+```
+
+The returned JSON is stable:
+
+```json
+{ "ok": true, "value": { "kind": "success" }, "error": null, "version": 1 }
+```
+
+or:
+
+```json
+{
+  "ok": false,
+  "value": null,
+  "error": { "code": "invalid_argument", "status": 1, "message": "command_json_utf8 is null" },
+  "version": 1
+}
+```
+
+Both strings are owned by the caller and must be freed with `editor_core_ui_ffi_string_free`.
+Availability is advertised by `ECU_FEATURE_JSON_COMMAND_ENVELOPE`.
+
 ## LSP Workspace Lifecycle
 
 The LSP lifecycle APIs are JSON control-plane functions. Workspace folder changes are exposed as:

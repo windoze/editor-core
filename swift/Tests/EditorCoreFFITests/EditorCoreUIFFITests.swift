@@ -100,6 +100,30 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(info.supports(.multiDocumentWorkspaceRoots))
         XCTAssertTrue(info.supports(.multiDocumentWorkspaceEditTransactionUndo))
         XCTAssertTrue(info.supports(.multiDocumentTabLanguageID))
+        XCTAssertTrue(info.supports(.jsonCommandEnvelope))
+    }
+
+    func testExecuteCommandEnvelopeJSONReportsSuccessAndError() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui = try EditorUI(library: lib, initialText: "abc", viewportWidthCells: 80)
+
+        let success = try ui.executeCommandEnvelope(#"{"kind":"edit","op":"type_char","ch":"!"}"#)
+        XCTAssertTrue(success.ok)
+        XCTAssertEqual(success.version, lib.abiVersion)
+        XCTAssertNil(success.error)
+        if case .object(let value)? = success.value {
+            XCTAssertEqual(value["kind"], .string("success"))
+        } else {
+            XCTFail("expected object command result")
+        }
+
+        let failure = try ui.executeCommandEnvelope(#"{"kind":"edit","op":"type_char","ch":"too long"}"#)
+        XCTAssertFalse(failure.ok)
+        XCTAssertEqual(failure.version, lib.abiVersion)
+        XCTAssertNil(failure.value)
+        XCTAssertEqual(failure.error?.code, "internal")
+        XCTAssertEqual(failure.error?.status, .internal)
+        XCTAssertTrue(failure.error?.message.contains("ch must be exactly one character") ?? false)
     }
 
     func testEditorUILSPResultEventsWrapperStartsEmpty() throws {

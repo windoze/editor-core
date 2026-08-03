@@ -82,7 +82,10 @@ Primary return form:
 Companion APIs:
 
 - `const char* ecf_last_error_message(void)` style or allocated string variant.
-- Optional structured error payload in future (`domain`, `code`, `message`, `details_json`).
+- JSON control-plane calls may expose a structured envelope:
+  `{ "ok": bool, "value": <json-or-null>, "error": { "code": string, "status": int32, "message": string } | null, "version": abi_version }`.
+  The UI FFI command dispatcher has this as an additive API while the legacy null-pointer +
+  `last_error_message` symbol remains available for compatibility.
 
 Proposed error codes:
 
@@ -283,9 +286,8 @@ Guidelines:
 - The UI FFI also exports `editor_core_ui_ffi_abi_version()` and
   `editor_core_ui_ffi_feature_flags()` so Swift/App hosts can probe the loaded UI ABI and gate
   optional feature paths before calling newer symbols.
-- UI FFI feature flags are append-only within the pre-v1 line. As of the current draft, bit 23
-  (`ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_UNDO`) marks availability of the
-  multi-document WorkspaceEdit transaction undo JSON control-plane symbol.
+- UI FFI feature flags are append-only within the pre-v1 line. As of the current draft, bit 25
+  (`ECU_FEATURE_JSON_COMMAND_ENVELOPE`) marks availability of the UI command JSON envelope symbol.
 - The current cycle is still pre-v1; breaking fixed-width cleanup is allowed before tagging v1, and `editor_core_ffi.h` is the authoritative declaration of the current C surface.
 - Compatible additions:
   - new functions
@@ -354,6 +356,7 @@ uint32_t editor_core_ui_ffi_abi_version(void);
 uint64_t editor_core_ui_ffi_feature_flags(void);
 EditorUi* editor_core_ui_ffi_editor_ui_new(const char* initial_text_utf8, uint32_t viewport_width_cells);
 EditorUi* editor_core_ui_ffi_editor_ui_clone_view(EditorUi* ui, uint32_t viewport_width_cells);
+char* editor_core_ui_ffi_editor_ui_execute_command_envelope_json(EditorUi* ui, const char* command_json_utf8);
 int32_t editor_core_ui_ffi_editor_ui_lsp_request_hover(EditorUi* ui, uint32_t line, uint32_t column, uint64_t* out_request_id);
 int32_t editor_core_ui_ffi_editor_ui_set_tab_width(EditorUi* ui, uint32_t width_cells);
 char* editor_core_ui_ffi_editor_ui_lsp_apply_workspace_edit_json(EditorUi* ui, const char* workspace_edit_json_utf8, const char* document_uri_utf8);

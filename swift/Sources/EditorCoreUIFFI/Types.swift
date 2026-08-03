@@ -459,6 +459,49 @@ public indirect enum EcuJSONValue: Equatable, Sendable, Decodable {
     }
 }
 
+public struct EcuJSONCommandEnvelope: Equatable, Sendable, Decodable {
+    public var ok: Bool
+    public var value: EcuJSONValue?
+    public var error: EcuJSONCommandError?
+    public var version: UInt32
+
+    public init(ok: Bool, value: EcuJSONValue?, error: EcuJSONCommandError?, version: UInt32) {
+        self.ok = ok
+        self.value = value
+        self.error = error
+        self.version = version
+    }
+}
+
+public struct EcuJSONCommandError: Equatable, Sendable, Decodable {
+    public var code: String
+    public var status: EcuStatus?
+    public var message: String
+
+    public init(code: String, status: EcuStatus?, message: String) {
+        self.code = code
+        self.status = status
+        self.message = message
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case code
+        case status
+        case message
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        code = try container.decodeIfPresent(String.self, forKey: .code) ?? "unknown"
+        message = try container.decodeIfPresent(String.self, forKey: .message) ?? ""
+        if let rawStatus = try container.decodeIfPresent(Int32.self, forKey: .status) {
+            status = EcuStatus(rawValue: rawStatus)
+        } else {
+            status = nil
+        }
+    }
+}
+
 public enum EcuLspAvailability: Equatable, Sendable, Decodable {
     case disabled
     case enabled

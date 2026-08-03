@@ -209,6 +209,32 @@ extension EditorUI {
         return String(cString: ptr)
     }
 
+    /// Execute one editor command encoded as JSON and return a stable `{ ok, value, error, version }` envelope.
+    ///
+    /// This is the preferred migration path for hosts that want structured command failures without
+    /// depending on the legacy null-pointer + `last_error_message` convention.
+    public func executeCommandEnvelopeJSON(_ commandJSON: String) throws -> String {
+        guard let ptr = commandJSON.withCString({ cstr in
+            editor_core_ui_ffi_editor_ui_execute_command_envelope_json(handle, cstr)
+        }) else {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .internal,
+                context: "editor_ui_execute_command_envelope_json",
+                message: library.lastErrorMessageString()
+            )
+        }
+        defer { editor_core_ui_ffi_string_free(ptr) }
+        return String(cString: ptr)
+    }
+
+    public func executeCommandEnvelope(_ commandJSON: String) throws -> EcuJSONCommandEnvelope {
+        try Self.decodeSnapshot(
+            EcuJSONCommandEnvelope.self,
+            from: executeCommandEnvelopeJSON(commandJSON),
+            context: "editor_ui_execute_command_envelope"
+        )
+    }
+
     public func diagnosticsJSON() throws -> String {
         guard let ptr = editor_core_ui_ffi_editor_ui_diagnostics_json(handle) else {
             throw EditorCoreUIFFIError.ffiStatus(
