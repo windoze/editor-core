@@ -1547,6 +1547,12 @@
   - 验证记录：
     - `swift test --package-path swift --filter 'Atto(EditorPreferencesApplication|ConfigurationSettings|Preferences)Tests'`
     - `git diff --check`
+- 中间提交：`feat(app): back up corrupt editor settings`
+  - 所属任务：阶段 9 的配置、偏好与 capability DTO 完整性增量；补齐 settings store 的损坏文件保护，避免无效 JSON 配置反复阻断 App settings 加载。
+  - 提交边界：`AttoConfigurationSettingsStore.load(from:)` 在文件可读但 JSON/DTO decode 失败时，将原文件移动到同目录 `*.invalid` 备份路径，若备份已存在则使用递增后缀，然后返回 `nil` 让调用方继续按下层配置运行。该提交不实现 settings schema migration、不实现用户可见恢复 UI、不实现 Sublime settings scope selector 规则、不接 Preferences UI、不新增 Rust/FFI ABI，也不完成 core/headless capability negotiation。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'Atto(ConfigurationSettings|EditorPreferencesApplication|Preferences)Tests'`
+    - `git diff --check`
 
 ## 阶段 10: ABI 版本、错误模型与兼容性门禁
 

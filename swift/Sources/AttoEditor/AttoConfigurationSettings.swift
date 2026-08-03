@@ -216,7 +216,12 @@ struct AttoConfigurationSettingsStore {
     func load(from url: URL) throws -> AttoConfigurationSettings? {
         guard fileManager.fileExists(atPath: url.path) else { return nil }
         let data = try Data(contentsOf: url)
-        return try JSONDecoder().decode(AttoConfigurationSettings.self, from: data)
+        do {
+            return try JSONDecoder().decode(AttoConfigurationSettings.self, from: data)
+        } catch {
+            _ = try backupCorruptSettingsFile(at: url)
+            return nil
+        }
     }
 
     func save(_ settings: AttoConfigurationSettings, to url: URL) throws {
@@ -228,6 +233,29 @@ struct AttoConfigurationSettingsStore {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(settings)
         try data.write(to: url, options: [.atomic])
+    }
+
+    @discardableResult
+    func backupCorruptSettingsFile(at url: URL) throws -> URL {
+        let backupURL = nextCorruptSettingsBackupURL(for: url)
+        try fileManager.moveItem(at: url, to: backupURL)
+        return backupURL
+    }
+
+    func nextCorruptSettingsBackupURL(for url: URL) -> URL {
+        let base = url.appendingPathExtension("invalid")
+        if fileManager.fileExists(atPath: base.path) == false {
+            return base
+        }
+
+        for index in 1... {
+            let candidate = URL(fileURLWithPath: "\(base.path).\(index)", isDirectory: false)
+            if fileManager.fileExists(atPath: candidate.path) == false {
+                return candidate
+            }
+        }
+
+        return URL(fileURLWithPath: "\(base.path).\(UUID().uuidString)", isDirectory: false)
     }
 }
 

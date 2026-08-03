@@ -122,6 +122,32 @@ final class AttoConfigurationSettingsTests: XCTestCase {
         ))
     }
 
+    func testSettingsStoreBacksUpCorruptSettingsWithoutOverwritingExistingBackup() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoConfigurationSettingsCorruptBackupTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let userSettingsURL = tempDir.appendingPathComponent("settings.json")
+        let existingBackupURL = userSettingsURL.appendingPathExtension("invalid")
+        let numberedBackupURL = URL(fileURLWithPath: "\(existingBackupURL.path).1", isDirectory: false)
+        try "previous backup".write(to: existingBackupURL, atomically: true, encoding: .utf8)
+        try "{ invalid json".write(to: userSettingsURL, atomically: true, encoding: .utf8)
+
+        let store = AttoConfigurationSettingsStore(userSettingsURL: userSettingsURL)
+        XCTAssertNil(try store.loadUserSettings())
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: userSettingsURL.path))
+        XCTAssertEqual(try String(contentsOf: existingBackupURL, encoding: .utf8), "previous backup")
+        XCTAssertEqual(try String(contentsOf: numberedBackupURL, encoding: .utf8), "{ invalid json")
+
+        let replacement = AttoConfigurationSettings(
+            editor: AttoEditorPreferenceSettings(fontSizePoints: 21)
+        )
+        try store.saveUserSettings(replacement)
+        XCTAssertEqual(try store.loadUserSettings(), replacement)
+    }
+
     func testSettingsDecodeIgnoresUnknownFutureFields() throws {
         let json = """
         {
