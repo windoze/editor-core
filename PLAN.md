@@ -1560,6 +1560,12 @@
     - `swift test --package-path swift --filter 'AttoConfigurationSettingsTests'`
     - `swift test --package-path swift --filter 'Atto(ConfigurationSettings|EditorPreferencesApplication|Preferences)Tests'`
     - `git diff --check`
+- 中间提交：`feat(app): configure default search options`
+  - 所属任务：阶段 9 的配置、偏好与 capability DTO 完整性增量；把已有 find/search typed options 纳入 Swift 配置 snapshot/settings，并让 AppKit find bar 消费 resolved configuration。
+  - 提交边界：`AttoEditorPreferenceSnapshot` 与 `AttoEditorPreferenceSettings` 新增 `find_case_sensitive`、`find_whole_word`、`find_regex` 字段，继续兼容旧 JSON 缺省值；user/workspace/runtime settings resolution 可覆盖这些字段；`AttoEditorAreaViewController` 在 view load 和偏好重应用时同步 find bar 的 Aa/Word/Regex 状态。该提交不新增 Rust/FFI ABI，不实现 workspace Find in Files scope 配置、不实现自定义 word boundary 规则、不接 Preferences UI、不实现 runtime override UI/持久化，也不完成 core/headless capability negotiation。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'Atto(ConfigurationSettings|EditorPreferencesApplication|Preferences)Tests'`
+    - `git diff --check`
 
 ## 阶段 10: ABI 版本、错误模型与兼容性门禁
 

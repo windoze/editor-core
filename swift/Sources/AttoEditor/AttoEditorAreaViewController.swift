@@ -1231,6 +1231,7 @@ final class AttoEditorAreaViewController: NSViewController {
         findReplaceBarView.replaceAllButton.action = #selector(replaceAllClicked(_:))
         findReplaceBarView.closeButton.target = self
         findReplaceBarView.closeButton.action = #selector(closeFindBarClicked(_:))
+        applyFindPreferences()
 
         contentHostView.translatesAutoresizingMaskIntoConstraints = false
         contentHostView.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.editorContentHost)

@@ -71,19 +71,28 @@ struct AttoEditorPreferenceSettings: Codable, Equatable {
     var autoPairsEnabled: Bool?
     var wrapMode: String?
     var wrapIndent: String?
+    var findCaseSensitive: Bool?
+    var findWholeWord: Bool?
+    var findRegex: Bool?
 
     init(
         fontFamilies: [String]? = nil,
         fontSizePoints: Double? = nil,
         autoPairsEnabled: Bool? = nil,
         wrapMode: String? = nil,
-        wrapIndent: String? = nil
+        wrapIndent: String? = nil,
+        findCaseSensitive: Bool? = nil,
+        findWholeWord: Bool? = nil,
+        findRegex: Bool? = nil
     ) {
         self.fontFamilies = fontFamilies
         self.fontSizePoints = fontSizePoints
         self.autoPairsEnabled = autoPairsEnabled
         self.wrapMode = wrapMode
         self.wrapIndent = wrapIndent
+        self.findCaseSensitive = findCaseSensitive
+        self.findWholeWord = findWholeWord
+        self.findRegex = findRegex
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -92,6 +101,9 @@ struct AttoEditorPreferenceSettings: Codable, Equatable {
         case autoPairsEnabled = "auto_pairs_enabled"
         case wrapMode = "wrap_mode"
         case wrapIndent = "wrap_indent"
+        case findCaseSensitive = "find_case_sensitive"
+        case findWholeWord = "find_whole_word"
+        case findRegex = "find_regex"
     }
 }
 
@@ -358,6 +370,15 @@ extension AttoConfigurationSnapshot {
         }
         if let wrapIndent = settings.wrapIndent {
             editor.wrapIndent = wrapIndent
+        }
+        if let findCaseSensitive = settings.findCaseSensitive {
+            editor.findCaseSensitive = findCaseSensitive
+        }
+        if let findWholeWord = settings.findWholeWord {
+            editor.findWholeWord = findWholeWord
+        }
+        if let findRegex = settings.findRegex {
+            editor.findRegex = findRegex
         }
     }
 

@@ -52,6 +52,8 @@ extension AttoEditorAreaViewController {
                 editCore.editorView.needsDisplay = true
             }
         }
+
+        applyFindPreferences()
     }
 
     func configuredFontFamiliesCSVForApplying() -> String {
@@ -76,6 +78,22 @@ extension AttoEditorAreaViewController {
 
     func configuredWrapIndentForApplying() -> EcuWrapIndent {
         AttoPreferences.parseWrapIndentString(configurationSnapshot.editor.wrapIndent) ?? preferences.effectiveWrapIndent
+    }
+
+    func configuredSearchOptionsForApplying() -> EcuSearchOptions {
+        EcuSearchOptions(
+            caseSensitive: configurationSnapshot.editor.findCaseSensitive,
+            wholeWord: configurationSnapshot.editor.findWholeWord,
+            regex: configurationSnapshot.editor.findRegex
+        )
+    }
+
+    func applyFindPreferences() {
+        let options = configuredSearchOptionsForApplying()
+        findReplaceBarView.caseSensitiveButton.state = options.caseSensitive ? .on : .off
+        findReplaceBarView.wholeWordButton.state = options.wholeWord ? .on : .off
+        findReplaceBarView.regexButton.state = options.regex ? .on : .off
+        applyFindStateToActiveTab()
     }
 
     func applyTheme(_ theme: EditorCoreSkiaTheme) {

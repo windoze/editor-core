@@ -307,6 +307,9 @@ final class AttoPreferencesTests: XCTestCase {
         XCTAssertFalse(snapshot.editor.autoPairsEnabled)
         XCTAssertEqual(snapshot.editor.wrapMode, "word")
         XCTAssertEqual(snapshot.editor.wrapIndent, "fixed_cells:3")
+        XCTAssertTrue(snapshot.editor.findCaseSensitive)
+        XCTAssertFalse(snapshot.editor.findWholeWord)
+        XCTAssertFalse(snapshot.editor.findRegex)
         XCTAssertEqual(snapshot.rendering.themeName, "Atto Light")
         XCTAssertTrue(snapshot.rendering.fontLigaturesEnabled)
         XCTAssertEqual(

@@ -39,6 +39,29 @@ struct AttoEditorPreferenceSnapshot: Codable, Equatable {
     var autoPairsEnabled: Bool
     var wrapMode: String
     var wrapIndent: String
+    var findCaseSensitive: Bool
+    var findWholeWord: Bool
+    var findRegex: Bool
+
+    init(
+        fontFamilies: [String],
+        fontSizePoints: Double,
+        autoPairsEnabled: Bool,
+        wrapMode: String,
+        wrapIndent: String,
+        findCaseSensitive: Bool = true,
+        findWholeWord: Bool = false,
+        findRegex: Bool = false
+    ) {
+        self.fontFamilies = fontFamilies
+        self.fontSizePoints = fontSizePoints
+        self.autoPairsEnabled = autoPairsEnabled
+        self.wrapMode = wrapMode
+        self.wrapIndent = wrapIndent
+        self.findCaseSensitive = findCaseSensitive
+        self.findWholeWord = findWholeWord
+        self.findRegex = findRegex
+    }
 
     private enum CodingKeys: String, CodingKey {
         case fontFamilies = "font_families"
@@ -46,6 +69,23 @@ struct AttoEditorPreferenceSnapshot: Codable, Equatable {
         case autoPairsEnabled = "auto_pairs_enabled"
         case wrapMode = "wrap_mode"
         case wrapIndent = "wrap_indent"
+        case findCaseSensitive = "find_case_sensitive"
+        case findWholeWord = "find_whole_word"
+        case findRegex = "find_regex"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            fontFamilies: try container.decode([String].self, forKey: .fontFamilies),
+            fontSizePoints: try container.decode(Double.self, forKey: .fontSizePoints),
+            autoPairsEnabled: try container.decode(Bool.self, forKey: .autoPairsEnabled),
+            wrapMode: try container.decode(String.self, forKey: .wrapMode),
+            wrapIndent: try container.decode(String.self, forKey: .wrapIndent),
+            findCaseSensitive: try container.decodeIfPresent(Bool.self, forKey: .findCaseSensitive) ?? true,
+            findWholeWord: try container.decodeIfPresent(Bool.self, forKey: .findWholeWord) ?? false,
+            findRegex: try container.decodeIfPresent(Bool.self, forKey: .findRegex) ?? false
+        )
     }
 }
 

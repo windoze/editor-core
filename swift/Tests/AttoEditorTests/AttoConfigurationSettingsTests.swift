@@ -11,7 +11,8 @@ final class AttoConfigurationSettingsTests: XCTestCase {
             editor: AttoEditorPreferenceSettings(
                 fontFamilies: ["User Mono"],
                 fontSizePoints: 15,
-                wrapMode: "word"
+                wrapMode: "word",
+                findCaseSensitive: false
             ),
             rendering: AttoRenderingPreferenceSettings(themeName: "User Theme"),
             language: AttoLanguagePreferenceSettings(
@@ -26,7 +27,8 @@ final class AttoConfigurationSettingsTests: XCTestCase {
         let workspace = AttoConfigurationSettings(
             editor: AttoEditorPreferenceSettings(
                 wrapMode: "none",
-                wrapIndent: "same_as_line_indent"
+                wrapIndent: "same_as_line_indent",
+                findWholeWord: true
             ),
             rendering: AttoRenderingPreferenceSettings(themeName: "Workspace Theme"),
             language: AttoLanguagePreferenceSettings(
@@ -42,7 +44,10 @@ final class AttoConfigurationSettingsTests: XCTestCase {
         )
 
         let runtime = AttoConfigurationSettings(
-            editor: AttoEditorPreferenceSettings(autoPairsEnabled: false),
+            editor: AttoEditorPreferenceSettings(
+                autoPairsEnabled: false,
+                findRegex: true
+            ),
             rendering: AttoRenderingPreferenceSettings(themeName: "Runtime Theme"),
             language: AttoLanguagePreferenceSettings(
                 commentConfigurations: [
@@ -64,6 +69,9 @@ final class AttoConfigurationSettingsTests: XCTestCase {
         XCTAssertFalse(snapshot.editor.autoPairsEnabled)
         XCTAssertEqual(snapshot.editor.wrapMode, "none")
         XCTAssertEqual(snapshot.editor.wrapIndent, "same_as_line_indent")
+        XCTAssertFalse(snapshot.editor.findCaseSensitive)
+        XCTAssertTrue(snapshot.editor.findWholeWord)
+        XCTAssertTrue(snapshot.editor.findRegex)
         XCTAssertEqual(snapshot.rendering.themeName, "Runtime Theme")
         XCTAssertEqual(snapshot.language.commentConfigurations["rust"], .line("//"))
         XCTAssertEqual(snapshot.language.commentConfigurations["python"], .line("#"))
@@ -197,6 +205,9 @@ final class AttoConfigurationSettingsTests: XCTestCase {
           "future_top_level": true,
           "editor": {
             "font_size_points": 17,
+            "find_case_sensitive": false,
+            "find_whole_word": true,
+            "find_regex": true,
             "future_editor_field": "ignored"
           },
           "language": {
@@ -220,6 +231,9 @@ final class AttoConfigurationSettingsTests: XCTestCase {
 
         XCTAssertEqual(settings.schemaVersion, 2)
         XCTAssertEqual(settings.editor?.fontSizePoints, 17)
+        XCTAssertEqual(settings.editor?.findCaseSensitive, false)
+        XCTAssertEqual(settings.editor?.findWholeWord, true)
+        XCTAssertEqual(settings.editor?.findRegex, true)
         XCTAssertEqual(settings.language?.commentConfigurations?["swift"], .line("//"))
         XCTAssertEqual(settings.language?.lspAutoRestart?.maxAttempts, 5)
     }
@@ -231,7 +245,10 @@ final class AttoConfigurationSettingsTests: XCTestCase {
                 fontSizePoints: 13,
                 autoPairsEnabled: true,
                 wrapMode: "char",
-                wrapIndent: "none"
+                wrapIndent: "none",
+                findCaseSensitive: true,
+                findWholeWord: false,
+                findRegex: false
             ),
             rendering: AttoRenderingPreferenceSnapshot(
                 themeName: "Base Theme",

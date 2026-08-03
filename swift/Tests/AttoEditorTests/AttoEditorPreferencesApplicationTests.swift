@@ -36,7 +36,10 @@ final class AttoEditorPreferencesApplicationTests: XCTestCase {
             editor: AttoEditorPreferenceSettings(
                 autoPairsEnabled: false,
                 wrapMode: "none",
-                wrapIndent: "fixed_cells:2"
+                wrapIndent: "fixed_cells:2",
+                findCaseSensitive: false,
+                findWholeWord: true,
+                findRegex: true
             ),
             rendering: AttoRenderingPreferenceSettings(themeName: "Atto Dark")
         ), workspaceRootURL: workspaceRootURL)
@@ -56,9 +59,16 @@ final class AttoEditorPreferencesApplicationTests: XCTestCase {
         XCTAssertFalse(snapshot.editor.autoPairsEnabled)
         XCTAssertEqual(snapshot.editor.wrapMode, "none")
         XCTAssertEqual(snapshot.editor.wrapIndent, "fixed_cells:2")
+        XCTAssertFalse(snapshot.editor.findCaseSensitive)
+        XCTAssertTrue(snapshot.editor.findWholeWord)
+        XCTAssertTrue(snapshot.editor.findRegex)
         XCTAssertEqual(snapshot.rendering.themeName, "Atto Dark")
         XCTAssertTrue(snapshot.rendering.fontLigaturesEnabled)
         XCTAssertEqual(snapshot.workspace.rootPath, workspaceRootURL.path)
+        ctx.editorAreaController.view.layoutSubtreeIfNeeded()
+        XCTAssertEqual(ctx.editorAreaController.findReplaceBarView.caseSensitiveButton.state, .off)
+        XCTAssertEqual(ctx.editorAreaController.findReplaceBarView.wholeWordButton.state, .on)
+        XCTAssertEqual(ctx.editorAreaController.findReplaceBarView.regexButton.state, .on)
 
         ctx.editorAreaController.openFile(url: fileURL, mode: .pinned)
         let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: ctx.editorAreaController.view))
@@ -74,7 +84,13 @@ final class AttoEditorPreferencesApplicationTests: XCTestCase {
 
         snapshot = ctx.editorAreaController._configurationSnapshotForTesting()
         XCTAssertEqual(snapshot.editor.wrapMode, "char")
+        XCTAssertTrue(snapshot.editor.findCaseSensitive)
+        XCTAssertFalse(snapshot.editor.findWholeWord)
+        XCTAssertFalse(snapshot.editor.findRegex)
         XCTAssertEqual(snapshot.rendering.themeName, "Atto Light")
+        XCTAssertEqual(ctx.editorAreaController.findReplaceBarView.caseSensitiveButton.state, .on)
+        XCTAssertEqual(ctx.editorAreaController.findReplaceBarView.wholeWordButton.state, .off)
+        XCTAssertEqual(ctx.editorAreaController.findReplaceBarView.regexButton.state, .off)
 
         try editorView.editor.setViewportWidthCells(4)
         XCTAssertTrue(try viewportLines(editorView.editor).contains { ($0["is_wrapped_part"] as? Bool) == true })
