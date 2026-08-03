@@ -121,6 +121,8 @@ extension AttoEditorAreaViewController {
             clearDiagnosticMarkers()
             statusBarView.update(
                 leftText: transientStatusText,
+                languageSourceText: nil,
+                languageSourceTooltip: nil,
                 languageId: nil,
                 languageIsEnabled: false,
                 lspText: nil,
@@ -229,8 +231,14 @@ extension AttoEditorAreaViewController {
             }
         }()
 
+        let languageSourceIndicator = AttoLanguageSourceIndicator(
+            source: tab.languageSupportSource,
+            languageId: tab.syntaxLanguageId
+        )
         statusBarView.update(
             leftText: transientStatusText ?? statusBarLeftText(for: tab, diagnostics: diagnosticsSnapshot),
+            languageSourceText: languageSourceIndicator.statusText,
+            languageSourceTooltip: languageSourceIndicator.tooltipText,
             languageId: tab.syntaxLanguageId,
             languageIsEnabled: true,
             lspText: lspText,
@@ -1576,7 +1584,7 @@ extension AttoEditorAreaViewController {
             return
         }
 
-        // "Plain Tex" => disable all syntax engines.
+        // "Plain Text" => disable all syntax engines.
         if languageId == nil {
             tab.editCore.editor.lspDisable()
             tab.editCore.editor.treeSitterDisable()
@@ -1585,6 +1593,7 @@ extension AttoEditorAreaViewController {
             tab.suppressesAutomaticLspStart = true
             syncProjectLspServerConfigsToCore()
             tab.syntaxLanguageId = nil
+            tab.languageSupportSource = .plainText
             applyLanguageConfiguration(for: tab)
             updateAlwaysPollProcessingForSelectedTab()
             updateStatusBar()
@@ -1614,6 +1623,7 @@ extension AttoEditorAreaViewController {
         do {
             try tab.editCore.editor.treeSitterEnableLanguage(lang)
             tab.syntaxLanguageId = lang
+            tab.languageSupportSource = .treeSitter
             applyLanguageConfiguration(for: tab)
             tab.editCore.editorView.kickProcessingPoll()
             updateAlwaysPollProcessingForSelectedTab()

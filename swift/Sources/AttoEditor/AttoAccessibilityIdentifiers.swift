@@ -47,6 +47,7 @@ enum AttoAccessibilityID {
 
     static let statusBar = "AttoEditor.StatusBar"
     static let statusBarLeftLabel = "AttoEditor.StatusBar.Left"
+    static let statusBarLanguageSourceLabel = "AttoEditor.StatusBar.LanguageSource"
     static let statusBarLanguagePopUp = "AttoEditor.StatusBar.Language"
     static let statusBarLspLabel = "AttoEditor.StatusBar.LSP"
     static let statusBarPositionLabel = "AttoEditor.StatusBar.Position"

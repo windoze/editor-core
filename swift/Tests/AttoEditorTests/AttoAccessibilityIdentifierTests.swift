@@ -39,6 +39,7 @@ final class AttoAccessibilityIdentifierTests: XCTestCase {
         XCTAssertNotNil(findView(identifier: AttoAccessibilityID.editorContentHost, in: vc.view))
         XCTAssertNotNil(findView(identifier: AttoAccessibilityID.editorEmptyState, in: vc.view))
         XCTAssertNotNil(findView(identifier: AttoAccessibilityID.statusBar, in: vc.view))
+        XCTAssertNotNil(findView(identifier: AttoAccessibilityID.statusBarLanguageSourceLabel, in: vc.view))
         XCTAssertNotNil(findView(identifier: AttoAccessibilityID.statusBarLanguagePopUp, in: vc.view))
         XCTAssertNotNil(findView(identifier: AttoAccessibilityID.statusBarPositionLabel, in: vc.view))
 

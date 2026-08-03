@@ -12,6 +12,7 @@ final class AttoStatusBarView: NSView {
     var onSelectLanguage: ((String?) -> Void)?
 
     private let leftLabel = NSTextField(labelWithString: "")
+    private let languageSourceLabel = NSTextField(labelWithString: "")
     private let languagePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let lspLabel = NSTextField(labelWithString: "")
     private let positionLabel = NSTextField(labelWithString: "")
@@ -40,6 +41,13 @@ final class AttoStatusBarView: NSView {
         leftLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         leftLabel.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.statusBarLeftLabel)
         leftLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        languageSourceLabel.font = NSFont.systemFont(ofSize: 11, weight: .regular)
+        languageSourceLabel.textColor = NSColor(attoHex: 0xB5B5B5)
+        languageSourceLabel.lineBreakMode = .byTruncatingTail
+        languageSourceLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        languageSourceLabel.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.statusBarLanguageSourceLabel)
+        languageSourceLabel.translatesAutoresizingMaskIntoConstraints = false
 
         languagePopUp.font = NSFont.systemFont(ofSize: 11, weight: .regular)
         languagePopUp.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.statusBarLanguagePopUp)
@@ -77,6 +85,7 @@ final class AttoStatusBarView: NSView {
         rightStack.alignment = .centerY
         rightStack.spacing = 12
         rightStack.translatesAutoresizingMaskIntoConstraints = false
+        rightStack.addArrangedSubview(languageSourceLabel)
         rightStack.addArrangedSubview(languagePopUp)
         rightStack.addArrangedSubview(positionLabel)
         rightStack.addArrangedSubview(selectionLabel)
@@ -94,10 +103,12 @@ final class AttoStatusBarView: NSView {
             rightStack.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
 
-        // Default language list: always include "Plain Tex" (MVP); richer options are supplied by the host.
-        setLanguageOptions([.init(id: nil, title: "Plain Tex")])
+        // Default language list: always include "Plain Text" (MVP); richer options are supplied by the host.
+        setLanguageOptions([.init(id: nil, title: "Plain Text")])
         update(
             leftText: nil,
+            languageSourceText: nil,
+            languageSourceTooltip: nil,
             languageId: nil,
             languageIsEnabled: false,
             lspText: nil,
@@ -130,6 +141,8 @@ final class AttoStatusBarView: NSView {
 
     func update(
         leftText: String?,
+        languageSourceText: String?,
+        languageSourceTooltip: String?,
         languageId: String?,
         languageIsEnabled: Bool,
         lspText: String?,
@@ -138,6 +151,9 @@ final class AttoStatusBarView: NSView {
         fileSizeText: String?
     ) {
         leftLabel.stringValue = leftText ?? ""
+        languageSourceLabel.stringValue = languageSourceText ?? ""
+        languageSourceLabel.toolTip = languageSourceTooltip ?? languageSourceText
+        languageSourceLabel.isHidden = (languageSourceText?.isEmpty != false)
 
         // Language selector
         languagePopUp.isEnabled = languageIsEnabled

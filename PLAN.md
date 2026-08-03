@@ -1933,6 +1933,15 @@
 ### 提交
 
 - `feat(lang): productize treesitter and lsp path`
+- 中间提交：`feat(lang): show language source indicator`
+  - 所属任务：阶段 11 的 Tree-sitter 与 LSP 主路线产品化增量；让 App 状态栏明确显示当前文档语言能力来源，区分 LSP semantic tokens、LSP + Tree-sitter、Tree-sitter、Sublime baseline 和 Plain Text。
+  - 提交边界：新增 App 层 `AttoLanguageSupportSource` / `AttoLanguageSourceIndicator` typed model；打开文件、手动语言切换、project LSP 自动启动和 LSP restart 路径写入当前 tab 的 language source；状态栏新增稳定 accessibility id 的 source label。该提交不改变 LSP/Tree-sitter/Sublime 选择优先级，不新增 Rust/FFI ABI，不扩展 `.sublime-syntax` 兼容能力，也不实现完整 language mode/settings 面板。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoLanguageSourceIndicatorTests'`
+    - `swift test --package-path swift --filter 'AttoStatusBarSelectionTests/testStatusBarShowsLanguageSourceIndicator'`
+    - `swift test --package-path swift --filter 'AttoAccessibilityIdentifierTests/testEditorChromeAndTabsExposeStableIdentifiers'`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 12: Workspace search、project index、recent 与 session
 

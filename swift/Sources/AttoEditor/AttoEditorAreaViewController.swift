@@ -1316,7 +1316,7 @@ final class AttoEditorAreaViewController: NSViewController {
     func refreshStatusBarLanguageOptions() {
         loadTreeSitterRegistryCacheIfNeeded()
         var opts: [AttoStatusBarView.LanguageOption] = [
-            .init(id: nil, title: "Plain Tex"),
+            .init(id: nil, title: "Plain Text"),
         ]
         for id in treeSitterLanguageIDs {
             opts.append(.init(id: id, title: id))
@@ -1811,6 +1811,7 @@ final class AttoEditorTab {
     var isPreview: Bool
     var isDirty: Bool
     var syntaxLanguageId: String?
+    var languageSupportSource: AttoLanguageSupportSource
     var panes: [EditCoreUI]
     var activePaneIndex: Int
     var lspServerConfig: AttoLspServerLaunchConfig?
@@ -1838,6 +1839,7 @@ final class AttoEditorTab {
         isPreview: Bool,
         isDirty: Bool,
         syntaxLanguageId: String?,
+        languageSupportSource: AttoLanguageSupportSource = .plainText,
         editCore: EditCoreUI
     ) {
         self.id = id
@@ -1847,6 +1849,7 @@ final class AttoEditorTab {
         self.isPreview = isPreview
         self.isDirty = isDirty
         self.syntaxLanguageId = syntaxLanguageId
+        self.languageSupportSource = languageSupportSource
         self.panes = [editCore]
         self.activePaneIndex = 0
         self.lspServerConfig = nil
