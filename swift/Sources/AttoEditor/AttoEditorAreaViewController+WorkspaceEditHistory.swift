@@ -94,7 +94,7 @@ extension AttoEditorAreaViewController {
             return AttoWorkspaceEditHistoryFormatter.items(
                 from: snapshot,
                 consumedUndoSequences: workspaceEditConsumedUndoSequences,
-                requestRetryLabelsBySequence: workspaceEditRequestRetryLabelsBySequence()
+                requestRetryDescriptorsBySequence: workspaceEditRequestRetryDescriptorsBySequence()
             )
         } catch {
             NSLog("AttoEditor: failed to load WorkspaceEdit transaction history: %@", String(describing: error))
@@ -251,8 +251,10 @@ extension AttoEditorAreaViewController {
         }
     }
 
-    private func workspaceEditRequestRetryLabelsBySequence() -> [UInt64: String] {
-        workspaceEditRequestRetryOwnersByTransactionSequence.mapValues(\.label)
+    private func workspaceEditRequestRetryDescriptorsBySequence()
+        -> [UInt64: AttoWorkspaceEditRequestRetryDescriptor]
+    {
+        workspaceEditRequestRetryOwnersByTransactionSequence.mapValues(\.descriptor)
     }
 
     private func pruneWorkspaceEditRequestRetryOwners(retaining validSequences: Set<UInt64>) {

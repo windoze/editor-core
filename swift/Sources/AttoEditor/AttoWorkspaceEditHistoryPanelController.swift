@@ -16,6 +16,7 @@ final class AttoWorkspaceEditHistoryPanelController: NSObject, NSTableViewDataSo
         let firstDiscardableConflictURI: String?
         let workspaceEditJSON: String?
         let requestRetryLabel: String?
+        let requestRetryDescriptor: AttoWorkspaceEditRequestRetryDescriptor?
         let canUndoLatest: Bool
     }
 
@@ -355,6 +356,7 @@ final class AttoWorkspaceEditHistoryPanelController: NSObject, NSTableViewDataSo
                     || item.firstSaveableConflictURI?.localizedCaseInsensitiveContains(query) == true
                     || item.firstDiscardableConflictURI?.localizedCaseInsensitiveContains(query) == true
                     || item.requestRetryLabel?.localizedCaseInsensitiveContains(query) == true
+                    || item.requestRetryDescriptor?.searchableText.localizedCaseInsensitiveContains(query) == true
             }
         }
         tableView.reloadData()
@@ -602,7 +604,7 @@ enum AttoWorkspaceEditHistoryFormatter {
     static func items(
         from snapshot: EcuWorkspaceEditTransactionEventsSnapshot,
         consumedUndoSequences: Set<UInt64> = [],
-        requestRetryLabelsBySequence: [UInt64: String] = [:]
+        requestRetryDescriptorsBySequence: [UInt64: AttoWorkspaceEditRequestRetryDescriptor] = [:]
     ) -> [AttoWorkspaceEditHistoryPanelController.Item] {
         let latestUndoableSequence = snapshot.events.last { event in
             isUndoableTransactionOperation(event.operation)
@@ -613,6 +615,7 @@ enum AttoWorkspaceEditHistoryFormatter {
             let result = event.result
             let editCount = result.appliedEditCount
             let resourceCount = result.appliedResourceOperationCount
+            let requestRetryDescriptor = requestRetryDescriptorsBySequence[event.sequence]
             return AttoWorkspaceEditHistoryPanelController.Item(
                 sequence: event.sequence,
                 operation: event.operation,
@@ -628,7 +631,8 @@ enum AttoWorkspaceEditHistoryFormatter {
                 firstSaveableConflictURI: firstSaveOrDiscardConflictURI(in: result.conflicts),
                 firstDiscardableConflictURI: firstSaveOrDiscardConflictURI(in: result.conflicts),
                 workspaceEditJSON: event.workspaceEditJSON,
-                requestRetryLabel: requestRetryLabelsBySequence[event.sequence],
+                requestRetryLabel: requestRetryDescriptor?.label,
+                requestRetryDescriptor: requestRetryDescriptor,
                 canUndoLatest: event.sequence == latestUndoableSequence
             )
         }

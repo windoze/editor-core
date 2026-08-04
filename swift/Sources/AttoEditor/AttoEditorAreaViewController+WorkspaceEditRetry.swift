@@ -17,8 +17,30 @@ enum AttoWorkspaceEditApplyOutcome {
 }
 
 struct AttoWorkspaceEditRequestRetryOwner {
-    let label: String
+    let descriptor: AttoWorkspaceEditRequestRetryDescriptor
     let rerun: @MainActor () -> Bool
+
+    var label: String {
+        descriptor.label
+    }
+
+    init(
+        descriptor: AttoWorkspaceEditRequestRetryDescriptor,
+        rerun: @escaping @MainActor () -> Bool
+    ) {
+        self.descriptor = descriptor
+        self.rerun = rerun
+    }
+
+    init(
+        label: String,
+        rerun: @escaping @MainActor () -> Bool
+    ) {
+        self.init(
+            descriptor: .unknown(label: label),
+            rerun: rerun
+        )
+    }
 }
 
 extension AttoEditorAreaViewController {
@@ -36,7 +58,14 @@ extension AttoEditorAreaViewController {
     func formattingWorkspaceEditRequestRetryOwner(
         context: FormattingRequestContext
     ) -> AttoWorkspaceEditRequestRetryOwner {
-        AttoWorkspaceEditRequestRetryOwner(label: context.kind.retryLabel) { [weak self] in
+        AttoWorkspaceEditRequestRetryOwner(
+            descriptor: workspaceEditRequestRetryDescriptor(
+                kind: workspaceEditRequestKind(for: context.kind),
+                label: context.kind.retryLabel,
+                tabID: context.tabID,
+                parameterSummary: formattingWorkspaceEditRequestParameters(context)
+            )
+        ) { [weak self] in
             guard let self else { return false }
             return self.retryFormattingWorkspaceEditRequest(context: context)
         }
@@ -73,7 +102,14 @@ extension AttoEditorAreaViewController {
     func colorPresentationWorkspaceEditRequestRetryOwner(
         context: ColorPresentationRequestContext
     ) -> AttoWorkspaceEditRequestRetryOwner {
-        AttoWorkspaceEditRequestRetryOwner(label: "Color Presentation") { [weak self] in
+        AttoWorkspaceEditRequestRetryOwner(
+            descriptor: workspaceEditRequestRetryDescriptor(
+                kind: .colorPresentation,
+                label: "Color Presentation",
+                tabID: context.tabID,
+                parameterSummary: colorPresentationWorkspaceEditRequestParameters(context)
+            )
+        ) { [weak self] in
             guard let self else { return false }
             return self.retryColorPresentationWorkspaceEditRequest(context: context)
         }
@@ -111,7 +147,14 @@ extension AttoEditorAreaViewController {
     func inlayHintResolveWorkspaceEditRequestRetryOwner(
         context: InlayHintResolveContext
     ) -> AttoWorkspaceEditRequestRetryOwner {
-        AttoWorkspaceEditRequestRetryOwner(label: "Inlay Hint Resolve") { [weak self] in
+        AttoWorkspaceEditRequestRetryOwner(
+            descriptor: workspaceEditRequestRetryDescriptor(
+                kind: .inlayHintResolve,
+                label: "Inlay Hint Resolve",
+                tabID: context.tabID,
+                parameterSummary: inlayHintResolveWorkspaceEditRequestParameters(context)
+            )
+        ) { [weak self] in
             guard let self else { return false }
             return self.retryInlayHintResolveWorkspaceEditRequest(context: context)
         }
@@ -150,7 +193,14 @@ extension AttoEditorAreaViewController {
     func executeCommandWorkspaceEditRequestRetryOwner(
         context: ExecuteCommandRequestContext
     ) -> AttoWorkspaceEditRequestRetryOwner {
-        AttoWorkspaceEditRequestRetryOwner(label: "Command: \(context.commandTitle)") { [weak self] in
+        AttoWorkspaceEditRequestRetryOwner(
+            descriptor: workspaceEditRequestRetryDescriptor(
+                kind: .executeCommand,
+                label: "Command: \(context.commandTitle)",
+                tabID: context.tabID,
+                parameterSummary: executeCommandWorkspaceEditRequestParameters(context)
+            )
+        ) { [weak self] in
             guard let self else { return false }
             return self.retryExecuteCommandWorkspaceEditRequest(context: context)
         }
@@ -195,7 +245,14 @@ extension AttoEditorAreaViewController {
     func completionWorkspaceEditRequestRetryOwner(
         context: CompletionRequestContext
     ) -> AttoWorkspaceEditRequestRetryOwner {
-        AttoWorkspaceEditRequestRetryOwner(label: "Completion") { [weak self] in
+        AttoWorkspaceEditRequestRetryOwner(
+            descriptor: workspaceEditRequestRetryDescriptor(
+                kind: .completion,
+                label: "Completion",
+                tabID: context.tabID,
+                parameterSummary: completionWorkspaceEditRequestParameters(context)
+            )
+        ) { [weak self] in
             guard let self else { return false }
             return self.retryCompletionWorkspaceEditRequest(context: context)
         }
@@ -252,7 +309,14 @@ extension AttoEditorAreaViewController {
         context: CodeActionRequestContext?
     ) -> AttoWorkspaceEditRequestRetryOwner? {
         guard let context else { return nil }
-        return AttoWorkspaceEditRequestRetryOwner(label: codeActionRetryLabel(context: context)) { [weak self] in
+        return AttoWorkspaceEditRequestRetryOwner(
+            descriptor: workspaceEditRequestRetryDescriptor(
+                kind: .codeAction,
+                label: codeActionRetryLabel(context: context),
+                tabID: context.tabID,
+                parameterSummary: codeActionWorkspaceEditRequestParameters(context)
+            )
+        ) { [weak self] in
             guard let self else { return false }
             return self.retryCodeActionWorkspaceEditRequest(context: context)
         }
@@ -323,7 +387,15 @@ extension AttoEditorAreaViewController {
     func renameWorkspaceEditRequestRetryOwner(
         context: RenameRequestContext
     ) -> AttoWorkspaceEditRequestRetryOwner {
-        AttoWorkspaceEditRequestRetryOwner(label: "Rename: \(context.newName)") { [weak self] in
+        AttoWorkspaceEditRequestRetryOwner(
+            descriptor: workspaceEditRequestRetryDescriptor(
+                kind: .rename,
+                label: "Rename: \(context.newName)",
+                tabID: context.tabID,
+                documentURI: context.documentURI,
+                parameterSummary: renameWorkspaceEditRequestParameters(context)
+            )
+        ) { [weak self] in
             guard let self else { return false }
             return self.retryRenameWorkspaceEditRequest(context: context)
         }

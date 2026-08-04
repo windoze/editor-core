@@ -594,6 +594,12 @@ final class AttoEditorAreaViewController: NSViewController {
         workspaceEditHistoryPanelController?.currentItems ?? []
     }
 
+    func _workspaceEditRequestRetryDescriptorsForTesting()
+        -> [UInt64: AttoWorkspaceEditRequestRetryDescriptor]
+    {
+        workspaceEditRequestRetryOwnersByTransactionSequence.mapValues(\.descriptor)
+    }
+
     func _workspaceEditHistoryPanelRowCountForTesting() -> Int {
         workspaceEditHistoryPanelController?.rowCount ?? 0
     }

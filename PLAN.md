@@ -34,7 +34,12 @@
 
 ### 剩余任务
 
-- [ ] 为 WorkspaceEdit request retry owner 增加 typed descriptor，记录 request kind、label、workspace root、document URI、tab/source 信息、原始请求参数摘要和失效原因。
+- [x] 为 WorkspaceEdit request retry owner 增加 typed descriptor，记录 request kind、label、workspace root、document URI、tab/source 信息、原始请求参数摘要和失效原因。
+  - 验证：`swift test --package-path swift --filter AttoWorkspaceEditRetryDescriptorTests`
+  - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testWorkspaceEditHistoryPanelRerunsRecordedRequestOwner`
+  - 验证：`swift test --package-path swift --filter AttoWorkspaceEdit`
+  - 验证：`cargo test -p editor-core-ui`
+  - 验证：`cargo test -p editor-core-ui-ffi`
 - [ ] 将 request/conflict owner 从当前 session-local closure cache 推进到 project/session 可恢复或可共享的 store；历史 transaction 即使没有可执行闭包，也应能展示归属和不可重跑原因。
 - [ ] 让 WorkspaceEdit History / Preview / Conflict UI 消费 descriptor，支持保存/丢弃 conflict 后按 request owner 安全 rerun，并在不可 rerun 时禁用动作并显示原因。
 - [ ] 为 snippet completion 建立单一 WorkspaceEdit transaction / undo 单元：`additionalTextEdits` 与 snippet 主体编辑必须一起 preview、apply、rollback、undo。
