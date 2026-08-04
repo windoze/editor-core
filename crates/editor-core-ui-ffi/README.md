@@ -48,6 +48,23 @@ deprecated; new Swift/App integrations should use the envelope methods and typed
 Workspace file list/search/replacement callers that need pagination or scan policy controls should
 gate on `ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_SCAN_OPTIONS`.
 
+## Swift/AppKit Host Contract
+
+AttoEditor uses this crate as the ABI boundary for core-owned app state. Current Swift integration
+expects:
+
+- `MultiDocumentEditorUi` to own tabs, split views, document URI/language metadata, workspace
+  roots, recent files/projects, workspace file scan metadata, project file index snapshots,
+  WorkspaceEdit transactions, and project LSP lifecycle descriptors.
+- Swift/AppKit to keep only presentation state such as selected controls, panel focus, visual
+  baselines, transient status text, and popup/overlay placement.
+- Runtime feature negotiation to decide whether a product surface is enabled, degraded, or routed
+  through a legacy compatibility fallback. New product code should not add raw JSON entry points
+  when an envelope + typed Swift wrapper already exists.
+- Visual baseline and optional `XCUIApplication` smoke tests to guard host-only behavior that is
+  intentionally outside the ABI: chrome layout, minimap/gutter placement, focus restoration,
+  child-window stacking, and app-session workflows.
+
 ## JSON Command Envelope
 
 The legacy JSON command dispatcher remains available:

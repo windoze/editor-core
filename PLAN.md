@@ -532,7 +532,13 @@
 
 ### 剩余任务
 
-- [ ] 更新 `docs/abi-v1-draft.md`、crate README、Swift package README 和 App 使用说明。
+- [x] 更新 `docs/abi-v1-draft.md`、crate README、Swift package README 和 App 使用说明。
+  - [x] 根 README 补齐 `editor-core-ui` / `editor-core-ui-ffi` workspace crate 描述。
+  - [x] `swift/README.md` 补充 AttoEditor 当前 core-owned App 能力边界、visual baseline 更新/strict 校验入口和 strict PR 语义。
+  - [x] `docs/abi-v1-draft.md` 与 `crates/editor-core-ui-ffi/README.md` 补充 Swift/AppKit runtime negotiation、core-owned workspace facts、legacy fallback 和 host-only UI contract。
+  - [x] `SWIFT-GAPS.md` 移除已完成阶段 14，仅保留阶段 15 剩余边界。
+  - 验证：`! rg -n "阶段 14|Sublime-like UI|当前按阶段 14|TODO|待办" SWIFT-GAPS.md README.md swift/README.md docs/abi-v1-draft.md crates/editor-core-ui-ffi/README.md`
+  - 验证：`git diff --check`
 - [ ] 清理过渡 API、重复状态源、临时 helper、旧 feature flag 和未使用测试 fixture。
 - [ ] 运行全量 Rust、Swift、AppKit、visual 和 opt-in smoke 验证。
 - [ ] 将仍未完成的内容明确标为 out-of-scope 或 deferred，并从本计划中移除。

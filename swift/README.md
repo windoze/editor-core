@@ -93,6 +93,16 @@ open .build/app-dist/AttoEditor.app
 占位图标位于 `Sources/AttoEditor/AppBundle/AppIcon.icns`（可直接替换）。
 `CFBundleIdentifier` 固定为 `codes.unwritten.attoeditor`（见 `Sources/AttoEditor/AppBundle/Info.plist`）。
 
+### 当前 App 能力边界
+
+AttoEditor 的长期事实源优先落在 core / `editor-core-ui`，Swift/AppKit 主要负责投影、焦点、面板和视觉状态：
+
+- tabs、split panes、preview/pinned tab、session restore、dirty/save/reload、recent files/projects 和 workspace root 由 core-backed workflow 驱动；
+- Quick Open、workspace search、replace-in-files 和 project file index 使用 core-owned workspace data source，并通过 runtime feature negotiation 在旧 runtime 上降级；
+- Tree-sitter、Sublime syntax 和 LSP derived state 共同提供 highlighting、folding、outline、diagnostics、semantic tokens、hover、signature help、completion、code actions 和 WorkspaceEdit preview/history；
+- Project LSP Dashboard 使用 core-owned project server schema、workspace folders、capabilities、session policy、recovery policy、attempt id、lifecycle events 和 process health log；
+- Sublime-like chrome 覆盖 tab bar、sidebar、status bar、quick panel、completion popup、find/replace、split panes、minimap、gutter markers、overlay stacking 和 editor focus restore。
+
 ### CLI（`atto`）
 
 AttoEditor 额外提供一个独立 CLI：`atto`，用于终端里打开文件/目录并通过 IPC 发送到主实例（支持 `-n/--new-window`、`-w/--wait`、`file:line:column`）。
@@ -155,6 +165,26 @@ JSON schema 与实现规划见：`swift/theme.md`
 cd swift
 swift test
 ```
+
+### Visual baselines
+
+视觉基线由 `Tests/AttoEditorTests/Resources/VisualBaselines/manifest.json` 声明，并覆盖窄窗口、多 pane、长文件、多 cursor、diagnostics、folding、semantic overlays、floating/persistent panels 和 WorkspaceEdit failure/preview 状态。
+
+更新 checked-in PNG：
+
+```bash
+# from the repository root
+swift/scripts/update-visual-baselines.sh
+```
+
+严格比对 checked-in PNG：
+
+```bash
+# from the repository root
+swift/scripts/check-visual-baselines.sh
+```
+
+PR workflow 在仓库包含 `VisualBaselines/*.png` 时走 strict baseline 路径；没有 PNG 时只跑 smoke artifact capture。
 
 ### XCUIApplication smoke tests（可选）
 

@@ -24,6 +24,9 @@ drive edits through the command/state APIs.
   - See `crates/editor-core-lsp/README.md`
 - `crates/editor-core-app/` — UI-agnostic “editor app shell” helpers (workspace file index, explorer helpers, sessions/recents, settings, find-in-files).
   - See `crates/editor-core-app/README.md`
+- `crates/editor-core-ui/` — core-owned multi-document UI/application model (tabs, splits, workspace file search/replacement, WorkspaceEdit transactions, project LSP lifecycle metadata).
+- `crates/editor-core-ui-ffi/` — C ABI bridge for `editor-core-ui` surfaces consumed by Swift/AppKit hosts.
+  - See `crates/editor-core-ui-ffi/README.md` and `docs/abi-v1-draft.md`
 - `crates/editor-core-ffi/` — C ABI bridge for Swift/C++/C# and other native hosts (typed hot-path + binary viewport blobs + JSON control plane).
   - See `crates/editor-core-ffi/README.md` and `docs/abi-v1-draft.md`
 - `crates/editor-core-sublime/` — `.sublime-syntax` highlighting + folding engine (headless output as style intervals + fold regions).

@@ -488,6 +488,23 @@ now have structured workspace-file operation envelopes are retained for source c
 marked deprecated. App and host integrations should consume the envelope methods plus their typed
 value helpers, using the raw JSON symbols only as explicit legacy fallbacks.
 
+### Swift/AppKit Integration Audit Boundary
+
+The current Swift host treats runtime feature negotiation as part of app startup and gates product
+features through typed compatibility descriptors. The expected v1 integration shape is:
+
+- Swift/AppKit keeps UI-only state such as active first responder, panel visibility, visual caches,
+  status text, and transient overlay placement.
+- Core / `editor-core-ui` owns durable workspace facts: tabs/views, split topology, document URIs,
+  language ids, workspace roots, recent files/projects, project file index snapshots, workspace
+  search/replacement scan metadata, WorkspaceEdit transactions, and project LSP lifecycle schema.
+- New workspace, LSP result, WorkspaceEdit, project lifecycle, and workspace-file operations use
+  envelope APIs when the advertised feature bit is present. Legacy raw JSON calls are compatibility
+  fallbacks only and should not become new product entry points.
+- Swift visual and UI smoke tests are expected to cover the host-specific contract that is outside
+  the C ABI: AppKit focus restoration, child-window/popup stacking, minimap/gutter placement,
+  narrow-window chrome constraints, and black-box app startup/session behavior.
+
 ## Cross-Language Binding Notes
 
 ## Swift (macOS)
