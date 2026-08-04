@@ -432,6 +432,53 @@ final class AttoWorkspaceEditSummaryTests: XCTestCase {
         XCTAssertTrue(sections[1].detailText.contains("Suggested action: Save or discard the open tab changes"))
     }
 
+    func testWorkspaceEditPreviewReportsUnavailableRequestRetryReason() throws {
+        let result = try decodeTransactionResult("""
+        {
+          "mode": "preview",
+          "apply_mode": "atomic",
+          "applied": false,
+          "applied_uris": [],
+          "applied_edit_count": 0,
+          "applied_resource_operation_count": 0,
+          "conflicts": [
+            {
+              "uri": "file:///project/dirty.swift",
+              "kind": "dirty_document",
+              "severity": "error",
+              "apply_impact": "blocks_atomic_apply",
+              "resolution": "save_or_discard",
+              "reason": "resource_operation_dirty_target",
+              "operation": "delete",
+              "message": "delete targets a modified open tab"
+            }
+          ],
+          "skipped_uris": ["file:///project/dirty.swift"],
+          "documents": [
+            {
+              "uri": "file:///project/dirty.swift",
+              "edit_count": 0,
+              "is_open": true,
+              "is_dirty": true
+            }
+          ]
+        }
+        """)
+
+        var preview = AttoWorkspaceEditPreview(result: result)
+        preview.requestRetryDescriptor = AttoWorkspaceEditRequestRetryDescriptor
+            .unknown(label: "Rename: persistedName")
+            .invalidated(.requestClosureUnavailable)
+
+        XCTAssertFalse(preview.canResolveConflictAndRetry)
+        XCTAssertEqual(preview.requestRetryUnavailableReason, "retry closure unavailable")
+        XCTAssertEqual(
+            preview.requestRetryUnavailableStatusText,
+            "WorkspaceEdit request retry unavailable: Rename: persistedName (retry closure unavailable)"
+        )
+        XCTAssertTrue(preview.displayText.contains("Request: Rename: persistedName unavailable (retry closure unavailable)"))
+    }
+
     func testWorkspaceEditPreviewGroupsMultipleConflictKinds() throws {
         let result = try decodeTransactionResult("""
         {

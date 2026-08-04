@@ -366,6 +366,7 @@ extension AttoEditorAreaViewController {
             result: result,
             parsedWorkspaceEdit: workspaceEdit
         )
+        preview.requestRetryDescriptor = requestRetryOwner?.descriptor
         preview.sections = AttoWorkspaceEditPreviewDetailBuilder.sections(
             preview: preview,
             workspaceEdit: workspaceEdit,
@@ -442,12 +443,38 @@ extension AttoEditorAreaViewController {
             discardWorkspaceEditConflictTarget(uri, editorView: editorView)
             return .stop
         case .saveAndRetry(let uri):
+            guard workspaceEditPreviewRequestRetryAvailable(
+                preview,
+                requestRetryOwner: requestRetryOwner
+            ) else {
+                return .stop
+            }
             guard saveWorkspaceEditConflictTarget(uri, editorView: editorView) else { return .stop }
             return requestRetryOwner == nil ? .retry : .rerunRequest
         case .discardAndRetry(let uri):
+            guard workspaceEditPreviewRequestRetryAvailable(
+                preview,
+                requestRetryOwner: requestRetryOwner
+            ) else {
+                return .stop
+            }
             guard discardWorkspaceEditConflictTarget(uri, editorView: editorView) else { return .stop }
             return requestRetryOwner == nil ? .retry : .rerunRequest
         }
+    }
+
+    private func workspaceEditPreviewRequestRetryAvailable(
+        _ preview: AttoWorkspaceEditPreview,
+        requestRetryOwner: AttoWorkspaceEditRequestRetryOwner?
+    ) -> Bool {
+        guard let descriptor = requestRetryOwner?.descriptor ?? preview.requestRetryDescriptor,
+              descriptor.canRerun == false
+        else {
+            return true
+        }
+        setTransientStatusText(descriptor.retryUnavailableStatusText)
+        NSSound.beep()
+        return false
     }
 
     @discardableResult

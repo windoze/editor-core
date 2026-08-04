@@ -72,6 +72,22 @@ struct AttoWorkspaceEditRequestRetryDescriptor: Codable, Equatable {
         invalidationReason == nil
     }
 
+    var invalidationReasonText: String? {
+        invalidationReason.map(Self.invalidationReasonText)
+    }
+
+    var retryUnavailableStatusText: String {
+        let reason = invalidationReasonText ?? "retry unavailable"
+        return "WorkspaceEdit request retry unavailable: \(label) (\(reason))"
+    }
+
+    var requestSummaryText: String {
+        guard let invalidationReasonText else {
+            return "Request: \(label)"
+        }
+        return "Request: \(label) unavailable (\(invalidationReasonText))"
+    }
+
     var parameterSummaryText: String {
         guard parameterSummary.isEmpty == false else { return "" }
         return parameterSummary.map { "\($0.name)=\($0.value)" }.joined(separator: ", ")
@@ -121,6 +137,27 @@ struct AttoWorkspaceEditRequestRetryDescriptor: Codable, Equatable {
 
     static func jsonParameter(_ name: String, _ json: String) -> Parameter {
         Parameter(name: name, value: summarizedValue(normalizedJSONSummary(json)))
+    }
+
+    static func invalidationReasonText(_ reason: InvalidationReason) -> String {
+        switch reason {
+        case .sourceTabClosed:
+            return "source tab closed"
+        case .documentURIUnavailable:
+            return "document URI unavailable"
+        case .workspaceRootUnavailable:
+            return "workspace root unavailable"
+        case .lspUnavailable:
+            return "LSP unavailable"
+        case .requestParametersUnavailable:
+            return "request parameters unavailable"
+        case .requestClosureUnavailable:
+            return "retry closure unavailable"
+        case .serverCapabilityChanged:
+            return "server capability changed"
+        case .expired:
+            return "request expired"
+        }
     }
 
     private static func summarizedValue(_ value: String, limit: Int = 160) -> String {

@@ -46,6 +46,11 @@ struct AttoWorkspaceEditRequestRetryOwner {
 extension AttoEditorAreaViewController {
     @discardableResult
     func rerunWorkspaceEditRequest(_ requestRetryOwner: AttoWorkspaceEditRequestRetryOwner) -> Bool {
+        guard requestRetryOwner.descriptor.canRerun else {
+            setTransientStatusText(requestRetryOwner.descriptor.retryUnavailableStatusText)
+            NSSound.beep()
+            return false
+        }
         guard requestRetryOwner.rerun() else {
             setTransientStatusText("WorkspaceEdit request retry failed: \(requestRetryOwner.label)")
             NSSound.beep()

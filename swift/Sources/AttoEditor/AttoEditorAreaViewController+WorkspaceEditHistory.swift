@@ -134,14 +134,7 @@ extension AttoEditorAreaViewController {
     @discardableResult
     func rerunWorkspaceEditHistoryRequest(_ sequence: UInt64) -> Bool {
         guard let owner = workspaceEditRequestRetryOwnersByTransactionSequence[sequence] else {
-            if let descriptor = workspaceEditRequestRetryDescriptorForHistorySequence(sequence) {
-                let reason = descriptor.invalidationReason.map(workspaceEditRequestRetryUnavailableReasonText)
-                    ?? "Retry closure unavailable"
-                setTransientStatusText("WorkspaceEdit request retry unavailable: \(descriptor.label) (\(reason))")
-            } else {
-                setTransientStatusText("WorkspaceEdit request retry source unavailable")
-            }
-            NSSound.beep()
+            reportWorkspaceEditHistoryRequestRetryUnavailable(sequence)
             return false
         }
         let started = rerunWorkspaceEditRequest(owner)
@@ -187,6 +180,7 @@ extension AttoEditorAreaViewController {
         _ uri: String,
         rerunRequestSequence sequence: UInt64
     ) -> Bool {
+        guard workspaceEditHistoryRequestRetryAvailable(sequence) else { return false }
         guard let editorView = activeTab?.editCore.editorView else {
             NSSound.beep()
             return false
@@ -231,6 +225,7 @@ extension AttoEditorAreaViewController {
         _ uri: String,
         rerunRequestSequence sequence: UInt64
     ) -> Bool {
+        guard workspaceEditHistoryRequestRetryAvailable(sequence) else { return false }
         guard let editorView = activeTab?.editCore.editorView else {
             NSSound.beep()
             return false
@@ -318,27 +313,26 @@ extension AttoEditorAreaViewController {
         return descriptor.invalidated(.requestClosureUnavailable)
     }
 
-    private func workspaceEditRequestRetryUnavailableReasonText(
-        _ reason: AttoWorkspaceEditRequestRetryDescriptor.InvalidationReason
-    ) -> String {
-        switch reason {
-        case .sourceTabClosed:
-            return "Source tab closed"
-        case .documentURIUnavailable:
-            return "Document URI unavailable"
-        case .workspaceRootUnavailable:
-            return "Workspace root unavailable"
-        case .lspUnavailable:
-            return "LSP unavailable"
-        case .requestParametersUnavailable:
-            return "Request parameters unavailable"
-        case .requestClosureUnavailable:
-            return "Retry closure unavailable"
-        case .serverCapabilityChanged:
-            return "Server capability changed"
-        case .expired:
-            return "Request expired"
+    private func workspaceEditHistoryRequestRetryAvailable(_ sequence: UInt64) -> Bool {
+        if let owner = workspaceEditRequestRetryOwnersByTransactionSequence[sequence] {
+            guard owner.descriptor.canRerun else {
+                setTransientStatusText(owner.descriptor.retryUnavailableStatusText)
+                NSSound.beep()
+                return false
+            }
+            return true
         }
+        reportWorkspaceEditHistoryRequestRetryUnavailable(sequence)
+        return false
+    }
+
+    private func reportWorkspaceEditHistoryRequestRetryUnavailable(_ sequence: UInt64) {
+        if let descriptor = workspaceEditRequestRetryDescriptorForHistorySequence(sequence) {
+            setTransientStatusText(descriptor.retryUnavailableStatusText)
+        } else {
+            setTransientStatusText("WorkspaceEdit request retry source unavailable")
+        }
+        NSSound.beep()
     }
 
     private func pruneWorkspaceEditRequestRetryOwners(retaining validSequences: Set<UInt64>) {

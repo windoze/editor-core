@@ -6,12 +6,11 @@
 
 ## 阶段 4：WorkspaceEdit 剩余缺口
 
-- 建立真正跨 session / project-level 的 WorkspaceEdit request 与 conflict owner 归属模型。
-- 让 WorkspaceEdit History / Preview / Conflict UI 能在重新打开 panel、切换 tab/project 或 session restore 后展示归属信息，并在可安全重跑时触发 request rerun。
+- 将 WorkspaceEdit owner store 继续收敛为真正 project-level 模型，覆盖跨 app session restore、workspace root 迁移和 core history retention 后的归属 reconciliation。
 - 明确不能重跑的历史请求状态：源 tab 关闭、document URI 失效、workspace root 不匹配、server capability 变化、request 参数缺失或已过期。
 - 完成 snippet completion 的 `additionalTextEdits` 与 snippet 主体编辑的统一 transaction / undo 语义。
 - 支持跨文件 snippet `additionalTextEdits` 的 preview、apply、failure rollback 和 conflict summary。
-- 扩展更深层 conflict 检测与解决语义：dirty/stale 版本、overlapping edits、resource dependency、打开/未打开文件混合失败、保存/丢弃/打开/重跑动作的组合状态。
+- 扩展更深层 conflict 检测与解决语义：dirty/stale 版本、overlapping edits、resource dependency、打开/未打开文件混合失败和 secondary rollback failure。
 - 补齐阶段 4 的 Rust、FFI、Swift wrapper、AppKit panel 和回归测试。
 
 ## 阶段 5：Core Workspace Ownership

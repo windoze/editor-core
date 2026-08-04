@@ -61,6 +61,7 @@ struct AttoWorkspaceEditPreview: Equatable {
     let conflicts: [Conflict]
     let skippedDetails: [SkippedDetail]
     let unsupportedOperationURIs: [String]
+    var requestRetryDescriptor: AttoWorkspaceEditRequestRetryDescriptor?
     var sections: [Section]
 
     init(
@@ -137,6 +138,7 @@ struct AttoWorkspaceEditPreview: Equatable {
             )
         }
         unsupportedOperationURIs = result.unsupportedOperationURIs
+        requestRetryDescriptor = nil
         sections = []
     }
 
@@ -227,6 +229,9 @@ struct AttoWorkspaceEditPreview: Equatable {
 
         if let conflictSummaryLine {
             lines.append(conflictSummaryLine)
+        }
+        if let requestRetrySummaryLine {
+            lines.append(requestRetrySummaryLine)
         }
 
         let documentRows = previewRows()

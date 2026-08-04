@@ -231,6 +231,7 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
         saveAndRetryButton.action = #selector(saveAndRetryClicked(_:))
         saveAndRetryButton.bezelStyle = .rounded
         saveAndRetryButton.isHidden = preview?.firstSaveableConflictTargetURI == nil
+        saveAndRetryButton.toolTip = preview?.requestRetryUnavailableToolTip
         saveAndRetryButton.identifier = NSUserInterfaceItemIdentifier(
             AttoAccessibilityID.workspaceEditPreviewSaveAndRetryButton
         )
@@ -240,6 +241,7 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
         discardAndRetryButton.action = #selector(discardAndRetryClicked(_:))
         discardAndRetryButton.bezelStyle = .rounded
         discardAndRetryButton.isHidden = preview?.firstDiscardableConflictTargetURI == nil
+        discardAndRetryButton.toolTip = preview?.requestRetryUnavailableToolTip
         discardAndRetryButton.identifier = NSUserInterfaceItemIdentifier(
             AttoAccessibilityID.workspaceEditPreviewDiscardAndRetryButton
         )
@@ -310,9 +312,11 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
         }
         if saveAndRetryButton.isHidden == false {
             saveAndRetryButton.isEnabled = selectedSaveableConflictTargetURI() != nil
+                && preview?.canResolveConflictAndRetry != false
         }
         if discardAndRetryButton.isHidden == false {
             discardAndRetryButton.isEnabled = selectedDiscardableConflictTargetURI() != nil
+                && preview?.canResolveConflictAndRetry != false
         }
         guard openConflictButton.isHidden == false else { return }
         openConflictButton.isEnabled = selectedConflictTargetURI() != nil
@@ -405,6 +409,10 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
     }
 
     @objc private func saveAndRetryClicked(_ sender: Any?) {
+        guard preview?.canResolveConflictAndRetry != false else {
+            NSSound.beep()
+            return
+        }
         guard let uri = selectedSaveableConflictTargetURI() else {
             NSSound.beep()
             return
@@ -423,6 +431,10 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
     }
 
     @objc private func discardAndRetryClicked(_ sender: Any?) {
+        guard preview?.canResolveConflictAndRetry != false else {
+            NSSound.beep()
+            return
+        }
         guard let uri = selectedDiscardableConflictTargetURI() else {
             NSSound.beep()
             return

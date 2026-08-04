@@ -247,6 +247,53 @@ final class AttoWorkspaceEditRetryDescriptorTests: XCTestCase {
         XCTAssertTrue(item.detail.contains("Request: Rename: persistedName unavailable (retry closure unavailable)"))
     }
 
+    func testPreviewPanelDisablesConflictRetryButtonsWhenRequestCannotRerun() throws {
+        let descriptor = AttoWorkspaceEditRequestRetryDescriptor
+            .unknown(label: "Rename: persistedName")
+            .invalidated(.requestClosureUnavailable)
+        var preview = try dirtyDocumentConflictPreview()
+        preview.requestRetryDescriptor = descriptor
+
+        let panelController = AttoWorkspaceEditPreviewPanelController()
+        let panel = panelController.showForTesting(relativeTo: nil, preview: preview)
+        defer { panelController.closeForTesting() }
+
+        let saveAndRetryButton: NSButton = try XCTUnwrap(findView(
+            identifiedBy: AttoAccessibilityID.workspaceEditPreviewSaveAndRetryButton,
+            in: panel.contentView
+        ))
+        let discardAndRetryButton: NSButton = try XCTUnwrap(findView(
+            identifiedBy: AttoAccessibilityID.workspaceEditPreviewDiscardAndRetryButton,
+            in: panel.contentView
+        ))
+        let summaryLabel: NSTextField = try XCTUnwrap(findView(
+            identifiedBy: AttoAccessibilityID.workspaceEditPreviewSummary,
+            in: panel.contentView
+        ))
+
+        XCTAssertFalse(saveAndRetryButton.isHidden)
+        XCTAssertFalse(discardAndRetryButton.isHidden)
+        XCTAssertFalse(saveAndRetryButton.isEnabled)
+        XCTAssertFalse(discardAndRetryButton.isEnabled)
+        XCTAssertEqual(saveAndRetryButton.toolTip, "Cannot retry Rename: persistedName: retry closure unavailable")
+        XCTAssertEqual(discardAndRetryButton.toolTip, "Cannot retry Rename: persistedName: retry closure unavailable")
+        XCTAssertTrue(summaryLabel.stringValue.contains(
+            "Request: Rename: persistedName unavailable (retry closure unavailable)"
+        ))
+    }
+
+    func testPreviewSaveAndRetryDoesNotSaveConflictWhenRequestCannotRerun() throws {
+        try assertPreviewRetryDecisionDoesNotResolveConflictWhenRequestCannotRerun { uri in
+            .saveAndRetry(uri)
+        }
+    }
+
+    func testPreviewDiscardAndRetryDoesNotDiscardConflictWhenRequestCannotRerun() throws {
+        try assertPreviewRetryDecisionDoesNotResolveConflictWhenRequestCannotRerun { uri in
+            .discardAndRetry(uri)
+        }
+    }
+
     private func makeEditorArea(
         workspaceRootURL: URL,
         ownerStore: AttoWorkspaceEditRequestOwnerStore
@@ -271,5 +318,140 @@ final class AttoWorkspaceEditRetryDescriptorTests: XCTestCase {
         window.makeKeyAndOrderFront(nil)
         vc.view.layoutSubtreeIfNeeded()
         return window
+    }
+
+    private func assertPreviewRetryDecisionDoesNotResolveConflictWhenRequestCannotRerun(
+        decision: @escaping (String) -> AttoWorkspaceEditPreviewDecision
+    ) throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoWorkspaceEditRetryDescriptorTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let ownerStore = AttoWorkspaceEditRequestOwnerStore(
+            logFileURL: tempDir.appendingPathComponent("workspace-edit-request-owners.jsonl")
+        )
+        let dirtyURL = tempDir.appendingPathComponent("dirty-conflict.txt").standardizedFileURL
+        let mainURL = tempDir.appendingPathComponent("main.txt").standardizedFileURL
+        try "dirty\n".write(to: dirtyURL, atomically: true, encoding: .utf8)
+        try "main\n".write(to: mainURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir.standardizedFileURL, ownerStore: ownerStore)
+        let window = attachToWindow(vc)
+        defer {
+            vc._setWorkspaceEditPreviewDecisionProviderForTesting(nil)
+            window.close()
+        }
+
+        vc.openFile(url: dirtyURL, mode: .pinned)
+        let dirtyTab = try XCTUnwrap(vc.activeTab)
+        XCTAssertTrue(vc.executeActiveEditorCommandJSON(#"{"kind":"edit","op":"insert_text","text":"!"}"#))
+        vc.openFile(url: mainURL, mode: .pinned)
+
+        let descriptor = AttoWorkspaceEditRequestRetryDescriptor
+            .unknown(label: "Rename: persistedName")
+            .invalidated(.requestClosureUnavailable)
+        var rerunCount = 0
+        let owner = AttoWorkspaceEditRequestRetryOwner(descriptor: descriptor) {
+            rerunCount += 1
+            return true
+        }
+        var previews: [AttoWorkspaceEditPreview] = []
+        vc._setWorkspaceEditPreviewDecisionProviderForTesting { preview in
+            previews.append(preview)
+            return decision(dirtyURL.absoluteString)
+        }
+        let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
+
+        let workspaceEdit = """
+        {
+          "applyMode": "atomic",
+          "workspaceEdit": {
+            "documentChanges": [
+              {
+                "textDocument": {
+                  "uri": "\(mainURL.absoluteString)"
+                },
+                "edits": [
+                  {
+                    "range": {
+                      "start": { "line": 0, "character": 0 },
+                      "end": { "line": 0, "character": 0 }
+                    },
+                    "newText": "updated "
+                  }
+                ]
+              },
+              {
+                "kind": "delete",
+                "uri": "\(dirtyURL.absoluteString)"
+              }
+            ]
+          }
+        }
+        """
+
+        XCTAssertFalse(vc.applyWorkspaceEditJSONToActiveTab(workspaceEdit, requestRetryOwner: owner).accepted)
+        XCTAssertEqual(rerunCount, 0)
+        XCTAssertEqual(previews.count, 1)
+        XCTAssertEqual(previews[0].requestRetryDescriptor, descriptor)
+        XCTAssertFalse(previews[0].canResolveConflictAndRetry)
+        XCTAssertEqual(
+            try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting()),
+            coreTransactionCursor
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dirtyURL.path))
+        XCTAssertEqual(try String(contentsOf: dirtyURL, encoding: .utf8), "dirty\n")
+        XCTAssertEqual(try dirtyTab.editCore.editor.text(), "!dirty\n")
+        XCTAssertEqual(try String(contentsOf: mainURL, encoding: .utf8), "main\n")
+        XCTAssertEqual(vc._transientStatusTextForTesting(), descriptor.retryUnavailableStatusText)
+    }
+
+    private func dirtyDocumentConflictPreview() throws -> AttoWorkspaceEditPreview {
+        let result = try JSONDecoder().decode(EcuWorkspaceEditTransactionResult.self, from: Data("""
+        {
+          "mode": "preview",
+          "apply_mode": "atomic",
+          "applied": false,
+          "applied_uris": [],
+          "applied_edit_count": 0,
+          "applied_resource_operation_count": 0,
+          "conflicts": [
+            {
+              "uri": "file:///project/dirty.swift",
+              "kind": "dirty_document",
+              "severity": "error",
+              "apply_impact": "blocks_atomic_apply",
+              "resolution": "save_or_discard",
+              "reason": "resource_operation_dirty_target",
+              "operation": "delete",
+              "message": "delete targets a modified open tab"
+            }
+          ],
+          "skipped_uris": ["file:///project/dirty.swift"],
+          "documents": [
+            {
+              "uri": "file:///project/dirty.swift",
+              "edit_count": 0,
+              "is_open": true,
+              "is_dirty": true
+            }
+          ]
+        }
+        """.utf8))
+        return AttoWorkspaceEditPreview(result: result)
+    }
+
+    private func findView<T: NSView>(identifiedBy identifier: String, in root: NSView?) -> T? {
+        guard let root else { return nil }
+        if root.identifier?.rawValue == identifier {
+            return root as? T
+        }
+        for subview in root.subviews {
+            if let match: T = findView(identifiedBy: identifier, in: subview) {
+                return match
+            }
+        }
+        return nil
     }
 }

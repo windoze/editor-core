@@ -46,7 +46,14 @@
   - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testWorkspaceEditHistoryPanelRerunsRecordedRequestOwner`
   - 验证：`cargo test -p editor-core-ui`
   - 验证：`cargo test -p editor-core-ui-ffi`
-- [ ] 让 WorkspaceEdit History / Preview / Conflict UI 消费 descriptor，支持保存/丢弃 conflict 后按 request owner 安全 rerun，并在不可 rerun 时禁用动作并显示原因。
+- [x] 让 WorkspaceEdit History / Preview / Conflict UI 消费 descriptor，支持保存/丢弃 conflict 后按 request owner 安全 rerun，并在不可 rerun 时禁用动作并显示原因。
+  - 验证：`swift test --package-path swift --filter AttoWorkspaceEditRetryDescriptorTests`
+  - 验证：`swift test --package-path swift --filter AttoWorkspaceEditSummaryTests`
+  - 验证：`swift test --package-path swift --filter AttoWorkspaceEdit`
+  - 验证：`swift test --package-path swift --filter 'AttoEditorCommandTests/test.*WorkspaceEdit.*SaveAndRetry'`
+  - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testWorkspaceEditPreviewDiscardAndRetryDecisionAppliesAfterReloadingTargetTab`
+  - 验证：`cargo test -p editor-core-ui`
+  - 验证：`cargo test -p editor-core-ui-ffi`
 - [ ] 为 snippet completion 建立单一 WorkspaceEdit transaction / undo 单元：`additionalTextEdits` 与 snippet 主体编辑必须一起 preview、apply、rollback、undo。
 - [ ] 支持跨文件 snippet `additionalTextEdits` 的 transaction apply，并定义与 snippet placeholder session 的交互边界。
 - [ ] 扩展 conflict 检测：dirty 与 stale version、overlapping edits、resource dependency、打开/未打开文件混合失败、unsupported URI、secondary rollback failure。

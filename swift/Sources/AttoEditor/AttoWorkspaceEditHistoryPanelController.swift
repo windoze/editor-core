@@ -625,9 +625,7 @@ enum AttoWorkspaceEditHistoryFormatter {
             let editCount = result.appliedEditCount
             let resourceCount = result.appliedResourceOperationCount
             let requestRetryDescriptor = requestRetryDescriptorsBySequence[event.sequence]
-            let requestRetryUnavailableReason = requestRetryDescriptor?.invalidationReason.map(
-                requestRetryUnavailableReasonText
-            )
+            let requestRetryUnavailableReason = requestRetryDescriptor?.invalidationReasonText
             return AttoWorkspaceEditHistoryPanelController.Item(
                 sequence: event.sequence,
                 operation: event.operation,
@@ -636,8 +634,7 @@ enum AttoWorkspaceEditHistoryFormatter {
                     editCount: editCount,
                     resourceCount: resourceCount,
                     result: result,
-                    requestRetryDescriptor: requestRetryDescriptor,
-                    requestRetryUnavailableReason: requestRetryUnavailableReason
+                    requestRetryDescriptor: requestRetryDescriptor
                 ),
                 status: status(for: result),
                 conflictCount: result.conflicts.count,
@@ -687,8 +684,7 @@ enum AttoWorkspaceEditHistoryFormatter {
         editCount: Int,
         resourceCount: Int,
         result: EcuWorkspaceEditTransactionResult,
-        requestRetryDescriptor: AttoWorkspaceEditRequestRetryDescriptor?,
-        requestRetryUnavailableReason: String?
+        requestRetryDescriptor: AttoWorkspaceEditRequestRetryDescriptor?
     ) -> String {
         var parts = [
             "\(editCount) text edits, \(resourceCount) resource ops",
@@ -697,46 +693,10 @@ enum AttoWorkspaceEditHistoryFormatter {
             parts.append(conflictSummary(for: result.conflicts))
         }
         if let requestRetryDescriptor {
-            parts.append(requestSummary(
-                descriptor: requestRetryDescriptor,
-                unavailableReason: requestRetryUnavailableReason
-            ))
+            parts.append(requestRetryDescriptor.requestSummaryText)
         }
         parts.append(uriSummary(for: result))
         return parts.joined(separator: " | ")
-    }
-
-    private static func requestSummary(
-        descriptor: AttoWorkspaceEditRequestRetryDescriptor,
-        unavailableReason: String?
-    ) -> String {
-        guard let unavailableReason else {
-            return "Request: \(descriptor.label)"
-        }
-        return "Request: \(descriptor.label) unavailable (\(unavailableReason))"
-    }
-
-    private static func requestRetryUnavailableReasonText(
-        _ reason: AttoWorkspaceEditRequestRetryDescriptor.InvalidationReason
-    ) -> String {
-        switch reason {
-        case .sourceTabClosed:
-            return "source tab closed"
-        case .documentURIUnavailable:
-            return "document URI unavailable"
-        case .workspaceRootUnavailable:
-            return "workspace root unavailable"
-        case .lspUnavailable:
-            return "LSP unavailable"
-        case .requestParametersUnavailable:
-            return "request parameters unavailable"
-        case .requestClosureUnavailable:
-            return "retry closure unavailable"
-        case .serverCapabilityChanged:
-            return "server capability changed"
-        case .expired:
-            return "request expired"
-        }
     }
 
     private static func conflictSummary(for conflicts: [EcuWorkspaceEditTransactionConflict]) -> String {
