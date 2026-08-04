@@ -1370,6 +1370,7 @@ fn ffi_project_lsp_servers_envelope_json_reports_success_and_errors() {
               "semantic_tokens": true,
               "completion": { "supported": true }
             },
+            "shared_session": true,
             "workspace_roots": ["file:///workspace", " file:///workspace ", "file:///other"],
             "workspace_folders": [
               { "uri": " file:///workspace ", "name": " Workspace ", "root_alias": " main " }
@@ -1380,6 +1381,7 @@ fn ffi_project_lsp_servers_envelope_json_reports_success_and_errors() {
             "key": "",
             "command": "/bin/sourcekit-lsp",
             "language_id": "swift",
+            "shared_session": false,
             "auto_start": false
           }
         ]"#,
@@ -1411,6 +1413,7 @@ fn ffi_project_lsp_servers_envelope_json_reports_success_and_errors() {
                     "completion": { "supported": true },
                     "semantic_tokens": true
                 },
+                "shared_session": true,
                 "workspace_roots": ["file:///other", "file:///workspace"],
                 "workspace_folders": [
                     {
@@ -1432,6 +1435,7 @@ fn ffi_project_lsp_servers_envelope_json_reports_success_and_errors() {
                 "language_id": "swift",
                 "language_name": "swift",
                 "server_capabilities": {},
+                "shared_session": false,
                 "workspace_roots": [],
                 "workspace_folders": [],
                 "auto_start": false
@@ -1520,6 +1524,7 @@ fn ffi_project_lsp_lifecycle_envelope_json_reports_success_and_errors() {
         start_envelope["value"][0]["server_capabilities"],
         serde_json::json!({})
     );
+    assert_eq!(start_envelope["value"][0]["shared_session"], true);
 
     let stop = CString::new("stop_plan").unwrap();
     let stop_json = take_owned_string(
@@ -1555,6 +1560,7 @@ fn ffi_project_lsp_lifecycle_envelope_json_reports_success_and_errors() {
             "language_id": "rust",
             "language_name": "Rust",
             "server_capabilities": { "hover": true },
+            "shared_session": false,
             "server_key": "rust",
             "command": "/bin/rust-analyzer",
             "args": ["--stdio"],
@@ -1594,6 +1600,10 @@ fn ffi_project_lsp_lifecycle_envelope_json_reports_success_and_errors() {
     assert_eq!(
         events_envelope["value"]["events"][0]["server_capabilities"]["hover"],
         true
+    );
+    assert_eq!(
+        events_envelope["value"]["events"][0]["shared_session"],
+        false
     );
 
     let unknown = CString::new("future_operation").unwrap();
@@ -2094,6 +2104,7 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
               "semantic_tokens": true,
               "completion": { "supported": true }
             },
+            "shared_session": true,
             "workspace_roots": ["file:///new", "file:///new", " file:///other "],
             "auto_start": true
           },
@@ -2101,6 +2112,7 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
             "key": "",
             "command": "/bin/sourcekit-lsp",
             "language_id": "swift",
+            "shared_session": false,
             "auto_start": false
           }
         ]"#,
@@ -2130,6 +2142,7 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                     "completion": { "supported": true },
                     "semantic_tokens": true
                 },
+                "shared_session": true,
                 "workspace_roots": ["file:///new", "file:///other"],
                 "workspace_folders": [
                     {
@@ -2150,6 +2163,7 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                 "language_id": "swift",
                 "language_name": "swift",
                 "server_capabilities": {},
+                "shared_session": false,
                 "workspace_roots": [],
                 "workspace_folders": [],
                 "auto_start": false
@@ -2179,6 +2193,7 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                     "completion": { "supported": true },
                     "semantic_tokens": true
                 },
+                "shared_session": true,
                 "server_key": "rust",
                 "command": "/bin/rust-analyzer",
                 "args": ["--stdio"],
@@ -2218,6 +2233,7 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                     "completion": { "supported": true },
                     "semantic_tokens": true
                 },
+                "shared_session": true,
                 "server_key": "rust",
                 "command": "/bin/rust-analyzer",
                 "args": ["--stdio"],
@@ -2241,6 +2257,7 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                 "language_id": "swift",
                 "language_name": "swift",
                 "server_capabilities": {},
+                "shared_session": false,
                 "server_key": "swift",
                 "command": "/bin/sourcekit-lsp",
                 "args": [],
@@ -2282,6 +2299,7 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                     "completion": { "supported": true },
                     "semantic_tokens": true
                 },
+                "shared_session": true,
                 "server_key": "rust",
                 "command": "/bin/rust-analyzer",
                 "args": ["--stdio"],
@@ -2305,6 +2323,7 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                 "language_id": "swift",
                 "language_name": "swift",
                 "server_capabilities": {},
+                "shared_session": false,
                 "server_key": "swift",
                 "command": "/bin/sourcekit-lsp",
                 "args": [],

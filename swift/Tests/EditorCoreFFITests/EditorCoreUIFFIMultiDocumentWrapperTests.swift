@@ -99,6 +99,7 @@ extension EditorCoreUIFFITests {
                     "semantic_tokens": .bool(true),
                     "completion": .object(["supported": .bool(true)]),
                 ]),
+                sharedSession: true,
                 workspaceRoots: ["file:///new", "file:///new", " file:///other "],
                 workspaceFolders: [
                     EcuProjectLspWorkspaceFolder(
@@ -112,6 +113,7 @@ extension EditorCoreUIFFITests {
                 key: "",
                 command: "/bin/sourcekit-lsp",
                 languageId: "swift",
+                sharedSession: false,
                 autoStart: false
             ),
         ])
@@ -125,6 +127,7 @@ extension EditorCoreUIFFITests {
             "completion": .object(["supported": .bool(true)]),
             "semantic_tokens": .bool(true),
         ]))
+        XCTAssertTrue(lspServers[0].sharedSession)
         XCTAssertEqual(lspServers[0].workspaceRoots, ["file:///new", "file:///other"])
         XCTAssertEqual(lspServers[0].workspaceFolders, [
             EcuProjectLspWorkspaceFolder(
@@ -139,6 +142,7 @@ extension EditorCoreUIFFITests {
         ])
         XCTAssertEqual(lspServers[1].languageName, "swift")
         XCTAssertEqual(lspServers[1].serverCapabilities, .object([:]))
+        XCTAssertFalse(lspServers[1].sharedSession)
         XCTAssertFalse(lspServers[1].autoStart)
         XCTAssertEqual(try multi.snapshot().projectLspServers, lspServers)
         let startPlan = try multi.projectLspStartPlan()
@@ -150,6 +154,7 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(startPlan[0].languageId, "rust")
         XCTAssertEqual(startPlan[0].languageName, "Rust Language")
         XCTAssertEqual(startPlan[0].serverCapabilities, lspServers[0].serverCapabilities)
+        XCTAssertTrue(startPlan[0].sharedSession)
         XCTAssertEqual(startPlan[0].serverKey, "rust")
         XCTAssertEqual(startPlan[0].command, "/bin/rust-analyzer")
         XCTAssertEqual(startPlan[0].args, ["--stdio"])
@@ -163,6 +168,7 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(stopPlan[0].serverKey, "rust")
         XCTAssertEqual(stopPlan[0].languageName, "Rust Language")
         XCTAssertEqual(stopPlan[0].serverCapabilities, lspServers[0].serverCapabilities)
+        XCTAssertTrue(stopPlan[0].sharedSession)
         XCTAssertEqual(stopPlan[0].workspaceRoots, ["file:///new", "file:///other"])
         XCTAssertEqual(stopPlan[0].workspaceFolders, lspServers[0].workspaceFolders)
         XCTAssertEqual(stopPlan[1].tabId, beta)
@@ -171,6 +177,7 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(stopPlan[1].command, "/bin/sourcekit-lsp")
         XCTAssertEqual(stopPlan[1].languageName, "swift")
         XCTAssertEqual(stopPlan[1].serverCapabilities, .object([:]))
+        XCTAssertFalse(stopPlan[1].sharedSession)
         XCTAssertEqual(stopPlan[1].workspaceRoots, ["file:///new", "file:///other"])
         XCTAssertEqual(stopPlan[1].workspaceFolders.map(\.name), ["new", "other"])
         let restartPlan = try multi.projectLspRestartPlan()
@@ -181,6 +188,7 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(restartPlan[0].serverKey, "rust")
         XCTAssertEqual(restartPlan[0].languageName, "Rust Language")
         XCTAssertEqual(restartPlan[0].serverCapabilities, lspServers[0].serverCapabilities)
+        XCTAssertTrue(restartPlan[0].sharedSession)
         XCTAssertEqual(restartPlan[0].workspaceRoots, ["file:///new", "file:///other"])
         XCTAssertEqual(restartPlan[0].workspaceFolders, lspServers[0].workspaceFolders)
         XCTAssertEqual(restartPlan[1].tabId, beta)
@@ -189,6 +197,7 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(restartPlan[1].command, "/bin/sourcekit-lsp")
         XCTAssertEqual(restartPlan[1].languageName, "swift")
         XCTAssertEqual(restartPlan[1].serverCapabilities, .object([:]))
+        XCTAssertFalse(restartPlan[1].sharedSession)
         XCTAssertEqual(restartPlan[1].workspaceRoots, ["file:///new", "file:///other"])
         XCTAssertEqual(restartPlan[1].workspaceFolders.map(\.name), ["new", "other"])
 
@@ -199,6 +208,7 @@ extension EditorCoreUIFFITests {
             languageId: "rust",
             languageName: "Rust Language",
             serverCapabilities: .object(["hover": .bool(true)]),
+            sharedSession: false,
             serverKey: "rust",
             command: "/bin/rust-analyzer",
             args: ["--stdio"],
@@ -242,6 +252,7 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(lifecycleEvents.events[0].documentURI, "file:///project/main.rs")
         XCTAssertEqual(lifecycleEvents.events[0].languageName, "Rust Language")
         XCTAssertEqual(lifecycleEvents.events[0].serverCapabilities, .object(["hover": .bool(true)]))
+        XCTAssertFalse(lifecycleEvents.events[0].sharedSession)
         XCTAssertEqual(lifecycleEvents.events[1].operation, "restart")
         XCTAssertEqual(lifecycleEvents.events[1].trigger, "manual_restart")
         XCTAssertEqual(lifecycleEvents.events[2].operation, "stop")

@@ -1,7 +1,7 @@
 use super::project_lsp::{
     ProjectLspWorkspaceFolder, default_project_lsp_server_capabilities,
-    normalize_project_lsp_language_name, normalize_project_lsp_server_capabilities,
-    normalize_project_lsp_workspace_schema,
+    default_project_lsp_shared_session, normalize_project_lsp_language_name,
+    normalize_project_lsp_server_capabilities, normalize_project_lsp_workspace_schema,
 };
 use crate::UiError;
 use std::collections::VecDeque;
@@ -23,6 +23,8 @@ pub struct ProjectLspStartOutcome {
     pub language_name: String,
     #[serde(default = "default_project_lsp_server_capabilities")]
     pub server_capabilities: serde_json::Value,
+    #[serde(default = "default_project_lsp_shared_session")]
+    pub shared_session: bool,
     #[serde(default)]
     pub server_key: String,
     pub command: String,
@@ -54,6 +56,8 @@ pub struct ProjectLspLifecycleEvent {
     pub language_name: String,
     #[serde(default = "default_project_lsp_server_capabilities")]
     pub server_capabilities: serde_json::Value,
+    #[serde(default = "default_project_lsp_shared_session")]
+    pub shared_session: bool,
     pub server_key: String,
     pub command: String,
     #[serde(default)]
@@ -116,6 +120,7 @@ impl ProjectLspLifecycleEventStore {
             language_id,
             language_name,
             server_capabilities,
+            shared_session: outcome.shared_session,
             server_key: normalize_optional(&outcome.server_key).unwrap_or_default(),
             command,
             args: normalize_non_empty_vec(outcome.args),

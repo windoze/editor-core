@@ -182,6 +182,7 @@ extension EditorCoreUIFFITests {
                     "semantic_tokens": .bool(true),
                     "completion": .object(["supported": .bool(true)]),
                 ]),
+                sharedSession: true,
                 workspaceRoots: ["file:///workspace", " file:///workspace ", "file:///other"],
                 workspaceFolders: [
                     EcuProjectLspWorkspaceFolder(
@@ -196,6 +197,7 @@ extension EditorCoreUIFFITests {
                 key: "",
                 command: "/bin/sourcekit-lsp",
                 languageId: "swift",
+                sharedSession: false,
                 autoStart: false
             ),
         ])
@@ -221,6 +223,7 @@ extension EditorCoreUIFFITests {
             "completion": .object(["supported": .bool(true)]),
             "semantic_tokens": .bool(true),
         ]))
+        XCTAssertEqual(first["shared_session"], .bool(true))
         XCTAssertEqual(first["workspace_roots"], .array([.string("file:///other"), .string("file:///workspace")]))
         XCTAssertEqual(first["workspace_folders"], .array([
             .object([
@@ -240,6 +243,7 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(second["language_id"], .string("swift"))
         XCTAssertEqual(second["language_name"], .string("swift"))
         XCTAssertEqual(second["server_capabilities"], .object([:]))
+        XCTAssertEqual(second["shared_session"], .bool(false))
         XCTAssertEqual(second["workspace_roots"], .array([]))
         XCTAssertEqual(second["workspace_folders"], .array([]))
         XCTAssertEqual(second["auto_start"], .bool(false))
@@ -331,6 +335,7 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(firstStart["server_key"], .string("rust"))
         XCTAssertEqual(firstStart["language_name"], .string("rust"))
         XCTAssertEqual(firstStart["server_capabilities"], .object([:]))
+        XCTAssertEqual(firstStart["shared_session"], .bool(true))
 
         let stop = try multi.projectLspStopPlanEnvelope()
         XCTAssertTrue(stop.ok)
@@ -344,6 +349,7 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(firstStop["server_key"], .string("rust"))
         XCTAssertEqual(firstStop["language_name"], .string("rust"))
         XCTAssertEqual(firstStop["server_capabilities"], .object([:]))
+        XCTAssertEqual(firstStop["shared_session"], .bool(true))
 
         let restart = try multi.projectLspRestartPlanEnvelope()
         XCTAssertTrue(restart.ok)
@@ -357,12 +363,14 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(firstRestart["server_key"], .string("rust"))
         XCTAssertEqual(firstRestart["language_name"], .string("rust"))
         XCTAssertEqual(firstRestart["server_capabilities"], .object([:]))
+        XCTAssertEqual(firstRestart["shared_session"], .bool(true))
 
         try multi.recordProjectLspStartOutcome(EcuProjectLspStartOutcome(
             tabId: tab,
             documentURI: "file:///project/main.rs",
             languageId: "rust",
             serverCapabilities: .object(["hover": .bool(true)]),
+            sharedSession: false,
             serverKey: "rust",
             command: "/bin/rust-analyzer",
             args: ["--stdio"],
@@ -384,6 +392,7 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(firstEvent["operation"], .string("start"))
         XCTAssertEqual(firstEvent["language_name"], .string("rust"))
         XCTAssertEqual(firstEvent["server_capabilities"], .object(["hover": .bool(true)]))
+        XCTAssertEqual(firstEvent["shared_session"], .bool(false))
         XCTAssertEqual(firstEvent["status"], .string("started"))
 
         let failure = try multi.projectLspLifecycleEnvelope(operationRawValue: "future_operation")

@@ -462,6 +462,7 @@ extension AttoEditorAreaViewController {
                     languageId: existing.languageId,
                     languageName: existing.languageName,
                     serverCapabilities: existing.serverCapabilities,
+                    sharedSession: existing.sharedSession,
                     workspaceRoots: workspaceRoots,
                     autoStart: existing.autoStart || autoStart
                 )

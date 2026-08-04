@@ -10,6 +10,7 @@ struct AttoProjectLspLifecycleAction {
     let languageId: String
     let languageName: String
     let serverCapabilities: EcuJSONValue
+    let sharedSession: Bool
     let serverKey: String
     let command: String
     let args: [String]
@@ -36,6 +37,7 @@ struct AttoProjectLspLifecycleAction {
             languageId: planEntry?.languageId ?? config.languageId,
             languageName: planEntry?.languageName ?? config.languageId,
             serverCapabilities: planEntry?.serverCapabilities ?? .object([:]),
+            sharedSession: planEntry?.sharedSession ?? true,
             serverKey: planEntry?.serverKey ?? AttoEditorAreaViewController.projectLspServerConfigKey(for: config),
             command: planEntry?.command ?? config.command,
             args: planEntry?.args ?? AttoEditorAreaViewController.projectLspServerConfigArgs(from: config.args),
@@ -64,6 +66,7 @@ struct AttoProjectLspLifecycleAction {
             languageId: planEntry?.languageId ?? config.languageId,
             languageName: planEntry?.languageName ?? config.languageId,
             serverCapabilities: planEntry?.serverCapabilities ?? .object([:]),
+            sharedSession: planEntry?.sharedSession ?? true,
             serverKey: planEntry?.serverKey ?? AttoEditorAreaViewController.projectLspServerConfigKey(for: config),
             command: planEntry?.command ?? config.command,
             args: planEntry?.args ?? AttoEditorAreaViewController.projectLspServerConfigArgs(from: config.args),
@@ -92,6 +95,7 @@ struct AttoProjectLspLifecycleAction {
             languageId: planEntry?.languageId ?? config.languageId,
             languageName: planEntry?.languageName ?? config.languageId,
             serverCapabilities: planEntry?.serverCapabilities ?? .object([:]),
+            sharedSession: planEntry?.sharedSession ?? true,
             serverKey: planEntry?.serverKey ?? AttoEditorAreaViewController.projectLspServerConfigKey(for: config),
             command: planEntry?.command ?? config.command,
             args: planEntry?.args ?? AttoEditorAreaViewController.projectLspServerConfigArgs(from: config.args),
@@ -114,6 +118,7 @@ struct AttoProjectLspLifecycleAction {
             languageId: languageId,
             languageName: languageName,
             serverCapabilities: serverCapabilities,
+            sharedSession: sharedSession,
             serverKey: serverKey,
             command: command,
             args: args,

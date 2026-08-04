@@ -22,6 +22,8 @@ pub struct ProjectLspServerConfig {
     pub language_name: String,
     #[serde(default = "default_project_lsp_server_capabilities")]
     pub server_capabilities: serde_json::Value,
+    #[serde(default = "default_project_lsp_shared_session")]
+    pub shared_session: bool,
     #[serde(default)]
     pub workspace_roots: Vec<String>,
     #[serde(default)]
@@ -40,6 +42,8 @@ pub struct ProjectLspStartPlanEntry {
     pub language_name: String,
     #[serde(default = "default_project_lsp_server_capabilities")]
     pub server_capabilities: serde_json::Value,
+    #[serde(default = "default_project_lsp_shared_session")]
+    pub shared_session: bool,
     pub server_key: String,
     pub command: String,
     #[serde(default)]
@@ -60,6 +64,8 @@ pub struct ProjectLspStopPlanEntry {
     pub language_name: String,
     #[serde(default = "default_project_lsp_server_capabilities")]
     pub server_capabilities: serde_json::Value,
+    #[serde(default = "default_project_lsp_shared_session")]
+    pub shared_session: bool,
     pub server_key: String,
     pub command: String,
     #[serde(default)]
@@ -80,6 +86,8 @@ pub struct ProjectLspRestartPlanEntry {
     pub language_name: String,
     #[serde(default = "default_project_lsp_server_capabilities")]
     pub server_capabilities: serde_json::Value,
+    #[serde(default = "default_project_lsp_shared_session")]
+    pub shared_session: bool,
     pub server_key: String,
     pub command: String,
     #[serde(default)]
@@ -155,6 +163,7 @@ pub(crate) fn project_lsp_start_plan(
                 language_id: language_id.clone(),
                 language_name: config.language_name.clone(),
                 server_capabilities: config.server_capabilities.clone(),
+                shared_session: config.shared_session,
                 server_key: config.key.clone(),
                 command: config.command.clone(),
                 args: config.args.clone(),
@@ -207,6 +216,7 @@ pub(crate) fn project_lsp_stop_plan(
                 language_id: language_id.clone(),
                 language_name: config.language_name.clone(),
                 server_capabilities: config.server_capabilities.clone(),
+                shared_session: config.shared_session,
                 server_key: config.key.clone(),
                 command: config.command.clone(),
                 args: config.args.clone(),
@@ -259,6 +269,7 @@ pub(crate) fn project_lsp_restart_plan(
                 language_id: language_id.clone(),
                 language_name: config.language_name.clone(),
                 server_capabilities: config.server_capabilities.clone(),
+                shared_session: config.shared_session,
                 server_key: config.key.clone(),
                 command: config.command.clone(),
                 args: config.args.clone(),
@@ -302,6 +313,7 @@ fn normalize_project_lsp_server(
         language_id,
         language_name,
         server_capabilities,
+        shared_session: config.shared_session,
         workspace_roots,
         workspace_folders,
         auto_start: config.auto_start,
@@ -324,6 +336,10 @@ pub(crate) fn normalize_project_lsp_language_name(
 
 pub(crate) fn default_project_lsp_server_capabilities() -> serde_json::Value {
     serde_json::Value::Object(Default::default())
+}
+
+pub(crate) fn default_project_lsp_shared_session() -> bool {
+    true
 }
 
 pub(crate) fn normalize_project_lsp_server_capabilities(

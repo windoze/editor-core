@@ -1863,6 +1863,7 @@ fn multi_document_tracks_project_lsp_server_configs() {
                     "semantic_tokens": true,
                     "completion": { "supported": true }
                 }),
+                shared_session: true,
                 workspace_roots: vec![
                     " file:///workspace ".to_string(),
                     "file:///workspace".to_string(),
@@ -1882,6 +1883,7 @@ fn multi_document_tracks_project_lsp_server_configs() {
                 language_id: "swift".to_string(),
                 language_name: "".to_string(),
                 server_capabilities: serde_json::Value::Null,
+                shared_session: false,
                 workspace_roots: vec![],
                 workspace_folders: vec![],
                 auto_start: false,
@@ -1900,8 +1902,10 @@ fn multi_document_tracks_project_lsp_server_configs() {
         configs[0].server_capabilities["completion"]["supported"],
         true
     );
+    assert!(configs[0].shared_session);
     assert_eq!(configs[1].language_name, "swift");
     assert_eq!(configs[1].server_capabilities, serde_json::json!({}));
+    assert!(!configs[1].shared_session);
     assert_eq!(
         configs[0].workspace_roots,
         vec!["file:///other", "file:///workspace"]
@@ -1937,6 +1941,7 @@ fn multi_document_tracks_project_lsp_server_configs() {
                 language_id: "bad".to_string(),
                 language_name: "".to_string(),
                 server_capabilities: serde_json::json!(["not", "an", "object"]),
+                shared_session: true,
                 workspace_roots: vec![],
                 workspace_folders: vec![],
                 auto_start: true,
@@ -2170,6 +2175,7 @@ fn multi_document_builds_project_lsp_start_plan_from_open_tabs() {
                 server_capabilities: serde_json::json!({
                     "semantic_tokens": true
                 }),
+                shared_session: true,
                 workspace_roots: vec![],
                 workspace_folders: vec![],
                 auto_start: true,
@@ -2181,6 +2187,7 @@ fn multi_document_builds_project_lsp_start_plan_from_open_tabs() {
                 language_id: "swift".to_string(),
                 language_name: "".to_string(),
                 server_capabilities: serde_json::json!({}),
+                shared_session: false,
                 workspace_roots: vec!["file:///swift-root".to_string()],
                 workspace_folders: vec![],
                 auto_start: false,
@@ -2197,6 +2204,7 @@ fn multi_document_builds_project_lsp_start_plan_from_open_tabs() {
     assert_eq!(plan[0].language_id, "rust");
     assert_eq!(plan[0].language_name, "Rust");
     assert_eq!(plan[0].server_capabilities["semantic_tokens"], true);
+    assert!(plan[0].shared_session);
     assert_eq!(plan[0].server_key, "rust");
     assert_eq!(plan[0].command, "/bin/rust-analyzer");
     assert_eq!(plan[0].args, vec!["--stdio"]);
@@ -2250,6 +2258,7 @@ fn multi_document_builds_project_lsp_stop_plan_from_open_tabs() {
                 language_id: "rust".to_string(),
                 language_name: "".to_string(),
                 server_capabilities: serde_json::json!({}),
+                shared_session: true,
                 workspace_roots: vec![],
                 workspace_folders: vec![],
                 auto_start: true,
@@ -2263,6 +2272,7 @@ fn multi_document_builds_project_lsp_stop_plan_from_open_tabs() {
                 server_capabilities: serde_json::json!({
                     "workspace_symbols": true
                 }),
+                shared_session: false,
                 workspace_roots: vec!["file:///swift-root".to_string()],
                 workspace_folders: vec![ProjectLspWorkspaceFolder {
                     uri: " file:///swift-root ".to_string(),
@@ -2288,6 +2298,7 @@ fn multi_document_builds_project_lsp_stop_plan_from_open_tabs() {
     assert_eq!(plan[1].server_key, "swift");
     assert_eq!(plan[1].language_name, "Swift");
     assert_eq!(plan[1].server_capabilities["workspace_symbols"], true);
+    assert!(!plan[1].shared_session);
     assert_eq!(plan[1].workspace_roots, vec!["file:///swift-root"]);
     assert_eq!(
         plan[1].workspace_folders,
@@ -2338,6 +2349,7 @@ fn multi_document_builds_project_lsp_restart_plan_from_open_tabs() {
                 language_id: "rust".to_string(),
                 language_name: "Rust".to_string(),
                 server_capabilities: serde_json::json!({}),
+                shared_session: true,
                 workspace_roots: vec![],
                 workspace_folders: vec![],
                 auto_start: true,
@@ -2351,6 +2363,7 @@ fn multi_document_builds_project_lsp_restart_plan_from_open_tabs() {
                 server_capabilities: serde_json::json!({
                     "diagnostics": true
                 }),
+                shared_session: false,
                 workspace_roots: vec!["file:///swift-root".to_string()],
                 workspace_folders: vec![],
                 auto_start: false,
@@ -2372,6 +2385,7 @@ fn multi_document_builds_project_lsp_restart_plan_from_open_tabs() {
     assert_eq!(plan[1].server_key, "swift");
     assert_eq!(plan[1].language_name, "swift");
     assert_eq!(plan[1].server_capabilities["diagnostics"], true);
+    assert!(!plan[1].shared_session);
     assert_eq!(plan[1].workspace_roots, vec!["file:///swift-root"]);
     assert_eq!(plan[1].workspace_folders[0].name, "swift-root");
 
@@ -2405,6 +2419,7 @@ fn multi_document_records_project_lsp_start_outcomes() {
             server_capabilities: serde_json::json!({
                 "hover": true
             }),
+            shared_session: false,
             server_key: "rust".to_string(),
             command: "/bin/rust-analyzer".to_string(),
             args: vec!["--stdio".to_string()],
@@ -2426,6 +2441,7 @@ fn multi_document_records_project_lsp_start_outcomes() {
     assert_eq!(started.tab_id, tab_id.get());
     assert_eq!(started.language_name, "Rust");
     assert_eq!(started.server_capabilities["hover"], true);
+    assert!(!started.shared_session);
     assert_eq!(
         started.workspace_folders,
         vec![ProjectLspWorkspaceFolder {
@@ -2444,6 +2460,7 @@ fn multi_document_records_project_lsp_start_outcomes() {
             language_id: "rust".to_string(),
             language_name: "".to_string(),
             server_capabilities: serde_json::json!({}),
+            shared_session: true,
             server_key: "rust".to_string(),
             command: "/bin/rust-analyzer".to_string(),
             args: vec![],
@@ -2470,6 +2487,7 @@ fn multi_document_records_project_lsp_start_outcomes() {
             language_id: "rust".to_string(),
             language_name: "".to_string(),
             server_capabilities: serde_json::json!({}),
+            shared_session: true,
             server_key: "rust".to_string(),
             command: "/bin/rust-analyzer".to_string(),
             args: vec![],
@@ -2495,6 +2513,7 @@ fn multi_document_records_project_lsp_start_outcomes() {
             language_id: "rust".to_string(),
             language_name: "".to_string(),
             server_capabilities: serde_json::json!({}),
+            shared_session: true,
             server_key: "rust".to_string(),
             command: "/bin/rust-analyzer".to_string(),
             args: vec![],
@@ -2522,6 +2541,7 @@ fn multi_document_records_project_lsp_start_outcomes() {
             language_id: "rust".to_string(),
             language_name: "".to_string(),
             server_capabilities: serde_json::json!({}),
+            shared_session: true,
             server_key: "rust".to_string(),
             command: "/bin/rust-analyzer".to_string(),
             args: vec![],
@@ -2548,6 +2568,7 @@ fn multi_document_records_project_lsp_start_outcomes() {
             language_id: "rust".to_string(),
             language_name: "".to_string(),
             server_capabilities: serde_json::json!({}),
+            shared_session: true,
             server_key: "rust".to_string(),
             command: "/bin/rust-analyzer".to_string(),
             args: vec![],
@@ -2581,6 +2602,7 @@ fn multi_document_records_project_lsp_start_outcomes() {
     assert_eq!(json["latest_sequence"], 6);
     assert_eq!(json["events"][0]["status"], "started");
     assert_eq!(json["events"][0]["server_capabilities"]["hover"], true);
+    assert_eq!(json["events"][0]["shared_session"], false);
     assert_eq!(
         json["events"][0]["workspace_folders"][0]["root_alias"],
         "main"
@@ -2604,6 +2626,7 @@ fn multi_document_records_project_lsp_start_outcomes() {
             language_id: "rust".to_string(),
             language_name: "".to_string(),
             server_capabilities: serde_json::json!({}),
+            shared_session: true,
             server_key: "rust".to_string(),
             command: "/bin/rust-analyzer".to_string(),
             args: vec![],
@@ -2632,6 +2655,7 @@ fn multi_document_records_project_lsp_start_outcomes() {
                 language_id: "rust".to_string(),
                 language_name: "".to_string(),
                 server_capabilities: serde_json::json!({}),
+                shared_session: true,
                 server_key: "rust".to_string(),
                 command: "/bin/rust-analyzer".to_string(),
                 args: vec![],
