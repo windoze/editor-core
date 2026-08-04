@@ -275,6 +275,10 @@
     - 验证：`swift test --package-path swift --filter AttoEditorLspWorkbenchOwnershipTests`
     - 验证：`swift test --package-path swift --filter Workbench`
   - [ ] 统一 refresh / cancel / timeout / error 策略，并覆盖 active tab、workspace、空结果和 stale 展示路径。
+    - [x] 让 Document Colors refresh 的空结果记录 fresh empty lifecycle，清理 stale/error current state，并在 Workbench 中显示 `0 colors`。
+      - 验证：`swift test --package-path swift --filter AttoEditorLspWorkbenchRefreshTests`
+    - [ ] 抽出 event-backed result 的 refresh/cancel/timeout/error 标记 helper，减少 Code Lens / Inlay Hints / Document Links / Document Colors / Hierarchy 的重复分支。
+    - [ ] 覆盖 active tab 与 workspace diagnostics refresh 的空结果、stale 清理和 error metadata 策略。
 - [ ] 补齐 keyboard navigation、focus restore、selection restore 和 panel persistence。
 - [ ] 拆分继续增长的 Workbench/AppKit 测试文件。
 

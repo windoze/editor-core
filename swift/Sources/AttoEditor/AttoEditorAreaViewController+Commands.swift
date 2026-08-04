@@ -1184,6 +1184,18 @@ extension AttoEditorAreaViewController {
         showFeedback: Bool
     ) -> Bool {
         guard items.isEmpty == false else {
+            if mode == .refresh {
+                let owner = lspDocumentResultOwner(for: tab)
+                recordDocumentColorResultLifecycle(items: [], mode: mode, owner: owner)
+                lastDocumentColorItems = []
+                lastDocumentColorOwner = owner
+                updateVisibleDocumentColorPanel(items: [])
+                updateVisibleLspWorkbenchPanel()
+                if showFeedback {
+                    presentLspResultFeedback(AttoLspResultFeedback.empty(.documentColors), in: tab.editCore.editorView)
+                }
+                return true
+            }
             if showFeedback {
                 presentLspResultFeedback(AttoLspResultFeedback.empty(.documentColors), in: tab.editCore.editorView)
             }

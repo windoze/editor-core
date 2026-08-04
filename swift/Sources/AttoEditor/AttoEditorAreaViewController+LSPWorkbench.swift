@@ -522,9 +522,12 @@ extension AttoEditorAreaViewController {
             ? lastDocumentColorItems
             : []
         let documentColorCount = documentColorItems.count
+        let documentColorEventSequence = lspResultOwnerMatchesActiveDocument(lastDocumentColorOwner)
+            ? lastDocumentColorEventSequence
+            : nil
         let documentColorStatus = lspWorkbenchDocumentColorStatus(
             count: documentColorCount,
-            eventSequence: documentColorItems.isEmpty ? nil : lastDocumentColorEventSequence
+            eventSequence: documentColorEventSequence
         )
         let currentHierarchySnapshot = lspWorkbenchHierarchySnapshot()
         let hierarchyCount = currentHierarchySnapshot?.entries.count ?? 0
@@ -711,12 +714,12 @@ extension AttoEditorAreaViewController {
     }
 
     private func lspWorkbenchDocumentColorStatus(count: Int, eventSequence: UInt64?) -> String {
-        guard count > 0 else { return "request on open" }
         let countText = count == 1 ? "1 color" : "\(count) colors"
         if let eventSequence,
            let status = lspResultEventPanelMetadata(countText: countText, eventSequence: eventSequence) {
             return status
         }
+        guard count > 0 else { return "request on open" }
         return lspWorkbenchResultEventStatus(countText: countText, family: "document_colors") ?? "\(count) cached"
     }
 
