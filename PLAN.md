@@ -465,7 +465,12 @@
   - 验证：`swift/scripts/update-visual-baselines.sh`
   - 验证：`swift/scripts/check-visual-baselines.sh`
   - 验证：`git diff --check`
-- [ ] PNG 合入后确认 strict visual baseline PR 门禁默认生效。
+- [x] PNG 合入后确认 strict visual baseline PR 门禁默认生效。
+  - [x] `.github/workflows/visual-baselines.yml` 的 PR 条件会在检测到任意 checked-in `VisualBaselines/*.png` 后跳过 smoke，改跑 `swift/scripts/check-visual-baselines.sh`。
+  - [x] 本地检测命令已返回 `has_png=true`，当前 39 个 PNG baseline 会触发 strict PR 路径。
+  - 验证：`baseline_png="$(find swift/Tests/AttoEditorTests/Resources/VisualBaselines -type f -name '*.png' -print -quit)"; test -n "$baseline_png"`
+  - 验证：`swift/scripts/check-visual-baselines.sh`
+  - 验证：`git diff --check`
 - [ ] 扩展 WorkspaceEdit rollback secondary failure、更多 conflict/failure 边界和跨 theme/window-size fixtures。
 - [ ] 扩展 opt-in `XCUIApplication` smoke tests：真实 LSP server、多文件 workspace、多 root/project session、server 错误/延迟/重启后的 panels。
 
