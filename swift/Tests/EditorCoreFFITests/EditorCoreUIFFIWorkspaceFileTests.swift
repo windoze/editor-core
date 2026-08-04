@@ -21,13 +21,14 @@ extension EditorCoreUIFFITests {
 
         try multi.setWorkspaceRoots([root.standardizedFileURL.absoluteString])
 
-        let results = try multi.searchWorkspaceFiles(
+        let envelope = try multi.searchWorkspaceFilesEnvelope(
             query: "needle",
             options: EcuSearchOptions(caseSensitive: false),
             includeGlobs: ["*.rs"],
             excludeGlobs: [],
             maxResults: 10
         )
+        let results = try envelope.workspaceFileSearchResults()
         XCTAssertEqual(results.count, 1)
         XCTAssertEqual(results[0].path, sourceURL.standardizedFileURL.path)
         XCTAssertEqual(results[0].relativePath, "src/lib.rs")
@@ -37,13 +38,6 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(results[0].matchStart, 8)
         XCTAssertEqual(results[0].matchEnd, 14)
 
-        let envelope = try multi.searchWorkspaceFilesEnvelope(
-            query: "needle",
-            options: EcuSearchOptions(caseSensitive: false),
-            includeGlobs: ["*.rs"],
-            excludeGlobs: [],
-            maxResults: 10
-        )
         XCTAssertTrue(envelope.ok)
         XCTAssertEqual(envelope.statusKind, .success)
         guard case .object(let value)? = envelope.value,
@@ -80,24 +74,20 @@ extension EditorCoreUIFFITests {
 
         try multi.setWorkspaceRoots([root.standardizedFileURL.absoluteString])
 
-        let files = try multi.listWorkspaceFiles(
+        let listEnvelope = try multi.listWorkspaceFilesEnvelope(
             includeGlobs: ["src/**"],
             excludeGlobs: ["*.swift"],
             maxResults: 10
         )
+        let files = try listEnvelope.workspaceFileEntries()
         XCTAssertEqual(files.count, 1)
         XCTAssertEqual(files[0].path, sourceURL.standardizedFileURL.path)
         XCTAssertEqual(files[0].relativePath, "src/lib.rs")
         XCTAssertEqual(URL(string: files[0].uri)?.isFileURL, true)
 
-        let envelope = try multi.listWorkspaceFilesEnvelope(
-            includeGlobs: ["src/**"],
-            excludeGlobs: ["*.swift"],
-            maxResults: 10
-        )
-        XCTAssertTrue(envelope.ok)
-        XCTAssertEqual(envelope.statusKind, .success)
-        guard case .object(let listValue)? = envelope.value,
+        XCTAssertTrue(listEnvelope.ok)
+        XCTAssertEqual(listEnvelope.statusKind, .success)
+        guard case .object(let listValue)? = listEnvelope.value,
               case .array(let envelopeFiles)? = listValue["files"]
         else {
             XCTFail("expected workspace file list envelope")
@@ -105,7 +95,7 @@ extension EditorCoreUIFFITests {
         }
         XCTAssertEqual(envelopeFiles.count, 1)
 
-        let limited = try multi.listWorkspaceFiles(maxResults: 1)
+        let limited = try multi.listWorkspaceFilesEnvelope(maxResults: 1).workspaceFileEntries()
         XCTAssertEqual(limited.count, 1)
         XCTAssertEqual(limited[0].relativePath, "README.md")
     }
@@ -128,11 +118,11 @@ extension EditorCoreUIFFITests {
         try "pub fn core() {}\n".write(to: coreModelURL, atomically: true, encoding: .utf8)
 
         try multi.setWorkspaceRoots([root.standardizedFileURL.absoluteString])
-        let initial = try multi.projectFileIndexSnapshot()
+        let initialEnvelope = try multi.projectFileIndexSnapshotEnvelope()
+        let initial = try initialEnvelope.projectFileIndexSnapshot()
         XCTAssertFalse(initial.isBuilt)
         XCTAssertTrue(initial.files.isEmpty)
-        XCTAssertTrue(try multi.queryProjectFileIndex(query: "cm").isEmpty)
-        let initialEnvelope = try multi.projectFileIndexSnapshotEnvelope()
+        XCTAssertTrue(try multi.queryProjectFileIndexEnvelope(query: "cm").projectFileIndexQueryResults().isEmpty)
         XCTAssertTrue(initialEnvelope.ok)
         guard case .object(let initialValue)? = initialEnvelope.value,
               initialValue["is_built"] == .bool(false)
@@ -141,11 +131,11 @@ extension EditorCoreUIFFITests {
             return
         }
 
-        let refreshed = try multi.refreshProjectFileIndex(maxResults: 10)
+        let refreshedEnvelope = try multi.refreshProjectFileIndexEnvelope(maxResults: 10)
+        let refreshed = try refreshedEnvelope.projectFileIndexSnapshot()
         XCTAssertTrue(refreshed.isBuilt)
         XCTAssertEqual(refreshed.maxResults, 10)
         XCTAssertEqual(refreshed.files.map(\.relativePath), ["src/core_model.rs", "src/lib.rs"])
-        let refreshedEnvelope = try multi.refreshProjectFileIndexEnvelope(maxResults: 10)
         XCTAssertTrue(refreshedEnvelope.ok)
         guard case .object(let refreshedValue)? = refreshedEnvelope.value,
               case .array(let refreshedFiles)? = refreshedValue["files"]
@@ -154,10 +144,10 @@ extension EditorCoreUIFFITests {
             return
         }
         XCTAssertEqual(refreshedFiles.count, 2)
-        let queryMatches = try multi.queryProjectFileIndex(query: "cm")
+        let queryEnvelope = try multi.queryProjectFileIndexEnvelope(query: "cm")
+        let queryMatches = try queryEnvelope.projectFileIndexQueryResults()
         XCTAssertEqual(queryMatches.map(\.relativePath), ["src/core_model.rs"])
         XCTAssertGreaterThan(try XCTUnwrap(queryMatches.first?.score), 0)
-        let queryEnvelope = try multi.queryProjectFileIndexEnvelope(query: "cm")
         XCTAssertTrue(queryEnvelope.ok)
         guard case .object(let queryValue)? = queryEnvelope.value,
               case .array(let envelopeMatches)? = queryValue["results"]
@@ -169,16 +159,16 @@ extension EditorCoreUIFFITests {
 
         try "fn main() {}\n".write(to: secondURL, atomically: true, encoding: .utf8)
         XCTAssertEqual(
-            try multi.projectFileIndexSnapshot().files.map(\.relativePath),
+            try multi.projectFileIndexSnapshotEnvelope().projectFileIndexSnapshot().files.map(\.relativePath),
             ["src/core_model.rs", "src/lib.rs"]
         )
         XCTAssertEqual(
-            try multi.refreshProjectFileIndex(maxResults: 10).files.map(\.relativePath),
+            try multi.refreshProjectFileIndexEnvelope(maxResults: 10).projectFileIndexSnapshot().files.map(\.relativePath),
             ["src/core_model.rs", "src/lib.rs", "src/main.rs"]
         )
 
         try multi.clearProjectFileIndex()
-        let cleared = try multi.projectFileIndexSnapshot()
+        let cleared = try multi.projectFileIndexSnapshotEnvelope().projectFileIndexSnapshot()
         XCTAssertFalse(cleared.isBuilt)
         XCTAssertTrue(cleared.files.isEmpty)
     }
@@ -201,15 +191,6 @@ extension EditorCoreUIFFITests {
 
         try multi.setWorkspaceRoots([root.standardizedFileURL.absoluteString])
 
-        let workspaceEdit = try multi.workspaceFileReplacementWorkspaceEditJSON(
-            query: #"alpha(\d)"#,
-            replacement: "beta$1",
-            options: EcuSearchOptions(caseSensitive: true, regex: true),
-            includeGlobs: ["*.rs"],
-            excludeGlobs: [],
-            applyMode: "atomic",
-            maxResults: 10
-        )
         let replacementEnvelope = try multi.workspaceFileReplacementWorkspaceEditEnvelope(
             query: #"alpha(\d)"#,
             replacement: "beta$1",
@@ -219,6 +200,7 @@ extension EditorCoreUIFFITests {
             applyMode: "atomic",
             maxResults: 10
         )
+        let workspaceEdit = try replacementEnvelope.workspaceFileReplacementWorkspaceEditPayloadJSON()
         XCTAssertTrue(replacementEnvelope.ok)
         XCTAssertEqual(replacementEnvelope.statusKind, .success)
         guard case .object(let workspaceEditValue)? = replacementEnvelope.value else {

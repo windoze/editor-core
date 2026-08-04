@@ -446,13 +446,20 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
     }
 
     private func refreshCoreProjectFileIndex() {
-        guard supportsCoreProjectFileIndex else { return }
-        _ = try? editorAreaController.coreDocuments?.refreshProjectFileIndex()
+        guard supportsCoreProjectFileIndex,
+              let coreDocuments = editorAreaController.coreDocuments
+        else {
+            return
+        }
+
+        _ = try? coreDocuments.refreshProjectFileIndexEnvelope().projectFileIndexSnapshot()
     }
 
     private func refreshedCoreProjectFileIndexEntries() -> [AttoWorkspaceFileIndex.Entry]? {
         guard supportsCoreProjectFileIndex,
-              let snapshot = try? editorAreaController.coreDocuments?.refreshProjectFileIndex()
+              let snapshot = try? editorAreaController.coreDocuments?
+                  .refreshProjectFileIndexEnvelope()
+                  .projectFileIndexSnapshot()
         else {
             return nil
         }
@@ -470,8 +477,11 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
             return nil
         }
 
-        _ = try? coreDocuments.refreshProjectFileIndex()
-        guard let results = try? coreDocuments.queryProjectFileIndex(query: query, maxResults: maxResults) else {
+        _ = try? coreDocuments.refreshProjectFileIndexEnvelope().projectFileIndexSnapshot()
+        guard let results = try? coreDocuments
+            .queryProjectFileIndexEnvelope(query: query, maxResults: maxResults)
+            .projectFileIndexQueryResults()
+        else {
             return nil
         }
         return workspaceFileEntries(from: results)
@@ -479,7 +489,9 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
 
     private func coreWorkspaceFileEntries() -> [AttoWorkspaceFileIndex.Entry]? {
         guard supportsCoreWorkspaceFileList,
-              let entries = try? editorAreaController.coreDocuments?.listWorkspaceFiles()
+              let entries = try? editorAreaController.coreDocuments?
+                  .listWorkspaceFilesEnvelope()
+                  .workspaceFileEntries()
         else {
             return nil
         }

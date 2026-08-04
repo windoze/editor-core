@@ -42,6 +42,10 @@ names and unknown envelope status strings are forward-compatible and should not 
 the runtime by default. Every returned runtime-info, envelope, legacy JSON, or allocated error
 string must be freed exactly once with `editor_core_ui_ffi_string_free`.
 
+Swift wrappers follow the same rule. Workspace file search/list, project file index, and workspace
+file replacement raw JSON helpers that have envelope equivalents remain callable but are marked
+deprecated; new Swift/App integrations should use the envelope methods and typed value helpers.
+
 ## JSON Command Envelope
 
 The legacy JSON command dispatcher remains available:

@@ -768,7 +768,11 @@ extension AttoEditorCommandTests {
 
         let entries = ctx.workspaceFileEntries()
         XCTAssertEqual(entries.map(\.relativePath), ["src/cached.rs", "src/core_model.rs", "src/core_only.rs"])
-        let coreIndex = try XCTUnwrap(ctx.editorAreaController.coreDocuments?.projectFileIndexSnapshot())
+        let coreIndex = try XCTUnwrap(
+            ctx.editorAreaController.coreDocuments?
+                .projectFileIndexSnapshotEnvelope()
+                .projectFileIndexSnapshot()
+        )
         XCTAssertEqual(coreIndex.files.map(\.relativePath), ["src/cached.rs", "src/core_model.rs", "src/core_only.rs"])
 
         let quickOpenTitles = delegate._quickOpenCommandsForTesting().map(\.title)

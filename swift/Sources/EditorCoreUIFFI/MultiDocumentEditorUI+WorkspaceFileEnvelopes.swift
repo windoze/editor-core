@@ -1,8 +1,101 @@
 import CEditorCoreUIFFI
+import Foundation
 
 public typealias EcuWorkspaceFileOperationEnvelope = EcuMultiDocumentSearchEnvelope
 public typealias EcuWorkspaceFileOperationEnvelopeError = EcuMultiDocumentSearchEnvelopeError
 public typealias EcuWorkspaceFileOperationEnvelopeStatus = EcuMultiDocumentSearchEnvelopeStatus
+
+public extension EcuMultiDocumentSearchEnvelope {
+    func workspaceFileSearchResults() throws -> [EcuWorkspaceFileSearchResult] {
+        try decodeWorkspaceFileValue(
+            EcuWorkspaceFileSearchResponse.self,
+            context: "multi_document_search_workspace_files_envelope_value_decode"
+        ).results
+    }
+
+    func workspaceFileEntries() throws -> [EcuWorkspaceFileEntry] {
+        try decodeWorkspaceFileValue(
+            EcuWorkspaceFileListResponse.self,
+            context: "multi_document_list_workspace_files_envelope_value_decode"
+        ).files
+    }
+
+    func projectFileIndexSnapshot() throws -> EcuProjectFileIndexSnapshot {
+        try decodeWorkspaceFileValue(
+            EcuProjectFileIndexSnapshot.self,
+            context: "multi_document_project_file_index_snapshot_envelope_value_decode"
+        )
+    }
+
+    func projectFileIndexQueryResults() throws -> [EcuProjectFileIndexQueryResult] {
+        try decodeWorkspaceFileValue(
+            EcuProjectFileIndexQueryResponse.self,
+            context: "multi_document_query_project_file_index_envelope_value_decode"
+        ).results
+    }
+
+    func workspaceFileReplacementWorkspaceEditPayloadJSON() throws -> String {
+        try workspaceFileEnvelopeValueJSON(
+            context: "multi_document_workspace_file_replacement_workspace_edit_envelope_value_encode"
+        )
+    }
+
+    private func decodeWorkspaceFileValue<T: Decodable>(_ type: T.Type, context: String) throws -> T {
+        let json = try workspaceFileEnvelopeValueJSON(context: context)
+        guard let data = json.data(using: .utf8) else {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .invalidUtf8,
+                context: context,
+                message: "encoded envelope value is not UTF-8"
+            )
+        }
+        do {
+            return try JSONDecoder().decode(T.self, from: data)
+        } catch {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .invalidArgument,
+                context: context,
+                message: String(describing: error)
+            )
+        }
+    }
+
+    private func workspaceFileEnvelopeValueJSON(context: String) throws -> String {
+        if ok == false {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: error?.status ?? .commandFailed,
+                context: context,
+                message: error?.message ?? "workspace file operation envelope failed"
+            )
+        }
+        guard let value else {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .internal,
+                context: context,
+                message: "workspace file operation envelope did not contain a value"
+            )
+        }
+        do {
+            let data = try JSONEncoder().encode(value)
+            guard let json = String(data: data, encoding: .utf8) else {
+                throw EditorCoreUIFFIError.ffiStatus(
+                    code: .invalidUtf8,
+                    context: context,
+                    message: "encoded envelope value is not UTF-8"
+                )
+            }
+            return json
+        } catch let error as EditorCoreUIFFIError {
+            throw error
+        } catch {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .invalidArgument,
+                context: context,
+                message: String(describing: error)
+            )
+        }
+    }
+}
 
 extension MultiDocumentEditorUI {
     public func listWorkspaceFilesEnvelopeJSON(

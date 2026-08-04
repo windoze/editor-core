@@ -441,15 +441,15 @@ public struct EcuProjectFileIndexQueryResult: Decodable, Equatable, Sendable {
     }
 }
 
-private struct EcuWorkspaceFileSearchResponse: Decodable {
+struct EcuWorkspaceFileSearchResponse: Decodable {
     let results: [EcuWorkspaceFileSearchResult]
 }
 
-private struct EcuWorkspaceFileListResponse: Decodable {
+struct EcuWorkspaceFileListResponse: Decodable {
     let files: [EcuWorkspaceFileEntry]
 }
 
-private struct EcuProjectFileIndexQueryResponse: Decodable {
+struct EcuProjectFileIndexQueryResponse: Decodable {
     let results: [EcuProjectFileIndexQueryResult]
 }
 
@@ -1875,6 +1875,7 @@ public final class MultiDocumentEditorUI {
         )
     }
 
+    @available(*, deprecated, message: "Use searchWorkspaceFilesEnvelopeJSON(...).")
     public func searchWorkspaceFilesJSON(
         query: String,
         options: EcuSearchOptions = EcuSearchOptions(),
@@ -1904,6 +1905,7 @@ public final class MultiDocumentEditorUI {
         }
     }
 
+    @available(*, deprecated, message: "Use searchWorkspaceFilesEnvelope(...).workspaceFileSearchResults().")
     public func searchWorkspaceFiles(
         query: String,
         options: EcuSearchOptions = EcuSearchOptions(),
@@ -1925,6 +1927,7 @@ public final class MultiDocumentEditorUI {
         ).results
     }
 
+    @available(*, deprecated, message: "Use listWorkspaceFilesEnvelopeJSON(...).")
     public func listWorkspaceFilesJSON(
         includeGlobs: [String] = [],
         excludeGlobs: [String] = [],
@@ -1952,6 +1955,7 @@ public final class MultiDocumentEditorUI {
         }
     }
 
+    @available(*, deprecated, message: "Use listWorkspaceFilesEnvelope(...).workspaceFileEntries().")
     public func listWorkspaceFiles(
         includeGlobs: [String] = [],
         excludeGlobs: [String] = [],
@@ -1969,12 +1973,14 @@ public final class MultiDocumentEditorUI {
         ).files
     }
 
+    @available(*, deprecated, message: "Use refreshProjectFileIndexEnvelopeJSON(...).")
     public func refreshProjectFileIndexJSON(maxResults: UInt32 = 10_000) throws -> String {
         try ffiStringResult(context: "multi_document_refresh_project_file_index_json") {
             editor_core_ui_ffi_multi_document_refresh_project_file_index_json(handle, maxResults)
         }
     }
 
+    @available(*, deprecated, message: "Use refreshProjectFileIndexEnvelope(...).projectFileIndexSnapshot().")
     public func refreshProjectFileIndex(maxResults: UInt32 = 10_000) throws -> EcuProjectFileIndexSnapshot {
         try decode(
             EcuProjectFileIndexSnapshot.self,
@@ -1983,12 +1989,14 @@ public final class MultiDocumentEditorUI {
         )
     }
 
+    @available(*, deprecated, message: "Use projectFileIndexSnapshotEnvelopeJSON().")
     public func projectFileIndexSnapshotJSON() throws -> String {
         try ffiStringResult(context: "multi_document_project_file_index_snapshot_json") {
             editor_core_ui_ffi_multi_document_project_file_index_snapshot_json(handle)
         }
     }
 
+    @available(*, deprecated, message: "Use projectFileIndexSnapshotEnvelope().projectFileIndexSnapshot().")
     public func projectFileIndexSnapshot() throws -> EcuProjectFileIndexSnapshot {
         try decode(
             EcuProjectFileIndexSnapshot.self,
@@ -2002,6 +2010,7 @@ public final class MultiDocumentEditorUI {
         try library.ensureStatus(status, context: "multi_document_clear_project_file_index")
     }
 
+    @available(*, deprecated, message: "Use queryProjectFileIndexEnvelopeJSON(query:maxResults:).")
     public func queryProjectFileIndexJSON(query: String, maxResults: UInt32 = 200) throws -> String {
         try ffiStringResult(context: "multi_document_query_project_file_index_json") {
             query.withCString { queryPtr in
@@ -2014,6 +2023,7 @@ public final class MultiDocumentEditorUI {
         }
     }
 
+    @available(*, deprecated, message: "Use queryProjectFileIndexEnvelope(query:maxResults:).projectFileIndexQueryResults().")
     public func queryProjectFileIndex(
         query: String,
         maxResults: UInt32 = 200
@@ -2074,6 +2084,7 @@ public final class MultiDocumentEditorUI {
         )
     }
 
+    @available(*, deprecated, message: "Use workspaceFileReplacementWorkspaceEditEnvelope(...).workspaceFileReplacementWorkspaceEditPayloadJSON().")
     public func workspaceFileReplacementWorkspaceEditJSON(
         query: String,
         replacement: String,

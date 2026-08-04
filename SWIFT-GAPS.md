@@ -27,10 +27,6 @@
 - 补齐 schema-aware settings UI 中 user / workspace / runtime override 的可编辑状态，以及 user / workspace 文件级回滚体验；当前已具备 effective value、source、override、validation error 可见性和 runtime override 清空回滚。
 - 补齐 per-document / per-language / per-workspace settings 应用的测试。
 
-## 阶段 10：Result Envelope、错误模型与 Host Capability
-
-- 清理或隔离过渡 raw JSON API，保留兼容路径但不作为完成标准。
-
 ## 阶段 11：Tree-sitter + LSP 语言体验
 
 - 产品化 Tree-sitter + LSP 主路线的 highlighting、outline、folding、language mode 和降级体验。

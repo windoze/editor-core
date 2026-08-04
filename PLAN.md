@@ -10,7 +10,7 @@
 - [已完成] 阶段 7：完成跨 tab/project result panels、统一 dock/workbench 容器和刷新/过期策略。
 - [已完成] 阶段 8：完成 Sublime-like command/keymap 行为矩阵、keymap 文件兼容和 snippets/macros/build systems 边界。
 - [已完成] 阶段 9：完成 settings selector、schema-aware settings UI、runtime override 持久化和跨 schema 字段迁移。
-- [待办] 阶段 10：完成剩余 JSON result envelope 覆盖、错误模型统一和 host capability negotiation。
+- [已完成] 阶段 10：完成剩余 JSON result envelope 覆盖、错误模型统一和 host capability negotiation。
 - [待办] 阶段 11：产品化 Tree-sitter + LSP 主路线的高亮、outline、folding、语言模式和降级体验。
 - [待办] 阶段 12：完成 core-backed workspace search、project index、replace-in-files、recent 和 session 工作流。
 - [待办] 阶段 13：合入首批经批准机器生成的 PNG baselines；CI 已具备 PNG 合入后自动 strict PR 门禁。
@@ -375,7 +375,11 @@
   - 验证：`cargo build -p editor-core-ui-ffi --release`
   - 验证：`swift test --package-path swift --filter 'EditorCoreFFIRuntimeCompatibilityTests|EditorCoreUIFFIRuntimeCompatibilityTests'`
   - 验证：`swift test --package-path swift --filter AttoRuntimeCompatibilityTests`
-- [ ] 清理或隔离过渡 raw JSON API。
+- [x] 清理或隔离过渡 raw JSON API。
+  - 交付：保留 C ABI/raw Swift 兼容入口，但将 workspace file search/list、project file index 和 workspace file replacement 的旧 raw/decoded Swift wrapper 标为 deprecated；新增 envelope value typed helper，并把 Atto App 与相关测试迁移到 envelope 主路径。
+  - 验证：`swift test --package-path swift --filter 'testMultiDocumentWorkspaceFile|testMultiDocumentProjectFileIndex'`
+  - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testQuickOpenUsesCoreWorkspaceFileListWhenAvailable`
+  - 验证：`git diff --check`
 
 ## 阶段 11：Tree-sitter + LSP 语言体验
 

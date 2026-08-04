@@ -743,13 +743,15 @@ extension AttoEditorAreaViewController {
         guard q.isEmpty == false, let coreDocuments else { return nil }
 
         do {
-            let coreResults = try coreDocuments.searchWorkspaceFiles(
-                query: q,
-                options: ecuSearchOptions(from: options),
-                includeGlobs: includeGlobs,
-                excludeGlobs: excludeGlobs,
-                maxResults: 2000
-            )
+            let coreResults = try coreDocuments
+                .searchWorkspaceFilesEnvelope(
+                    query: q,
+                    options: ecuSearchOptions(from: options),
+                    includeGlobs: includeGlobs,
+                    excludeGlobs: excludeGlobs,
+                    maxResults: 2000
+                )
+                .workspaceFileSearchResults()
 
             var out: [AttoFindInFilesViewController.SearchResult] = []
             out.reserveCapacity(coreResults.count)
@@ -792,15 +794,17 @@ extension AttoEditorAreaViewController {
         }
 
         do {
-            let workspaceEditJSON = try coreDocuments.workspaceFileReplacementWorkspaceEditJSON(
-                query: q,
-                replacement: replacement,
-                options: ecuSearchOptions(from: options),
-                includeGlobs: includeGlobs,
-                excludeGlobs: excludeGlobs,
-                applyMode: "atomic",
-                maxResults: 2000
-            )
+            let workspaceEditJSON = try coreDocuments
+                .workspaceFileReplacementWorkspaceEditEnvelope(
+                    query: q,
+                    replacement: replacement,
+                    options: ecuSearchOptions(from: options),
+                    includeGlobs: includeGlobs,
+                    excludeGlobs: excludeGlobs,
+                    applyMode: "atomic",
+                    maxResults: 2000
+                )
+                .workspaceFileReplacementWorkspaceEditPayloadJSON()
             let applied = applyWorkspaceEditJSONToActiveTab(workspaceEditJSON)
             if applied {
                 setTransientStatusText("Replace in Files applied")

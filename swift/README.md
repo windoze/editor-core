@@ -9,6 +9,13 @@
 - 运行时不再依赖 `libeditor_core_ffi.dylib` / `libeditor_core_ui_ffi.dylib` 的查找路径；
 - 需要在构建 SwiftPM 包之前，先用 Cargo 生成对应的 `.a` 产物（或在 CI 里缓存它们）。
 
+## API 选择
+
+新 Swift/App 集成优先使用 runtime negotiation 结果和对应的 typed result envelope。已经有
+envelope 覆盖的 workspace file search/list、project file index、workspace file replacement 旧
+raw JSON wrapper 仍保留以兼容既有调用方，但在 Swift 层标记为 deprecated；只有在运行时缺少相应
+feature bit 且调用方明确接受旧错误形态时，才应作为 legacy fallback 使用。
+
 ## 目录结构
 
 - `Sources/CEditorCoreFFI/`：C header module（转发到 `crates/editor-core-ffi/include/editor_core_ffi.h`）

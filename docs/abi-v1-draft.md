@@ -468,6 +468,11 @@ When a host links statically, the headers and library archive must be produced b
 that supplied the feature bit. Dynamic/plugin-style hosts may resolve optional symbols after
 feature probing, but still must not call a symbol that is absent from the loaded library.
 
+Swift wrappers mirror the same transition policy: raw JSON and decoded convenience methods that
+now have structured workspace-file operation envelopes are retained for source compatibility but
+marked deprecated. App and host integrations should consume the envelope methods plus their typed
+value helpers, using the raw JSON symbols only as explicit legacy fallbacks.
+
 ## Cross-Language Binding Notes
 
 ## Swift (macOS)
