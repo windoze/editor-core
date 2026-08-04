@@ -6,7 +6,7 @@
 
 - [已完成] 阶段 4：完成 WorkspaceEdit conflict 检测、解决语义和跨请求/project 重试归属。
 - [已完成] 阶段 5：完成 tab、split、project、session 和 LSP ownership 向 core workspace 模型迁移。
-- [进行中] 阶段 6：完成 core-owned project/LSP lifecycle schema、server ownership、恢复策略和 dashboard 产品化。
+- [已完成] 阶段 6：完成 core-owned project/LSP lifecycle schema、server ownership、恢复策略和 dashboard 产品化。
 - [已完成] 阶段 7：完成跨 tab/project result panels、统一 dock/workbench 容器和刷新/过期策略。
 - [已完成] 阶段 8：完成 Sublime-like command/keymap 行为矩阵、keymap 文件兼容和 snippets/macros/build systems 边界。
 - [已完成] 阶段 9：完成 settings selector、schema-aware settings UI、runtime override 持久化和跨 schema 字段迁移。
@@ -163,9 +163,10 @@
 
 ### 剩余任务
 
-- [ ] 将 LSP start/restart/stop/shutdown 的实际执行 ownership 下沉为 core-owned typed lifecycle。
+- [x] 将 LSP start/restart/stop/shutdown 的实际执行 ownership 下沉为 core-owned typed lifecycle。
   - [x] 让 core-owned start/stop/restart plan entries 显式携带 `operation` 字段，并同步 Rust、FFI JSON、Swift wrapper 和 ABI draft，作为统一 lifecycle action descriptor 的基础。
   - [x] 将 Swift Project LSP lifecycle outcome 记录收敛到统一 action descriptor，并让 auto-start、manual restart/shutdown、project restart/shutdown、auto-restart、tab close 和 language-change stop 复用 core plan entry 的 operation / workspace roots / active view metadata。
+  - [x] 移除 Swift/AppKit 在 core plan 缺失或构建失败时直接执行 project LSP start/restart/stop/shutdown 的 fallback；项目级与单 tab 生命周期操作必须匹配 core typed plan entry 才会执行。
   - 验证：`cargo test -p editor-core-ui project_lsp`
   - 验证：`cargo test -p editor-core-ui-ffi project_lsp`
   - 验证：`cargo test -p editor-core-ui-ffi ffi_multi_document_exposes_tab_preview_split_and_search`
@@ -176,6 +177,7 @@
   - 验证：`swift test --package-path swift --filter 'AttoEditorCommandTests/test(ProjectLspAutoRestartUsesCoreRestartPlanRoot|RestartLspServerInActiveTabUsesCoreRestartPlanRoot|RestartLspServerRestartsActiveTabSession|ShutdownLspServerStopsActiveSessionAndRecordsOutcome|ShutdownProjectLspServersStopsConfiguredOpenTabsAndRecordsOutcomes|RestartProjectLspServersRestartsConfiguredOpenTabs)'`
   - 验证：`swift test --package-path swift --filter 'AttoEditorCommandTests/test(ShutdownLspServerInActiveTabRequiresCoreStopPlanMatch|ShutdownLspServerRequiresRunningSession|ShutdownProjectLspServersRequiresRunningConfiguredTabs)'`
   - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testProjectLspProcessHealthAutoRestartsExitedConfiguredTab`
+  - 验证：`swift test --package-path swift --filter 'AttoEditorCommandTests/test(ProjectLspAutoStartUsesCoreStartPlanLanguageFilter|WorkspaceRootChangeAutoStartsConfiguredOpenTabLsp|RestartLspServerInActiveTabUsesCoreRestartPlanRoot|RestartLspServerInActiveTabRecordsSkippedWhenCorePlanDoesNotMatch|ShutdownLspServerInActiveTabRequiresCoreStopPlanMatch|ShutdownProjectLspServersStopsConfiguredOpenTabsAndRecordsOutcomes|RestartProjectLspServersRestartsConfiguredOpenTabs)'`
   - 验证：`cargo fmt --check`
   - 验证：`git diff --check`
 - [x] 完成 project LSP server schema：workspace roots、language metadata、capabilities、workspaceFolders、root alias、shared session、attempt id。

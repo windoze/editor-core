@@ -145,8 +145,10 @@ extension AttoEditorAreaViewController {
         for candidates: [ProjectLspShutdownCandidate]
     ) -> [ProjectLspShutdownTarget] {
         guard candidates.isEmpty == false else { return [] }
-        let fallbackTargets = candidates.map { (candidate: $0, planEntry: nil as EcuProjectLspStopPlanEntry?) }
-        guard let coreDocuments else { return fallbackTargets }
+        guard let coreDocuments else {
+            NSLog("AttoEditor: project LSP shutdown requires a core stop plan")
+            return []
+        }
 
         syncProjectLspServerConfigsToCore()
         do {
@@ -167,7 +169,7 @@ extension AttoEditorAreaViewController {
             }
         } catch {
             NSLog("AttoEditor: failed to build project LSP stop plan: %@", String(describing: error))
-            return fallbackTargets
+            return []
         }
     }
 
@@ -177,7 +179,7 @@ extension AttoEditorAreaViewController {
         config: AttoLspServerLaunchConfig
     ) -> (allowed: Bool, planEntry: EcuProjectLspStopPlanEntry?) {
         guard let coreDocuments, let coreTabID = tab.coreTabID else {
-            return (allowed: true, planEntry: nil)
+            return (allowed: false, planEntry: nil)
         }
 
         do {
@@ -187,7 +189,7 @@ extension AttoEditorAreaViewController {
             }
         } catch {
             NSLog("AttoEditor: failed to inspect core tabs for project LSP stop plan: %@", String(describing: error))
-            return (allowed: true, planEntry: nil)
+            return (allowed: false, planEntry: nil)
         }
 
         syncCoreTabLanguageId(config.languageId, for: tab)
@@ -209,7 +211,7 @@ extension AttoEditorAreaViewController {
             return (allowed: true, planEntry: entry)
         } catch {
             NSLog("AttoEditor: failed to build project LSP stop plan: %@", String(describing: error))
-            return (allowed: true, planEntry: nil)
+            return (allowed: false, planEntry: nil)
         }
     }
 

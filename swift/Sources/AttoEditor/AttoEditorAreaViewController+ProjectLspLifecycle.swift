@@ -148,10 +148,10 @@ extension AttoEditorAreaViewController {
         for candidates: [ProjectLspStartCandidate]
     ) -> [ProjectLspStartTarget] {
         guard candidates.isEmpty == false else { return [] }
-        let fallbackTargets = candidates.map {
-            ProjectLspStartTarget(candidate: $0, planEntry: nil, rootURI: nil)
+        guard let coreDocuments else {
+            NSLog("AttoEditor: project LSP start requires a core start plan")
+            return []
         }
-        guard let coreDocuments else { return fallbackTargets }
 
         let additionalConfigs = Dictionary(
             uniqueKeysWithValues: candidates.map { (ObjectIdentifier($0.tab), $0.config) }
@@ -183,7 +183,7 @@ extension AttoEditorAreaViewController {
             }
         } catch {
             NSLog("AttoEditor: failed to build project LSP start plan: %@", String(describing: error))
-            return fallbackTargets
+            return []
         }
     }
 

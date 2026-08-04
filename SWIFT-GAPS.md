@@ -11,10 +11,6 @@
 - 补齐 split drag/drop 和 project/session 归属。
 - 继续让迁移期测试同时断言 core snapshot、Swift wrapper query 和 AppKit projection，避免双事实源漂移。
 
-## 阶段 6：Project / LSP Lifecycle Ownership
-
-- 将 LSP start / restart / stop / shutdown 的实际执行 ownership 从 Swift/AppKit 过渡到 core-owned typed lifecycle。
-
 ## 阶段 7：Result Panels 与 Workbench
 
 - 完成跨 tab / project 的 result panels，并继续将 result family 迁移到已建立的统一 dock/workbench 容器。
