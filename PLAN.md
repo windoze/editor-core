@@ -78,7 +78,15 @@
   - 验证：`cargo test -p editor-core-ui-ffi`
   - 验证：`swift test --package-path swift --filter AttoWorkspaceEditSummaryTests`
   - 验证：`swift test --package-path swift --filter AttoWorkspaceEdit`
-- [ ] 扩展 conflict 解决 UI：open/save/discard/retry/rerun/reapply 的可用状态、分组文案和失败反馈。
+- [x] 扩展 conflict 解决 UI：open/save/discard/retry/rerun/reapply 的可用状态、分组文案和失败反馈。
+  - 验证：`swift test --package-path swift --filter AttoWorkspaceEditRetryDescriptorTests`
+  - 验证：`swift test --package-path swift --filter AttoWorkspaceEditSummaryTests`
+  - 验证：`swift test --package-path swift --filter 'AttoEditorCommandTests/testWorkspaceEditHistoryPanel'`
+  - 验证：`swift test --package-path swift --filter AttoWorkspaceEdit`
+  - 验证：`cargo test -p editor-core-ui`
+  - 验证：`cargo test -p editor-core-ui-ffi`
+  - 验证：`cargo fmt --check`
+  - 验证：`git diff --check`
 - [ ] 补齐 Rust、FFI、Swift wrapper、AppKit panel 和 targeted tests。
 
 ### 验证

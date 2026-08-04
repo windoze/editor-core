@@ -28,16 +28,16 @@ final class AttoWorkspaceEditHistoryPanelController: NSObject, NSTableViewDataSo
     private var items: [Item] = []
     private var filteredItems: [Item] = []
     private var panel: NSPanel?
-    private let onUndoLatest: () -> Void
-    private let onReapply: (String) -> Void
-    private let onRerunRequest: (UInt64) -> Void
-    private let onOpenConflict: (String) -> Void
-    private let onSaveConflict: (String) -> Void
-    private let onDiscardConflict: (String) -> Void
-    private let onSaveConflictAndReapply: (String, String) -> Void
-    private let onDiscardConflictAndReapply: (String, String) -> Void
-    private let onSaveConflictAndRerunRequest: (String, UInt64) -> Void
-    private let onDiscardConflictAndRerunRequest: (String, UInt64) -> Void
+    private let onUndoLatest: () -> Bool
+    private let onReapply: (String) -> Bool
+    private let onRerunRequest: (UInt64) -> Bool
+    private let onOpenConflict: (String) -> Bool
+    private let onSaveConflict: (String) -> Bool
+    private let onDiscardConflict: (String) -> Bool
+    private let onSaveConflictAndReapply: (String, String) -> Bool
+    private let onDiscardConflictAndReapply: (String, String) -> Bool
+    private let onSaveConflictAndRerunRequest: (String, UInt64) -> Bool
+    private let onDiscardConflictAndRerunRequest: (String, UInt64) -> Bool
     private let searchField = NSSearchField(frame: .zero)
     private let metadataLabel = NSTextField(labelWithString: "")
     private let tableView = NSTableView(frame: .zero)
@@ -52,16 +52,16 @@ final class AttoWorkspaceEditHistoryPanelController: NSObject, NSTableViewDataSo
     private let undoButton = NSButton(title: "Undo Latest", target: nil, action: nil)
 
     init(
-        onUndoLatest: @escaping () -> Void,
-        onReapply: @escaping (String) -> Void,
-        onRerunRequest: @escaping (UInt64) -> Void,
-        onOpenConflict: @escaping (String) -> Void,
-        onSaveConflict: @escaping (String) -> Void,
-        onDiscardConflict: @escaping (String) -> Void,
-        onSaveConflictAndReapply: @escaping (String, String) -> Void,
-        onDiscardConflictAndReapply: @escaping (String, String) -> Void,
-        onSaveConflictAndRerunRequest: @escaping (String, UInt64) -> Void,
-        onDiscardConflictAndRerunRequest: @escaping (String, UInt64) -> Void
+        onUndoLatest: @escaping () -> Bool,
+        onReapply: @escaping (String) -> Bool,
+        onRerunRequest: @escaping (UInt64) -> Bool,
+        onOpenConflict: @escaping (String) -> Bool,
+        onSaveConflict: @escaping (String) -> Bool,
+        onDiscardConflict: @escaping (String) -> Bool,
+        onSaveConflictAndReapply: @escaping (String, String) -> Bool,
+        onDiscardConflictAndReapply: @escaping (String, String) -> Bool,
+        onSaveConflictAndRerunRequest: @escaping (String, UInt64) -> Bool,
+        onDiscardConflictAndRerunRequest: @escaping (String, UInt64) -> Bool
     ) {
         self.onUndoLatest = onUndoLatest
         self.onReapply = onReapply
@@ -333,19 +333,30 @@ final class AttoWorkspaceEditHistoryPanelController: NSObject, NSTableViewDataSo
     }
 
     private func updateButtonState() {
-        let canRerun = selectedRerunRequestSequence() != nil
-        undoButton.isEnabled = items.contains { $0.canUndoLatest }
-        openConflictButton.isEnabled = selectedConflictTargetURI() != nil
-        saveConflictButton.isEnabled = selectedSaveableConflictTargetURI() != nil
-        discardConflictButton.isEnabled = selectedDiscardableConflictTargetURI() != nil
-        saveAndReapplyButton.title = canRerun ? "Save & Rerun" : "Save & Reapply"
-        discardAndReapplyButton.title = canRerun ? "Discard & Rerun" : "Discard & Reapply"
-        saveAndReapplyButton.isEnabled =
-            selectedSaveAndRerunConflictTarget() != nil || selectedSaveAndReapplyConflictTarget() != nil
-        discardAndReapplyButton.isEnabled =
-            selectedDiscardAndRerunConflictTarget() != nil || selectedDiscardAndReapplyConflictTarget() != nil
-        rerunRequestButton.isEnabled = canRerun
-        reapplyButton.isEnabled = selectedReapplyWorkspaceEditJSON() != nil
+        let state = currentActionState()
+        apply(state: state.openConflict, to: openConflictButton)
+        apply(state: state.saveConflict, to: saveConflictButton)
+        apply(state: state.discardConflict, to: discardConflictButton)
+        apply(state: state.saveAndResolve, to: saveAndReapplyButton)
+        apply(state: state.discardAndResolve, to: discardAndReapplyButton)
+        apply(state: state.rerunRequest, to: rerunRequestButton)
+        apply(state: state.reapply, to: reapplyButton)
+        apply(state: state.undoLatest, to: undoButton)
+    }
+
+    private func apply(state: AttoWorkspaceEditActionButtonState, to button: NSButton) {
+        if let title = state.title {
+            button.title = title
+        }
+        button.isEnabled = state.isEnabled
+        button.toolTip = state.toolTip
+    }
+
+    private func currentActionState() -> AttoWorkspaceEditHistoryActionState {
+        AttoWorkspaceEditConflictActionState.history(
+            for: selectedItem(),
+            hasUndoLatest: items.contains { $0.canUndoLatest }
+        )
     }
 
     private func applyFilter() {
@@ -533,71 +544,119 @@ final class AttoWorkspaceEditHistoryPanelController: NSObject, NSTableViewDataSo
     }
 
     @objc private func openConflictClicked(_ sender: Any?) {
+        let state = currentActionState().openConflict
         guard let uri = selectedConflictTargetURI() else {
-            NSSound.beep()
+            reportUnavailableAction(state)
             return
         }
-        onOpenConflict(uri)
+        guard onOpenConflict(uri) else {
+            reportFailedAction("Open conflict failed")
+            return
+        }
     }
 
     @objc private func saveConflictClicked(_ sender: Any?) {
+        let state = currentActionState().saveConflict
         guard let uri = selectedSaveableConflictTargetURI() else {
-            NSSound.beep()
+            reportUnavailableAction(state)
             return
         }
-        onSaveConflict(uri)
+        guard onSaveConflict(uri) else {
+            reportFailedAction("Save conflict failed")
+            return
+        }
     }
 
     @objc private func discardConflictClicked(_ sender: Any?) {
+        let state = currentActionState().discardConflict
         guard let uri = selectedDiscardableConflictTargetURI() else {
-            NSSound.beep()
+            reportUnavailableAction(state)
             return
         }
-        onDiscardConflict(uri)
+        guard onDiscardConflict(uri) else {
+            reportFailedAction("Discard conflict failed")
+            return
+        }
     }
 
     @objc private func saveAndReapplyClicked(_ sender: Any?) {
         if let target = selectedSaveAndRerunConflictTarget() {
-            onSaveConflictAndRerunRequest(target.uri, target.sequence)
+            guard onSaveConflictAndRerunRequest(target.uri, target.sequence) else {
+                reportFailedAction("Save and rerun failed")
+                return
+            }
             return
         }
+        let state = currentActionState().saveAndResolve
         guard let target = selectedSaveAndReapplyConflictTarget() else {
-            NSSound.beep()
+            reportUnavailableAction(state)
             return
         }
-        onSaveConflictAndReapply(target.uri, target.workspaceEditJSON)
+        guard onSaveConflictAndReapply(target.uri, target.workspaceEditJSON) else {
+            reportFailedAction("Save and reapply failed")
+            return
+        }
     }
 
     @objc private func discardAndReapplyClicked(_ sender: Any?) {
         if let target = selectedDiscardAndRerunConflictTarget() {
-            onDiscardConflictAndRerunRequest(target.uri, target.sequence)
+            guard onDiscardConflictAndRerunRequest(target.uri, target.sequence) else {
+                reportFailedAction("Discard and rerun failed")
+                return
+            }
             return
         }
+        let state = currentActionState().discardAndResolve
         guard let target = selectedDiscardAndReapplyConflictTarget() else {
-            NSSound.beep()
+            reportUnavailableAction(state)
             return
         }
-        onDiscardConflictAndReapply(target.uri, target.workspaceEditJSON)
+        guard onDiscardConflictAndReapply(target.uri, target.workspaceEditJSON) else {
+            reportFailedAction("Discard and reapply failed")
+            return
+        }
     }
 
     @objc private func rerunRequestClicked(_ sender: Any?) {
+        let state = currentActionState().rerunRequest
         guard let sequence = selectedRerunRequestSequence() else {
-            NSSound.beep()
+            reportUnavailableAction(state)
             return
         }
-        onRerunRequest(sequence)
+        guard onRerunRequest(sequence) else {
+            reportFailedAction("Rerun request failed")
+            return
+        }
     }
 
     @objc private func reapplyClicked(_ sender: Any?) {
+        let state = currentActionState().reapply
         guard let workspaceEditJSON = selectedReapplyWorkspaceEditJSON() else {
-            NSSound.beep()
+            reportUnavailableAction(state)
             return
         }
-        onReapply(workspaceEditJSON)
+        guard onReapply(workspaceEditJSON) else {
+            reportFailedAction("Reapply WorkspaceEdit failed")
+            return
+        }
     }
 
     @objc private func undoLatestClicked(_ sender: Any?) {
-        onUndoLatest()
+        let state = currentActionState().undoLatest
+        guard onUndoLatest() else {
+            reportUnavailableAction(state)
+            return
+        }
+    }
+
+    private func reportUnavailableAction(_ state: AttoWorkspaceEditActionButtonState) {
+        metadataLabel.stringValue = AttoWorkspaceEditConflictActionState.unavailableFeedback(for: state)
+        NSSound.beep()
+    }
+
+    private func reportFailedAction(_ text: String) {
+        metadataLabel.stringValue = text
+        NSSound.beep()
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -700,10 +759,7 @@ enum AttoWorkspaceEditHistoryFormatter {
     }
 
     private static func conflictSummary(for conflicts: [EcuWorkspaceEditTransactionConflict]) -> String {
-        let countText = conflicts.count == 1 ? "1 conflict" : "\(conflicts.count) conflicts"
-        guard let first = conflicts.first(where: { $0.uri.isEmpty == false }) else { return countText }
-        let kind = first.kind.isEmpty ? "conflict" : first.kind.replacingOccurrences(of: "_", with: " ")
-        return "\(countText): \(kind) in \(displayName(for: first.uri))"
+        AttoWorkspaceEditConflictActionState.historyConflictSummary(for: conflicts)
     }
 
     private static func firstSaveOrDiscardConflictURI(

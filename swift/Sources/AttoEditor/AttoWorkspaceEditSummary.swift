@@ -379,19 +379,25 @@ struct AttoWorkspaceEditPreview: Equatable {
     }
 
     func saveableConflictTargetURI(for section: Section?) -> String? {
-        if let section,
-           section.uri.isEmpty == false,
-           conflicts.contains(where: { $0.uri == section.uri && Self.isSaveOrDiscardConflict($0) }) {
-            return section.uri
+        if let section, section.uri.isEmpty == false {
+            if conflicts.contains(where: { $0.uri == section.uri && Self.isSaveOrDiscardConflict($0) }) {
+                return section.uri
+            }
+            if conflicts.contains(where: { $0.uri == section.uri }) {
+                return nil
+            }
         }
         return firstSaveableConflictTargetURI
     }
 
     func discardableConflictTargetURI(for section: Section?) -> String? {
-        if let section,
-           section.uri.isEmpty == false,
-           conflicts.contains(where: { $0.uri == section.uri && Self.isSaveOrDiscardConflict($0) }) {
-            return section.uri
+        if let section, section.uri.isEmpty == false {
+            if conflicts.contains(where: { $0.uri == section.uri && Self.isSaveOrDiscardConflict($0) }) {
+                return section.uri
+            }
+            if conflicts.contains(where: { $0.uri == section.uri }) {
+                return nil
+            }
         }
         return firstDiscardableConflictTargetURI
     }
@@ -467,7 +473,7 @@ struct AttoWorkspaceEditPreview: Equatable {
         }
     }
 
-    fileprivate static func conflictGroupTitle(kind: String, operation: String?) -> String {
+    static func conflictGroupTitle(kind: String, operation: String?) -> String {
         let kindTitle = conflictKindDisplayName(kind)
         guard let operation, operation.isEmpty == false else {
             return kindTitle

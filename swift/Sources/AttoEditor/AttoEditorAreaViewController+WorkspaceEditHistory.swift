@@ -13,54 +13,55 @@ extension AttoEditorAreaViewController {
         if workspaceEditHistoryPanelController == nil {
             workspaceEditHistoryPanelController = AttoWorkspaceEditHistoryPanelController(
                 onUndoLatest: { [weak self] in
-                    guard let self else { return }
-                    _ = self.undoLastCoreWorkspaceEditTransaction()
+                    guard let self else { return false }
+                    let undone = self.undoLastCoreWorkspaceEditTransaction()
                     self.refreshWorkspaceEditHistoryPanelIfVisible()
+                    return undone
                 },
                 onReapply: { [weak self] workspaceEditJSON in
-                    guard let self else { return }
-                    _ = self.reapplyWorkspaceEditHistoryTransaction(workspaceEditJSON)
+                    guard let self else { return false }
+                    return self.reapplyWorkspaceEditHistoryTransaction(workspaceEditJSON)
                 },
                 onRerunRequest: { [weak self] sequence in
-                    guard let self else { return }
-                    _ = self.rerunWorkspaceEditHistoryRequest(sequence)
+                    guard let self else { return false }
+                    return self.rerunWorkspaceEditHistoryRequest(sequence)
                 },
                 onOpenConflict: { [weak self] uri in
-                    guard let self else { return }
-                    _ = self.openWorkspaceEditHistoryConflictTarget(uri)
+                    guard let self else { return false }
+                    return self.openWorkspaceEditHistoryConflictTarget(uri)
                 },
                 onSaveConflict: { [weak self] uri in
-                    guard let self else { return }
-                    _ = self.saveWorkspaceEditHistoryConflictTarget(uri)
+                    guard let self else { return false }
+                    return self.saveWorkspaceEditHistoryConflictTarget(uri)
                 },
                 onDiscardConflict: { [weak self] uri in
-                    guard let self else { return }
-                    _ = self.discardWorkspaceEditHistoryConflictTarget(uri)
+                    guard let self else { return false }
+                    return self.discardWorkspaceEditHistoryConflictTarget(uri)
                 },
                 onSaveConflictAndReapply: { [weak self] uri, workspaceEditJSON in
-                    guard let self else { return }
-                    _ = self.saveWorkspaceEditHistoryConflictTarget(
+                    guard let self else { return false }
+                    return self.saveWorkspaceEditHistoryConflictTarget(
                         uri,
                         reapplyWorkspaceEditJSON: workspaceEditJSON
                     )
                 },
                 onDiscardConflictAndReapply: { [weak self] uri, workspaceEditJSON in
-                    guard let self else { return }
-                    _ = self.discardWorkspaceEditHistoryConflictTarget(
+                    guard let self else { return false }
+                    return self.discardWorkspaceEditHistoryConflictTarget(
                         uri,
                         reapplyWorkspaceEditJSON: workspaceEditJSON
                     )
                 },
                 onSaveConflictAndRerunRequest: { [weak self] uri, sequence in
-                    guard let self else { return }
-                    _ = self.saveWorkspaceEditHistoryConflictTarget(
+                    guard let self else { return false }
+                    return self.saveWorkspaceEditHistoryConflictTarget(
                         uri,
                         rerunRequestSequence: sequence
                     )
                 },
                 onDiscardConflictAndRerunRequest: { [weak self] uri, sequence in
-                    guard let self else { return }
-                    _ = self.discardWorkspaceEditHistoryConflictTarget(
+                    guard let self else { return false }
+                    return self.discardWorkspaceEditHistoryConflictTarget(
                         uri,
                         rerunRequestSequence: sequence
                     )

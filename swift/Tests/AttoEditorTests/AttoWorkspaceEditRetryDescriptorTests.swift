@@ -282,6 +282,184 @@ final class AttoWorkspaceEditRetryDescriptorTests: XCTestCase {
         ))
     }
 
+    func testPreviewPanelExplainsSelectedManualConflictActions() throws {
+        var preview = try mixedManualAndDirtyConflictPreview()
+        preview.sections = [
+            AttoWorkspaceEditPreview.Section(
+                uri: "file:///project/manual.swift",
+                title: "manual.swift",
+                subtitle: "secondary rollback failure",
+                detailText: "manual conflict"
+            ),
+            AttoWorkspaceEditPreview.Section(
+                uri: "file:///project/dirty.swift",
+                title: "dirty.swift",
+                subtitle: "dirty delete",
+                detailText: "dirty conflict"
+            ),
+        ]
+
+        let panelController = AttoWorkspaceEditPreviewPanelController()
+        let panel = panelController.showForTesting(relativeTo: nil, preview: preview)
+        defer { panelController.closeForTesting() }
+
+        let openConflictButton: NSButton = try XCTUnwrap(findView(
+            identifiedBy: AttoAccessibilityID.workspaceEditPreviewOpenConflictButton,
+            in: panel.contentView
+        ))
+        let saveConflictButton: NSButton = try XCTUnwrap(findView(
+            identifiedBy: AttoAccessibilityID.workspaceEditPreviewSaveConflictButton,
+            in: panel.contentView
+        ))
+        let discardConflictButton: NSButton = try XCTUnwrap(findView(
+            identifiedBy: AttoAccessibilityID.workspaceEditPreviewDiscardConflictButton,
+            in: panel.contentView
+        ))
+        let saveAndRetryButton: NSButton = try XCTUnwrap(findView(
+            identifiedBy: AttoAccessibilityID.workspaceEditPreviewSaveAndRetryButton,
+            in: panel.contentView
+        ))
+        let discardAndRetryButton: NSButton = try XCTUnwrap(findView(
+            identifiedBy: AttoAccessibilityID.workspaceEditPreviewDiscardAndRetryButton,
+            in: panel.contentView
+        ))
+        let summaryLabel: NSTextField = try XCTUnwrap(findView(
+            identifiedBy: AttoAccessibilityID.workspaceEditPreviewSummary,
+            in: panel.contentView
+        ))
+
+        XCTAssertTrue(openConflictButton.isEnabled)
+        XCTAssertEqual(openConflictButton.toolTip, "Open conflict target: manual.swift")
+        XCTAssertFalse(saveConflictButton.isEnabled)
+        XCTAssertEqual(saveConflictButton.toolTip, "Selected conflict cannot be resolved by saving an open tab.")
+        XCTAssertFalse(discardConflictButton.isEnabled)
+        XCTAssertEqual(
+            discardConflictButton.toolTip,
+            "Selected conflict cannot be resolved by discarding an open tab."
+        )
+        XCTAssertFalse(saveAndRetryButton.isEnabled)
+        XCTAssertEqual(saveAndRetryButton.toolTip, "Selected conflict cannot be resolved by saving before retry.")
+        XCTAssertFalse(discardAndRetryButton.isEnabled)
+        XCTAssertEqual(
+            discardAndRetryButton.toolTip,
+            "Selected conflict cannot be resolved by discarding before retry."
+        )
+
+        XCTAssertTrue(invokeButtonAction(saveConflictButton))
+        XCTAssertEqual(summaryLabel.stringValue, "Selected conflict cannot be resolved by saving an open tab.")
+    }
+
+    func testHistoryPanelExplainsUnavailableActionsAndFailedCallbacks() throws {
+        let conflictURI = "file:///project/dirty.swift"
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 500),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.makeKeyAndOrderFront(nil)
+        defer { window.close() }
+
+        let controller = AttoWorkspaceEditHistoryPanelController(
+            onUndoLatest: { false },
+            onReapply: { _ in false },
+            onRerunRequest: { _ in false },
+            onOpenConflict: { _ in false },
+            onSaveConflict: { _ in false },
+            onDiscardConflict: { _ in false },
+            onSaveConflictAndReapply: { _, _ in false },
+            onDiscardConflictAndReapply: { _, _ in false },
+            onSaveConflictAndRerunRequest: { _, _ in false },
+            onDiscardConflictAndRerunRequest: { _, _ in false }
+        )
+        let panel = controller.show(
+            relativeTo: window,
+            items: [
+                historyItem(
+                    status: "Rejected",
+                    conflictURI: conflictURI,
+                    workspaceEditJSON: #"{"changes":{}}"#
+                ),
+            ]
+        )
+        XCTAssertTrue(panel)
+        defer { controller.close() }
+
+        let historyPanel = try XCTUnwrap(window.childWindows?.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.workspaceEditHistoryPanel
+        })
+        let root = try XCTUnwrap(historyPanel.contentView)
+        let metadataLabel: NSTextField = try XCTUnwrap(findView(
+            identifiedBy: AttoAccessibilityID.workspaceEditHistoryPanelMetadataLabel,
+            in: root
+        ))
+        let openConflictButton: NSButton = try XCTUnwrap(findView(
+            identifiedBy: AttoAccessibilityID.workspaceEditHistoryPanelOpenConflictButton,
+            in: root
+        ))
+        let saveAndReapplyButton: NSButton = try XCTUnwrap(findView(
+            identifiedBy: AttoAccessibilityID.workspaceEditHistoryPanelSaveAndReapplyButton,
+            in: root
+        ))
+        let discardAndReapplyButton: NSButton = try XCTUnwrap(findView(
+            identifiedBy: AttoAccessibilityID.workspaceEditHistoryPanelDiscardAndReapplyButton,
+            in: root
+        ))
+        let rerunRequestButton: NSButton = try XCTUnwrap(findView(
+            identifiedBy: AttoAccessibilityID.workspaceEditHistoryPanelRerunRequestButton,
+            in: root
+        ))
+        let reapplyButton: NSButton = try XCTUnwrap(findView(
+            identifiedBy: AttoAccessibilityID.workspaceEditHistoryPanelReapplyButton,
+            in: root
+        ))
+
+        XCTAssertTrue(openConflictButton.isEnabled)
+        XCTAssertEqual(openConflictButton.toolTip, "Open conflict target: dirty.swift")
+        XCTAssertEqual(saveAndReapplyButton.title, "Save & Reapply")
+        XCTAssertTrue(saveAndReapplyButton.isEnabled)
+        XCTAssertEqual(saveAndReapplyButton.toolTip, "Save conflict target, then reapply the WorkspaceEdit.")
+        XCTAssertEqual(discardAndReapplyButton.title, "Discard & Reapply")
+        XCTAssertTrue(discardAndReapplyButton.isEnabled)
+        XCTAssertEqual(discardAndReapplyButton.toolTip, "Discard conflict changes, then reapply the WorkspaceEdit.")
+        XCTAssertFalse(rerunRequestButton.isEnabled)
+        XCTAssertEqual(
+            rerunRequestButton.toolTip,
+            "Selected WorkspaceEdit was not recorded with a rerunnable request."
+        )
+        XCTAssertTrue(reapplyButton.isEnabled)
+        XCTAssertTrue(invokeButtonAction(openConflictButton))
+        XCTAssertEqual(metadataLabel.stringValue, "Open conflict failed")
+
+        let descriptor = AttoWorkspaceEditRequestRetryDescriptor
+            .unknown(label: "Rename: persistedName")
+            .invalidated(.requestClosureUnavailable)
+        controller.update(items: [
+            historyItem(
+                status: "Rejected",
+                conflictURI: conflictURI,
+                workspaceEditJSON: #"{"changes":{}}"#,
+                requestRetryDescriptor: descriptor
+            ),
+        ])
+
+        XCTAssertEqual(saveAndReapplyButton.title, "Save & Rerun")
+        XCTAssertFalse(saveAndReapplyButton.isEnabled)
+        XCTAssertEqual(saveAndReapplyButton.toolTip, "Cannot rerun Rename: persistedName: retry closure unavailable")
+        XCTAssertEqual(discardAndReapplyButton.title, "Discard & Rerun")
+        XCTAssertFalse(discardAndReapplyButton.isEnabled)
+        XCTAssertEqual(
+            discardAndReapplyButton.toolTip,
+            "Cannot rerun Rename: persistedName: retry closure unavailable"
+        )
+        XCTAssertFalse(rerunRequestButton.isEnabled)
+        XCTAssertEqual(rerunRequestButton.toolTip, "Cannot rerun Rename: persistedName: retry closure unavailable")
+        XCTAssertTrue(reapplyButton.isEnabled)
+
+        XCTAssertTrue(invokeButtonAction(rerunRequestButton))
+        XCTAssertEqual(metadataLabel.stringValue, "Cannot rerun Rename: persistedName: retry closure unavailable")
+    }
+
     func testPreviewSaveAndRetryDoesNotSaveConflictWhenRequestCannotRerun() throws {
         try assertPreviewRetryDecisionDoesNotResolveConflictWhenRequestCannotRerun { uri in
             .saveAndRetry(uri)
@@ -442,6 +620,81 @@ final class AttoWorkspaceEditRetryDescriptorTests: XCTestCase {
         return AttoWorkspaceEditPreview(result: result)
     }
 
+    private func mixedManualAndDirtyConflictPreview() throws -> AttoWorkspaceEditPreview {
+        let result = try JSONDecoder().decode(EcuWorkspaceEditTransactionResult.self, from: Data("""
+        {
+          "mode": "preview",
+          "apply_mode": "atomic",
+          "applied": false,
+          "applied_uris": [],
+          "applied_edit_count": 0,
+          "applied_resource_operation_count": 0,
+          "conflicts": [
+            {
+              "uri": "file:///project/manual.swift",
+              "kind": "secondary_rollback_failure",
+              "severity": "error",
+              "apply_impact": "blocks_atomic_apply",
+              "resolution": "manual_recovery",
+              "reason": "secondary_filesystem_rollback_failed",
+              "operation": "rollback",
+              "message": "filesystem rollback failed after atomic WorkspaceEdit apply failure"
+            },
+            {
+              "uri": "file:///project/dirty.swift",
+              "kind": "dirty_document",
+              "severity": "error",
+              "apply_impact": "blocks_atomic_apply",
+              "resolution": "save_or_discard",
+              "reason": "resource_operation_dirty_target",
+              "operation": "delete",
+              "message": "delete targets a modified open tab"
+            }
+          ],
+          "skipped_uris": ["file:///project/manual.swift", "file:///project/dirty.swift"],
+          "documents": [
+            {
+              "uri": "file:///project/manual.swift",
+              "edit_count": 0,
+              "is_open": false,
+              "is_dirty": false
+            },
+            {
+              "uri": "file:///project/dirty.swift",
+              "edit_count": 0,
+              "is_open": true,
+              "is_dirty": true
+            }
+          ]
+        }
+        """.utf8))
+        return AttoWorkspaceEditPreview(result: result)
+    }
+
+    private func historyItem(
+        status: String,
+        conflictURI: String,
+        workspaceEditJSON: String?,
+        requestRetryDescriptor: AttoWorkspaceEditRequestRetryDescriptor? = nil
+    ) -> AttoWorkspaceEditHistoryPanelController.Item {
+        AttoWorkspaceEditHistoryPanelController.Item(
+            sequence: 1,
+            operation: "apply",
+            title: "#1 Apply WorkspaceEdit",
+            detail: "1 conflict",
+            status: status,
+            conflictCount: 1,
+            firstConflictURI: conflictURI,
+            firstSaveableConflictURI: conflictURI,
+            firstDiscardableConflictURI: conflictURI,
+            workspaceEditJSON: workspaceEditJSON,
+            requestRetryLabel: requestRetryDescriptor?.label,
+            requestRetryDescriptor: requestRetryDescriptor,
+            requestRetryUnavailableReason: requestRetryDescriptor?.invalidationReasonText,
+            canUndoLatest: false
+        )
+    }
+
     private func findView<T: NSView>(identifiedBy identifier: String, in root: NSView?) -> T? {
         guard let root else { return nil }
         if root.identifier?.rawValue == identifier {
@@ -453,5 +706,22 @@ final class AttoWorkspaceEditRetryDescriptorTests: XCTestCase {
             }
         }
         return nil
+    }
+
+    @discardableResult
+    private func invokeButtonAction(
+        _ button: NSButton,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) -> Bool {
+        guard let action = button.action else {
+            XCTFail("Button has no action", file: file, line: line)
+            return false
+        }
+        let sent = NSApp.sendAction(action, to: button.target, from: button)
+        if sent == false {
+            XCTFail("Button action was not handled", file: file, line: line)
+        }
+        return sent
     }
 }

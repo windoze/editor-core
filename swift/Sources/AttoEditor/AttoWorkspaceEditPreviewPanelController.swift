@@ -160,6 +160,7 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
             saveConflictButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 112),
         ])
 
+        tableView.reloadData()
         return panel
     }
 
@@ -305,21 +306,59 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
 
     private func updateConflictActionButtons() {
         if saveConflictButton.isHidden == false {
-            saveConflictButton.isEnabled = selectedSaveableConflictTargetURI() != nil
+            apply(
+                state: AttoWorkspaceEditConflictActionState.previewSaveConflict(
+                    targetURI: selectedSaveableConflictTargetURI()
+                ),
+                to: saveConflictButton
+            )
         }
         if discardConflictButton.isHidden == false {
-            discardConflictButton.isEnabled = selectedDiscardableConflictTargetURI() != nil
+            apply(
+                state: AttoWorkspaceEditConflictActionState.previewDiscardConflict(
+                    targetURI: selectedDiscardableConflictTargetURI()
+                ),
+                to: discardConflictButton
+            )
         }
         if saveAndRetryButton.isHidden == false {
-            saveAndRetryButton.isEnabled = selectedSaveableConflictTargetURI() != nil
-                && preview?.canResolveConflictAndRetry != false
+            apply(
+                state: AttoWorkspaceEditConflictActionState.previewSaveAndRetry(
+                    targetURI: selectedSaveableConflictTargetURI(),
+                    preview: preview
+                ),
+                to: saveAndRetryButton
+            )
         }
         if discardAndRetryButton.isHidden == false {
-            discardAndRetryButton.isEnabled = selectedDiscardableConflictTargetURI() != nil
-                && preview?.canResolveConflictAndRetry != false
+            apply(
+                state: AttoWorkspaceEditConflictActionState.previewDiscardAndRetry(
+                    targetURI: selectedDiscardableConflictTargetURI(),
+                    preview: preview
+                ),
+                to: discardAndRetryButton
+            )
         }
         guard openConflictButton.isHidden == false else { return }
-        openConflictButton.isEnabled = selectedConflictTargetURI() != nil
+        apply(
+            state: AttoWorkspaceEditConflictActionState.previewOpenConflict(
+                targetURI: selectedConflictTargetURI()
+            ),
+            to: openConflictButton
+        )
+    }
+
+    private func apply(state: AttoWorkspaceEditActionButtonState, to button: NSButton) {
+        if let title = state.title {
+            button.title = title
+        }
+        button.isEnabled = state.isEnabled
+        button.toolTip = state.toolTip
+    }
+
+    private func reportUnavailableAction(_ state: AttoWorkspaceEditActionButtonState) {
+        summaryLabel.stringValue = AttoWorkspaceEditConflictActionState.unavailableFeedback(for: state)
+        NSSound.beep()
     }
 
     private func selectedConflictTargetURI() -> String? {
@@ -391,8 +430,11 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
     }
 
     @objc private func openConflictClicked(_ sender: Any?) {
+        let state = AttoWorkspaceEditConflictActionState.previewOpenConflict(
+            targetURI: selectedConflictTargetURI()
+        )
         guard let uri = selectedConflictTargetURI() else {
-            NSSound.beep()
+            reportUnavailableAction(state)
             return
         }
         decision = .openConflict(uri)
@@ -400,8 +442,11 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
     }
 
     @objc private func saveConflictClicked(_ sender: Any?) {
+        let state = AttoWorkspaceEditConflictActionState.previewSaveConflict(
+            targetURI: selectedSaveableConflictTargetURI()
+        )
         guard let uri = selectedSaveableConflictTargetURI() else {
-            NSSound.beep()
+            reportUnavailableAction(state)
             return
         }
         decision = .saveConflict(uri)
@@ -409,12 +454,16 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
     }
 
     @objc private func saveAndRetryClicked(_ sender: Any?) {
-        guard preview?.canResolveConflictAndRetry != false else {
-            NSSound.beep()
+        let state = AttoWorkspaceEditConflictActionState.previewSaveAndRetry(
+            targetURI: selectedSaveableConflictTargetURI(),
+            preview: preview
+        )
+        guard let uri = selectedSaveableConflictTargetURI() else {
+            reportUnavailableAction(state)
             return
         }
-        guard let uri = selectedSaveableConflictTargetURI() else {
-            NSSound.beep()
+        guard preview?.canResolveConflictAndRetry != false else {
+            reportUnavailableAction(state)
             return
         }
         decision = .saveAndRetry(uri)
@@ -422,8 +471,11 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
     }
 
     @objc private func discardConflictClicked(_ sender: Any?) {
+        let state = AttoWorkspaceEditConflictActionState.previewDiscardConflict(
+            targetURI: selectedDiscardableConflictTargetURI()
+        )
         guard let uri = selectedDiscardableConflictTargetURI() else {
-            NSSound.beep()
+            reportUnavailableAction(state)
             return
         }
         decision = .discardConflict(uri)
@@ -431,12 +483,16 @@ final class AttoWorkspaceEditPreviewPanelController: NSObject, NSTableViewDataSo
     }
 
     @objc private func discardAndRetryClicked(_ sender: Any?) {
-        guard preview?.canResolveConflictAndRetry != false else {
-            NSSound.beep()
+        let state = AttoWorkspaceEditConflictActionState.previewDiscardAndRetry(
+            targetURI: selectedDiscardableConflictTargetURI(),
+            preview: preview
+        )
+        guard let uri = selectedDiscardableConflictTargetURI() else {
+            reportUnavailableAction(state)
             return
         }
-        guard let uri = selectedDiscardableConflictTargetURI() else {
-            NSSound.beep()
+        guard preview?.canResolveConflictAndRetry != false else {
+            reportUnavailableAction(state)
             return
         }
         decision = .discardAndRetry(uri)
