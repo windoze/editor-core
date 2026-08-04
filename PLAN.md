@@ -136,6 +136,10 @@
   - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testCloseAllTabsUsesCoreTabProjectionOrder`
   - 验证：`git diff --check`
 - [ ] 补齐 tab drag/drop、split drag/drop、pane move、tab move 与 core snapshot 的一致性。
+  - [x] 将 split/pane focus/move/close 与 tab drag reorder 的 core snapshot / Swift wrapper / AppKit projection 回归拆到独立 core workspace drag projection 测试。
+  - [x] tab move command 回归已收敛到 core workspace command 测试。
+  - [ ] 设计并实现 drag tab to split / split drag/drop 入口；当前代码只发现 tab bar reorder drag 和命令式 split/pane move。
+  - 验证：`swift test --package-path swift --filter AttoCoreWorkspaceDragProjectionTests`
 - [ ] 将 dirty state、close prompt、save-all、reload、recent session 和 root change 继续收敛到 core-backed 工作流。
 - [ ] 建立迁移期测试：同一操作同时断言 core snapshot、Swift wrapper 和 AppKit projection。
 
