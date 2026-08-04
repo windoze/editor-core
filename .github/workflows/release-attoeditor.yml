@@ -1,0 +1,174 @@
+name: Release AttoEditor
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号（不带 v 前缀，如 0.5.0）。留空则用 Info.plist 里的值。"
+        required: false
+        type: string
+      skip_notarize:
+        description: "只签名，跳过公证（用于快速验证 pipeline）"
+        required: false
+        default: false
+        type: boolean
+
+# 同一个 tag/ref 重复触发时取消旧的运行；公证很慢，不要并行烧额度。
+concurrency:
+  group: release-attoeditor-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write # 创建 GitHub Release 需要
+
+jobs:
+  release:
+    name: Build, sign, notarize, publish
+    runs-on: macos-15
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Toolchain versions
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+          rustc --version
+          cargo --version
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            # refs/tags/v0.5.0 -> 0.5.0
+            version="${GITHUB_REF_NAME#v}"
+            echo "is_tag=true" >> "$GITHUB_OUTPUT"
+          else
+            version="${{ inputs.version }}"
+            echo "is_tag=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          # CFBundleVersion 必须单调递增；用 run_number 保证这一点。
+          echo "build=${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "Resolved version='${version}' build='${GITHUB_RUN_NUMBER}'"
+
+      - name: Cache cargo registry and build
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-release-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-release-cargo-
+
+      - name: Import signing certificate
+        id: keychain
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${APPLE_CERTIFICATE_P12}" ]]; then
+            echo "::error::缺少 secret APPLE_CERTIFICATE_P12"
+            exit 1
+          fi
+
+          # 用一次性 keychain，避免污染 runner 的 login keychain。
+          keychain_path="${RUNNER_TEMP}/attoeditor-signing.keychain-db"
+          keychain_password="$(uuidgen)"
+          cert_path="${RUNNER_TEMP}/certificate.p12"
+
+          echo "${APPLE_CERTIFICATE_P12}" | base64 --decode > "${cert_path}"
+
+          security create-keychain -p "${keychain_password}" "${keychain_path}"
+          security set-keychain-settings -lut 21600 "${keychain_path}"
+          security unlock-keychain -p "${keychain_password}" "${keychain_path}"
+
+          security import "${cert_path}" \
+            -k "${keychain_path}" \
+            -P "${APPLE_CERTIFICATE_PASSWORD}" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+
+          # 允许 codesign 非交互访问私钥，否则会弹 UI 并挂住。
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "${keychain_password}" \
+            "${keychain_path}" > /dev/null
+
+          # 把临时 keychain 加进搜索列表，让 codesign 能找到 identity。
+          security list-keychains -d user -s "${keychain_path}" $(security list-keychains -d user | tr -d '"')
+
+          rm -f "${cert_path}"
+
+          echo "keychain_path=${keychain_path}" >> "$GITHUB_OUTPUT"
+          echo "可用的签名 identity："
+          security find-identity -v -p codesigning "${keychain_path}"
+
+      - name: Build, sign, notarize, package DMG
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          # Team ID 由脚本从 APPLE_SIGNING_IDENTITY 的 "(TEAMID)" 推导，无需单独配。
+          # 公证走 Apple ID + app-specific password，不需要 App Store Connect API key。
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          KEYCHAIN_PATH: ${{ steps.keychain.outputs.keychain_path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(--build "${{ steps.version.outputs.build }}" --out "${GITHUB_WORKSPACE}/dist")
+          if [[ -n "${{ steps.version.outputs.version }}" ]]; then
+            args+=(--version "${{ steps.version.outputs.version }}")
+          fi
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.skip_notarize }}" == "true" ]]; then
+            args+=(--skip-notarize)
+          fi
+          swift/scripts/package-attoeditor-release.sh "${args[@]}"
+
+      - name: Compute checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${GITHUB_WORKSPACE}/dist"
+          shasum -a 256 *.dmg | tee SHA256SUMS.txt
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: AttoEditor-dmg
+          path: |
+            dist/*.dmg
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: ${{ steps.version.outputs.is_tag == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 先建 draft，确认产物无误后再手动 publish。
+          gh release create "${GITHUB_REF_NAME}" \
+            --draft \
+            --generate-notes \
+            --title "AttoEditor ${GITHUB_REF_NAME}" \
+            dist/*.dmg dist/SHA256SUMS.txt
+
+      - name: Clean up keychain
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          keychain_path="${{ steps.keychain.outputs.keychain_path }}"
+          if [[ -n "${keychain_path}" && -f "${keychain_path}" ]]; then
+            security delete-keychain "${keychain_path}" || true
+          fi

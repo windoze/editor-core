@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Hardened runtime 是公证的硬性要求，下面的例外是 AttoEditor 真实需要的能力。
+
+         注意：这里没有开 App Sandbox。AttoEditor 需要打开任意路径的文件、
+         并启动用户机器上的 LSP server，沙盒化需要另一套 (user-selected files
+         + 无法 spawn 任意可执行文件) 设计，不在当前范围内。 -->
+
+    <!-- tree-sitter 的 wasm grammar 走 wasmtime，会 JIT 生成可执行内存页。
+         没有这一项，加载 .wasm grammar 时会直接被 hardened runtime 杀掉。 -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+</dict>
+</plist>
