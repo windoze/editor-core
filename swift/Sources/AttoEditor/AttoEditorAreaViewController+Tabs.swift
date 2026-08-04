@@ -1251,6 +1251,13 @@ extension AttoEditorAreaViewController {
         guard (try? tab.editCore.editor.lspIsEnabled()) == true else { return }
         let projectedURL = projectedFileURL(for: tab)
         let config = tab.lspServerConfig
+        let stopPlanEntry = config.flatMap { config in
+            projectLspStopPlanDecision(
+                for: tab,
+                documentURL: projectedURL,
+                config: config
+            ).planEntry
+        }
         let stopAttemptId: UInt64? = {
             guard let config else { return nil }
             return recordProjectLspStopOutcome(
@@ -1258,7 +1265,8 @@ extension AttoEditorAreaViewController {
                 documentURL: projectedURL,
                 config: config,
                 trigger: "tab_close",
-                status: "requested"
+                status: "requested",
+                planEntry: stopPlanEntry
             )
         }()
         tab.editCore.editor.lspDisable()
@@ -1269,7 +1277,8 @@ extension AttoEditorAreaViewController {
                 config: config,
                 trigger: "tab_close",
                 status: "stopped",
-                attemptId: stopAttemptId
+                attemptId: stopAttemptId,
+                planEntry: stopPlanEntry
             )
         }
     }

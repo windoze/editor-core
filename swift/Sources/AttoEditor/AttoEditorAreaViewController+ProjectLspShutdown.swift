@@ -9,6 +9,10 @@ extension AttoEditorAreaViewController {
         config: AttoLspServerLaunchConfig,
         coreTabID: UInt64?
     )
+    private typealias ProjectLspShutdownTarget = (
+        candidate: ProjectLspShutdownCandidate,
+        planEntry: EcuProjectLspStopPlanEntry?
+    )
 
     @discardableResult
     func shutdownProjectLspServers() -> Bool {
@@ -48,51 +52,56 @@ extension AttoEditorAreaViewController {
         var failures: [String] = []
 
         for target in shutdownTargets {
+            let candidate = target.candidate
             let shutdownAttemptId = recordProjectLspStopOutcome(
-                for: target.tab,
-                documentURL: target.fileURL,
-                config: target.config,
+                for: candidate.tab,
+                documentURL: candidate.fileURL,
+                config: candidate.config,
                 trigger: "project_shutdown",
-                status: "requested"
+                status: "requested",
+                planEntry: target.planEntry
             )
             do {
-                let didShutdown = try target.tab.editCore.editor.lspShutdown()
+                let didShutdown = try candidate.tab.editCore.editor.lspShutdown()
                 guard didShutdown else {
                     recordProjectLspStopOutcome(
-                        for: target.tab,
-                        documentURL: target.fileURL,
-                        config: target.config,
+                        for: candidate.tab,
+                        documentURL: candidate.fileURL,
+                        config: candidate.config,
                         trigger: "project_shutdown",
                         status: "failed",
                         errorMessage: "No running LSP server was available to shut down.",
-                        attemptId: shutdownAttemptId
+                        attemptId: shutdownAttemptId,
+                        planEntry: target.planEntry
                     )
-                    failures.append("\(target.fileURL.lastPathComponent): no running LSP server")
+                    failures.append("\(candidate.fileURL.lastPathComponent): no running LSP server")
                     continue
                 }
 
                 recordProjectLspStopOutcome(
-                    for: target.tab,
-                    documentURL: target.fileURL,
-                    config: target.config,
+                    for: candidate.tab,
+                    documentURL: candidate.fileURL,
+                    config: candidate.config,
                     trigger: "project_shutdown",
                     status: "stopped",
-                    attemptId: shutdownAttemptId
+                    attemptId: shutdownAttemptId,
+                    planEntry: target.planEntry
                 )
-                markLspServerShutdown(for: target.tab)
-                target.tab.editCore.editorView.needsDisplay = true
+                markLspServerShutdown(for: candidate.tab)
+                candidate.tab.editCore.editorView.needsDisplay = true
                 shutdownCount += 1
             } catch {
                 recordProjectLspStopOutcome(
-                    for: target.tab,
-                    documentURL: target.fileURL,
-                    config: target.config,
+                    for: candidate.tab,
+                    documentURL: candidate.fileURL,
+                    config: candidate.config,
                     trigger: "project_shutdown",
                     status: "failed",
                     errorMessage: String(describing: error),
-                    attemptId: shutdownAttemptId
+                    attemptId: shutdownAttemptId,
+                    planEntry: target.planEntry
                 )
-                failures.append("\(target.fileURL.lastPathComponent): \(error)")
+                failures.append("\(candidate.fileURL.lastPathComponent): \(error)")
             }
         }
 
@@ -134,9 +143,10 @@ extension AttoEditorAreaViewController {
 
     private func projectLspShutdownTargets(
         for candidates: [ProjectLspShutdownCandidate]
-    ) -> [ProjectLspShutdownCandidate] {
+    ) -> [ProjectLspShutdownTarget] {
         guard candidates.isEmpty == false else { return [] }
-        guard let coreDocuments else { return candidates }
+        let fallbackTargets = candidates.map { (candidate: $0, planEntry: nil as EcuProjectLspStopPlanEntry?) }
+        guard let coreDocuments else { return fallbackTargets }
 
         syncProjectLspServerConfigsToCore()
         do {
@@ -153,11 +163,11 @@ extension AttoEditorAreaViewController {
                 else {
                     return nil
                 }
-                return candidate
+                return (candidate: candidate, planEntry: entry)
             }
         } catch {
             NSLog("AttoEditor: failed to build project LSP stop plan: %@", String(describing: error))
-            return candidates
+            return fallbackTargets
         }
     }
 

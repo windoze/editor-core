@@ -512,7 +512,7 @@ extension AttoEditorAreaViewController {
             .lowercased()
     }
 
-    private static func projectLspServerConfigArgs(from args: String?) -> [String] {
+    static func projectLspServerConfigArgs(from args: String?) -> [String] {
         guard let args else { return [] }
         return args.split { $0.isWhitespace }.map(String.init)
     }
@@ -718,74 +718,38 @@ extension AttoEditorAreaViewController {
         errorMessage: String? = nil,
         attemptId: UInt64? = nil
     ) -> UInt64? {
-        guard let coreDocuments,
-              let coreTabID = target.candidate.coreTabID
-        else {
-            return nil
-        }
-
-        let planEntry = target.planEntry
-        let outcome = EcuProjectLspStartOutcome(
-            tabId: coreTabID,
-            activeViewIndex: planEntry?.activeViewIndex ?? 0,
-            documentURI: planEntry?.documentURI ?? target.candidate.fileURL.standardizedFileURL.absoluteString,
-            languageId: planEntry?.languageId ?? target.candidate.config.languageId,
-            serverKey: planEntry?.serverKey ?? Self.projectLspServerConfigKey(for: target.candidate.config),
-            command: planEntry?.command ?? target.candidate.config.command,
-            args: planEntry?.args ?? Self.projectLspServerConfigArgs(from: target.candidate.config.args),
-            workspaceRoots: planEntry?.workspaceRoots ?? [],
+        let action = AttoProjectLspLifecycleAction.start(
+            tab: target.candidate.tab,
+            documentURL: target.candidate.fileURL,
+            config: target.candidate.config,
             trigger: "auto_start",
-            status: status,
-            attemptId: attemptId,
-            errorMessage: errorMessage
+            planEntry: target.planEntry,
+            fallbackWorkspaceRoots: projectLspWorkspaceRootURIs()
         )
-
-        do {
-            try coreDocuments.recordProjectLspStartOutcome(outcome)
-            if let attemptId {
-                return attemptId
-            }
-            if Self.isProjectLspRequestedStatus(status) {
-                return try? coreDocuments.projectLspLifecycleEventsLatestSequence()
-            }
-        } catch {
-            NSLog("AttoEditor: failed to record project LSP start outcome: %@", String(describing: error))
-        }
-        return nil
+        return recordProjectLspLifecycleAction(
+            action,
+            status: status,
+            errorMessage: errorMessage,
+            attemptId: attemptId
+        )
     }
 
     @discardableResult
-    private func recordProjectLspLifecycleOutcome(
-        for tab: AttoEditorTab,
-        documentURL: URL,
-        config: AttoLspServerLaunchConfig,
-        operation: String,
-        trigger: String,
+    private func recordProjectLspLifecycleAction(
+        _ action: AttoProjectLspLifecycleAction,
         status: String,
         errorMessage: String? = nil,
         attemptId: UInt64? = nil
     ) -> UInt64? {
         guard let coreDocuments,
-              let coreTabID = tab.coreTabID
+              let outcome = action.outcome(
+                  status: status,
+                  attemptId: attemptId,
+                  errorMessage: errorMessage
+              )
         else {
             return nil
         }
-
-        let outcome = EcuProjectLspStartOutcome(
-            tabId: coreTabID,
-            activeViewIndex: UInt32(clamping: tab.activePaneIndex),
-            operation: operation,
-            documentURI: documentURL.standardizedFileURL.absoluteString,
-            languageId: config.languageId,
-            serverKey: Self.projectLspServerConfigKey(for: config),
-            command: config.command,
-            args: Self.projectLspServerConfigArgs(from: config.args),
-            workspaceRoots: projectLspWorkspaceRootURIs(),
-            trigger: trigger,
-            status: status,
-            attemptId: attemptId,
-            errorMessage: errorMessage
-        )
 
         do {
             try coreDocuments.recordProjectLspStartOutcome(outcome)
@@ -798,7 +762,7 @@ extension AttoEditorAreaViewController {
         } catch {
             NSLog(
                 "AttoEditor: failed to record project LSP %@ outcome: %@",
-                operation,
+                action.operation,
                 String(describing: error)
             )
         }
@@ -817,14 +781,19 @@ extension AttoEditorAreaViewController {
         trigger: String,
         status: String,
         errorMessage: String? = nil,
-        attemptId: UInt64? = nil
+        attemptId: UInt64? = nil,
+        planEntry: EcuProjectLspRestartPlanEntry? = nil
     ) -> UInt64? {
-        recordProjectLspLifecycleOutcome(
-            for: tab,
+        let action = AttoProjectLspLifecycleAction.restart(
+            tab: tab,
             documentURL: documentURL,
             config: config,
-            operation: "restart",
             trigger: trigger,
+            planEntry: planEntry,
+            fallbackWorkspaceRoots: projectLspWorkspaceRootURIs()
+        )
+        return recordProjectLspLifecycleAction(
+            action,
             status: status,
             errorMessage: errorMessage,
             attemptId: attemptId
@@ -839,14 +808,19 @@ extension AttoEditorAreaViewController {
         trigger: String,
         status: String,
         errorMessage: String? = nil,
-        attemptId: UInt64? = nil
+        attemptId: UInt64? = nil,
+        planEntry: EcuProjectLspStopPlanEntry? = nil
     ) -> UInt64? {
-        recordProjectLspLifecycleOutcome(
-            for: tab,
+        let action = AttoProjectLspLifecycleAction.stop(
+            tab: tab,
             documentURL: documentURL,
             config: config,
-            operation: "stop",
             trigger: trigger,
+            planEntry: planEntry,
+            fallbackWorkspaceRoots: projectLspWorkspaceRootURIs()
+        )
+        return recordProjectLspLifecycleAction(
+            action,
             status: status,
             errorMessage: errorMessage,
             attemptId: attemptId
@@ -875,6 +849,7 @@ extension AttoEditorAreaViewController {
         }
 
         let shutdownAttemptId: UInt64?
+        let stopPlanEntry: EcuProjectLspStopPlanEntry?
         if let config {
             let planDecision = projectLspStopPlanDecision(
                 for: tab,
@@ -900,14 +875,17 @@ extension AttoEditorAreaViewController {
                 )
                 return false
             }
+            stopPlanEntry = planDecision.planEntry
             shutdownAttemptId = recordProjectLspStopOutcome(
                 for: tab,
                 documentURL: documentURL,
                 config: config,
                 trigger: "manual_shutdown",
-                status: "requested"
+                status: "requested",
+                planEntry: stopPlanEntry
             )
         } else {
+            stopPlanEntry = nil
             shutdownAttemptId = nil
         }
 
@@ -922,7 +900,8 @@ extension AttoEditorAreaViewController {
                         trigger: "manual_shutdown",
                         status: "failed",
                         errorMessage: "No running LSP server was available to shut down.",
-                        attemptId: shutdownAttemptId
+                        attemptId: shutdownAttemptId,
+                        planEntry: stopPlanEntry
                     )
                 }
                 NSSound.beep()
@@ -943,7 +922,8 @@ extension AttoEditorAreaViewController {
                     config: config,
                     trigger: "manual_shutdown",
                     status: "stopped",
-                    attemptId: shutdownAttemptId
+                    attemptId: shutdownAttemptId,
+                    planEntry: stopPlanEntry
                 )
             }
             markLspServerShutdown(for: tab)
@@ -962,7 +942,8 @@ extension AttoEditorAreaViewController {
                     trigger: "manual_shutdown",
                     status: "failed",
                     errorMessage: String(describing: error),
-                    attemptId: shutdownAttemptId
+                    attemptId: shutdownAttemptId,
+                    planEntry: stopPlanEntry
                 )
             }
             updateAlwaysPollProcessingForSelectedTab()
@@ -1028,7 +1009,8 @@ extension AttoEditorAreaViewController {
             documentURL: documentURL,
             config: config,
             trigger: "manual_restart",
-            status: "requested"
+            status: "requested",
+            planEntry: planDecision.planEntry
         )
 
         do {
@@ -1044,7 +1026,8 @@ extension AttoEditorAreaViewController {
                 config: config,
                 trigger: "manual_restart",
                 status: "started",
-                attemptId: restartAttemptId
+                attemptId: restartAttemptId,
+                planEntry: planDecision.planEntry
             )
             updateAlwaysPollProcessingForSelectedTab()
             updateStatusBar()
@@ -1060,7 +1043,8 @@ extension AttoEditorAreaViewController {
                 trigger: "manual_restart",
                 status: "failed",
                 errorMessage: String(describing: error),
-                attemptId: restartAttemptId
+                attemptId: restartAttemptId,
+                planEntry: planDecision.planEntry
             )
             updateAlwaysPollProcessingForSelectedTab()
             updateStatusBar()
@@ -1141,7 +1125,8 @@ extension AttoEditorAreaViewController {
             documentURL: target.fileURL,
             config: config,
             trigger: "auto_restart",
-            status: "requested"
+            status: "requested",
+            planEntry: planDecision.planEntry
         )
         do {
             try restartLspServer(
@@ -1156,7 +1141,8 @@ extension AttoEditorAreaViewController {
                 config: config,
                 trigger: "auto_restart",
                 status: "started",
-                attemptId: restartAttemptId
+                attemptId: restartAttemptId,
+                planEntry: planDecision.planEntry
             )
             updateAlwaysPollProcessingForSelectedTab()
             updateStatusBar()
@@ -1172,7 +1158,8 @@ extension AttoEditorAreaViewController {
                 trigger: "auto_restart",
                 status: "failed",
                 errorMessage: String(describing: error),
-                attemptId: restartAttemptId
+                attemptId: restartAttemptId,
+                planEntry: planDecision.planEntry
             )
             updateAlwaysPollProcessingForSelectedTab()
             updateStatusBar()

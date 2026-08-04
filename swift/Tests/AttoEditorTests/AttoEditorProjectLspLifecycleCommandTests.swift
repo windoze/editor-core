@@ -100,6 +100,7 @@ extension AttoEditorCommandTests {
         try FileManager.default.createDirectory(at: alternateRoot, withIntermediateDirectories: true)
         vc.setWorkspaceRootURL(alternateRoot)
         defer { tab.editCore.editor.lspDisable() }
+        let alternateRootURI = alternateRoot.standardizedFileURL.absoluteString
 
         let captured = waitForCapturedLspInput(
             at: captureURL,
@@ -109,7 +110,7 @@ extension AttoEditorCommandTests {
         XCTAssertEqual(tab.lspServerConfig?.command, scriptURL.path)
         XCTAssertEqual(tab.lspServerConfig?.languageId, "rust")
         XCTAssertTrue(captured.contains(fileURL.standardizedFileURL.absoluteString), captured)
-        XCTAssertTrue(captured.contains(alternateRoot.standardizedFileURL.absoluteString), captured)
+        XCTAssertTrue(captured.contains(alternateRootURI), captured)
         let lifecycle = try XCTUnwrap(try vc._coreProjectLspLifecycleEventsForTesting())
         let coreTabID = try XCTUnwrap(tab.coreTabID)
         XCTAssertEqual(lifecycle.latestSequence, 2)
@@ -117,6 +118,7 @@ extension AttoEditorCommandTests {
         XCTAssertEqual(lifecycle.events.map(\.operation), ["start", "start"])
         XCTAssertEqual(lifecycle.events.map(\.trigger), ["auto_start", "auto_start"])
         XCTAssertEqual(lifecycle.events.map(\.status), ["requested", "started"])
+        XCTAssertEqual(lifecycle.events.map(\.workspaceRoots), [[alternateRootURI], [alternateRootURI]])
         XCTAssertEqual(lifecycle.events.map(\.tabId), [coreTabID, coreTabID])
         let attemptId = try XCTUnwrap(lifecycle.events[0].attemptId)
         XCTAssertEqual(attemptId, lifecycle.events[0].sequence)
@@ -327,12 +329,16 @@ extension AttoEditorCommandTests {
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
         let fileURL = tempDir.appendingPathComponent("close_project_lsp.txt")
+        let plannedRoot = tempDir.appendingPathComponent("close-project-lsp-planned-root", isDirectory: true)
+        try FileManager.default.createDirectory(at: plannedRoot, withIntermediateDirectories: true)
         try "close".write(to: fileURL, atomically: true, encoding: .utf8)
         let captureURL = tempDir.appendingPathComponent("close-project-lsp-stdin.txt")
         let scriptURL = tempDir.appendingPathComponent("close-project-fake-lsp.sh")
         try writeAppendingFakeLspServerScript(captureURL: captureURL, scriptURL: scriptURL)
 
         let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let plannedRootURI = plannedRoot.standardizedFileURL.absoluteString
+        try vc.coreDocuments?.setWorkspaceRoots([plannedRootURI])
         _ = attachToWindow(vc)
         vc.openFile(url: fileURL, mode: .pinned)
         let tab = try XCTUnwrap(vc.activeTab)
@@ -366,6 +372,7 @@ extension AttoEditorCommandTests {
         XCTAssertEqual(lifecycle.events.map(\.operation), ["stop", "stop"])
         XCTAssertEqual(lifecycle.events.map(\.trigger), ["tab_close", "tab_close"])
         XCTAssertEqual(lifecycle.events.map(\.status), ["requested", "stopped"])
+        XCTAssertEqual(lifecycle.events.map(\.workspaceRoots), [[plannedRootURI], [plannedRootURI]])
         XCTAssertEqual(lifecycle.events.map(\.tabId), [coreTabID, coreTabID])
         let attemptId = try XCTUnwrap(lifecycle.events[0].attemptId)
         XCTAssertEqual(attemptId, lifecycle.events[0].sequence)
@@ -384,12 +391,16 @@ extension AttoEditorCommandTests {
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
         let fileURL = tempDir.appendingPathComponent("plain_stop.txt")
+        let plannedRoot = tempDir.appendingPathComponent("plain-stop-planned-root", isDirectory: true)
+        try FileManager.default.createDirectory(at: plannedRoot, withIntermediateDirectories: true)
         try "plain".write(to: fileURL, atomically: true, encoding: .utf8)
         let captureURL = tempDir.appendingPathComponent("plain-stop-lsp-stdin.txt")
         let scriptURL = tempDir.appendingPathComponent("plain-stop-fake-lsp.sh")
         try writeAppendingFakeLspServerScript(captureURL: captureURL, scriptURL: scriptURL)
 
         let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let plannedRootURI = plannedRoot.standardizedFileURL.absoluteString
+        try vc.coreDocuments?.setWorkspaceRoots([plannedRootURI])
         _ = attachToWindow(vc)
         vc.openFile(url: fileURL, mode: .pinned)
         let tab = try XCTUnwrap(vc.activeTab)
@@ -426,6 +437,7 @@ extension AttoEditorCommandTests {
         XCTAssertEqual(lifecycle.events.map(\.operation), ["stop", "stop"])
         XCTAssertEqual(lifecycle.events.map(\.trigger), ["language_change", "language_change"])
         XCTAssertEqual(lifecycle.events.map(\.status), ["requested", "stopped"])
+        XCTAssertEqual(lifecycle.events.map(\.workspaceRoots), [[plannedRootURI], [plannedRootURI]])
         XCTAssertEqual(lifecycle.events.map(\.tabId), [coreTabID, coreTabID])
         let attemptId = try XCTUnwrap(lifecycle.events[0].attemptId)
         XCTAssertEqual(attemptId, lifecycle.events[0].sequence)
@@ -609,6 +621,8 @@ extension AttoEditorCommandTests {
 
         let firstURL = tempDir.appendingPathComponent("shutdown_project_first.txt")
         let secondURL = tempDir.appendingPathComponent("shutdown_project_second.txt")
+        let plannedRoot = tempDir.appendingPathComponent("shutdown-project-planned-root", isDirectory: true)
+        try FileManager.default.createDirectory(at: plannedRoot, withIntermediateDirectories: true)
         try "first".write(to: firstURL, atomically: true, encoding: .utf8)
         try "second".write(to: secondURL, atomically: true, encoding: .utf8)
 
@@ -620,6 +634,8 @@ extension AttoEditorCommandTests {
         try writeInlayHintResolveFakeLspServerScript(captureURL: secondCaptureURL, scriptURL: secondScriptURL)
 
         let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let plannedRootURI = plannedRoot.standardizedFileURL.absoluteString
+        try vc.coreDocuments?.setWorkspaceRoots([plannedRootURI])
         _ = attachToWindow(vc)
         vc.openFile(url: firstURL, mode: .pinned)
         let firstTab = try XCTUnwrap(vc.activeTab)
@@ -703,6 +719,10 @@ extension AttoEditorCommandTests {
         let lifecycle = try XCTUnwrap(try vc._coreProjectLspLifecycleEventsForTesting())
         XCTAssertEqual(lifecycle.latestSequence, 4)
         XCTAssertEqual(lifecycle.events.map(\.operation), ["stop", "stop", "stop", "stop"])
+        XCTAssertEqual(
+            lifecycle.events.map(\.workspaceRoots),
+            Array(repeating: [plannedRootURI], count: 4)
+        )
         XCTAssertEqual(
             lifecycle.events.map(\.trigger),
             ["project_shutdown", "project_shutdown", "project_shutdown", "project_shutdown"]
@@ -874,6 +894,8 @@ extension AttoEditorCommandTests {
         XCTAssertTrue(captured.contains(plannedRootURI), captured)
         XCTAssertEqual(tab.lspServerConfig, config)
         XCTAssertEqual(vc._transientStatusTextForTesting(), "LSP server restarted")
+        let lifecycle = try XCTUnwrap(try vc._coreProjectLspLifecycleEventsForTesting())
+        XCTAssertEqual(lifecycle.events.map(\.workspaceRoots), [[plannedRootURI], [plannedRootURI]])
     }
 
     func testRestartLspServerInActiveTabRecordsSkippedWhenCorePlanDoesNotMatch() throws {
@@ -1082,6 +1104,7 @@ extension AttoEditorCommandTests {
         let lifecycle = try XCTUnwrap(try vc._coreProjectLspLifecycleEventsForTesting())
         XCTAssertEqual(lifecycle.events.map(\.trigger), ["auto_restart", "auto_restart"])
         XCTAssertEqual(lifecycle.events.map(\.status), ["requested", "started"])
+        XCTAssertEqual(lifecycle.events.map(\.workspaceRoots), [[plannedRootURI], [plannedRootURI]])
         let attemptId = try XCTUnwrap(lifecycle.events[0].attemptId)
         XCTAssertEqual(attemptId, lifecycle.events[0].sequence)
         XCTAssertEqual(lifecycle.events[1].attemptId, attemptId)
@@ -1436,6 +1459,8 @@ extension AttoEditorCommandTests {
 
         let firstURL = tempDir.appendingPathComponent("first.txt")
         let secondURL = tempDir.appendingPathComponent("second.txt")
+        let plannedRoot = tempDir.appendingPathComponent("project-restart-planned-root", isDirectory: true)
+        try FileManager.default.createDirectory(at: plannedRoot, withIntermediateDirectories: true)
         try "first".write(to: firstURL, atomically: true, encoding: .utf8)
         try "second".write(to: secondURL, atomically: true, encoding: .utf8)
 
@@ -1447,6 +1472,8 @@ extension AttoEditorCommandTests {
         try writeAppendingFakeLspServerScript(captureURL: secondCaptureURL, scriptURL: secondScriptURL)
 
         let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let plannedRootURI = plannedRoot.standardizedFileURL.absoluteString
+        try vc.coreDocuments?.setWorkspaceRoots([plannedRootURI])
         _ = attachToWindow(vc)
         vc.openFile(url: firstURL, mode: .pinned)
         let firstTab = try XCTUnwrap(vc.activeTab)
@@ -1515,12 +1542,18 @@ extension AttoEditorCommandTests {
         )
         XCTAssertTrue(firstCaptured.contains(firstURL.standardizedFileURL.absoluteString), firstCaptured)
         XCTAssertTrue(secondCaptured.contains(secondURL.standardizedFileURL.absoluteString), secondCaptured)
+        XCTAssertTrue(firstCaptured.contains(plannedRootURI), firstCaptured)
+        XCTAssertTrue(secondCaptured.contains(plannedRootURI), secondCaptured)
         XCTAssertEqual(firstTab.lspServerConfig, firstConfig)
         XCTAssertEqual(secondTab.lspServerConfig, secondConfig)
         XCTAssertEqual(vc._transientStatusTextForTesting(), "LSP servers restarted: 2")
         let lifecycle = try XCTUnwrap(try vc._coreProjectLspLifecycleEventsForTesting())
         XCTAssertEqual(lifecycle.latestSequence, 4)
         XCTAssertEqual(lifecycle.events.map(\.operation), ["restart", "restart", "restart", "restart"])
+        XCTAssertEqual(
+            lifecycle.events.map(\.workspaceRoots),
+            Array(repeating: [plannedRootURI], count: 4)
+        )
         XCTAssertEqual(
             lifecycle.events.map(\.trigger),
             ["project_restart", "project_restart", "project_restart", "project_restart"]

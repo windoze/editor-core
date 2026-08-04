@@ -50,7 +50,8 @@ extension AttoEditorAreaViewController {
                 documentURL: target.candidate.fileURL,
                 config: target.candidate.config,
                 trigger: "project_restart",
-                status: "requested"
+                status: "requested",
+                planEntry: target.planEntry
             )
             do {
                 try restartLspServer(
@@ -65,7 +66,8 @@ extension AttoEditorAreaViewController {
                     config: target.candidate.config,
                     trigger: "project_restart",
                     status: "started",
-                    attemptId: restartAttemptId
+                    attemptId: restartAttemptId,
+                    planEntry: target.planEntry
                 )
                 restartedCount += 1
             } catch {
@@ -77,7 +79,8 @@ extension AttoEditorAreaViewController {
                     trigger: "project_restart",
                     status: "failed",
                     errorMessage: String(describing: error),
-                    attemptId: restartAttemptId
+                    attemptId: restartAttemptId,
+                    planEntry: target.planEntry
                 )
                 failures.append("\(target.candidate.fileURL.lastPathComponent): \(error)")
             }
