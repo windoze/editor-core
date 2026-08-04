@@ -182,6 +182,11 @@ public enum EditorCoreUIFFIRuntimeCompatibility {
             reason: "Swift hosts can read workspace file list, project index, and replacement results through structured result envelopes."
         ),
         EditorCoreUIFFIRuntimeFeature(
+            feature: .multiDocumentWorkspaceFileScanOptions,
+            name: "multi-document workspace file scan options",
+            reason: "Swift hosts can request core-owned workspace scan pagination, ignore-file handling, binary/large-file filtering, and cancellation budgets."
+        ),
+        EditorCoreUIFFIRuntimeFeature(
             feature: .multiDocumentWorkspaceFileReplacement,
             name: "multi-document workspace file replacement",
             reason: "Swift hosts can generate WorkspaceEdit payloads for replacing local project file search matches."

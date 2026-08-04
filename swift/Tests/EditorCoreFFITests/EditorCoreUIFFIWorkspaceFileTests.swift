@@ -49,6 +49,65 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(envelopeResults.count, 1)
     }
 
+    func testMultiDocumentWorkspaceFileScanOptionsExposeSummary() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let multi = try MultiDocumentEditorUI(library: lib)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("editor-core-ui-swift-workspace-scan-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("src", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try "ignored.txt\n".write(to: root.appendingPathComponent(".gitignore"), atomically: true, encoding: .utf8)
+        try "needle ignored\n".write(to: root.appendingPathComponent("ignored.txt"), atomically: true, encoding: .utf8)
+        try "needle a1\nneedle a2\n".write(to: root.appendingPathComponent("src/a.txt"), atomically: true, encoding: .utf8)
+        try "needle b\n".write(to: root.appendingPathComponent("src/b.txt"), atomically: true, encoding: .utf8)
+        try Data([0x6E, 0x65, 0x65, 0x64, 0x6C, 0x65, 0x00]).write(to: root.appendingPathComponent("binary.bin"))
+        try "needle \(String(repeating: "x", count: 256))\n".write(
+            to: root.appendingPathComponent("large.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        try multi.setWorkspaceRoots([root.standardizedFileURL.absoluteString])
+
+        let scanOptions = EcuWorkspaceFileScanOptions(
+            includeGlobs: ["*.txt", "*.bin"],
+            maxResults: 1,
+            offset: 1,
+            maxFileSizeBytes: 128
+        )
+        let searchResponse = try multi
+            .searchWorkspaceFilesEnvelope(
+                query: "needle",
+                options: EcuSearchOptions(caseSensitive: false),
+                scanOptions: scanOptions
+            )
+            .workspaceFileSearchResponse()
+
+        XCTAssertEqual(searchResponse.results.map(\.relativePath), ["src/a.txt"])
+        XCTAssertEqual(searchResponse.results.map(\.line1), [2])
+        XCTAssertEqual(searchResponse.scan.offset, 1)
+        XCTAssertEqual(searchResponse.scan.returnedResults, 1)
+        XCTAssertEqual(searchResponse.scan.matchedResults, 3)
+        XCTAssertEqual(searchResponse.scan.nextOffset, 2)
+        XCTAssertTrue(searchResponse.scan.truncated)
+        XCTAssertEqual(searchResponse.scan.skippedBinaryFiles, 1)
+        XCTAssertEqual(searchResponse.scan.skippedLargeFiles, 1)
+        XCTAssertTrue(searchResponse.scan.ignoreFilesEnabled)
+
+        let cancelledList = try multi
+            .listWorkspaceFilesEnvelope(
+                scanOptions: EcuWorkspaceFileScanOptions(maxResults: 10, cancelAfterFiles: 1)
+            )
+            .workspaceFileListResponse()
+        XCTAssertEqual(cancelledList.files.count, 1)
+        XCTAssertEqual(cancelledList.scan.visitedFiles, 1)
+        XCTAssertTrue(cancelledList.scan.cancelled)
+    }
+
     func testMultiDocumentWorkspaceFileListUsesWorkspaceRootsAndGlobs() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         let multi = try MultiDocumentEditorUI(library: lib)

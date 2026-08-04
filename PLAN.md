@@ -11,8 +11,8 @@
 - [已完成] 阶段 8：完成 Sublime-like command/keymap 行为矩阵、keymap 文件兼容和 snippets/macros/build systems 边界。
 - [已完成] 阶段 9：完成 settings selector、schema-aware settings UI、runtime override 持久化和跨 schema 字段迁移。
 - [已完成] 阶段 10：完成剩余 JSON result envelope 覆盖、错误模型统一和 host capability negotiation。
-- [待办] 阶段 11：产品化 Tree-sitter + LSP 主路线的高亮、outline、folding、语言模式和降级体验。
-- [待办] 阶段 12：完成 core-backed workspace search、project index、replace-in-files、recent 和 session 工作流。
+- [已完成] 阶段 11：产品化 Tree-sitter + LSP 主路线的高亮、outline、folding、语言模式和降级体验。
+- [进行中] 阶段 12：完成 core-backed workspace search、project index、replace-in-files、recent 和 session 工作流。
 - [待办] 阶段 13：合入首批经批准机器生成的 PNG baselines；CI 已具备 PNG 合入后自动 strict PR 门禁。
 - [待办] 阶段 14：在测试保护下打磨 Sublime-like chrome、minimap、gutter、overlay、focus 和编辑交互。
 - [待办] 阶段 15：完成最终文档审计、ABI/README 更新、过渡 API 清理和全量验证。
@@ -423,7 +423,23 @@
   - 验证：`swift test --package-path swift --filter AttoFindInFilesWorkspaceSearchProviderTests`
   - 验证：`swift test --package-path swift --filter 'AttoEditorCommandTests/test(FindInWorkspaceFilesUsesCoreWorkspaceSearch|QuickOpenUsesCoreWorkspaceFileListWhenAvailable)'`
   - 验证：`swift test --package-path swift --filter testFindInFilesWorkspaceReplaceUsesCoreWorkspaceEditTransaction`
-- [ ] 支持 ignored files、binary files、large files、pagination、cancellation 和 result refresh。
+- [x] 支持 ignored files、binary files、large files、pagination、cancellation 和 result refresh。
+  - [x] 新增 core-owned `WorkspaceFileScanOptions` / `WorkspaceFileScanSummary`，workspace file list/search/replacement 共用 ignore walker、include/exclude globs、分页 offset/max、二进制/invalid UTF-8 跳过、大文件跳过和取消预算。
+  - [x] 新增 UI FFI scan-options envelope 入口和 feature bit，Swift wrapper 解码 `scan` summary；旧 include/exclude/max envelope 保持兼容。
+  - [x] Find in Files、Replace in Files 和 Quick Open/project file list 在新 runtime 上优先消费 scan-options envelope，旧 runtime 保留原 envelope fallback。
+  - 验证：`cargo check -p editor-core-ui-ffi`
+  - 验证：`cargo test -p editor-core-ui multi_document_workspace_file_search_uses_core_scan_policy`
+  - 验证：`cargo test -p editor-core-ui-ffi ffi_multi_document_workspace_file_scan_options_report_summary`
+  - 验证：`cargo test -p editor-core-ui-ffi ffi_feature_flags_include_semantic_tokens_requests`
+  - 验证：`cargo test -p editor-core-ui-ffi ffi_runtime_info_json_reports_version_and_feature_descriptors`
+  - 验证：`cargo build -p editor-core-ui-ffi --release`
+  - 验证：`swift test --package-path swift --filter testMultiDocumentWorkspaceFileScanOptionsExposeSummary`
+  - 验证：`swift test --package-path swift --filter EditorCoreUIFFIRuntimeCompatibilityTests`
+  - 验证：`swift test --package-path swift --filter AttoRuntimeCompatibilityTests`
+  - 验证：`swift test --package-path swift --filter testLoadsLibraryAndVersion`
+  - 验证：`swift test --package-path swift --filter testRuntimeInfoJSONDescriptorsCoverKnownFeatures`
+  - 验证：`cargo fmt --check`
+  - 验证：`git diff --check`
 - [ ] 让 Find in Files、Quick Open、recent files/projects 和 session restore 消费同一套 core-backed 数据源。
 
 ## 阶段 13：Visual Baselines 与黑盒自动化

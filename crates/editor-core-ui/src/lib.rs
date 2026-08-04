@@ -67,9 +67,10 @@ pub use multi_document::{
     WorkspaceEditTransactionEvent, WorkspaceEditTransactionEventsSnapshot,
     WorkspaceEditTransactionResourceOperation, WorkspaceEditTransactionResult,
     WorkspaceEditTransactionSkippedDetail, WorkspaceEditTransactionUndoResult, WorkspaceFileEntry,
-    WorkspaceFileListOptions, WorkspaceFileReplacementOptions, WorkspaceFileSearchOptions,
-    WorkspaceFileSearchResult, WorkspaceFolder, WorkspaceOutlineDocument, WorkspaceOutlineSnapshot,
-    WorkspaceRootsChange,
+    WorkspaceFileListOptions, WorkspaceFileListResponse, WorkspaceFileReplacementOptions,
+    WorkspaceFileScanOptions, WorkspaceFileScanSummary, WorkspaceFileSearchOptions,
+    WorkspaceFileSearchResponse, WorkspaceFileSearchResult, WorkspaceFolder,
+    WorkspaceOutlineDocument, WorkspaceOutlineSnapshot, WorkspaceRootsChange,
 };
 pub use state::EditorUi;
 pub use state_events::{

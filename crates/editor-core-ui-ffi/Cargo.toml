@@ -20,4 +20,5 @@ editor-core = { version = "0.5.0", path = "../editor-core" }
 editor-core-ui = { version = "0.5.0", path = "../editor-core-ui" }
 editor-core-render-skia = { version = "0.5.0", path = "../editor-core-render-skia" }
 libc = "0.2"
+serde = { version = "1.0", features = ["derive"] }
 serde_json = "1"

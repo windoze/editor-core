@@ -272,8 +272,16 @@ normalization and fixed-size MRU behavior, are included in `snapshot_json` as `r
 and are not cleared when the active workspace roots change.
 For Quick Open/project file panels, hosts can query the same roots with
 `editor_core_ui_ffi_multi_document_list_workspace_files_json(...)`, which returns a bounded
-`{ "files": [...] }` payload containing local file `uri`, absolute `path`, and `relative_path`
-entries after applying include/exclude globs.
+`{ "files": [...], "scan": { ... } }` payload containing local file `uri`, absolute `path`, and
+`relative_path` entries after applying include/exclude globs. Newer runtimes also expose
+`editor_core_ui_ffi_multi_document_list_workspace_files_with_options_envelope_json(...)`,
+`editor_core_ui_ffi_multi_document_search_workspace_files_with_options_envelope_json(...)`, and
+`editor_core_ui_ffi_multi_document_workspace_file_replacement_workspace_edit_with_options_envelope_json(...)`.
+These accept a `scan_options_json_utf8` object with `include_globs`, `exclude_globs`,
+`max_results`, `offset`, `max_file_size_bytes`, `skip_binary`, `respect_ignore_files`,
+`cancelled`, and `cancel_after_files`, allowing hosts to keep pagination, ignore-file behavior,
+large/binary-file filtering, cancellation budgets, and result-refresh metadata in the core-owned
+workspace model.
 Hosts can also refresh and read a core-owned project file index snapshot through
 `editor_core_ui_ffi_multi_document_refresh_project_file_index_json(...)`,
 `editor_core_ui_ffi_multi_document_project_file_index_snapshot_json(...)`, and
@@ -290,6 +298,12 @@ provide `_envelope_json` variants gated by
 `ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_OPERATION_ENVELOPE`; these wrap successful payloads in
 `value` and invalid arguments or runtime failures in the shared `{ ok, status, error, version }`
 result envelope.
+Explicit workspace scan options are gated by
+`ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_SCAN_OPTIONS`. Search/list/replacement envelope values
+that use the scan model include a `scan` object with `offset`, `max_results`, `next_offset`,
+`truncated`, `cancelled`, `visited_files`, `matched_results`, `returned_results`,
+`skipped_large_files`, `skipped_binary_files`, `skipped_unreadable_files`, and
+`ignore_files_enabled`.
 
 Open-tab metadata is part of the same core-owned multi-document model. Hosts can set or clear
 document URI metadata with `editor_core_ui_ffi_multi_document_set_tab_document_uri(...)` and
@@ -423,8 +437,9 @@ Guidelines:
   `ECU_FEATURE_LSP_SEMANTIC_TOKENS_APPLICATION_ENVELOPE` /
   `ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_SEARCH` /
   `ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_REPLACEMENT` /
-  `ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_OPERATION_ENVELOPE` mark availability of the
-  corresponding JSON envelope symbols, workspace file search/replacement symbols, and
+  `ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_OPERATION_ENVELOPE` /
+  `ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_SCAN_OPTIONS` mark availability of the corresponding
+  JSON envelope symbols, workspace file search/replacement symbols, scan-options symbols, and
   stream/result coverage.
 - The current cycle is still pre-v1; breaking fixed-width cleanup is allowed before tagging v1, and `editor_core_ffi.h` is the authoritative declaration of the current C surface.
 - Compatible additions:
@@ -602,10 +617,13 @@ char* editor_core_ui_ffi_multi_document_snapshot_envelope_json(MultiDocumentEdit
 char* editor_core_ui_ffi_multi_document_search_all_tabs_envelope_json(MultiDocumentEditorUi* multi, const char* query_utf8, uint8_t case_sensitive, uint8_t whole_word, uint8_t regex);
 char* editor_core_ui_ffi_multi_document_list_workspace_files_json(MultiDocumentEditorUi* multi, const char* include_globs_json_utf8, const char* exclude_globs_json_utf8, uint32_t max_results);
 char* editor_core_ui_ffi_multi_document_list_workspace_files_envelope_json(MultiDocumentEditorUi* multi, const char* include_globs_json_utf8, const char* exclude_globs_json_utf8, uint32_t max_results);
+char* editor_core_ui_ffi_multi_document_list_workspace_files_with_options_envelope_json(MultiDocumentEditorUi* multi, const char* scan_options_json_utf8);
 char* editor_core_ui_ffi_multi_document_search_workspace_files_json(MultiDocumentEditorUi* multi, const char* query_utf8, const char* include_globs_json_utf8, const char* exclude_globs_json_utf8, uint8_t case_sensitive, uint8_t whole_word, uint8_t regex, uint32_t max_results);
 char* editor_core_ui_ffi_multi_document_search_workspace_files_envelope_json(MultiDocumentEditorUi* multi, const char* query_utf8, const char* include_globs_json_utf8, const char* exclude_globs_json_utf8, uint8_t case_sensitive, uint8_t whole_word, uint8_t regex, uint32_t max_results);
+char* editor_core_ui_ffi_multi_document_search_workspace_files_with_options_envelope_json(MultiDocumentEditorUi* multi, const char* query_utf8, const char* scan_options_json_utf8, uint8_t case_sensitive, uint8_t whole_word, uint8_t regex);
 char* editor_core_ui_ffi_multi_document_workspace_file_replacement_workspace_edit_json(MultiDocumentEditorUi* multi, const char* query_utf8, const char* replacement_utf8, const char* include_globs_json_utf8, const char* exclude_globs_json_utf8, const char* apply_mode_utf8, uint8_t case_sensitive, uint8_t whole_word, uint8_t regex, uint32_t max_results);
 char* editor_core_ui_ffi_multi_document_workspace_file_replacement_workspace_edit_envelope_json(MultiDocumentEditorUi* multi, const char* query_utf8, const char* replacement_utf8, const char* include_globs_json_utf8, const char* exclude_globs_json_utf8, const char* apply_mode_utf8, uint8_t case_sensitive, uint8_t whole_word, uint8_t regex, uint32_t max_results);
+char* editor_core_ui_ffi_multi_document_workspace_file_replacement_workspace_edit_with_options_envelope_json(MultiDocumentEditorUi* multi, const char* query_utf8, const char* replacement_utf8, const char* scan_options_json_utf8, const char* apply_mode_utf8, uint8_t case_sensitive, uint8_t whole_word, uint8_t regex);
 int32_t editor_core_ui_ffi_multi_document_remember_recent_file_uri(MultiDocumentEditorUi* multi, const char* uri_utf8);
 int32_t editor_core_ui_ffi_multi_document_restore_recent_files_json(MultiDocumentEditorUi* multi, const char* uris_json_utf8);
 int32_t editor_core_ui_ffi_multi_document_clear_recent_files(MultiDocumentEditorUi* multi);

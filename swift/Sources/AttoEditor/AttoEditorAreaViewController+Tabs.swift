@@ -743,15 +743,27 @@ extension AttoEditorAreaViewController {
         guard q.isEmpty == false, let coreDocuments else { return nil }
 
         do {
-            let coreResults = try coreDocuments
-                .searchWorkspaceFilesEnvelope(
+            let searchEnvelope: EcuMultiDocumentSearchEnvelope
+            if coreDocuments.library.featureFlags.contains(.multiDocumentWorkspaceFileScanOptions) {
+                searchEnvelope = try coreDocuments.searchWorkspaceFilesEnvelope(
+                    query: q,
+                    options: ecuSearchOptions(from: options),
+                    scanOptions: EcuWorkspaceFileScanOptions(
+                        includeGlobs: includeGlobs,
+                        excludeGlobs: excludeGlobs,
+                        maxResults: 2000
+                    )
+                )
+            } else {
+                searchEnvelope = try coreDocuments.searchWorkspaceFilesEnvelope(
                     query: q,
                     options: ecuSearchOptions(from: options),
                     includeGlobs: includeGlobs,
                     excludeGlobs: excludeGlobs,
                     maxResults: 2000
                 )
-                .workspaceFileSearchResults()
+            }
+            let coreResults = try searchEnvelope.workspaceFileSearchResults()
 
             var out: [AttoFindInFilesViewController.SearchResult] = []
             out.reserveCapacity(coreResults.count)
@@ -794,8 +806,21 @@ extension AttoEditorAreaViewController {
         }
 
         do {
-            let workspaceEditJSON = try coreDocuments
-                .workspaceFileReplacementWorkspaceEditEnvelope(
+            let replacementEnvelope: EcuWorkspaceFileOperationEnvelope
+            if coreDocuments.library.featureFlags.contains(.multiDocumentWorkspaceFileScanOptions) {
+                replacementEnvelope = try coreDocuments.workspaceFileReplacementWorkspaceEditEnvelope(
+                    query: q,
+                    replacement: replacement,
+                    options: ecuSearchOptions(from: options),
+                    scanOptions: EcuWorkspaceFileScanOptions(
+                        includeGlobs: includeGlobs,
+                        excludeGlobs: excludeGlobs,
+                        maxResults: 2000
+                    ),
+                    applyMode: "atomic"
+                )
+            } else {
+                replacementEnvelope = try coreDocuments.workspaceFileReplacementWorkspaceEditEnvelope(
                     query: q,
                     replacement: replacement,
                     options: ecuSearchOptions(from: options),
@@ -804,7 +829,8 @@ extension AttoEditorAreaViewController {
                     applyMode: "atomic",
                     maxResults: 2000
                 )
-                .workspaceFileReplacementWorkspaceEditPayloadJSON()
+            }
+            let workspaceEditJSON = try replacementEnvelope.workspaceFileReplacementWorkspaceEditPayloadJSON()
             let applied = applyWorkspaceEditJSONToActiveTab(workspaceEditJSON)
             if applied {
                 setTransientStatusText("Replace in Files applied")

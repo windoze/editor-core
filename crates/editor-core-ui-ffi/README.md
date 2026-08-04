@@ -45,6 +45,8 @@ string must be freed exactly once with `editor_core_ui_ffi_string_free`.
 Swift wrappers follow the same rule. Workspace file search/list, project file index, and workspace
 file replacement raw JSON helpers that have envelope equivalents remain callable but are marked
 deprecated; new Swift/App integrations should use the envelope methods and typed value helpers.
+Workspace file list/search/replacement callers that need pagination or scan policy controls should
+gate on `ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_SCAN_OPTIONS`.
 
 ## JSON Command Envelope
 
@@ -889,13 +891,28 @@ char* editor_core_ui_ffi_multi_document_list_workspace_files_json(
     const char* exclude_globs_json_utf8,
     uint32_t max_results
 );
+
+char* editor_core_ui_ffi_multi_document_list_workspace_files_with_options_envelope_json(
+    MultiDocumentEditorUi* multi,
+    const char* scan_options_json_utf8
+);
 ```
 
 `include_globs_json_utf8` and `exclude_globs_json_utf8` use the same JSON string-array format and
 glob semantics as workspace file search. `max_results == 0` selects the default bounded limit.
-Hidden paths, `target`, and `.build` are skipped. The returned JSON is `{ "files": [...] }`; each
-entry contains `uri`, `path`, and `relative_path`, sorted by relative path for stable UI display.
-Availability is advertised by `ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_LIST`.
+Hidden paths, `target`, and `.build` are skipped. The returned JSON is `{ "files": [...], "scan":
+{ ... } }`; each entry contains `uri`, `path`, and `relative_path`, sorted by relative path for
+stable UI display. The legacy raw JSON/list envelope accepts include/exclude/max arguments; the
+options-envelope variant accepts `scan_options_json_utf8`, a JSON object with `include_globs`,
+`exclude_globs`, `max_results`, `offset`, `max_file_size_bytes`, `skip_binary`,
+`respect_ignore_files`, `cancelled`, and `cancel_after_files`. Availability is advertised by
+`ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_LIST`; explicit scan options are advertised by
+`ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_SCAN_OPTIONS`.
+
+The `scan` summary reports `offset`, `max_results`, `next_offset`, `truncated`, `cancelled`,
+`visited_files`, `matched_results`, `returned_results`, `skipped_large_files`,
+`skipped_binary_files`, `skipped_unreadable_files`, and `ignore_files_enabled`. File search and
+replacement use the same scan summary shape.
 
 Hosts that want a core-owned project file cache can refresh and query the project file index:
 
@@ -956,16 +973,28 @@ char* editor_core_ui_ffi_multi_document_search_workspace_files_envelope_json(
     uint8_t regex,
     uint32_t max_results
 );
+
+char* editor_core_ui_ffi_multi_document_search_workspace_files_with_options_envelope_json(
+    MultiDocumentEditorUi* multi,
+    const char* query_utf8,
+    const char* scan_options_json_utf8,
+    uint8_t case_sensitive,
+    uint8_t whole_word,
+    uint8_t regex
+);
 ```
 
 `include_globs_json_utf8` and `exclude_globs_json_utf8` are JSON arrays of string patterns; null or
 an empty string means no patterns. Patterns use `/` separators and support `*`, `?`, and `**`.
 Patterns without `/` match path components by basename. `max_results == 0` selects the default
-bounded limit.
+bounded limit. The options-envelope variant uses the same `scan_options_json_utf8` schema as
+workspace file listing and applies it before reading file content. Text search skips files larger
+than `max_file_size_bytes`, binary files with NUL bytes, and invalid UTF-8 files by default.
 
 Each result contains `uri`, `path`, `relative_path`, `line1`, `column1`, `line_text`, `match_start`,
 and `match_end`. `line1` and `column1` are 1-based for UI navigation. `match_start` and `match_end`
-are 0-based line-local character offsets for preview highlighting.
+are 0-based line-local character offsets for preview highlighting. Envelope values include both
+`results` and `scan`.
 
 ## Multi-document Workspace File Replacement WorkspaceEdit
 
@@ -985,11 +1014,24 @@ char* editor_core_ui_ffi_multi_document_workspace_file_replacement_workspace_edi
     uint8_t regex,
     uint32_t max_results
 );
+
+char* editor_core_ui_ffi_multi_document_workspace_file_replacement_workspace_edit_with_options_envelope_json(
+    MultiDocumentEditorUi* multi,
+    const char* query_utf8,
+    const char* replacement_utf8,
+    const char* scan_options_json_utf8,
+    const char* apply_mode_utf8,
+    uint8_t case_sensitive,
+    uint8_t whole_word,
+    uint8_t regex
+);
 ```
 
 `include_globs_json_utf8` and `exclude_globs_json_utf8` use the same JSON string-array format and
 glob semantics as workspace file search. `apply_mode_utf8` accepts `partial` or `atomic`; null or an
-empty string defaults to `atomic`. `max_results == 0` selects the default bounded limit.
+empty string defaults to `atomic`. `max_results == 0` selects the default bounded limit. The
+options-envelope variant uses `scan_options_json_utf8` for pagination, ignore handling, large-file
+and binary-file skipping, and cancellation budgets.
 
 The returned JSON is a transaction-compatible envelope:
 
@@ -1011,7 +1053,14 @@ The returned JSON is a transaction-compatible envelope:
       }
     ]
   },
-  "applyMode": "atomic"
+  "applyMode": "atomic",
+  "scan": {
+    "offset": 0,
+    "max_results": 2000,
+    "next_offset": null,
+    "truncated": false,
+    "cancelled": false
+  }
 }
 ```
 

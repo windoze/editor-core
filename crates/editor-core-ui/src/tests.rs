@@ -2135,6 +2135,95 @@ fn multi_document_project_file_index_caches_workspace_files() {
 }
 
 #[test]
+fn multi_document_workspace_file_search_uses_core_scan_policy() {
+    let root = unique_temp_path("workspace_file_scan_policy");
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    std::fs::write(root.join(".gitignore"), "ignored.txt\n").unwrap();
+    std::fs::write(root.join("ignored.txt"), "needle ignored\n").unwrap();
+    std::fs::write(root.join("binary.bin"), b"needle\0binary\n").unwrap();
+    std::fs::write(
+        root.join("large.txt"),
+        format!("needle {}\n", "x".repeat(256)),
+    )
+    .unwrap();
+    std::fs::write(root.join("src").join("a.txt"), "needle a1\nneedle a2\n").unwrap();
+    std::fs::write(root.join("src").join("b.txt"), "needle b\n").unwrap();
+
+    let mut multi = MultiDocumentEditorUi::new();
+    multi.set_workspace_roots([editor_core_lsp::path_to_file_uri(&root)]);
+
+    let scan_options = WorkspaceFileScanOptions {
+        include_globs: vec!["*.txt".to_string(), "*.bin".to_string()],
+        exclude_globs: Vec::new(),
+        max_results: 2,
+        offset: 0,
+        max_file_size_bytes: 128,
+        skip_binary: true,
+        respect_ignore_files: true,
+        cancelled: false,
+        cancel_after_files: None,
+    };
+    let page = multi
+        .search_workspace_files_with_scan_options(
+            "needle",
+            SearchOptions::default(),
+            scan_options.clone(),
+        )
+        .unwrap();
+
+    assert_eq!(
+        page.results
+            .iter()
+            .map(|result| (result.relative_path.as_str(), result.line1))
+            .collect::<Vec<_>>(),
+        vec![("src/a.txt", 1), ("src/a.txt", 2)]
+    );
+    assert_eq!(page.scan.returned_results, 2);
+    assert_eq!(page.scan.matched_results, 3);
+    assert_eq!(page.scan.next_offset, Some(2));
+    assert!(page.scan.truncated);
+    assert!(!page.scan.cancelled);
+    assert_eq!(page.scan.skipped_binary_files, 1);
+    assert_eq!(page.scan.skipped_large_files, 1);
+    assert!(page.scan.ignore_files_enabled);
+
+    let second_page = multi
+        .search_workspace_files_with_scan_options(
+            "needle",
+            SearchOptions::default(),
+            WorkspaceFileScanOptions {
+                offset: 2,
+                ..scan_options
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        second_page
+            .results
+            .iter()
+            .map(|result| result.relative_path.as_str())
+            .collect::<Vec<_>>(),
+        vec!["src/b.txt"]
+    );
+    assert!(!second_page.scan.truncated);
+    assert_eq!(second_page.scan.returned_results, 1);
+    assert_eq!(second_page.scan.matched_results, 3);
+
+    let cancelled = multi
+        .list_workspace_files_with_scan_options(WorkspaceFileScanOptions {
+            max_results: 10,
+            cancel_after_files: Some(1),
+            ..WorkspaceFileScanOptions::default()
+        })
+        .unwrap();
+    assert_eq!(cancelled.files.len(), 1);
+    assert_eq!(cancelled.scan.visited_files, 1);
+    assert!(cancelled.scan.cancelled);
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn multi_document_project_file_index_queries_cached_files() {
     let mut root = std::env::temp_dir();
     root.push(format!(

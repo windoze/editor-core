@@ -225,6 +225,10 @@ fn ffi_feature_flags_include_semantic_tokens_requests() {
             & ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_OPERATION_ENVELOPE,
         0
     );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags() & ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_SCAN_OPTIONS,
+        0
+    );
 }
 
 #[test]
@@ -420,6 +424,11 @@ fn ffi_runtime_info_json_reports_version_and_feature_descriptors() {
         feature["name"] == "multi_document_workspace_file_operation_envelope"
             && feature["bit"] == 56
             && feature["flag"] == ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_OPERATION_ENVELOPE
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "multi_document_workspace_file_scan_options"
+            && feature["bit"] == 57
+            && feature["flag"] == ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_SCAN_OPTIONS
     }));
     assert!(features.iter().any(|feature| {
         feature["name"] == "multi_document_workspace_edit_transaction"
@@ -951,6 +960,105 @@ fn ffi_multi_document_workspace_file_search_reports_success_and_errors() {
             .unwrap()
             .contains("include_globs_json_utf8 must be a JSON string array")
     );
+
+    unsafe { editor_core_ui_ffi_multi_document_free(multi) };
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn ffi_multi_document_workspace_file_scan_options_report_summary() {
+    let mut root = std::env::temp_dir();
+    root.push(format!(
+        "editor_core_ui_ffi_workspace_file_scan_options_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    std::fs::write(root.join(".gitignore"), "ignored.txt\n").unwrap();
+    std::fs::write(root.join("ignored.txt"), "needle ignored\n").unwrap();
+    std::fs::write(root.join("src").join("a.txt"), "needle a1\nneedle a2\n").unwrap();
+    std::fs::write(root.join("src").join("b.txt"), "needle b\n").unwrap();
+    std::fs::write(root.join("binary.bin"), b"needle\0binary\n").unwrap();
+    std::fs::write(
+        root.join("large.txt"),
+        format!("needle {}\n", "x".repeat(256)),
+    )
+    .unwrap();
+
+    let multi = editor_core_ui_ffi_multi_document_new();
+    assert!(!multi.is_null());
+
+    let roots =
+        CString::new(serde_json::json!([format!("file://{}", root.to_string_lossy())]).to_string())
+            .unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_set_workspace_roots_json(multi, roots.as_ptr()),
+        ECU_OK
+    );
+
+    let query = CString::new("needle").unwrap();
+    let scan_options = CString::new(
+        serde_json::json!({
+            "include_globs": ["*.txt", "*.bin"],
+            "max_results": 1,
+            "offset": 1,
+            "max_file_size_bytes": 128,
+            "skip_binary": true,
+            "respect_ignore_files": true
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let envelope_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_search_workspace_files_with_options_envelope_json(
+            multi,
+            query.as_ptr(),
+            scan_options.as_ptr(),
+            0,
+            0,
+            0,
+        ),
+    );
+    let envelope: serde_json::Value = serde_json::from_str(&envelope_json).unwrap();
+    assert_eq!(envelope["ok"], true);
+    assert_eq!(envelope["value"]["results"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        envelope["value"]["results"][0]["relative_path"],
+        "src/a.txt"
+    );
+    assert_eq!(envelope["value"]["results"][0]["line1"], 2);
+    assert_eq!(envelope["value"]["scan"]["offset"], 1);
+    assert_eq!(envelope["value"]["scan"]["returned_results"], 1);
+    assert_eq!(envelope["value"]["scan"]["matched_results"], 3);
+    assert_eq!(envelope["value"]["scan"]["next_offset"], 2);
+    assert_eq!(envelope["value"]["scan"]["truncated"], true);
+    assert_eq!(envelope["value"]["scan"]["skipped_binary_files"], 1);
+    assert_eq!(envelope["value"]["scan"]["skipped_large_files"], 1);
+    assert_eq!(envelope["value"]["scan"]["ignore_files_enabled"], true);
+
+    let replacement = CString::new("found").unwrap();
+    let apply_mode = CString::new("atomic").unwrap();
+    let replacement_envelope_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_workspace_file_replacement_workspace_edit_with_options_envelope_json(
+            multi,
+            query.as_ptr(),
+            replacement.as_ptr(),
+            scan_options.as_ptr(),
+            apply_mode.as_ptr(),
+            0,
+            0,
+            0,
+        ),
+    );
+    let replacement_envelope: serde_json::Value =
+        serde_json::from_str(&replacement_envelope_json).unwrap();
+    assert_eq!(replacement_envelope["ok"], true);
+    assert_eq!(replacement_envelope["value"]["applyMode"], "atomic");
+    assert_eq!(replacement_envelope["value"]["scan"]["offset"], 1);
+    assert_eq!(replacement_envelope["value"]["scan"]["returned_results"], 1);
 
     unsafe { editor_core_ui_ffi_multi_document_free(multi) };
     let _ = std::fs::remove_dir_all(root);

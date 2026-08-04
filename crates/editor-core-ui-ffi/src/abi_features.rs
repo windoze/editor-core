@@ -118,6 +118,8 @@ pub const ECU_FEATURE_MULTI_DOCUMENT_PROJECT_FILE_INDEX: u64 = 1 << 54;
 pub const ECU_FEATURE_MULTI_DOCUMENT_PROJECT_FILE_INDEX_QUERY: u64 = 1 << 55;
 /// Feature bit: multi-document workspace file/index operations can return structured result envelopes.
 pub const ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_OPERATION_ENVELOPE: u64 = 1 << 56;
+/// Feature bit: workspace file operations accept core-owned scan option JSON.
+pub const ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_SCAN_OPTIONS: u64 = 1 << 57;
 
 pub const ECU_FEATURE_FLAGS: u64 = ECU_FEATURE_JSON_COMMAND_DISPATCH
     | ECU_FEATURE_TYPED_DERIVED_SNAPSHOTS
@@ -175,7 +177,8 @@ pub const ECU_FEATURE_FLAGS: u64 = ECU_FEATURE_JSON_COMMAND_DISPATCH
     | ECU_FEATURE_MULTI_DOCUMENT_RECENT_PROJECTS
     | ECU_FEATURE_MULTI_DOCUMENT_PROJECT_FILE_INDEX
     | ECU_FEATURE_MULTI_DOCUMENT_PROJECT_FILE_INDEX_QUERY
-    | ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_OPERATION_ENVELOPE;
+    | ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_OPERATION_ENVELOPE
+    | ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_SCAN_OPTIONS;
 
 struct FeatureDescriptor {
     bit: u8,
@@ -526,6 +529,12 @@ const FEATURE_DESCRIPTORS: &[FeatureDescriptor] = &[
         flag: ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_OPERATION_ENVELOPE,
         name: "multi_document_workspace_file_operation_envelope",
         description: "Multi-document workspace file list, project index, and replacement helpers can return structured result envelopes.",
+    },
+    FeatureDescriptor {
+        bit: 57,
+        flag: ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_SCAN_OPTIONS,
+        name: "multi_document_workspace_file_scan_options",
+        description: "Multi-document workspace file list, search, and replacement helpers accept core-owned scan options for pagination, ignore files, large files, binary files, and cancellation budgets.",
     },
 ];
 

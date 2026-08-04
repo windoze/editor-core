@@ -994,6 +994,7 @@ dependencies = [
  "editor-core-render-skia",
  "editor-core-sublime",
  "editor-core-treesitter",
+ "ignore",
  "libc",
  "pretty_assertions",
  "regex",
@@ -1012,6 +1013,7 @@ dependencies = [
  "editor-core-render-skia",
  "editor-core-ui",
  "libc",
+ "serde",
  "serde_json",
 ]
 

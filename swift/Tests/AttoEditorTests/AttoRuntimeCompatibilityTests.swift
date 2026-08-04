@@ -157,6 +157,7 @@ final class AttoRuntimeCompatibilityTests: XCTestCase {
                 EditorCoreUIFFIFeatures.multiDocumentProjectFileIndex.rawValue,
                 EditorCoreUIFFIFeatures.multiDocumentProjectFileIndexQuery.rawValue,
                 EditorCoreUIFFIFeatures.multiDocumentWorkspaceFileOperationEnvelope.rawValue,
+                EditorCoreUIFFIFeatures.multiDocumentWorkspaceFileScanOptions.rawValue,
                 EditorCoreUIFFIFeatures.multiDocumentWorkspaceRootsChangeEnvelope.rawValue,
                 EditorCoreUIFFIFeatures.multiDocumentProjectLSPServersEnvelope.rawValue,
                 EditorCoreUIFFIFeatures.multiDocumentProjectLSPStartPlan.rawValue,

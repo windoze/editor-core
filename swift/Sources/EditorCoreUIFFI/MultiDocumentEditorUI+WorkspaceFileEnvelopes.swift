@@ -6,18 +6,26 @@ public typealias EcuWorkspaceFileOperationEnvelopeError = EcuMultiDocumentSearch
 public typealias EcuWorkspaceFileOperationEnvelopeStatus = EcuMultiDocumentSearchEnvelopeStatus
 
 public extension EcuMultiDocumentSearchEnvelope {
-    func workspaceFileSearchResults() throws -> [EcuWorkspaceFileSearchResult] {
+    func workspaceFileSearchResponse() throws -> EcuWorkspaceFileSearchResponse {
         try decodeWorkspaceFileValue(
             EcuWorkspaceFileSearchResponse.self,
             context: "multi_document_search_workspace_files_envelope_value_decode"
-        ).results
+        )
     }
 
-    func workspaceFileEntries() throws -> [EcuWorkspaceFileEntry] {
+    func workspaceFileSearchResults() throws -> [EcuWorkspaceFileSearchResult] {
+        try workspaceFileSearchResponse().results
+    }
+
+    func workspaceFileListResponse() throws -> EcuWorkspaceFileListResponse {
         try decodeWorkspaceFileValue(
             EcuWorkspaceFileListResponse.self,
             context: "multi_document_list_workspace_files_envelope_value_decode"
-        ).files
+        )
+    }
+
+    func workspaceFileEntries() throws -> [EcuWorkspaceFileEntry] {
+        try workspaceFileListResponse().files
     }
 
     func projectFileIndexSnapshot() throws -> EcuProjectFileIndexSnapshot {
@@ -98,6 +106,31 @@ public extension EcuMultiDocumentSearchEnvelope {
 }
 
 extension MultiDocumentEditorUI {
+    private static func encodeScanOptions(
+        _ options: EcuWorkspaceFileScanOptions,
+        context: String
+    ) throws -> String {
+        do {
+            let data = try JSONEncoder().encode(options)
+            guard let json = String(data: data, encoding: .utf8) else {
+                throw EditorCoreUIFFIError.ffiStatus(
+                    code: .invalidUtf8,
+                    context: context,
+                    message: "encoded scan options are not UTF-8"
+                )
+            }
+            return json
+        } catch let error as EditorCoreUIFFIError {
+            throw error
+        } catch {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .invalidArgument,
+                context: context,
+                message: String(describing: error)
+            )
+        }
+    }
+
     public func listWorkspaceFilesEnvelopeJSON(
         includeGlobs: [String] = [],
         excludeGlobs: [String] = [],
@@ -138,6 +171,74 @@ extension MultiDocumentEditorUI {
                 maxResults: maxResults
             ),
             context: "multi_document_list_workspace_files_envelope_decode"
+        )
+    }
+
+    public func listWorkspaceFilesEnvelopeJSON(
+        scanOptions: EcuWorkspaceFileScanOptions
+    ) throws -> String {
+        let optionsJSON = try Self.encodeScanOptions(
+            scanOptions,
+            context: "multi_document_workspace_file_list_scan_options_encode"
+        )
+        return try ffiStringResult(context: "multi_document_list_workspace_files_with_options_envelope_json") {
+            optionsJSON.withCString { optionsPtr in
+                editor_core_ui_ffi_multi_document_list_workspace_files_with_options_envelope_json(
+                    handle,
+                    optionsPtr
+                )
+            }
+        }
+    }
+
+    public func listWorkspaceFilesEnvelope(
+        scanOptions: EcuWorkspaceFileScanOptions
+    ) throws -> EcuWorkspaceFileOperationEnvelope {
+        try decode(
+            EcuWorkspaceFileOperationEnvelope.self,
+            from: listWorkspaceFilesEnvelopeJSON(scanOptions: scanOptions),
+            context: "multi_document_list_workspace_files_with_options_envelope_decode"
+        )
+    }
+
+    public func searchWorkspaceFilesEnvelopeJSON(
+        query: String,
+        options: EcuSearchOptions = EcuSearchOptions(),
+        scanOptions: EcuWorkspaceFileScanOptions
+    ) throws -> String {
+        let optionsJSON = try Self.encodeScanOptions(
+            scanOptions,
+            context: "multi_document_workspace_file_search_scan_options_encode"
+        )
+        return try ffiStringResult(context: "multi_document_search_workspace_files_with_options_envelope_json") {
+            query.withCString { queryPtr in
+                optionsJSON.withCString { optionsPtr in
+                    editor_core_ui_ffi_multi_document_search_workspace_files_with_options_envelope_json(
+                        handle,
+                        queryPtr,
+                        optionsPtr,
+                        options.ffiCaseSensitive,
+                        options.ffiWholeWord,
+                        options.ffiRegex
+                    )
+                }
+            }
+        }
+    }
+
+    public func searchWorkspaceFilesEnvelope(
+        query: String,
+        options: EcuSearchOptions = EcuSearchOptions(),
+        scanOptions: EcuWorkspaceFileScanOptions
+    ) throws -> EcuMultiDocumentSearchEnvelope {
+        try decode(
+            EcuMultiDocumentSearchEnvelope.self,
+            from: searchWorkspaceFilesEnvelopeJSON(
+                query: query,
+                options: options,
+                scanOptions: scanOptions
+            ),
+            context: "multi_document_search_workspace_files_with_options_envelope_decode"
         )
     }
 
@@ -235,6 +336,59 @@ extension MultiDocumentEditorUI {
                 }
             }
         }
+    }
+
+    public func workspaceFileReplacementWorkspaceEditEnvelopeJSON(
+        query: String,
+        replacement: String,
+        options: EcuSearchOptions = EcuSearchOptions(),
+        scanOptions: EcuWorkspaceFileScanOptions,
+        applyMode: String = "atomic"
+    ) throws -> String {
+        let optionsJSON = try Self.encodeScanOptions(
+            scanOptions,
+            context: "multi_document_workspace_file_replacement_scan_options_encode"
+        )
+        return try ffiStringResult(context: "multi_document_workspace_file_replacement_with_options_envelope_json") {
+            query.withCString { queryPtr in
+                replacement.withCString { replacementPtr in
+                    optionsJSON.withCString { optionsPtr in
+                        applyMode.withCString { applyModePtr in
+                            editor_core_ui_ffi_multi_document_workspace_file_replacement_workspace_edit_with_options_envelope_json(
+                                handle,
+                                queryPtr,
+                                replacementPtr,
+                                optionsPtr,
+                                applyModePtr,
+                                options.ffiCaseSensitive,
+                                options.ffiWholeWord,
+                                options.ffiRegex
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    public func workspaceFileReplacementWorkspaceEditEnvelope(
+        query: String,
+        replacement: String,
+        options: EcuSearchOptions = EcuSearchOptions(),
+        scanOptions: EcuWorkspaceFileScanOptions,
+        applyMode: String = "atomic"
+    ) throws -> EcuWorkspaceFileOperationEnvelope {
+        try decode(
+            EcuWorkspaceFileOperationEnvelope.self,
+            from: workspaceFileReplacementWorkspaceEditEnvelopeJSON(
+                query: query,
+                replacement: replacement,
+                options: options,
+                scanOptions: scanOptions,
+                applyMode: applyMode
+            ),
+            context: "multi_document_workspace_file_replacement_with_options_envelope_decode"
+        )
     }
 
     public func workspaceFileReplacementWorkspaceEditEnvelope(

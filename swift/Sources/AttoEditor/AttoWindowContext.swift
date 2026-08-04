@@ -421,6 +421,10 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
         editorAreaController.coreDocuments?.library.featureFlags.contains(.multiDocumentWorkspaceFileSearch) ?? false
     }
 
+    private var supportsCoreWorkspaceFileScanOptions: Bool {
+        editorAreaController.coreDocuments?.library.featureFlags.contains(.multiDocumentWorkspaceFileScanOptions) ?? false
+    }
+
     private func coreRecentFileURLs() -> [URL]? {
         guard supportsCoreRecentFiles,
               let entries = try? editorAreaController.coreDocuments?.recentFiles()
@@ -498,13 +502,22 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
 
     private func coreWorkspaceFileEntries() -> [AttoWorkspaceFileIndex.Entry]? {
         guard supportsCoreWorkspaceFileList,
-              let entries = try? editorAreaController.coreDocuments?
-                  .listWorkspaceFilesEnvelope()
-                  .workspaceFileEntries()
+              let coreDocuments = editorAreaController.coreDocuments
         else {
             return nil
         }
 
+        let entries: [EcuWorkspaceFileEntry]?
+        if supportsCoreWorkspaceFileScanOptions {
+            entries = try? coreDocuments
+                .listWorkspaceFilesEnvelope(scanOptions: EcuWorkspaceFileScanOptions())
+                .workspaceFileEntries()
+        } else {
+            entries = try? coreDocuments
+                .listWorkspaceFilesEnvelope()
+                .workspaceFileEntries()
+        }
+        guard let entries else { return nil }
         return workspaceFileEntries(from: entries)
     }
 

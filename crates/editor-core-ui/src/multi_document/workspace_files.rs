@@ -1,8 +1,9 @@
 use crate::UiError;
-use editor_core_lsp::path_to_file_uri;
 use serde::Serialize;
-use std::fs;
-use std::path::{Path, PathBuf};
+
+use super::workspace_scan::{
+    self, WorkspaceFileScanOptions, WorkspaceFileScanSummary, walk_workspace_files,
+};
 
 const DEFAULT_MAX_WORKSPACE_FILE_LIST_RESULTS: usize = 10_000;
 
@@ -40,99 +41,54 @@ pub struct WorkspaceFileEntry {
     pub relative_path: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct WorkspaceFileListResponse {
+    pub files: Vec<WorkspaceFileEntry>,
+    pub scan: WorkspaceFileScanSummary,
+}
+
 pub(crate) fn list_workspace_files(
     workspace_roots: &[String],
     options: WorkspaceFileListOptions,
 ) -> Result<Vec<WorkspaceFileEntry>, UiError> {
-    let include_globs = super::workspace_search::normalize_globs(&options.include_globs);
-    let exclude_globs = super::workspace_search::normalize_globs(&options.exclude_globs);
-    let max_results = options.resolved_max_results();
+    Ok(list_workspace_files_with_scan_options(workspace_roots, options.scan_options())?.files)
+}
 
+pub(crate) fn list_workspace_files_with_scan_options(
+    workspace_roots: &[String],
+    scan_options: WorkspaceFileScanOptions,
+) -> Result<WorkspaceFileListResponse, UiError> {
     let mut out = Vec::new();
-    let mut roots = super::workspace_search::workspace_root_paths(workspace_roots);
-    for root in roots.drain(..) {
-        collect_root(
-            &root,
-            &root,
-            &include_globs,
-            &exclude_globs,
-            max_results,
-            &mut out,
-        );
-        if out.len() >= max_results {
-            break;
-        }
-    }
+    let scan = walk_workspace_files(
+        workspace_roots,
+        scan_options,
+        DEFAULT_MAX_WORKSPACE_FILE_LIST_RESULTS,
+        |candidate, pager| {
+            if pager.accept_result() {
+                out.push(WorkspaceFileEntry {
+                    uri: candidate.uri,
+                    path: candidate.path.to_string_lossy().into_owned(),
+                    relative_path: candidate.relative_path,
+                });
+            }
+            Ok(())
+        },
+    )?;
 
     out.sort_by(|a, b| {
         a.relative_path
             .cmp(&b.relative_path)
             .then(a.path.cmp(&b.path))
     });
-    out.truncate(max_results);
-    Ok(out)
+    Ok(WorkspaceFileListResponse { files: out, scan })
 }
 
-fn collect_root(
-    root: &Path,
-    dir: &Path,
-    include_globs: &[String],
-    exclude_globs: &[String],
-    max_results: usize,
-    out: &mut Vec<WorkspaceFileEntry>,
-) {
-    if out.len() >= max_results {
-        return;
+impl WorkspaceFileListOptions {
+    pub(crate) fn scan_options(&self) -> WorkspaceFileScanOptions {
+        workspace_scan::WorkspaceFileScanOptions::from_globs(
+            self.include_globs.clone(),
+            self.exclude_globs.clone(),
+            self.max_results,
+        )
     }
-
-    let Ok(entries) = fs::read_dir(dir) else {
-        return;
-    };
-    let mut entries = entries.filter_map(Result::ok).collect::<Vec<_>>();
-    entries.sort_by_key(|entry| entry.path());
-
-    for entry in entries {
-        if out.len() >= max_results {
-            break;
-        }
-
-        let path = entry.path();
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        if super::workspace_search::should_skip_name(&name) {
-            continue;
-        }
-
-        let Ok(file_type) = entry.file_type() else {
-            continue;
-        };
-        if file_type.is_dir() {
-            collect_root(root, &path, include_globs, exclude_globs, max_results, out);
-            continue;
-        }
-        if !file_type.is_file() {
-            continue;
-        }
-
-        collect_file(root, path, include_globs, exclude_globs, out);
-    }
-}
-
-fn collect_file(
-    root: &Path,
-    path: PathBuf,
-    include_globs: &[String],
-    exclude_globs: &[String],
-    out: &mut Vec<WorkspaceFileEntry>,
-) {
-    let relative_path = super::workspace_search::relative_path(root, &path);
-    if !super::workspace_search::path_included(&relative_path, include_globs, exclude_globs) {
-        return;
-    }
-
-    out.push(WorkspaceFileEntry {
-        uri: path_to_file_uri(&path),
-        path: path.to_string_lossy().into_owned(),
-        relative_path,
-    });
 }

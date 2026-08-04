@@ -206,6 +206,7 @@ uint32_t editor_core_ui_ffi_abi_version(void);
 #define ECU_FEATURE_MULTI_DOCUMENT_PROJECT_FILE_INDEX (1ull << 54)
 #define ECU_FEATURE_MULTI_DOCUMENT_PROJECT_FILE_INDEX_QUERY (1ull << 55)
 #define ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_OPERATION_ENVELOPE (1ull << 56)
+#define ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_SCAN_OPTIONS (1ull << 57)
 uint64_t editor_core_ui_ffi_feature_flags(void);
 char* editor_core_ui_ffi_runtime_info_json(void);
 
@@ -375,6 +376,9 @@ char* editor_core_ui_ffi_multi_document_list_workspace_files_envelope_json(
     const char* include_globs_json_utf8,
     const char* exclude_globs_json_utf8,
     uint32_t max_results);
+char* editor_core_ui_ffi_multi_document_list_workspace_files_with_options_envelope_json(
+    MultiDocumentEditorUi* multi,
+    const char* scan_options_json_utf8);
 char* editor_core_ui_ffi_multi_document_search_workspace_files_json(
     MultiDocumentEditorUi* multi,
     const char* query_utf8,
@@ -393,6 +397,13 @@ char* editor_core_ui_ffi_multi_document_search_workspace_files_envelope_json(
     uint8_t whole_word,
     uint8_t regex,
     uint32_t max_results);
+char* editor_core_ui_ffi_multi_document_search_workspace_files_with_options_envelope_json(
+    MultiDocumentEditorUi* multi,
+    const char* query_utf8,
+    const char* scan_options_json_utf8,
+    uint8_t case_sensitive,
+    uint8_t whole_word,
+    uint8_t regex);
 char* editor_core_ui_ffi_multi_document_workspace_file_replacement_workspace_edit_json(
     MultiDocumentEditorUi* multi,
     const char* query_utf8,
@@ -415,6 +426,15 @@ char* editor_core_ui_ffi_multi_document_workspace_file_replacement_workspace_edi
     uint8_t whole_word,
     uint8_t regex,
     uint32_t max_results);
+char* editor_core_ui_ffi_multi_document_workspace_file_replacement_workspace_edit_with_options_envelope_json(
+    MultiDocumentEditorUi* multi,
+    const char* query_utf8,
+    const char* replacement_utf8,
+    const char* scan_options_json_utf8,
+    const char* apply_mode_utf8,
+    uint8_t case_sensitive,
+    uint8_t whole_word,
+    uint8_t regex);
 char* editor_core_ui_ffi_multi_document_workspace_outline_snapshot_json(
     MultiDocumentEditorUi* multi);
 char* editor_core_ui_ffi_multi_document_workspace_outline_snapshot_envelope_json(

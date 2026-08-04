@@ -1,8 +1,9 @@
 use super::*;
 use editor_core::SearchOptions;
 use editor_core_ui::{
-    WorkspaceFileListOptions, WorkspaceFileReplacementOptions, WorkspaceFileSearchOptions,
+    WorkspaceFileListOptions, WorkspaceFileReplacementOptions, WorkspaceFileScanOptions,
 };
+use serde::Deserialize;
 use serde_json::{Value, json};
 
 fn search_all_tabs_value(
@@ -36,18 +37,18 @@ fn workspace_file_search_value(
     exclude_globs: Vec<String>,
     max_results: u32,
 ) -> Result<Value, String> {
-    let results = multi
-        .search_workspace_files(
+    let response = multi
+        .search_workspace_files_with_scan_options(
             query,
             options,
-            WorkspaceFileSearchOptions {
+            WorkspaceFileScanOptions::from_globs(
                 include_globs,
                 exclude_globs,
-                max_results: max_results as usize,
-            },
+                max_results as usize,
+            ),
         )
         .map_err(|err| format!("workspace file search failed: {err}"))?;
-    Ok(json!({ "results": results }))
+    Ok(json!(response))
 }
 
 fn workspace_file_list_value(
@@ -56,14 +57,14 @@ fn workspace_file_list_value(
     exclude_globs: Vec<String>,
     max_results: u32,
 ) -> Result<Value, String> {
-    let files = multi
-        .list_workspace_files(WorkspaceFileListOptions {
+    let response = multi
+        .list_workspace_files_with_scan_options(WorkspaceFileScanOptions::from_globs(
             include_globs,
             exclude_globs,
-            max_results: max_results as usize,
-        })
+            max_results as usize,
+        ))
         .map_err(|err| format!("workspace file list failed: {err}"))?;
-    Ok(json!({ "files": files }))
+    Ok(json!(response))
 }
 
 fn project_file_index_snapshot_value(multi: &MultiDocumentEditorUi) -> Value {
@@ -123,6 +124,45 @@ fn parse_apply_mode(ptr: *const c_char) -> Result<String, String> {
     }
 }
 
+#[derive(Debug, Deserialize)]
+struct WorkspaceFileScanOptionsJson {
+    include_globs: Option<Vec<String>>,
+    exclude_globs: Option<Vec<String>>,
+    max_results: Option<u32>,
+    offset: Option<u32>,
+    max_file_size_bytes: Option<u64>,
+    skip_binary: Option<bool>,
+    respect_ignore_files: Option<bool>,
+    cancelled: Option<bool>,
+    cancel_after_files: Option<u32>,
+}
+
+fn parse_scan_options_json(
+    ptr: *const c_char,
+    name: &'static str,
+) -> Result<WorkspaceFileScanOptions, String> {
+    if ptr.is_null() {
+        return Ok(WorkspaceFileScanOptions::default());
+    }
+    let json = require_str(ptr, name)?;
+    if json.trim().is_empty() {
+        return Ok(WorkspaceFileScanOptions::default());
+    }
+    let parsed = serde_json::from_str::<WorkspaceFileScanOptionsJson>(json)
+        .map_err(|err| invalid_argument(format!("{name} must be a JSON object: {err}")))?;
+    Ok(WorkspaceFileScanOptions {
+        include_globs: parsed.include_globs.unwrap_or_default(),
+        exclude_globs: parsed.exclude_globs.unwrap_or_default(),
+        max_results: parsed.max_results.unwrap_or(0) as usize,
+        offset: parsed.offset.unwrap_or(0) as usize,
+        max_file_size_bytes: parsed.max_file_size_bytes.unwrap_or(0),
+        skip_binary: parsed.skip_binary.unwrap_or(true),
+        respect_ignore_files: parsed.respect_ignore_files.unwrap_or(true),
+        cancelled: parsed.cancelled.unwrap_or(false),
+        cancel_after_files: parsed.cancel_after_files.map(|limit| limit as usize),
+    })
+}
+
 fn workspace_file_replacement_workspace_edit_value(
     multi: &mut MultiDocumentEditorUi,
     query: &str,
@@ -134,16 +174,16 @@ fn workspace_file_replacement_workspace_edit_value(
     max_results: u32,
 ) -> Result<Value, String> {
     let workspace_edit_json = multi
-        .workspace_file_replacement_workspace_edit_json(
+        .workspace_file_replacement_workspace_edit_json_with_scan_options(
             query,
             replacement,
             options,
-            WorkspaceFileReplacementOptions {
+            WorkspaceFileScanOptions::from_globs(
                 include_globs,
                 exclude_globs,
-                max_results: max_results as usize,
-                apply_mode,
-            },
+                max_results as usize,
+            ),
+            apply_mode,
         )
         .map_err(|err| format!("workspace file replacement failed: {err}"))?;
     serde_json::from_str(&workspace_edit_json)
@@ -298,6 +338,34 @@ pub extern "C" fn editor_core_ui_ffi_multi_document_list_workspace_files_envelop
         let exclude_globs = parse_globs_json(exclude_globs_json_utf8, "exclude_globs_json_utf8")?;
         let value = workspace_file_list_value(multi, include_globs, exclude_globs, max_results)?;
         Ok(multi_document_json_envelope_success(value))
+    }) {
+        Ok(envelope) => {
+            clear_last_error();
+            envelope
+        }
+        Err(err) => {
+            let (status, message) = classify_error(err);
+            set_last_error(message.clone());
+            multi_document_json_envelope_error(status, message)
+        }
+    };
+    make_c_string_ptr(envelope)
+}
+
+/// List local files under the configured workspace roots with explicit scan options.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_multi_document_list_workspace_files_with_options_envelope_json(
+    multi: *mut MultiDocumentEditorUi,
+    scan_options_json_utf8: *const c_char,
+) -> *mut c_char {
+    let envelope = match ffi_catch(|| {
+        let multi = require_mut(multi, "multi")?;
+        let scan_options =
+            parse_scan_options_json(scan_options_json_utf8, "scan_options_json_utf8")?;
+        let value = multi
+            .list_workspace_files_with_scan_options(scan_options)
+            .map_err(|err| format!("workspace file list failed: {err}"))?;
+        Ok(multi_document_json_envelope_success(json!(value)))
     }) {
         Ok(envelope) => {
             clear_last_error();
@@ -514,6 +582,44 @@ pub extern "C" fn editor_core_ui_ffi_multi_document_search_workspace_files_envel
     make_c_string_ptr(envelope)
 }
 
+/// Search local files under workspace roots with explicit scan options.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_multi_document_search_workspace_files_with_options_envelope_json(
+    multi: *mut MultiDocumentEditorUi,
+    query_utf8: *const c_char,
+    scan_options_json_utf8: *const c_char,
+    case_sensitive: u8,
+    whole_word: u8,
+    regex: u8,
+) -> *mut c_char {
+    let envelope = match ffi_catch(|| {
+        let multi = require_mut(multi, "multi")?;
+        let query = require_str(query_utf8, "query_utf8")?;
+        let scan_options =
+            parse_scan_options_json(scan_options_json_utf8, "scan_options_json_utf8")?;
+        let options = SearchOptions {
+            case_sensitive: case_sensitive != 0,
+            whole_word: whole_word != 0,
+            regex: regex != 0,
+        };
+        let value = multi
+            .search_workspace_files_with_scan_options(query, options, scan_options)
+            .map_err(|err| format!("workspace file search failed: {err}"))?;
+        Ok(multi_document_json_envelope_success(json!(value)))
+    }) {
+        Ok(envelope) => {
+            clear_last_error();
+            envelope
+        }
+        Err(err) => {
+            let (status, message) = classify_error(err);
+            set_last_error(message.clone());
+            multi_document_json_envelope_error(status, message)
+        }
+    };
+    make_c_string_ptr(envelope)
+}
+
 /// Build a WorkspaceEdit JSON payload that replaces local file search matches.
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_multi_document_workspace_file_replacement_workspace_edit_json(
@@ -601,6 +707,56 @@ pub extern "C" fn editor_core_ui_ffi_multi_document_workspace_file_replacement_w
             apply_mode,
             max_results,
         )?;
+        Ok(multi_document_json_envelope_success(value))
+    }) {
+        Ok(envelope) => {
+            clear_last_error();
+            envelope
+        }
+        Err(err) => {
+            let (status, message) = classify_error(err);
+            set_last_error(message.clone());
+            multi_document_json_envelope_error(status, message)
+        }
+    };
+    make_c_string_ptr(envelope)
+}
+
+/// Build a replacement WorkspaceEdit with explicit workspace file scan options.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_multi_document_workspace_file_replacement_workspace_edit_with_options_envelope_json(
+    multi: *mut MultiDocumentEditorUi,
+    query_utf8: *const c_char,
+    replacement_utf8: *const c_char,
+    scan_options_json_utf8: *const c_char,
+    apply_mode_utf8: *const c_char,
+    case_sensitive: u8,
+    whole_word: u8,
+    regex: u8,
+) -> *mut c_char {
+    let envelope = match ffi_catch(|| {
+        let multi = require_mut(multi, "multi")?;
+        let query = require_str(query_utf8, "query_utf8")?;
+        let replacement = require_str(replacement_utf8, "replacement_utf8")?;
+        let scan_options =
+            parse_scan_options_json(scan_options_json_utf8, "scan_options_json_utf8")?;
+        let apply_mode = parse_apply_mode(apply_mode_utf8)?;
+        let options = SearchOptions {
+            case_sensitive: case_sensitive != 0,
+            whole_word: whole_word != 0,
+            regex: regex != 0,
+        };
+        let workspace_edit_json = multi
+            .workspace_file_replacement_workspace_edit_json_with_scan_options(
+                query,
+                replacement,
+                options,
+                scan_options,
+                apply_mode,
+            )
+            .map_err(|err| format!("workspace file replacement failed: {err}"))?;
+        let value = serde_json::from_str(&workspace_edit_json)
+            .map_err(|err| format!("workspace file replacement returned invalid JSON: {err}"))?;
         Ok(multi_document_json_envelope_success(value))
     }) {
         Ok(envelope) => {

@@ -7,7 +7,6 @@
 ## 阶段 12：Workspace Search、Project Index 与 Session Workflows
 
 - 继续收敛 workspace search/result refresh 细节、recent 和 session 工作流。
-- 将 opened scope、workspace scope、ignored files、binary files、large files、result pagination 和 cancellation 纳入 core-owned 模型。
 - 让 Find in Files、Quick Open、recent files/projects 和 session restore 消费同一套 core-backed 数据源。
 
 ## 阶段 13：Visual Baselines 与黑盒自动化

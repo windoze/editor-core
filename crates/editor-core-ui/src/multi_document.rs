@@ -16,6 +16,7 @@ mod workspace_edit;
 mod workspace_files;
 mod workspace_outline;
 mod workspace_roots;
+mod workspace_scan;
 mod workspace_search;
 
 pub use lsp_request_events::{MultiDocumentLspRequestEvent, MultiDocumentLspRequestEventsSnapshot};
@@ -43,11 +44,15 @@ pub use workspace_edit::{
     WorkspaceEditTransactionResourceOperation, WorkspaceEditTransactionResult,
     WorkspaceEditTransactionSkippedDetail, WorkspaceEditTransactionUndoResult,
 };
-pub use workspace_files::{WorkspaceFileEntry, WorkspaceFileListOptions};
+pub use workspace_files::{
+    WorkspaceFileEntry, WorkspaceFileListOptions, WorkspaceFileListResponse,
+};
 pub use workspace_outline::{WorkspaceOutlineDocument, WorkspaceOutlineSnapshot};
 pub use workspace_roots::{WorkspaceFolder, WorkspaceRootsChange};
+pub use workspace_scan::{WorkspaceFileScanOptions, WorkspaceFileScanSummary};
 pub use workspace_search::{
-    WorkspaceFileReplacementOptions, WorkspaceFileSearchOptions, WorkspaceFileSearchResult,
+    WorkspaceFileReplacementOptions, WorkspaceFileSearchOptions, WorkspaceFileSearchResponse,
+    WorkspaceFileSearchResult,
 };
 
 const MAX_WORKSPACE_EDIT_UNDO_RECORDS: usize = 64;
@@ -883,12 +888,35 @@ impl MultiDocumentEditorUi {
         )
     }
 
+    /// Search regular local files with explicit core-owned scan options.
+    pub fn search_workspace_files_with_scan_options(
+        &self,
+        query: &str,
+        options: SearchOptions,
+        scan_options: WorkspaceFileScanOptions,
+    ) -> Result<WorkspaceFileSearchResponse, UiError> {
+        workspace_search::search_workspace_files_with_scan_options(
+            &self.workspace_roots,
+            query,
+            options,
+            scan_options,
+        )
+    }
+
     /// List regular local files under configured workspace roots.
     pub fn list_workspace_files(
         &self,
         options: WorkspaceFileListOptions,
     ) -> Result<Vec<WorkspaceFileEntry>, UiError> {
         workspace_files::list_workspace_files(&self.workspace_roots, options)
+    }
+
+    /// List regular local files with explicit core-owned scan options.
+    pub fn list_workspace_files_with_scan_options(
+        &self,
+        scan_options: WorkspaceFileScanOptions,
+    ) -> Result<WorkspaceFileListResponse, UiError> {
+        workspace_files::list_workspace_files_with_scan_options(&self.workspace_roots, scan_options)
     }
 
     /// Refresh the core-owned project file index from the current workspace roots.
@@ -933,6 +961,25 @@ impl MultiDocumentEditorUi {
             replacement,
             options,
             replacement_options,
+        )
+    }
+
+    /// Build a replacement WorkspaceEdit JSON envelope with explicit core-owned scan options.
+    pub fn workspace_file_replacement_workspace_edit_json_with_scan_options(
+        &self,
+        query: &str,
+        replacement: &str,
+        options: SearchOptions,
+        scan_options: WorkspaceFileScanOptions,
+        apply_mode: String,
+    ) -> Result<String, UiError> {
+        workspace_search::workspace_file_replacement_workspace_edit_json_with_scan_options(
+            &self.workspace_roots,
+            query,
+            replacement,
+            options,
+            scan_options,
+            apply_mode,
         )
     }
 
