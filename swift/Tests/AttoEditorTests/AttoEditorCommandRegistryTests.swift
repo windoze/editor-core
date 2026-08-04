@@ -195,6 +195,24 @@ extension AttoEditorCommandTests {
         XCTAssertFalse(closeAll.isEnabled)
     }
 
+    func testCommandSurfacesReferenceRegisteredCommandIDs() throws {
+        let delegate = AttoAppDelegate(keyBindings: AttoKeymap.defaultBindings)
+        let registryIDs = Set(delegate._defaultCommandsForTesting().map(\.id))
+        let menuIDs = Set(commandIDs(in: AttoMainMenuBuilder.build(appDelegate: delegate)))
+        let defaultKeymapIDs = Set(AttoKeymap.defaultBindings.keys)
+
+        XCTAssertTrue(
+            menuIDs.subtracting(registryIDs).isEmpty,
+            "Menu references commands missing from the registry: \(menuIDs.subtracting(registryIDs).sorted())"
+        )
+        XCTAssertTrue(
+            defaultKeymapIDs.subtracting(registryIDs).isEmpty,
+            "Default keymap references commands missing from the registry: \(defaultKeymapIDs.subtracting(registryIDs).sorted())"
+        )
+        XCTAssertTrue(menuIDs.contains("workbench.command_palette"))
+        XCTAssertTrue(defaultKeymapIDs.contains("workbench.command_palette"))
+    }
+
     func testCommandRegistryCarriesParameterSchemasAndMacroPolicies() throws {
         let delegate = AttoAppDelegate(keyBindings: [:])
         XCTAssertTrue(delegate._commandConflictsForTesting().isEmpty)
@@ -435,5 +453,18 @@ extension AttoEditorCommandTests {
         XCTAssertEqual(try editorView.editor.text(), "abc\ndeXf\n")
 
         XCTAssertFalse(delegate.executeCommand(id: "editor.duplicate_lines", arguments: ["unused": .boolean(true)]))
+    }
+
+    private func commandIDs(in menu: NSMenu) -> [String] {
+        var out: [String] = []
+        for item in menu.items {
+            if let commandID = item.representedObject as? String {
+                out.append(commandID)
+            }
+            if let submenu = item.submenu {
+                out.append(contentsOf: commandIDs(in: submenu))
+            }
+        }
+        return out
     }
 }
