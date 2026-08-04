@@ -877,9 +877,12 @@ extension AttoEditorAreaViewController {
             guard confirmReloadDirtyTab(tab) else { return false }
         }
 
-        let diskText: String
+        let loadResult: AttoDocumentLoadResult
         do {
-            diskText = try String(contentsOf: url, encoding: .utf8)
+            loadResult = try AttoDocumentLoadPolicy.loadText(
+                from: url,
+                largeFileByteLimit: documentLoadLargeFileByteLimit
+            )
         } catch {
             setTransientStatusText("Reload failed: \(url.lastPathComponent)")
             NSSound.beep()
@@ -887,7 +890,7 @@ extension AttoEditorAreaViewController {
             return false
         }
 
-        guard replaceOpenTabTextForReload(tab, with: diskText, documentURL: url) else {
+        guard replaceOpenTabTextForReload(tab, with: loadResult, documentURL: url) else {
             setTransientStatusText("Reload failed: \(url.lastPathComponent)")
             NSSound.beep()
             return false
@@ -903,10 +906,11 @@ extension AttoEditorAreaViewController {
     @discardableResult
     private func replaceOpenTabTextForReload(
         _ tab: AttoEditorTab,
-        with text: String,
+        with loadResult: AttoDocumentLoadResult,
         documentURL: URL
     ) -> Bool {
         do {
+            let text = loadResult.text
             let oldText = try tab.editCore.editor.text()
             let fullRange = UInt32(clamping: oldText.unicodeScalars.count)
             _ = try tab.editCore.editor.applyTextEdits([
@@ -919,7 +923,10 @@ extension AttoEditorAreaViewController {
             tab.isDirty = false
             tab.isUntitled = false
             syncCoreTabText(tab, markSaved: true)
-            notifyLspDocumentChangedForOpenSessions(tab, documentURL: documentURL, text: text)
+            applyDocumentLoadPolicyResult(loadResult, to: tab, documentURL: documentURL)
+            if !loadResult.disablesLanguageProcessing {
+                notifyLspDocumentChangedForOpenSessions(tab, documentURL: documentURL, text: text)
+            }
             refreshTabAfterReload(tab, documentURL: documentURL)
             return true
         } catch {

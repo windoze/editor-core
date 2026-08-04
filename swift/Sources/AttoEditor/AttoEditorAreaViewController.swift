@@ -53,6 +53,7 @@ final class AttoEditorAreaViewController: NSViewController {
     var treeSitterRegistryJSON: String?
     var treeSitterLanguageIDs: [String] = []
     var treeSitterExtensionMap: [String: String] = [:]
+    var documentLoadLargeFileByteLimit = AttoDocumentLoadPolicy.defaultLargeFileByteLimit
 
     var onDidCloseFile: ((URL) -> Void)?
     /// (url, createdOnDisk)
@@ -2021,6 +2022,7 @@ final class AttoEditorTab {
     var syntaxLanguageId: String?
     var languageSupportSource: AttoLanguageSupportSource
     var languageFallbackReasons: [String]
+    var languageProcessingDisabledReason: String?
     var panes: [EditCoreUI]
     var activePaneIndex: Int
     var lspServerConfig: AttoLspServerLaunchConfig?
@@ -2050,6 +2052,7 @@ final class AttoEditorTab {
         syntaxLanguageId: String?,
         languageSupportSource: AttoLanguageSupportSource = .plainText,
         languageFallbackReasons: [String] = [],
+        languageProcessingDisabledReason: String? = nil,
         editCore: EditCoreUI
     ) {
         self.id = id
@@ -2061,6 +2064,7 @@ final class AttoEditorTab {
         self.syntaxLanguageId = syntaxLanguageId
         self.languageSupportSource = languageSupportSource
         self.languageFallbackReasons = languageFallbackReasons
+        self.languageProcessingDisabledReason = languageProcessingDisabledReason
         self.panes = [editCore]
         self.activePaneIndex = 0
         self.lspServerConfig = nil

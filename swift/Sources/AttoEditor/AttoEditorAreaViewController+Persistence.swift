@@ -76,6 +76,10 @@ extension AttoEditorAreaViewController {
 
     func applyLanguageConfiguration(for tab: AttoEditorTab) {
         syncCoreTabLanguageId(tab)
+        applyDocumentLanguageConfiguration(for: tab)
+    }
+
+    func applyDocumentLanguageConfiguration(for tab: AttoEditorTab) {
         let fileURL = projectedFileURL(for: tab)
         for editCore in tab.panes {
             applyLanguageConfiguration(fileURL: fileURL, syntaxLanguageId: tab.syntaxLanguageId, to: editCore)
@@ -112,6 +116,42 @@ extension AttoEditorAreaViewController {
         } catch {
             NSLog("AttoEditor: setIndentationConfig failed for %@: %@", fileURL.path, String(describing: error))
         }
+    }
+
+    func applyDocumentLoadPolicyResult(
+        _ loadResult: AttoDocumentLoadResult,
+        to tab: AttoEditorTab,
+        documentURL: URL
+    ) {
+        let wasLanguageProcessingDisabled = tab.languageProcessingDisabledReason != nil
+        tab.languageProcessingDisabledReason = loadResult.languageProcessingDisabledReason
+
+        if loadResult.disablesLanguageProcessing {
+            stopLspSessionForLanguageChange(tab)
+            for editCore in tab.panes {
+                editCore.editor.treeSitterDisable()
+                editCore.editor.sublimeDisable()
+            }
+            tab.lspServerConfig = nil
+            tab.suppressesAutomaticLspStart = true
+            tab.syntaxLanguageId = nil
+            tab.languageSupportSource = .plainText
+            tab.languageFallbackReasons = loadResult.fallbackReasons
+            syncCoreTabLanguageId(nil, for: tab)
+            syncProjectLspServerConfigsToCore()
+            return
+        }
+
+        guard wasLanguageProcessingDisabled else { return }
+
+        let syntaxSupport = configureSyntaxSupport(for: documentURL, editCore: tab.editCore)
+        tab.syntaxLanguageId = syntaxSupport.syntaxLanguageId
+        tab.languageSupportSource = syntaxSupport.source
+        tab.languageFallbackReasons = syntaxSupport.fallbackReasons
+        tab.lspServerConfig = syntaxSupport.lspServerConfig
+        tab.suppressesAutomaticLspStart = false
+        syncCoreTabLanguageId(tab)
+        syncProjectLspServerConfigsToCore()
     }
 
     func configureEditCoreHooks(_ editCore: EditCoreUI, tabID: UUID) {
@@ -185,7 +225,16 @@ extension AttoEditorAreaViewController {
         isUntitled: Bool = false,
         initialTextOverride: String? = nil
     ) throws -> AttoEditorTab {
-        let initialText = initialTextOverride ?? ((try? String(contentsOf: url, encoding: .utf8)) ?? "")
+        let loadResult: AttoDocumentLoadResult
+        if let initialTextOverride {
+            loadResult = AttoDocumentLoadPolicy.overriddenText(initialTextOverride)
+        } else {
+            loadResult = try AttoDocumentLoadPolicy.loadText(
+                from: url,
+                largeFileByteLimit: documentLoadLargeFileByteLimit
+            )
+        }
+        let initialText = loadResult.text
 
         let prefs = AttoPreferences.shared
         let fontFamiliesCSV = prefs.fontFamiliesCSVForNewViews()
@@ -210,7 +259,14 @@ extension AttoEditorAreaViewController {
         }
 
         // Syntax support (best-effort): LSP -> Tree-sitter -> Sublime `.sublime-syntax`.
-        let syntaxSupport = configureSyntaxSupport(for: url, editCore: editCore)
+        let syntaxSupport = loadResult.disablesLanguageProcessing
+            ? SyntaxSupportConfiguration(
+                syntaxLanguageId: nil,
+                lspServerConfig: nil,
+                source: .plainText,
+                fallbackReasons: loadResult.fallbackReasons
+            )
+            : configureSyntaxSupport(for: url, editCore: editCore)
         let documentConfiguration = documentConfigurationSnapshot(
             for: url,
             syntaxLanguageId: syntaxSupport.syntaxLanguageId
@@ -232,9 +288,11 @@ extension AttoEditorAreaViewController {
             syntaxLanguageId: syntaxSupport.syntaxLanguageId,
             languageSupportSource: syntaxSupport.source,
             languageFallbackReasons: syntaxSupport.fallbackReasons,
+            languageProcessingDisabledReason: loadResult.languageProcessingDisabledReason,
             editCore: editCore
         )
         tab.lspServerConfig = syntaxSupport.lspServerConfig
+        tab.suppressesAutomaticLspStart = loadResult.disablesLanguageProcessing
         syncCoreTabLanguageId(tab)
         configureEditCoreHooks(editCore, tabID: tabId)
         return tab

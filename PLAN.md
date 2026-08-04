@@ -398,7 +398,12 @@
   - 验证：`swift test --package-path swift --filter AttoStatusBarSelectionTests/testStatusBarShowsLanguageSourceIndicator`
   - 验证：`swift test --package-path swift --filter 'AttoEditorCommandTests/test(ProjectLspAutoStartUsesCoreStartPlanLanguageFilter|ShutdownLspServerInActiveTabRequiresCoreStopPlanMatch)'`
   - 验证：`git diff --check`
-- [ ] 产品化 language mode 切换、parser/server 不可用、大文件、binary/invalid UTF-8 的降级体验。
+- [x] 产品化 language mode 切换、parser/server 不可用、大文件、binary/invalid UTF-8 的降级体验。
+  - [x] 新增 `AttoDocumentLoadPolicy`，统一检测大文件、binary NUL 和 invalid UTF-8；打开/重载时按结果降级到 Plain Text，禁用 LSP、Tree-sitter、Sublime 和 language mode selector，并把原因暴露到 status bar tooltip。
+  - [x] parser/server 不可用路径保留 Plain Text fallback，并将 No LSP server、Tree-sitter parser unavailable、No Sublime syntax fallback 的原因传到 tab/status bar。
+  - 验证：`swift test --package-path swift --filter AttoDocumentLoadPolicyTests`
+  - 验证：`swift test --package-path swift --filter AttoLanguageFallbackExperienceTests`
+  - 验证：`git diff --check`
 - [ ] 补齐 outline、folding、高亮、diagnostics 和 status bar 的跨语言测试。
 
 ## 阶段 12：Workspace Search / Project Index / Session

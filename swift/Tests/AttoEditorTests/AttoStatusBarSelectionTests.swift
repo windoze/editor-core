@@ -100,7 +100,7 @@ final class AttoStatusBarSelectionTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let file = root.appendingPathComponent("plain.txt")
+        let file = root.appendingPathComponent("plain.noattofallback")
         try "plain".write(to: file, atomically: true, encoding: .utf8)
 
         let lib = EditorCoreUIFFILibrary()

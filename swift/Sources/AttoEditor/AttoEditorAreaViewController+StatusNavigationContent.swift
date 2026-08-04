@@ -249,7 +249,7 @@ extension AttoEditorAreaViewController {
             languageSourceText: languageSourceIndicator.statusText,
             languageSourceTooltip: languageSourceIndicator.tooltipText,
             languageId: tab.syntaxLanguageId,
-            languageIsEnabled: true,
+            languageIsEnabled: tab.languageProcessingDisabledReason == nil,
             lspText: lspText,
             positionText: "Ln \(line1), Col \(col1)",
             selectionText: selectionText,
@@ -1680,7 +1680,8 @@ extension AttoEditorAreaViewController {
             tab.syntaxLanguageId = nil
             tab.languageSupportSource = .plainText
             tab.languageFallbackReasons = []
-            applyLanguageConfiguration(for: tab)
+            syncCoreTabLanguageId(nil, for: tab)
+            applyDocumentLanguageConfiguration(for: tab)
             updateAlwaysPollProcessingForSelectedTab()
             updateStatusBar()
             tab.editCore.editorView.needsDisplay = true
@@ -1689,6 +1690,12 @@ extension AttoEditorAreaViewController {
 
         let lang = (languageId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if lang.isEmpty {
+            NSSound.beep()
+            return
+        }
+
+        if let reason = tab.languageProcessingDisabledReason {
+            setTransientStatusText("Language mode unavailable: \(reason)")
             NSSound.beep()
             return
         }
@@ -1728,7 +1735,7 @@ extension AttoEditorAreaViewController {
         }
     }
 
-    private func stopLspSessionForLanguageChange(_ tab: AttoEditorTab) {
+    func stopLspSessionForLanguageChange(_ tab: AttoEditorTab) {
         guard (try? tab.editCore.editor.lspIsEnabled()) == true else { return }
         let documentURL = projectedFileURL(for: tab)
         let config = tab.lspServerConfig
