@@ -172,12 +172,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # 先建 draft，确认产物无误后再手动 publish。
-          gh release create "${GITHUB_REF_NAME}" \
-            --draft \
-            --generate-notes \
-            --title "AttoEditor ${GITHUB_REF_NAME}" \
-            dist/*.dmg dist/SHA256SUMS.txt
+          # 产物已经过签名 + 公证 + stapler validate 校验，直接正式发布。
+          #
+          # 用 --clobber 上传：release 已存在时（例如重跑同一个 tag）
+          # 覆盖同名 asset，而不是整步失败。
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            echo "release ${GITHUB_REF_NAME} 已存在，覆盖上传产物并确保为正式发布"
+            gh release upload "${GITHUB_REF_NAME}" \
+              dist/*.dmg dist/SHA256SUMS.txt --clobber
+            gh release edit "${GITHUB_REF_NAME}" --draft=false
+          else
+            gh release create "${GITHUB_REF_NAME}" \
+              --generate-notes \
+              --title "AttoEditor ${GITHUB_REF_NAME}" \
+              dist/*.dmg dist/SHA256SUMS.txt
+          fi
+          gh release view "${GITHUB_REF_NAME}" --json isDraft,url \
+            --jq '"draft=\(.isDraft) url=\(.url)"'
 
       - name: Clean up keychain
         if: ${{ always() }}
