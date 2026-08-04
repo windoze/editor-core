@@ -290,6 +290,10 @@
       - 验证：`swift test --package-path swift --filter Diagnostics`
       - 验证：`swift test --package-path swift --filter Workbench`
 - [ ] 补齐 keyboard navigation、focus restore、selection restore 和 panel persistence。
+  - [x] 先补 Workbench History / Problems panel 的 selection restore 与空结果键盘保护。
+    - 验证：`swift test --package-path swift --filter AttoAccessibilityIdentifierTests`
+    - 验证：`swift test --package-path swift --filter Workbench`
+  - [ ] 再补 Workbench floating panel / dock 的 focus restore 与可见性持久化。
 - [ ] 拆分继续增长的 Workbench/AppKit 测试文件。
 
 ## 阶段 8：Command / Keymap / Sublime 行为

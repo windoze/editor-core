@@ -23,6 +23,7 @@ final class AttoLspWorkbenchHistoryPanelController: NSObject, NSTableViewDataSou
     private var items: [Item] = []
     private var rows: [Row] = []
     private var filteredRows: [Row] = []
+    private var selectedItemID: String?
     private var panel: NSPanel?
     private let onOpen: (Item) -> Void
     private let searchField = NSSearchField(frame: .zero)
@@ -45,6 +46,26 @@ final class AttoLspWorkbenchHistoryPanelController: NSObject, NSTableViewDataSou
 
     var rowCount: Int {
         filteredRows.count
+    }
+
+    var selectedItem: Item? {
+        let row = tableView.selectedRow
+        if row >= 0, row < filteredRows.count {
+            return filteredRows[row].item
+        }
+        guard let selectedItemID else { return nil }
+        return filteredRows.first { $0.item.id == selectedItemID }?.item
+    }
+
+    @discardableResult
+    func selectItem(id: String) -> Bool {
+        guard let index = filteredRows.firstIndex(where: { $0.item.id == id }) else {
+            return false
+        }
+        selectedItemID = id
+        tableView.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
+        tableView.scrollRowToVisible(index)
+        return true
     }
 
     static func metadataSummary(for items: [Item]) -> String {
@@ -210,8 +231,18 @@ final class AttoLspWorkbenchHistoryPanelController: NSObject, NSTableViewDataSou
             }
         }
         tableView.reloadData()
-        if filteredRows.isEmpty == false {
+        restoreSelection()
+    }
+
+    private func restoreSelection() {
+        if let selectedItemID,
+           let selectedIndex = filteredRows.firstIndex(where: { $0.item.id == selectedItemID }) {
+            tableView.selectRowIndexes(IndexSet(integer: selectedIndex), byExtendingSelection: false)
+        } else if let first = filteredRows.first {
+            selectedItemID = first.item.id
             tableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+        } else {
+            tableView.deselectAll(nil)
         }
     }
 
@@ -280,9 +311,8 @@ final class AttoLspWorkbenchHistoryPanelController: NSObject, NSTableViewDataSou
     }
 
     private func openSelectedHistoryItem() {
-        let row = tableView.selectedRow
-        guard row >= 0, row < filteredRows.count else { return }
-        onOpen(filteredRows[row].item)
+        guard let selectedItem else { return }
+        onOpen(selectedItem)
     }
 
     func controlTextDidChange(_ obj: Notification) {
@@ -295,16 +325,10 @@ final class AttoLspWorkbenchHistoryPanelController: NSObject, NSTableViewDataSou
             hide()
             return true
         case #selector(NSResponder.moveDown(_:)):
-            let next = min(tableView.selectedRow + 1, filteredRows.count - 1)
-            if next >= 0 {
-                tableView.selectRowIndexes(IndexSet(integer: next), byExtendingSelection: false)
-                tableView.scrollRowToVisible(next)
-            }
+            moveSelection(delta: 1)
             return true
         case #selector(NSResponder.moveUp(_:)):
-            let previous = max(tableView.selectedRow - 1, 0)
-            tableView.selectRowIndexes(IndexSet(integer: previous), byExtendingSelection: false)
-            tableView.scrollRowToVisible(previous)
+            moveSelection(delta: -1)
             return true
         case #selector(NSResponder.insertNewline(_:)):
             openSelectedHistoryItem()
@@ -312,6 +336,24 @@ final class AttoLspWorkbenchHistoryPanelController: NSObject, NSTableViewDataSou
         default:
             return false
         }
+    }
+
+    private func moveSelection(delta: Int) {
+        guard filteredRows.isEmpty == false else {
+            tableView.deselectAll(nil)
+            return
+        }
+        let current = max(tableView.selectedRow, 0)
+        let next = min(max(current + delta, 0), filteredRows.count - 1)
+        selectedItemID = filteredRows[next].item.id
+        tableView.selectRowIndexes(IndexSet(integer: next), byExtendingSelection: false)
+        tableView.scrollRowToVisible(next)
+    }
+
+    func tableViewSelectionDidChange(_ notification: Notification) {
+        let row = tableView.selectedRow
+        guard row >= 0, row < filteredRows.count else { return }
+        selectedItemID = filteredRows[row].item.id
     }
 
     func windowWillClose(_ notification: Notification) {

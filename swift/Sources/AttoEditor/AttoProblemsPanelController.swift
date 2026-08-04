@@ -46,6 +46,7 @@ final class AttoProblemsPanelController: NSObject, NSTableViewDataSource, NSTabl
     }
 
     private struct Row {
+        let identity: String
         let payload: Payload
         let title: String
         let message: String
@@ -66,6 +67,7 @@ final class AttoProblemsPanelController: NSObject, NSTableViewDataSource, NSTabl
     private var problems: [AttoUnifiedDiagnosticProblem] = []
     private var rows: [Row] = []
     private var filteredRows: [Row] = []
+    private var selectedRowIdentity: String?
     private var title = "Problems"
     private var placeholder = "Filter problems..."
     private var metadataText: String?
@@ -154,9 +156,17 @@ final class AttoProblemsPanelController: NSObject, NSTableViewDataSource, NSTabl
         self.metadataText = metadataText
         let titleForDiagnostic = titleForDiagnostic ?? { $0.message }
         rows = diagnostics.map { diagnostic in
-            Row(
+            let rowTitle = titleForDiagnostic(diagnostic)
+            return Row(
+                identity: Self.rowIdentity(
+                    title: rowTitle,
+                    message: diagnostic.message,
+                    severity: diagnostic.severity?.rawValue,
+                    source: diagnostic.source,
+                    code: diagnostic.code
+                ),
                 payload: .active(diagnostic),
-                title: titleForDiagnostic(diagnostic),
+                title: rowTitle,
                 message: diagnostic.message,
                 severity: diagnostic.severity?.rawValue,
                 source: diagnostic.source,
@@ -181,9 +191,17 @@ final class AttoProblemsPanelController: NSObject, NSTableViewDataSource, NSTabl
         self.metadataText = metadataText
         let titleForWorkspaceDiagnostic = titleForWorkspaceDiagnostic ?? { $0.message }
         rows = workspaceDiagnostics.map { diagnostic in
-            Row(
+            let rowTitle = titleForWorkspaceDiagnostic(diagnostic)
+            return Row(
+                identity: Self.rowIdentity(
+                    title: rowTitle,
+                    message: diagnostic.message,
+                    severity: diagnostic.severityLabel,
+                    source: diagnostic.source,
+                    code: diagnostic.code
+                ),
                 payload: .workspace(diagnostic),
-                title: titleForWorkspaceDiagnostic(diagnostic),
+                title: rowTitle,
                 message: diagnostic.message,
                 severity: diagnostic.severityLabel,
                 source: diagnostic.source,
@@ -208,9 +226,17 @@ final class AttoProblemsPanelController: NSObject, NSTableViewDataSource, NSTabl
         self.metadataText = metadataText
         let titleForProblem = titleForProblem ?? { $0.message }
         rows = problems.map { problem in
-            Row(
+            let rowTitle = titleForProblem(problem)
+            return Row(
+                identity: Self.rowIdentity(
+                    title: rowTitle,
+                    message: problem.message,
+                    severity: problem.severity?.rawValue,
+                    source: problem.diagnosticSource,
+                    code: problem.code
+                ),
                 payload: .unified(problem),
-                title: titleForProblem(problem),
+                title: rowTitle,
                 message: problem.message,
                 severity: problem.severity?.rawValue,
                 source: problem.diagnosticSource,
@@ -405,9 +431,35 @@ final class AttoProblemsPanelController: NSObject, NSTableViewDataSource, NSTabl
             }
         }
         tableView.reloadData()
-        if filteredRows.isEmpty == false {
+        restoreSelection()
+    }
+
+    private func restoreSelection() {
+        if let selectedRowIdentity,
+           let selectedIndex = filteredRows.firstIndex(where: { $0.identity == selectedRowIdentity }) {
+            tableView.selectRowIndexes(IndexSet(integer: selectedIndex), byExtendingSelection: false)
+        } else if let first = filteredRows.first {
+            selectedRowIdentity = first.identity
             tableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+        } else {
+            tableView.deselectAll(nil)
         }
+    }
+
+    private static func rowIdentity(
+        title: String,
+        message: String,
+        severity: String?,
+        source: String?,
+        code: String?
+    ) -> String {
+        [
+            title,
+            message,
+            severity ?? "",
+            source ?? "",
+            code ?? "",
+        ].joined(separator: "|")
     }
 
     func numberOfRows(in tableView: NSTableView) -> Int {
@@ -470,16 +522,10 @@ final class AttoProblemsPanelController: NSObject, NSTableViewDataSource, NSTabl
             hide()
             return true
         case #selector(NSResponder.moveDown(_:)):
-            let next = min(tableView.selectedRow + 1, filteredRows.count - 1)
-            if next >= 0 {
-                tableView.selectRowIndexes(IndexSet(integer: next), byExtendingSelection: false)
-                tableView.scrollRowToVisible(next)
-            }
+            moveSelection(delta: 1)
             return true
         case #selector(NSResponder.moveUp(_:)):
-            let previous = max(tableView.selectedRow - 1, 0)
-            tableView.selectRowIndexes(IndexSet(integer: previous), byExtendingSelection: false)
-            tableView.scrollRowToVisible(previous)
+            moveSelection(delta: -1)
             return true
         case #selector(NSResponder.insertNewline(_:)):
             openSelectedProblem()
@@ -487,6 +533,24 @@ final class AttoProblemsPanelController: NSObject, NSTableViewDataSource, NSTabl
         default:
             return false
         }
+    }
+
+    private func moveSelection(delta: Int) {
+        guard filteredRows.isEmpty == false else {
+            tableView.deselectAll(nil)
+            return
+        }
+        let current = max(tableView.selectedRow, 0)
+        let next = min(max(current + delta, 0), filteredRows.count - 1)
+        selectedRowIdentity = filteredRows[next].identity
+        tableView.selectRowIndexes(IndexSet(integer: next), byExtendingSelection: false)
+        tableView.scrollRowToVisible(next)
+    }
+
+    func tableViewSelectionDidChange(_ notification: Notification) {
+        let row = tableView.selectedRow
+        guard row >= 0, row < filteredRows.count else { return }
+        selectedRowIdentity = filteredRows[row].identity
     }
 
     func windowWillClose(_ notification: Notification) {

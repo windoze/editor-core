@@ -907,6 +907,80 @@ final class AttoAccessibilityIdentifierTests: XCTestCase {
         )
     }
 
+    func testLspWorkbenchHistoryPanelRestoresSelectionAcrossUpdatesAndEmptyFilters() throws {
+        let items = [
+            AttoLspWorkbenchHistoryPanelController.Item(
+                id: "locations-1",
+                family: "locations",
+                resultSequence: 1,
+                title: "Locations",
+                detail: "Definition: 1 result",
+                status: "1 location | Fresh",
+                recordedAt: Date(timeIntervalSince1970: 1),
+                isPinned: false
+            ),
+            AttoLspWorkbenchHistoryPanelController.Item(
+                id: "symbols-2",
+                family: "symbols",
+                resultSequence: 2,
+                title: "Symbols",
+                detail: "Document Symbols: 2 results",
+                status: "2 symbols | Fresh",
+                recordedAt: Date(timeIntervalSince1970: 2),
+                isPinned: true
+            ),
+        ]
+
+        var openedItems: [AttoLspWorkbenchHistoryPanelController.Item] = []
+        let controller = AttoLspWorkbenchHistoryPanelController { openedItems.append($0) }
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 900, height: 580),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        defer {
+            controller.hide()
+            window.close()
+        }
+
+        window.contentView = NSView(frame: NSRect(x: 0, y: 0, width: 900, height: 580))
+        window.makeKeyAndOrderFront(nil)
+
+        XCTAssertTrue(controller.show(relativeTo: window, items: items))
+        let panel = try XCTUnwrap(window.childWindows?.first)
+        let root = try XCTUnwrap(panel.contentView)
+        let searchField = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.lspWorkbenchHistoryPanelSearchField, in: root) as? NSSearchField
+        )
+        let table = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.lspWorkbenchHistoryPanelTable, in: root) as? NSTableView
+        )
+
+        XCTAssertTrue(controller.selectItem(id: "symbols-2"))
+        XCTAssertEqual(controller.selectedItem?.id, "symbols-2")
+
+        controller.update(items: items)
+        XCTAssertEqual(controller.selectedItem?.id, "symbols-2")
+        XCTAssertEqual(table.selectedRow, 1)
+
+        searchField.stringValue = "no matching history"
+        controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: searchField))
+        XCTAssertEqual(table.numberOfRows, 0)
+        XCTAssertNil(controller.selectedItem)
+        XCTAssertTrue(controller.control(searchField, textView: NSTextView(), doCommandBy: #selector(NSResponder.moveDown(_:))))
+        XCTAssertTrue(controller.control(searchField, textView: NSTextView(), doCommandBy: #selector(NSResponder.moveUp(_:))))
+
+        searchField.stringValue = ""
+        controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: searchField))
+        XCTAssertEqual(table.numberOfRows, 2)
+        XCTAssertEqual(controller.selectedItem?.id, "symbols-2")
+        XCTAssertEqual(table.selectedRow, 1)
+
+        XCTAssertTrue(controller.control(searchField, textView: NSTextView(), doCommandBy: #selector(NSResponder.insertNewline(_:))))
+        XCTAssertEqual(openedItems, [items[1]])
+    }
+
     func testProblemsPanelExposesStableIdentifiersAndFiltersRows() throws {
         let diagnostics = [
             EcuDiagnostic(
@@ -968,6 +1042,23 @@ final class AttoAccessibilityIdentifierTests: XCTestCase {
         XCTAssertEqual(searchField.placeholderString, "Filter problems...")
         XCTAssertEqual(metadataLabel.stringValue, "Problems | 2 problems")
         XCTAssertEqual(table.numberOfRows, 2)
+
+        table.selectRowIndexes(IndexSet(integer: 1), byExtendingSelection: false)
+        controller.tableViewSelectionDidChange(
+            Notification(name: NSTableView.selectionDidChangeNotification, object: table)
+        )
+        controller.update(diagnostics: diagnostics, metadataText: "Problems | 2 problems")
+        XCTAssertEqual(table.selectedRow, 1)
+
+        searchField.stringValue = "no matching diagnostics"
+        controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: searchField))
+        XCTAssertEqual(table.numberOfRows, 0)
+        XCTAssertTrue(controller.control(searchField, textView: NSTextView(), doCommandBy: #selector(NSResponder.moveDown(_:))))
+
+        searchField.stringValue = ""
+        controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: searchField))
+        XCTAssertEqual(table.numberOfRows, 2)
+        XCTAssertEqual(table.selectedRow, 1)
 
         searchField.stringValue = "warning"
         controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: searchField))
