@@ -2,12 +2,7 @@
 
 完整历史、已完成提交记录和旧矩阵已归档到 `docs/archive/2026-08-04-swift-gaps-1/SWIFT-GAPS.md`。
 
-本文只保留尚未完成的目标和任务边界。执行顺序以 `PLAN.md` 为准：当前按阶段 12 到阶段 15 逐步推进。完成项不再在本文重复记录。
-
-## 阶段 12：Workspace Search、Project Index 与 Session Workflows
-
-- 继续收敛 workspace search/result refresh 细节、recent 和 session 工作流。
-- 让 Find in Files、Quick Open、recent files/projects 和 session restore 消费同一套 core-backed 数据源。
+本文只保留尚未完成的目标和任务边界。执行顺序以 `PLAN.md` 为准：当前按阶段 13 到阶段 15 逐步推进。完成项不再在本文重复记录。
 
 ## 阶段 13：Visual Baselines 与黑盒自动化
 

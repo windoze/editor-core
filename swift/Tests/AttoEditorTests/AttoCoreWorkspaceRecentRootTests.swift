@@ -73,6 +73,56 @@ final class AttoCoreWorkspaceRecentRootTests: XCTestCase {
         ])
     }
 
+    func testWindowWorkspaceDataSourceFeedsFindQuickOpenRecentAndSessionState() throws {
+        let delegate = AttoAppDelegate(keyBindings: [:])
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoCoreWorkspaceRecentRootTests-\(UUID().uuidString)", isDirectory: true)
+        let srcDir = tempDir.appendingPathComponent("src", isDirectory: true)
+        try FileManager.default.createDirectory(at: srcDir, withIntermediateDirectories: true)
+        defer {
+            delegate._closeWindowsForTesting()
+            try? FileManager.default.removeItem(at: tempDir)
+        }
+
+        let cachedURL = srcDir.appendingPathComponent("cached.swift")
+        try "let cached = true\n".write(to: cachedURL, atomically: true, encoding: .utf8)
+
+        let ctx = delegate._createWindowForTesting(workspaceRootURL: tempDir)
+        let coreDocuments = try XCTUnwrap(ctx.editorAreaController.coreDocuments)
+        XCTAssertEqual(ctx.fileIndex.entries().map(\.relativePath), ["src/cached.swift"])
+
+        let coreOnlyURL = srcDir.appendingPathComponent("core_only.swift")
+        try "let coreOnly = true\n".write(to: coreOnlyURL, atomically: true, encoding: .utf8)
+
+        let workspacePaths = ctx.workspaceFileEntries().map(\.relativePath)
+        XCTAssertEqual(workspacePaths, ["src/cached.swift", "src/core_only.swift"])
+        XCTAssertEqual(
+            Set(ctx.findInFilesController._workspaceFileURLsForTesting().map { $0.standardizedFileURL }),
+            Set([cachedURL.standardizedFileURL, coreOnlyURL.standardizedFileURL])
+        )
+
+        let quickOpenTitles = delegate._quickOpenCommandsForTesting().map(\.title)
+        XCTAssertTrue(quickOpenTitles.contains("src/cached.swift"))
+        XCTAssertTrue(quickOpenTitles.contains("src/core_only.swift"))
+        XCTAssertEqual(
+            delegate._quickOpenCommandsForTesting(query: "core_only").map(\.title),
+            ["src/core_only.swift"]
+        )
+
+        ctx.rememberRecentFile(coreOnlyURL)
+        XCTAssertEqual(try coreDocuments.recentFiles().map(\.uri), [
+            coreOnlyURL.standardizedFileURL.absoluteString,
+        ])
+        XCTAssertEqual(ctx.recentFileURLs(), [coreOnlyURL.standardizedFileURL])
+        XCTAssertEqual(ctx.recentProjectURLs(), [tempDir.standardizedFileURL])
+
+        let snapshot = ctx.makeSessionSnapshot()
+        XCTAssertEqual(snapshot.workspaceRootURI, tempDir.standardizedFileURL.absoluteString)
+        XCTAssertEqual(snapshot.recentFilePaths, [coreOnlyURL.standardizedFileURL.path])
+        let appSnapshot = try XCTUnwrap(delegate._makeSessionSnapshotForTesting())
+        XCTAssertEqual(appSnapshot.recentProjectURIs, [tempDir.standardizedFileURL.absoluteString])
+    }
+
     func testWindowWorkspaceRootsUseCoreRecentProjectsStore() throws {
         let delegate = AttoAppDelegate(keyBindings: [:])
         let tempDir = FileManager.default.temporaryDirectory

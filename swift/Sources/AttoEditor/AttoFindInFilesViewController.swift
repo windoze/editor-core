@@ -307,6 +307,10 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
         filteredWorkspaceFiles(files)
     }
 
+    func _workspaceFileURLsForTesting() -> [URL] {
+        workspaceFilesProvider?() ?? []
+    }
+
     func _setSearchOptionsForTesting(_ options: SearchOptions) {
         _ = view
         applySearchOptionsToButtons(options)

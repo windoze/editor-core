@@ -12,7 +12,7 @@
 - [已完成] 阶段 9：完成 settings selector、schema-aware settings UI、runtime override 持久化和跨 schema 字段迁移。
 - [已完成] 阶段 10：完成剩余 JSON result envelope 覆盖、错误模型统一和 host capability negotiation。
 - [已完成] 阶段 11：产品化 Tree-sitter + LSP 主路线的高亮、outline、folding、语言模式和降级体验。
-- [进行中] 阶段 12：完成 core-backed workspace search、project index、replace-in-files、recent 和 session 工作流。
+- [已完成] 阶段 12：完成 core-backed workspace search、project index、replace-in-files、recent 和 session 工作流。
 - [待办] 阶段 13：合入首批经批准机器生成的 PNG baselines；CI 已具备 PNG 合入后自动 strict PR 门禁。
 - [待办] 阶段 14：在测试保护下打磨 Sublime-like chrome、minimap、gutter、overlay、focus 和编辑交互。
 - [待办] 阶段 15：完成最终文档审计、ABI/README 更新、过渡 API 清理和全量验证。
@@ -440,7 +440,14 @@
   - 验证：`swift test --package-path swift --filter testRuntimeInfoJSONDescriptorsCoverKnownFeatures`
   - 验证：`cargo fmt --check`
   - 验证：`git diff --check`
-- [ ] 让 Find in Files、Quick Open、recent files/projects 和 session restore 消费同一套 core-backed 数据源。
+- [x] 让 Find in Files、Quick Open、recent files/projects 和 session restore 消费同一套 core-backed 数据源。
+  - [x] 新增 `AttoWorkspaceDataSource`，集中封装 core-backed workspace 文件列表/查询、recent files/projects、session workspace root 与本地 fallback，窗口上下文只保留 provider wiring 和 UI cache 同步。
+  - [x] Find in Files workspace 文件 provider、Quick Open、recent files/projects 和 session snapshot/restore 都通过同一 data source 读取 core-backed 状态。
+  - 验证：`swift test --package-path swift --filter AttoCoreWorkspaceRecentRootTests`
+  - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testQuickOpenUsesCoreWorkspaceFileListWhenAvailable`
+  - 验证：`swift test --package-path swift --filter AttoFindInFilesWorkspaceSearchProviderTests`
+  - 验证：`swift test --package-path swift --filter AttoCoreWorkspaceSessionRestoreTests`
+  - 验证：`git diff --check`
 
 ## 阶段 13：Visual Baselines 与黑盒自动化
 
