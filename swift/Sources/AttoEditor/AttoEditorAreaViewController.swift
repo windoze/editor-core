@@ -1384,6 +1384,9 @@ final class AttoEditorAreaViewController: NSViewController {
         tabBarView.onMoveTab = { [weak self] id, targetIndex in
             self?.moveTab(id: id, toProjectedIndex: targetIndex, beepOnFailure: false)
         }
+        tabBarView.onDropTabIntoSplit = { [weak self] id in
+            self?.dropTabIntoSplit(id: id, beepOnFailure: false)
+        }
         tabBarView.translatesAutoresizingMaskIntoConstraints = false
 
         findReplaceBarView.translatesAutoresizingMaskIntoConstraints = false

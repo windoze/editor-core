@@ -450,13 +450,36 @@ extension AttoEditorAreaViewController {
         }
     }
 
-    func splitCoreTab(_ tab: AttoEditorTab) {
-        guard let coreDocuments, let coreTabID = tab.coreTabID else { return }
-        do {
-            _ = try coreDocuments.splitTab(coreTabID, viewportWidthCells: 120)
-        } catch {
-            NSLog("AttoEditor: core multi-document splitTab failed: %@", String(describing: error))
+    func splitCoreTab(_ tab: AttoEditorTab, targetViewIndex: Int? = nil) throws -> Int? {
+        guard let coreDocuments, let coreTabID = tab.coreTabID else { return nil }
+
+        try coreDocuments.setActiveViewIndex(
+            tabId: coreTabID,
+            viewIndex: UInt32(clamping: tab.activePaneIndex)
+        )
+
+        let createdViewIndex = Int(try coreDocuments.splitTab(coreTabID, viewportWidthCells: 120))
+        guard let targetViewIndex, targetViewIndex != createdViewIndex else {
+            return createdViewIndex
         }
+
+        let moved = try coreDocuments.moveView(
+            tabId: coreTabID,
+            fromIndex: UInt32(clamping: createdViewIndex),
+            toIndex: UInt32(clamping: targetViewIndex)
+        )
+        guard moved else {
+            throw NSError(
+                domain: "AttoEditor.CoreWorkspace",
+                code: 1,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "core multi-document split view drop did not move view \(createdViewIndex) to \(targetViewIndex)"
+                ]
+            )
+        }
+        try coreDocuments.setActiveViewIndex(tabId: coreTabID, viewIndex: UInt32(clamping: targetViewIndex))
+        return targetViewIndex
     }
 
     func closeCoreView(tab: AttoEditorTab, viewIndex: Int) {
@@ -1441,7 +1464,7 @@ extension AttoEditorAreaViewController {
         return true
     }
 
-    private func projectedTabOrder() -> [AttoEditorTab] {
+    func projectedTabOrder() -> [AttoEditorTab] {
         if let projection = makeCoreProjectedTabs() {
             return projection.tabs.map(\.tab)
         }

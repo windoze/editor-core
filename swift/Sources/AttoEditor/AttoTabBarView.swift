@@ -14,6 +14,7 @@ final class AttoTabBarView: NSView {
     var onCloseTab: ((UUID) -> Void)?
     var onDoubleClickTab: ((UUID) -> Void)?
     var onMoveTab: ((UUID, Int) -> Void)?
+    var onDropTabIntoSplit: ((UUID) -> Void)?
 
     private let scrollView = NSScrollView()
     private let documentContainerView = NSView()
@@ -160,7 +161,7 @@ final class AttoTabBarView: NSView {
                 onSelect: { [weak self] in self?.onSelectTab?(tab.id) },
                 onDoubleClick: { [weak self] in self?.onDoubleClickTab?(tab.id) },
                 onClose: { [weak self] in self?.onCloseTab?(tab.id) },
-                onDragEnd: { [weak self] event in self?.moveTab(tab.id, forDragEndingWith: event) }
+                onDragEnd: { [weak self] event in self?.finishDraggingTab(tab.id, with: event) }
             )
             chip.translatesAutoresizingMaskIntoConstraints = false
             stackView.addArrangedSubview(chip)
@@ -254,6 +255,15 @@ final class AttoTabBarView: NSView {
         onSelectTab?(id)
     }
 
+    private func finishDraggingTab(_ id: UUID, with event: NSEvent) {
+        if dragEndedInSplitDropZone(event) {
+            onDropTabIntoSplit?(id)
+            return
+        }
+
+        moveTab(id, forDragEndingWith: event)
+    }
+
     private func moveTab(_ id: UUID, forDragEndingWith event: NSEvent) {
         guard let targetIndex = dragTargetIndex(for: id, event: event) else { return }
         guard let fromIndex = currentTabs.firstIndex(where: { $0.id == id }),
@@ -285,6 +295,11 @@ final class AttoTabBarView: NSView {
         }
 
         return max(0, currentTabs.count - 1)
+    }
+
+    private func dragEndedInSplitDropZone(_ event: NSEvent) -> Bool {
+        let point = convert(event.locationInWindow, from: nil)
+        return point.y < bounds.minY - 8
     }
 }
 

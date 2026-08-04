@@ -27,29 +27,81 @@ extension AttoEditorAreaViewController {
             return false
         }
 
+        return splitTabIntoPane(tab, targetPaneIndex: nil, beepOnFailure: true)
+    }
+
+    @discardableResult
+    func dropTabIntoSplit(
+        id: UUID,
+        targetPaneIndex: Int? = nil,
+        beepOnFailure: Bool = true
+    ) -> Bool {
+        guard let tab = projectedTabOrder().first(where: { $0.id == id }) else {
+            if beepOnFailure {
+                NSSound.beep()
+            }
+            return false
+        }
+
+        if selectedTabID != id {
+            selectTab(id: id)
+        }
+        return splitTabIntoPane(tab, targetPaneIndex: targetPaneIndex, beepOnFailure: beepOnFailure)
+    }
+
+    @discardableResult
+    private func splitTabIntoPane(
+        _ tab: AttoEditorTab,
+        targetPaneIndex: Int?,
+        beepOnFailure: Bool
+    ) -> Bool {
         do {
-            let pane = try appendSplitPane(to: tab)
+            let pane = try appendSplitPane(to: tab, targetPaneIndex: targetPaneIndex)
             showTabContent(tab)
             attachStatusObserver(to: pane.editorView)
             updateAlwaysPollProcessingForSelectedTab()
             updateStatusBar()
             pane.focusEditor()
+            notifySessionStateChanged()
             return true
         } catch {
-            NSSound.beep()
+            if beepOnFailure {
+                NSSound.beep()
+            }
             NSLog("AttoEditor: split active tab failed: %@", String(describing: error))
             return false
         }
     }
 
     @discardableResult
-    func appendSplitPane(to tab: AttoEditorTab) throws -> EditCoreUI {
-        let editor = try tab.editCore.editor.cloneView(viewportWidthCells: 120)
+    func appendSplitPane(to tab: AttoEditorTab, targetPaneIndex: Int? = nil) throws -> EditCoreUI {
+        let insertionIndex = try validatedSplitPaneInsertionIndex(targetPaneIndex, paneCount: tab.panes.count)
+        let sourcePane = tab.editCore
+        let coreInsertedViewIndex = try splitCoreTab(tab, targetViewIndex: insertionIndex)
+
+        do {
+            return try appendAppKitSplitPane(
+                to: tab,
+                sourcePane: sourcePane,
+                insertionIndex: insertionIndex
+            )
+        } catch {
+            rollbackCoreSplitPane(tab: tab, viewIndex: coreInsertedViewIndex)
+            throw error
+        }
+    }
+
+    private func appendAppKitSplitPane(
+        to tab: AttoEditorTab,
+        sourcePane: EditCoreUI,
+        insertionIndex: Int?
+    ) throws -> EditCoreUI {
+        let editor = try sourcePane.editor.cloneView(viewportWidthCells: 120)
         let documentConfiguration = documentConfigurationSnapshot(for: tab)
         let pane = try EditCoreUI(
             editor: editor,
             fontFamiliesCSV: configuredFontFamiliesCSVForNewView(documentConfiguration),
-            showsMinimap: tab.editCore.showsMinimap,
+            showsMinimap: sourcePane.showsMinimap,
             minimapPlacement: .rightOfScrollbar
         )
 
@@ -57,10 +109,34 @@ extension AttoEditorAreaViewController {
         applyLanguageConfiguration(fileURL: projectedFileURL(for: tab), syntaxLanguageId: tab.syntaxLanguageId, to: pane)
         configureEditCoreHooks(pane, tabID: tab.id)
 
-        tab.panes.append(pane)
-        tab.activePaneIndex = tab.panes.count - 1
-        splitCoreTab(tab)
+        if let insertionIndex, insertionIndex < tab.panes.count {
+            tab.panes.insert(pane, at: insertionIndex)
+            tab.activePaneIndex = insertionIndex
+        } else {
+            tab.panes.append(pane)
+            tab.activePaneIndex = tab.panes.count - 1
+        }
         return pane
+    }
+
+    private func validatedSplitPaneInsertionIndex(_ index: Int?, paneCount: Int) throws -> Int? {
+        guard let index else { return nil }
+        guard index >= 0, index <= paneCount else {
+            throw NSError(
+                domain: "AttoEditor.CoreWorkspace",
+                code: 2,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "invalid split pane insertion index \(index) for \(paneCount) panes"
+                ]
+            )
+        }
+        return index
+    }
+
+    private func rollbackCoreSplitPane(tab: AttoEditorTab, viewIndex: Int?) {
+        guard let viewIndex else { return }
+        closeCoreView(tab: tab, viewIndex: viewIndex)
     }
 
     @discardableResult
@@ -165,11 +241,64 @@ extension AttoEditorAreaViewController {
         tab.panes.insert(pane, at: to)
         tab.activePaneIndex = to
 
+        renderDroppedPane(tab: tab, pane: pane, focus: true)
+        return true
+    }
+
+    @discardableResult
+    func dropPaneInActiveTab(
+        fromProjectedIndex from: Int,
+        toProjectedIndex to: Int,
+        beepOnFailure: Bool = true
+    ) -> Bool {
+        guard let tab = activeTab else {
+            if beepOnFailure {
+                NSSound.beep()
+            }
+            return false
+        }
+        syncActivePaneIndexFromCoreProjectionIfAvailable(for: tab)
+
+        let count = tab.panes.count
+        guard count > 1,
+              from >= 0,
+              from < count,
+              to >= 0,
+              to < count,
+              from != to
+        else {
+            if beepOnFailure {
+                NSSound.beep()
+            }
+            return false
+        }
+
+        tab.activePaneIndex = from
+        setCoreActiveView(tab)
+
+        guard moveCoreView(tab: tab, fromIndex: from, toIndex: to) else {
+            if beepOnFailure {
+                NSSound.beep()
+            }
+            return false
+        }
+
+        let pane = tab.panes.remove(at: from)
+        tab.panes.insert(pane, at: to)
+        tab.activePaneIndex = to
+
+        renderDroppedPane(tab: tab, pane: pane, focus: true)
+        notifySessionStateChanged()
+        return true
+    }
+
+    private func renderDroppedPane(tab: AttoEditorTab, pane: EditCoreUI, focus: Bool) {
         showTabContent(tab)
         attachStatusObserver(to: pane.editorView)
         updateAlwaysPollProcessingForSelectedTab()
         updateStatusBar()
-        pane.focusEditor()
-        return true
+        if focus {
+            pane.focusEditor()
+        }
     }
 }

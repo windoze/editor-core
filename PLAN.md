@@ -5,8 +5,8 @@
 ## TODO（未完成任务）
 
 - [已完成] 阶段 4：完成 WorkspaceEdit conflict 检测、解决语义和跨请求/project 重试归属。
-- [进行中] 阶段 5：完成 tab、split、project、session 和 LSP ownership 向 core workspace 模型迁移。
-- [待办] 阶段 6：完成 core-owned project/LSP lifecycle schema、server ownership、恢复策略和 dashboard 产品化。
+- [已完成] 阶段 5：完成 tab、split、project、session 和 LSP ownership 向 core workspace 模型迁移。
+- [进行中] 阶段 6：完成 core-owned project/LSP lifecycle schema、server ownership、恢复策略和 dashboard 产品化。
 - [待办] 阶段 7：完成跨 tab/project result panels、统一 dock/workbench 容器和刷新/过期策略。
 - [待办] 阶段 8：完成 Sublime-like command/keymap 行为矩阵、keymap 文件兼容和 snippets/macros/build systems 边界。
 - [待办] 阶段 9：完成 settings selector、schema-aware settings UI、runtime override 持久化和跨 schema 字段迁移。
@@ -135,11 +135,13 @@
   - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testCloseAllTabsReleasesOwnedLspSessionsWithoutDuplicateDidClose`
   - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testCloseAllTabsUsesCoreTabProjectionOrder`
   - 验证：`git diff --check`
-- [ ] 补齐 tab drag/drop、split drag/drop、pane move、tab move 与 core snapshot 的一致性。
+- [x] 补齐 tab drag/drop、split drag/drop、pane move、tab move 与 core snapshot 的一致性。
   - [x] 将 split/pane focus/move/close 与 tab drag reorder 的 core snapshot / Swift wrapper / AppKit projection 回归拆到独立 core workspace drag projection 测试。
   - [x] tab move command 回归已收敛到 core workspace command 测试。
-  - [ ] 设计并实现 drag tab to split / split drag/drop 入口；当前代码只发现 tab bar reorder drag 和命令式 split/pane move。
+  - [x] 设计并实现 drag tab to split / split drag/drop 入口；当前代码只发现 tab bar reorder drag 和命令式 split/pane move。
+  - 验证：`swift test --package-path swift --filter AttoCoreWorkspaceDragDropEntryTests`
   - 验证：`swift test --package-path swift --filter AttoCoreWorkspaceDragProjectionTests`
+  - 验证：`git diff --check`
 - [x] 将 dirty state、close prompt、save-all、reload、recent session 和 root change 继续收敛到 core-backed 工作流。
   - [x] 将 dirty close prompt、open-file dirty projection、reload、save active、save-all 的 core-backed 回归拆到独立 dirty state 测试。
   - [x] 将 workspace root session snapshot、recent files、recent projects 的 core-backed 回归拆到独立 recent/root 测试。
