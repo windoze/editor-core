@@ -278,6 +278,10 @@
     - [x] 让 Document Colors refresh 的空结果记录 fresh empty lifecycle，清理 stale/error current state，并在 Workbench 中显示 `0 colors`。
       - 验证：`swift test --package-path swift --filter AttoEditorLspWorkbenchRefreshTests`
     - [ ] 抽出 event-backed result 的 refresh/cancel/timeout/error 标记 helper，减少 Code Lens / Inlay Hints / Document Links / Document Colors / Hierarchy 的重复分支。
+      - [x] 先覆盖 Code Lens / Inlay Hints / Document Links / Document Colors 的 refresh failure / timeout / result-error 写入路径。
+        - 验证：`swift test --package-path swift --filter AttoEditorLspWorkbenchRefreshTests`
+        - 验证：`swift test --package-path swift --filter Workbench`
+      - [ ] 再覆盖 Hierarchy prepare / children refresh 的 failure / timeout / result-error 写入路径。
     - [ ] 覆盖 active tab 与 workspace diagnostics refresh 的空结果、stale 清理和 error metadata 策略。
 - [ ] 补齐 keyboard navigation、focus restore、selection restore 和 panel persistence。
 - [ ] 拆分继续增长的 Workbench/AppKit 测试文件。

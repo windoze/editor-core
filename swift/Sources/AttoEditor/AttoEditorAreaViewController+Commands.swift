@@ -1073,12 +1073,12 @@ extension AttoEditorAreaViewController {
 
         guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
             let message = AttoLspResultFeedback.unavailable(.documentColors)
-            markCurrentLspEventResultError(family: "document_colors", message: message)
-            if showFeedback {
-                presentLspResultFeedback(message, in: tab.editCore.editorView)
-            }
-            NSSound.beep()
-            return false
+            return failLspEventResult(
+                family: "document_colors",
+                message: message,
+                showFeedback: showFeedback,
+                editorView: tab.editCore.editorView
+            )
         }
 
         cancelHoverUI()
@@ -1101,12 +1101,12 @@ extension AttoEditorAreaViewController {
                 .documentColors,
                 errorDescription: error.localizedDescription
             )
-            markCurrentLspEventResultError(family: "document_colors", message: message)
-            if showFeedback {
-                presentLspResultFeedback(message, in: tab.editCore.editorView)
-            }
-            NSSound.beep()
-            return false
+            return failLspEventResult(
+                family: "document_colors",
+                message: message,
+                showFeedback: showFeedback,
+                editorView: tab.editCore.editorView
+            )
         }
 
         documentColorContext = DocumentColorRequestContext(
@@ -1516,12 +1516,13 @@ extension AttoEditorAreaViewController {
             if remainingTicks <= 0 {
                 let showFeedback = ctx.showFeedback
                 let message = AttoLspResultFeedback.timeout(.documentColors)
-                self.cancelDocumentColorUI()
-                self.markCurrentLspEventResultError(family: "document_colors", message: message)
-                if showFeedback {
-                    self.presentLspResultFeedback(message, in: editorView)
-                }
-                NSSound.beep()
+                self.failLspEventResult(
+                    family: "document_colors",
+                    message: message,
+                    showFeedback: showFeedback,
+                    editorView: editorView,
+                    cancel: self.cancelDocumentColorUI
+                )
                 return
             }
             remainingTicks -= 1
@@ -1540,12 +1541,13 @@ extension AttoEditorAreaViewController {
                     .documentColors,
                     errorDescription: error.localizedDescription
                 )
-                self.cancelDocumentColorUI()
-                self.markCurrentLspEventResultError(family: "document_colors", message: message)
-                if showFeedback {
-                    self.presentLspResultFeedback(message, in: editorView)
-                }
-                NSSound.beep()
+                self.failLspEventResult(
+                    family: "document_colors",
+                    message: message,
+                    showFeedback: showFeedback,
+                    editorView: editorView,
+                    cancel: self.cancelDocumentColorUI
+                )
                 return
             }
             guard let result else { return }

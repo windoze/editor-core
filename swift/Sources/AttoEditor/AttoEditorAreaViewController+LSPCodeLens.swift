@@ -16,12 +16,12 @@ extension AttoEditorAreaViewController {
 
         guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
             let message = AttoLspResultFeedback.unavailable(.codeLensRefresh)
-            markCurrentLspEventResultError(family: "code_lens", message: message)
-            if showFeedback {
-                presentLspResultFeedback(message, in: tab.editCore.editorView)
-            }
-            NSSound.beep()
-            return false
+            return failLspEventResult(
+                family: "code_lens",
+                message: message,
+                showFeedback: showFeedback,
+                editorView: tab.editCore.editorView
+            )
         }
 
         cancelHoverUI()
@@ -45,12 +45,12 @@ extension AttoEditorAreaViewController {
                 .codeLensRefresh,
                 errorDescription: error.localizedDescription
             )
-            markCurrentLspEventResultError(family: "code_lens", message: message)
-            if showFeedback {
-                presentLspResultFeedback(message, in: tab.editCore.editorView)
-            }
-            NSSound.beep()
-            return false
+            return failLspEventResult(
+                family: "code_lens",
+                message: message,
+                showFeedback: showFeedback,
+                editorView: tab.editCore.editorView
+            )
         }
 
         codeLensRefreshContext = CodeLensRefreshContext(tabID: tab.id, showFeedback: showFeedback)
@@ -321,12 +321,13 @@ extension AttoEditorAreaViewController {
             if remainingTicks <= 0 {
                 let showFeedback = ctx.showFeedback
                 let message = AttoLspResultFeedback.timeout(.codeLensRefresh)
-                self.cancelCodeLensUI()
-                self.markCurrentLspEventResultError(family: "code_lens", message: message)
-                if showFeedback {
-                    self.presentLspResultFeedback(message, in: editorView)
-                }
-                NSSound.beep()
+                self.failLspEventResult(
+                    family: "code_lens",
+                    message: message,
+                    showFeedback: showFeedback,
+                    editorView: editorView,
+                    cancel: self.cancelCodeLensUI
+                )
                 return
             }
             remainingTicks -= 1
@@ -344,12 +345,13 @@ extension AttoEditorAreaViewController {
                     .codeLensRefresh,
                     errorDescription: error.localizedDescription
                 )
-                self.cancelCodeLensUI()
-                self.markCurrentLspEventResultError(family: "code_lens", message: message)
-                if showFeedback {
-                    self.presentLspResultFeedback(message, in: editorView)
-                }
-                NSSound.beep()
+                self.failLspEventResult(
+                    family: "code_lens",
+                    message: message,
+                    showFeedback: showFeedback,
+                    editorView: editorView,
+                    cancel: self.cancelCodeLensUI
+                )
                 return
             }
 
@@ -362,12 +364,13 @@ extension AttoEditorAreaViewController {
                     .codeLensRefresh,
                     errorDescription: error.localizedDescription
                 )
-                self.cancelCodeLensUI()
-                self.markCurrentLspEventResultError(family: "code_lens", message: message)
-                if showFeedback {
-                    self.presentLspResultFeedback(message, in: editorView)
-                }
-                NSSound.beep()
+                self.failLspEventResult(
+                    family: "code_lens",
+                    message: message,
+                    showFeedback: showFeedback,
+                    editorView: editorView,
+                    cancel: self.cancelCodeLensUI
+                )
                 return
             }
             guard let result else { return }
@@ -389,13 +392,13 @@ extension AttoEditorAreaViewController {
 
             if let errorMessage {
                 let message = AttoLspResultFeedback.failed(.codeLensRefresh, errorDescription: errorMessage)
-                self.markCurrentLspEventResultError(family: "code_lens", message: message)
-                guard showFeedback else { return }
-                self.presentLspResultFeedback(
-                    message,
-                    in: editorView
+                self.failLspEventResult(
+                    family: "code_lens",
+                    message: message,
+                    showFeedback: showFeedback,
+                    editorView: editorView,
+                    beep: showFeedback
                 )
-                NSSound.beep()
                 return
             }
             guard showFeedback else { return }

@@ -5,6 +5,43 @@ import XCTest
 
 @MainActor
 final class AttoEditorLspWorkbenchRefreshTests: XCTestCase {
+    func testEventResultFailureHelperMarksCurrentOwnerScopedEventError() throws {
+        try withTemporaryWorkspace { tempDir in
+            let fileURL = tempDir.appendingPathComponent("failure-helper.swift")
+            try "func run() {}\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+            let vc = makeEditorArea(workspaceRootURL: tempDir)
+            XCTAssertTrue(vc.openFile(url: fileURL, mode: .pinned))
+            let tab = try XCTUnwrap(vc.activeTab)
+            let owner = vc.lspDocumentResultOwner(for: tab)
+            let event = vc.lspResultEventStream.record(
+                family: "code_lens",
+                title: "Code Lens: 1 action",
+                owner: owner,
+                payload: .codeLens(itemCount: 1)
+            )
+            let message = AttoLspResultFeedback.timeout(.codeLensRefresh)
+
+            XCTAssertFalse(
+                vc.failLspEventResult(
+                    family: "code_lens",
+                    message: message,
+                    showFeedback: false,
+                    editorView: nil,
+                    beep: false
+                )
+            )
+
+            let updatedEvent = try XCTUnwrap(vc._lspResultLifecycleEventsForTesting(after: 0).first {
+                $0.sequence == event.sequence
+            })
+            XCTAssertEqual(updatedEvent.state, .error(message: message.statusText))
+            let workbenchItem = try XCTUnwrap(vc.lspWorkbenchItems().first { $0.id == "code_lens" })
+            XCTAssertEqual(workbenchItem.lifecycleState, .error)
+            XCTAssertTrue(workbenchItem.status.contains("Error: \(message.statusText)"))
+        }
+    }
+
     func testDocumentColorRefreshEmptyResultRecordsFreshZeroColors() throws {
         try withTemporaryWorkspace { tempDir in
             let fileURL = tempDir.appendingPathComponent("empty-colors.swift")
