@@ -164,6 +164,15 @@
 ### 剩余任务
 
 - [ ] 将 LSP start/restart/stop/shutdown 的实际执行 ownership 下沉为 core-owned typed lifecycle。
+  - [x] 让 core-owned start/stop/restart plan entries 显式携带 `operation` 字段，并同步 Rust、FFI JSON、Swift wrapper 和 ABI draft，作为统一 lifecycle action descriptor 的基础。
+  - 验证：`cargo test -p editor-core-ui project_lsp`
+  - 验证：`cargo test -p editor-core-ui-ffi project_lsp`
+  - 验证：`cargo test -p editor-core-ui-ffi ffi_multi_document_exposes_tab_preview_split_and_search`
+  - 验证：`cargo build -p editor-core-ui-ffi --release`
+  - 验证：`swift test --package-path swift --filter EditorCoreUIFFITests/testMultiDocumentEditorUIWrapperExposesTabsSplitsPreviewAndSearch`
+  - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testProjectLspLaunchConfigsSyncToCoreProjectStore`
+  - 验证：`cargo fmt --check`
+  - 验证：`git diff --check`
 - [ ] 完成 project LSP server schema：workspace roots、language metadata、capabilities、workspaceFolders、root alias、shared session、attempt id。
 - [ ] 让 auto-start、manual restart/shutdown、project restart/shutdown、auto-restart 和 user stop 共享同一 core plan/execution/outcome 模型。
 - [ ] 将 recovery policy 变为 core 可解释、可执行或可校验的策略。

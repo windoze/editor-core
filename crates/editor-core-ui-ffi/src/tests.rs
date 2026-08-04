@@ -2104,6 +2104,7 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
         lsp_start_plan_value,
         serde_json::json!([
             {
+                "operation": "start",
                 "tab_id": alpha_id,
                 "active_view_index": 0,
                 "document_uri": "file:///project/main.rs",
@@ -2127,6 +2128,7 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
         lsp_stop_plan_value,
         serde_json::json!([
             {
+                "operation": "stop",
                 "tab_id": alpha_id,
                 "active_view_index": 0,
                 "document_uri": "file:///project/main.rs",
@@ -2137,6 +2139,7 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                 "workspace_roots": ["file:///new", "file:///other"]
             },
             {
+                "operation": "stop",
                 "tab_id": beta_id,
                 "active_view_index": 0,
                 "document_uri": "file:///project/Beta.swift",
@@ -2162,6 +2165,7 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
         lsp_restart_plan_value,
         serde_json::json!([
             {
+                "operation": "restart",
                 "tab_id": alpha_id,
                 "active_view_index": 0,
                 "document_uri": "file:///project/main.rs",
@@ -2172,6 +2176,7 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                 "workspace_roots": ["file:///new", "file:///other"]
             },
             {
+                "operation": "restart",
                 "tab_id": beta_id,
                 "active_view_index": 0,
                 "document_uri": "file:///project/Beta.swift",

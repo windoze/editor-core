@@ -2130,6 +2130,7 @@ fn multi_document_builds_project_lsp_start_plan_from_open_tabs() {
 
     let plan = multi.project_lsp_start_plan();
     assert_eq!(plan.len(), 1);
+    assert_eq!(plan[0].operation, "start");
     assert_eq!(plan[0].tab_id, rust_tab.get());
     assert_eq!(plan[0].active_view_index, 0);
     assert_eq!(plan[0].document_uri, "file:///workspace/main.rs");
@@ -2141,6 +2142,7 @@ fn multi_document_builds_project_lsp_start_plan_from_open_tabs() {
 
     let json: serde_json::Value =
         serde_json::from_str(&multi.project_lsp_start_plan_json().unwrap()).unwrap();
+    assert_eq!(json[0]["operation"], "start");
     assert_eq!(json[0]["server_key"], "rust");
 }
 
@@ -2190,6 +2192,7 @@ fn multi_document_builds_project_lsp_stop_plan_from_open_tabs() {
 
     let plan = multi.project_lsp_stop_plan();
     assert_eq!(plan.len(), 2);
+    assert_eq!(plan[0].operation, "stop");
     assert_eq!(plan[0].tab_id, rust_tab.get());
     assert_eq!(plan[0].document_uri, "file:///workspace/main.rs");
     assert_eq!(plan[0].server_key, "rust");
@@ -2201,6 +2204,7 @@ fn multi_document_builds_project_lsp_stop_plan_from_open_tabs() {
 
     let json: serde_json::Value =
         serde_json::from_str(&multi.project_lsp_stop_plan_json().unwrap()).unwrap();
+    assert_eq!(json[1]["operation"], "stop");
     assert_eq!(json[1]["command"], "/bin/sourcekit-lsp");
 }
 
@@ -2250,6 +2254,7 @@ fn multi_document_builds_project_lsp_restart_plan_from_open_tabs() {
 
     let plan = multi.project_lsp_restart_plan();
     assert_eq!(plan.len(), 2);
+    assert_eq!(plan[0].operation, "restart");
     assert_eq!(plan[0].tab_id, rust_tab.get());
     assert_eq!(plan[0].document_uri, "file:///workspace/main.rs");
     assert_eq!(plan[0].server_key, "rust");
@@ -2261,6 +2266,7 @@ fn multi_document_builds_project_lsp_restart_plan_from_open_tabs() {
 
     let json: serde_json::Value =
         serde_json::from_str(&multi.project_lsp_restart_plan_json().unwrap()).unwrap();
+    assert_eq!(json[1]["operation"], "restart");
     assert_eq!(json[1]["command"], "/bin/sourcekit-lsp");
 }
 

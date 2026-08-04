@@ -18,6 +18,7 @@ pub struct ProjectLspServerConfig {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ProjectLspStartPlanEntry {
+    pub operation: String,
     pub tab_id: u64,
     pub active_view_index: usize,
     pub document_uri: String,
@@ -32,6 +33,7 @@ pub struct ProjectLspStartPlanEntry {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ProjectLspStopPlanEntry {
+    pub operation: String,
     pub tab_id: u64,
     pub active_view_index: usize,
     pub document_uri: String,
@@ -46,6 +48,7 @@ pub struct ProjectLspStopPlanEntry {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ProjectLspRestartPlanEntry {
+    pub operation: String,
     pub tab_id: u64,
     pub active_view_index: usize,
     pub document_uri: String,
@@ -109,6 +112,7 @@ pub(crate) fn project_lsp_start_plan(
                 config.workspace_roots.clone()
             };
             entries.push(ProjectLspStartPlanEntry {
+                operation: "start".to_string(),
                 tab_id: document.tab_id,
                 active_view_index: document.active_view_index,
                 document_uri: document_uri.clone(),
@@ -150,6 +154,7 @@ pub(crate) fn project_lsp_stop_plan(
                 config.workspace_roots.clone()
             };
             entries.push(ProjectLspStopPlanEntry {
+                operation: "stop".to_string(),
                 tab_id: document.tab_id,
                 active_view_index: document.active_view_index,
                 document_uri: document_uri.clone(),
@@ -191,6 +196,7 @@ pub(crate) fn project_lsp_restart_plan(
                 config.workspace_roots.clone()
             };
             entries.push(ProjectLspRestartPlanEntry {
+                operation: "restart".to_string(),
                 tab_id: document.tab_id,
                 active_view_index: document.active_view_index,
                 document_uri: document_uri.clone(),
