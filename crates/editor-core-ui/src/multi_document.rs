@@ -7,6 +7,7 @@ mod lsp_result_events;
 mod project_file_index;
 mod project_lsp;
 mod project_lsp_lifecycle;
+mod project_lsp_session;
 mod recent_files;
 mod recent_projects;
 mod state_events;
@@ -27,6 +28,7 @@ pub use project_lsp::{
 pub use project_lsp_lifecycle::{
     ProjectLspLifecycleEvent, ProjectLspLifecycleEventsSnapshot, ProjectLspStartOutcome,
 };
+pub use project_lsp_session::ProjectLspSessionPolicy;
 pub use recent_files::RecentFileEntry;
 pub use recent_projects::RecentProjectEntry;
 pub use state_events::{MultiDocumentStateEvent, MultiDocumentStateEventsSnapshot};

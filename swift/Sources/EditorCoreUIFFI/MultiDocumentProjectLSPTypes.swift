@@ -29,6 +29,78 @@ public struct EcuProjectLspRecoveryPolicy: Codable, Equatable, Sendable {
     }
 }
 
+public struct EcuProjectLspSessionPolicy: Codable, Equatable, Sendable {
+    public let scope: String
+    public let mergeStrategy: String
+    public let deduplicate: Bool
+    public let shutdownPolicy: String
+
+    private enum CodingKeys: String, CodingKey {
+        case scope
+        case mergeStrategy = "merge_strategy"
+        case deduplicate
+        case shutdownPolicy = "shutdown_policy"
+    }
+
+    public init(
+        scope: String = "workspace",
+        mergeStrategy: String = "server_workspace_roots",
+        deduplicate: Bool = true,
+        shutdownPolicy: String = "last_document"
+    ) {
+        self.scope = scope
+        self.mergeStrategy = mergeStrategy
+        self.deduplicate = deduplicate
+        self.shutdownPolicy = shutdownPolicy
+    }
+
+    public init(sharedSession: Bool) {
+        self = sharedSession ? Self.workspaceScoped() : Self.documentScoped()
+    }
+
+    public var isSharedSession: Bool {
+        scope.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "workspace"
+    }
+
+    public func normalized(sharedSession: Bool) -> Self {
+        let normalizedScope = scope.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if sharedSession == false {
+            return Self.documentScoped()
+        }
+        if normalizedScope == "document" {
+            return Self.documentScoped()
+        }
+        return Self.workspaceScoped()
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        scope = try container.decodeIfPresent(String.self, forKey: .scope) ?? "workspace"
+        mergeStrategy = try container.decodeIfPresent(String.self, forKey: .mergeStrategy)
+            ?? "server_workspace_roots"
+        deduplicate = try container.decodeIfPresent(Bool.self, forKey: .deduplicate) ?? true
+        shutdownPolicy = try container.decodeIfPresent(String.self, forKey: .shutdownPolicy) ?? "last_document"
+    }
+
+    private static func workspaceScoped() -> Self {
+        Self(
+            scope: "workspace",
+            mergeStrategy: "server_workspace_roots",
+            deduplicate: true,
+            shutdownPolicy: "last_document"
+        )
+    }
+
+    private static func documentScoped() -> Self {
+        Self(
+            scope: "document",
+            mergeStrategy: "document",
+            deduplicate: false,
+            shutdownPolicy: "document_close"
+        )
+    }
+}
+
 public struct EcuProjectLspServerConfig: Codable, Equatable, Sendable {
     public let key: String
     public let command: String
@@ -37,6 +109,7 @@ public struct EcuProjectLspServerConfig: Codable, Equatable, Sendable {
     public let languageName: String
     public let serverCapabilities: EcuJSONValue
     public let sharedSession: Bool
+    public let sessionPolicy: EcuProjectLspSessionPolicy
     public let workspaceRoots: [String]
     public let workspaceFolders: [EcuProjectLspWorkspaceFolder]
     public let autoStart: Bool
@@ -50,6 +123,7 @@ public struct EcuProjectLspServerConfig: Codable, Equatable, Sendable {
         case languageName = "language_name"
         case serverCapabilities = "server_capabilities"
         case sharedSession = "shared_session"
+        case sessionPolicy = "session_policy"
         case workspaceRoots = "workspace_roots"
         case workspaceFolders = "workspace_folders"
         case autoStart = "auto_start"
@@ -64,6 +138,7 @@ public struct EcuProjectLspServerConfig: Codable, Equatable, Sendable {
         languageName: String = "",
         serverCapabilities: EcuJSONValue = .object([:]),
         sharedSession: Bool = true,
+        sessionPolicy: EcuProjectLspSessionPolicy = EcuProjectLspSessionPolicy(),
         workspaceRoots: [String] = [],
         workspaceFolders: [EcuProjectLspWorkspaceFolder] = [],
         autoStart: Bool = true,
@@ -75,7 +150,9 @@ public struct EcuProjectLspServerConfig: Codable, Equatable, Sendable {
         self.languageId = languageId
         self.languageName = languageName
         self.serverCapabilities = serverCapabilities
-        self.sharedSession = sharedSession
+        let normalizedSessionPolicy = sessionPolicy.normalized(sharedSession: sharedSession)
+        self.sharedSession = normalizedSessionPolicy.isSharedSession
+        self.sessionPolicy = normalizedSessionPolicy
         self.workspaceRoots = workspaceRoots
         self.workspaceFolders = workspaceFolders
         self.autoStart = autoStart
@@ -90,7 +167,14 @@ public struct EcuProjectLspServerConfig: Codable, Equatable, Sendable {
         languageId = try container.decodeIfPresent(String.self, forKey: .languageId) ?? ""
         languageName = try container.decodeIfPresent(String.self, forKey: .languageName) ?? languageId
         serverCapabilities = try container.decodeIfPresent(EcuJSONValue.self, forKey: .serverCapabilities) ?? .object([:])
-        sharedSession = try container.decodeIfPresent(Bool.self, forKey: .sharedSession) ?? true
+        let decodedSharedSession = try container.decodeIfPresent(Bool.self, forKey: .sharedSession) ?? true
+        let decodedSessionPolicy = try container.decodeIfPresent(
+            EcuProjectLspSessionPolicy.self,
+            forKey: .sessionPolicy
+        ) ?? EcuProjectLspSessionPolicy(sharedSession: decodedSharedSession)
+        let normalizedSessionPolicy = decodedSessionPolicy.normalized(sharedSession: decodedSharedSession)
+        sharedSession = normalizedSessionPolicy.isSharedSession
+        sessionPolicy = normalizedSessionPolicy
         workspaceRoots = try container.decodeIfPresent([String].self, forKey: .workspaceRoots) ?? []
         workspaceFolders = try container.decodeIfPresent(
             [EcuProjectLspWorkspaceFolder].self,
@@ -143,6 +227,8 @@ public struct EcuProjectLspStartPlanEntry: Decodable, Equatable, Sendable {
     public let languageName: String
     public let serverCapabilities: EcuJSONValue
     public let sharedSession: Bool
+    public let sessionKey: String
+    public let sessionPolicy: EcuProjectLspSessionPolicy
     public let serverKey: String
     public let command: String
     public let args: [String]
@@ -160,6 +246,8 @@ public struct EcuProjectLspStartPlanEntry: Decodable, Equatable, Sendable {
         case languageName = "language_name"
         case serverCapabilities = "server_capabilities"
         case sharedSession = "shared_session"
+        case sessionKey = "session_key"
+        case sessionPolicy = "session_policy"
         case serverKey = "server_key"
         case command
         case args
@@ -178,7 +266,14 @@ public struct EcuProjectLspStartPlanEntry: Decodable, Equatable, Sendable {
         languageId = try container.decodeIfPresent(String.self, forKey: .languageId) ?? ""
         languageName = try container.decodeIfPresent(String.self, forKey: .languageName) ?? languageId
         serverCapabilities = try container.decodeIfPresent(EcuJSONValue.self, forKey: .serverCapabilities) ?? .object([:])
-        sharedSession = try container.decodeIfPresent(Bool.self, forKey: .sharedSession) ?? true
+        let decodedSharedSession = try container.decodeIfPresent(Bool.self, forKey: .sharedSession) ?? true
+        sessionKey = try container.decodeIfPresent(String.self, forKey: .sessionKey) ?? ""
+        let decodedSessionPolicy = try container.decodeIfPresent(
+            EcuProjectLspSessionPolicy.self,
+            forKey: .sessionPolicy
+        ) ?? EcuProjectLspSessionPolicy(sharedSession: decodedSharedSession)
+        sessionPolicy = decodedSessionPolicy.normalized(sharedSession: decodedSharedSession)
+        sharedSession = sessionPolicy.isSharedSession
         serverKey = try container.decodeIfPresent(String.self, forKey: .serverKey) ?? ""
         command = try container.decode(String.self, forKey: .command)
         args = try container.decodeIfPresent([String].self, forKey: .args) ?? []
@@ -204,6 +299,8 @@ public struct EcuProjectLspStopPlanEntry: Decodable, Equatable, Sendable {
     public let languageName: String
     public let serverCapabilities: EcuJSONValue
     public let sharedSession: Bool
+    public let sessionKey: String
+    public let sessionPolicy: EcuProjectLspSessionPolicy
     public let serverKey: String
     public let command: String
     public let args: [String]
@@ -221,6 +318,8 @@ public struct EcuProjectLspStopPlanEntry: Decodable, Equatable, Sendable {
         case languageName = "language_name"
         case serverCapabilities = "server_capabilities"
         case sharedSession = "shared_session"
+        case sessionKey = "session_key"
+        case sessionPolicy = "session_policy"
         case serverKey = "server_key"
         case command
         case args
@@ -239,7 +338,14 @@ public struct EcuProjectLspStopPlanEntry: Decodable, Equatable, Sendable {
         languageId = try container.decodeIfPresent(String.self, forKey: .languageId) ?? ""
         languageName = try container.decodeIfPresent(String.self, forKey: .languageName) ?? languageId
         serverCapabilities = try container.decodeIfPresent(EcuJSONValue.self, forKey: .serverCapabilities) ?? .object([:])
-        sharedSession = try container.decodeIfPresent(Bool.self, forKey: .sharedSession) ?? true
+        let decodedSharedSession = try container.decodeIfPresent(Bool.self, forKey: .sharedSession) ?? true
+        sessionKey = try container.decodeIfPresent(String.self, forKey: .sessionKey) ?? ""
+        let decodedSessionPolicy = try container.decodeIfPresent(
+            EcuProjectLspSessionPolicy.self,
+            forKey: .sessionPolicy
+        ) ?? EcuProjectLspSessionPolicy(sharedSession: decodedSharedSession)
+        sessionPolicy = decodedSessionPolicy.normalized(sharedSession: decodedSharedSession)
+        sharedSession = sessionPolicy.isSharedSession
         serverKey = try container.decodeIfPresent(String.self, forKey: .serverKey) ?? ""
         command = try container.decode(String.self, forKey: .command)
         args = try container.decodeIfPresent([String].self, forKey: .args) ?? []
@@ -265,6 +371,8 @@ public struct EcuProjectLspRestartPlanEntry: Decodable, Equatable, Sendable {
     public let languageName: String
     public let serverCapabilities: EcuJSONValue
     public let sharedSession: Bool
+    public let sessionKey: String
+    public let sessionPolicy: EcuProjectLspSessionPolicy
     public let serverKey: String
     public let command: String
     public let args: [String]
@@ -282,6 +390,8 @@ public struct EcuProjectLspRestartPlanEntry: Decodable, Equatable, Sendable {
         case languageName = "language_name"
         case serverCapabilities = "server_capabilities"
         case sharedSession = "shared_session"
+        case sessionKey = "session_key"
+        case sessionPolicy = "session_policy"
         case serverKey = "server_key"
         case command
         case args
@@ -300,7 +410,14 @@ public struct EcuProjectLspRestartPlanEntry: Decodable, Equatable, Sendable {
         languageId = try container.decodeIfPresent(String.self, forKey: .languageId) ?? ""
         languageName = try container.decodeIfPresent(String.self, forKey: .languageName) ?? languageId
         serverCapabilities = try container.decodeIfPresent(EcuJSONValue.self, forKey: .serverCapabilities) ?? .object([:])
-        sharedSession = try container.decodeIfPresent(Bool.self, forKey: .sharedSession) ?? true
+        let decodedSharedSession = try container.decodeIfPresent(Bool.self, forKey: .sharedSession) ?? true
+        sessionKey = try container.decodeIfPresent(String.self, forKey: .sessionKey) ?? ""
+        let decodedSessionPolicy = try container.decodeIfPresent(
+            EcuProjectLspSessionPolicy.self,
+            forKey: .sessionPolicy
+        ) ?? EcuProjectLspSessionPolicy(sharedSession: decodedSharedSession)
+        sessionPolicy = decodedSessionPolicy.normalized(sharedSession: decodedSharedSession)
+        sharedSession = sessionPolicy.isSharedSession
         serverKey = try container.decodeIfPresent(String.self, forKey: .serverKey) ?? ""
         command = try container.decode(String.self, forKey: .command)
         args = try container.decodeIfPresent([String].self, forKey: .args) ?? []
@@ -325,6 +442,8 @@ public struct EcuProjectLspStartOutcome: Encodable, Equatable, Sendable {
     public let languageName: String
     public let serverCapabilities: EcuJSONValue
     public let sharedSession: Bool
+    public let sessionKey: String
+    public let sessionPolicy: EcuProjectLspSessionPolicy
     public let serverKey: String
     public let command: String
     public let args: [String]
@@ -345,6 +464,8 @@ public struct EcuProjectLspStartOutcome: Encodable, Equatable, Sendable {
         case languageName = "language_name"
         case serverCapabilities = "server_capabilities"
         case sharedSession = "shared_session"
+        case sessionKey = "session_key"
+        case sessionPolicy = "session_policy"
         case serverKey = "server_key"
         case command
         case args
@@ -366,6 +487,8 @@ public struct EcuProjectLspStartOutcome: Encodable, Equatable, Sendable {
         languageName: String? = nil,
         serverCapabilities: EcuJSONValue = .object([:]),
         sharedSession: Bool = true,
+        sessionKey: String = "",
+        sessionPolicy: EcuProjectLspSessionPolicy = EcuProjectLspSessionPolicy(),
         serverKey: String,
         command: String,
         args: [String] = [],
@@ -384,7 +507,10 @@ public struct EcuProjectLspStartOutcome: Encodable, Equatable, Sendable {
         self.languageId = languageId
         self.languageName = languageName ?? languageId
         self.serverCapabilities = serverCapabilities
-        self.sharedSession = sharedSession
+        let normalizedSessionPolicy = sessionPolicy.normalized(sharedSession: sharedSession)
+        self.sharedSession = normalizedSessionPolicy.isSharedSession
+        self.sessionKey = sessionKey
+        self.sessionPolicy = normalizedSessionPolicy
         self.serverKey = serverKey
         self.command = command
         self.args = args
@@ -410,6 +536,8 @@ public struct EcuProjectLspLifecycleEvent: Decodable, Equatable, Sendable {
     public let languageName: String
     public let serverCapabilities: EcuJSONValue
     public let sharedSession: Bool
+    public let sessionKey: String
+    public let sessionPolicy: EcuProjectLspSessionPolicy
     public let serverKey: String
     public let command: String
     public let args: [String]
@@ -431,6 +559,8 @@ public struct EcuProjectLspLifecycleEvent: Decodable, Equatable, Sendable {
         case languageName = "language_name"
         case serverCapabilities = "server_capabilities"
         case sharedSession = "shared_session"
+        case sessionKey = "session_key"
+        case sessionPolicy = "session_policy"
         case serverKey = "server_key"
         case command
         case args
@@ -453,7 +583,14 @@ public struct EcuProjectLspLifecycleEvent: Decodable, Equatable, Sendable {
         languageId = try container.decodeIfPresent(String.self, forKey: .languageId) ?? ""
         languageName = try container.decodeIfPresent(String.self, forKey: .languageName) ?? languageId
         serverCapabilities = try container.decodeIfPresent(EcuJSONValue.self, forKey: .serverCapabilities) ?? .object([:])
-        sharedSession = try container.decodeIfPresent(Bool.self, forKey: .sharedSession) ?? true
+        let decodedSharedSession = try container.decodeIfPresent(Bool.self, forKey: .sharedSession) ?? true
+        sessionKey = try container.decodeIfPresent(String.self, forKey: .sessionKey) ?? ""
+        let decodedSessionPolicy = try container.decodeIfPresent(
+            EcuProjectLspSessionPolicy.self,
+            forKey: .sessionPolicy
+        ) ?? EcuProjectLspSessionPolicy(sharedSession: decodedSharedSession)
+        sessionPolicy = decodedSessionPolicy.normalized(sharedSession: decodedSharedSession)
+        sharedSession = sessionPolicy.isSharedSession
         serverKey = try container.decodeIfPresent(String.self, forKey: .serverKey) ?? ""
         command = try container.decodeIfPresent(String.self, forKey: .command) ?? ""
         args = try container.decodeIfPresent([String].self, forKey: .args) ?? []

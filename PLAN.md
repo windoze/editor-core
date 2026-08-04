@@ -218,7 +218,21 @@
   - [x] Dashboard server 行和 lifecycle 行展示 core lifecycle event 携带的 typed `recovery_policy`，让执行时使用的恢复策略能在排障入口中直接审计。
   - [x] Process health log 面板保留 field filter query，并提供当前 workspace 的 clear/export 操作；Dashboard 继续复用同一日志和事件模型。
   - 验证：`swift test --package-path swift --filter 'AttoEditorCommandTests/test(ProjectLspDashboardPanelShowsStatusAndHealthSnapshots|ProjectLspDashboardShowsCoreRecoveryPolicyFromLifecycleEvents|ProjectLspProcessHealthLogPanelUsesFieldFilterQuery|ClearProjectLspProcessHealthLogClearsCurrentWorkspaceOnly|ExportProjectLspProcessHealthLogExportsCurrentWorkspaceOnly)'`
-- [ ] 明确跨独立 project session 的合并、隔离、去重和 shutdown 策略。
+- [x] 明确跨独立 project session 的合并、隔离、去重和 shutdown 策略。
+  - [x] 为 project LSP server config、start/stop/restart plan、lifecycle outcome/event 增加 typed `session_policy`（`scope` / `merge_strategy` / `deduplicate` / `shutdown_policy`）和 plan/outcome/event `session_key`。
+  - [x] `shared_session=true` 归一化为 workspace-scoped shared policy（按 server + workspace roots 合并、可去重、last-document shutdown）；`shared_session=false` 归一化为 document-scoped isolated policy（按 document 隔离、不去重、document-close shutdown）。
+  - [x] Swift wrapper、AttoEditor lifecycle action descriptor 和 Project LSP events 展示消费同一 session policy/key，旧 `shared_session` 字段保持兼容。
+  - 验证：`cargo test -p editor-core-ui project_lsp`
+  - 验证：`cargo test -p editor-core-ui-ffi project_lsp`
+  - 验证：`cargo test -p editor-core-ui-ffi ffi_multi_document_exposes_tab_preview_split_and_search`
+  - 验证：`cargo build -p editor-core-ui-ffi --release`
+  - 验证：`swift test --package-path swift --filter EditorCoreUIFFITests/testMultiDocumentEditorUIWrapperExposesTabsSplitsPreviewAndSearch`
+  - 验证：`swift test --package-path swift --filter 'EditorCoreUIFFITests/testProjectLsp(ServersEnvelopeReportsSuccess|LifecycleEnvelopeReportsPlansEventsAndErrors|ServersEnvelopeDecodesFutureFieldsAndUnknownStatus|LifecycleEnvelopeDecodesFutureFieldsAndUnknownStatus)'`
+  - 验证：`swift test --package-path swift --filter 'AttoEditorCommandTests/test(ProjectLspLaunchConfigsSyncToCoreProjectStore|ShutdownLspServerStopsActiveSessionAndRecordsOutcome|ProjectLspDashboardShowsCoreRecoveryPolicyFromLifecycleEvents)'`
+  - 验证：`swift test --package-path swift --filter AttoLspResultLifecycleStoreTests/testProjectLspLifecycleEventStoreBoundsAndFiltersBySequence`
+  - 验证：`swift test --package-path swift --filter 'AttoEditorCommandTests/test(WorkspaceRootChangeAutoStartsConfiguredOpenTabLsp|ClosingConfiguredProjectLspTabRecordsStopOutcome|PlainTextSyntaxSwitchRecordsProjectLspStopOutcome|ProjectLspAutoRestartUsesCoreRestartPlanRoot|RestartLspServerInActiveTabUsesCoreRestartPlanRoot|RestartLspServerRestartsActiveTabSession|ShutdownLspServerStopsActiveSessionAndRecordsOutcome|ShutdownProjectLspServersStopsConfiguredOpenTabsAndRecordsOutcomes|RestartProjectLspServersRestartsConfiguredOpenTabs|ProjectLspProcessHealthAutoRestartsExitedConfiguredTab)'`
+  - 验证：`cargo fmt --check`
+  - 验证：`git diff --check`
 
 ## 阶段 7：Result Panels 与 Workbench
 

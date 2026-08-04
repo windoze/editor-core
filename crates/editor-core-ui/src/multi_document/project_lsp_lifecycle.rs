@@ -4,6 +4,10 @@ use super::project_lsp::{
     normalize_project_lsp_language_name, normalize_project_lsp_recovery_policy,
     normalize_project_lsp_server_capabilities, normalize_project_lsp_workspace_schema,
 };
+use super::project_lsp_session::{
+    ProjectLspSessionPolicy, default_project_lsp_session_policy, normalize_project_lsp_session_key,
+    normalize_project_lsp_session_policy, project_lsp_session_policy_is_shared,
+};
 use crate::UiError;
 use std::collections::VecDeque;
 
@@ -26,6 +30,10 @@ pub struct ProjectLspStartOutcome {
     pub server_capabilities: serde_json::Value,
     #[serde(default = "default_project_lsp_shared_session")]
     pub shared_session: bool,
+    #[serde(default)]
+    pub session_key: String,
+    #[serde(default = "default_project_lsp_session_policy")]
+    pub session_policy: ProjectLspSessionPolicy,
     #[serde(default)]
     pub server_key: String,
     pub command: String,
@@ -61,6 +69,10 @@ pub struct ProjectLspLifecycleEvent {
     pub server_capabilities: serde_json::Value,
     #[serde(default = "default_project_lsp_shared_session")]
     pub shared_session: bool,
+    #[serde(default)]
+    pub session_key: String,
+    #[serde(default = "default_project_lsp_session_policy")]
+    pub session_policy: ProjectLspSessionPolicy,
     pub server_key: String,
     pub command: String,
     #[serde(default)]
@@ -110,6 +122,18 @@ impl ProjectLspLifecycleEventStore {
             normalize_project_lsp_language_name(&outcome.language_name, &language_id);
         let server_capabilities =
             normalize_project_lsp_server_capabilities(outcome.server_capabilities)?;
+        let server_key = normalize_optional(&outcome.server_key).unwrap_or_default();
+        let document_uri = normalize_optional(&outcome.document_uri).unwrap_or_default();
+        let session_policy =
+            normalize_project_lsp_session_policy(outcome.session_policy, outcome.shared_session)?;
+        let shared_session = project_lsp_session_policy_is_shared(&session_policy);
+        let session_key = normalize_project_lsp_session_key(
+            &outcome.session_key,
+            &session_policy,
+            &server_key,
+            &document_uri,
+            &workspace_roots,
+        );
         let recovery_policy = normalize_project_lsp_recovery_policy(outcome.recovery_policy);
         let attempt_id = outcome
             .attempt_id
@@ -122,12 +146,14 @@ impl ProjectLspLifecycleEventStore {
             status,
             tab_id: outcome.tab_id,
             active_view_index: outcome.active_view_index,
-            document_uri: normalize_optional(&outcome.document_uri).unwrap_or_default(),
+            document_uri,
             language_id,
             language_name,
             server_capabilities,
-            shared_session: outcome.shared_session,
-            server_key: normalize_optional(&outcome.server_key).unwrap_or_default(),
+            shared_session,
+            session_key,
+            session_policy,
+            server_key,
             command,
             args: normalize_non_empty_vec(outcome.args),
             workspace_roots,

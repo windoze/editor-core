@@ -1864,6 +1864,7 @@ fn multi_document_tracks_project_lsp_server_configs() {
                     "completion": { "supported": true }
                 }),
                 shared_session: true,
+                session_policy: ProjectLspSessionPolicy::default(),
                 workspace_roots: vec![
                     " file:///workspace ".to_string(),
                     "file:///workspace".to_string(),
@@ -1889,6 +1890,7 @@ fn multi_document_tracks_project_lsp_server_configs() {
                 language_name: "".to_string(),
                 server_capabilities: serde_json::Value::Null,
                 shared_session: false,
+                session_policy: ProjectLspSessionPolicy::default(),
                 workspace_roots: vec![],
                 workspace_folders: vec![],
                 auto_start: false,
@@ -1909,9 +1911,27 @@ fn multi_document_tracks_project_lsp_server_configs() {
         true
     );
     assert!(configs[0].shared_session);
+    assert_eq!(
+        configs[0].session_policy,
+        ProjectLspSessionPolicy {
+            scope: "workspace".to_string(),
+            merge_strategy: "server_workspace_roots".to_string(),
+            deduplicate: true,
+            shutdown_policy: "last_document".to_string(),
+        }
+    );
     assert_eq!(configs[1].language_name, "swift");
     assert_eq!(configs[1].server_capabilities, serde_json::json!({}));
     assert!(!configs[1].shared_session);
+    assert_eq!(
+        configs[1].session_policy,
+        ProjectLspSessionPolicy {
+            scope: "document".to_string(),
+            merge_strategy: "document".to_string(),
+            deduplicate: false,
+            shutdown_policy: "document_close".to_string(),
+        }
+    );
     assert_eq!(
         configs[0].recovery_policy,
         ProjectLspRecoveryPolicy {
@@ -1960,6 +1980,7 @@ fn multi_document_tracks_project_lsp_server_configs() {
                 language_name: "".to_string(),
                 server_capabilities: serde_json::json!(["not", "an", "object"]),
                 shared_session: true,
+                session_policy: ProjectLspSessionPolicy::default(),
                 workspace_roots: vec![],
                 workspace_folders: vec![],
                 auto_start: true,
@@ -2195,6 +2216,7 @@ fn multi_document_builds_project_lsp_start_plan_from_open_tabs() {
                     "semantic_tokens": true
                 }),
                 shared_session: true,
+                session_policy: ProjectLspSessionPolicy::default(),
                 workspace_roots: vec![],
                 workspace_folders: vec![],
                 auto_start: true,
@@ -2208,6 +2230,7 @@ fn multi_document_builds_project_lsp_start_plan_from_open_tabs() {
                 language_name: "".to_string(),
                 server_capabilities: serde_json::json!({}),
                 shared_session: false,
+                session_policy: ProjectLspSessionPolicy::default(),
                 workspace_roots: vec!["file:///swift-root".to_string()],
                 workspace_folders: vec![],
                 auto_start: false,
@@ -2227,6 +2250,9 @@ fn multi_document_builds_project_lsp_start_plan_from_open_tabs() {
     assert_eq!(plan[0].language_name, "Rust");
     assert_eq!(plan[0].server_capabilities["semantic_tokens"], true);
     assert!(plan[0].shared_session);
+    assert_eq!(plan[0].session_key, "workspace:rust:file:///workspace");
+    assert_eq!(plan[0].session_policy.scope, "workspace");
+    assert!(plan[0].session_policy.deduplicate);
     assert_eq!(plan[0].server_key, "rust");
     assert_eq!(plan[0].command, "/bin/rust-analyzer");
     assert_eq!(plan[0].args, vec!["--stdio"]);
@@ -2246,6 +2272,16 @@ fn multi_document_builds_project_lsp_start_plan_from_open_tabs() {
     assert_eq!(json[0]["operation"], "start");
     assert_eq!(json[0]["attempt_id"], 1);
     assert_eq!(json[0]["server_key"], "rust");
+    assert_eq!(json[0]["session_key"], "workspace:rust:file:///workspace");
+    assert_eq!(
+        json[0]["session_policy"],
+        serde_json::json!({
+            "scope": "workspace",
+            "merge_strategy": "server_workspace_roots",
+            "deduplicate": true,
+            "shutdown_policy": "last_document"
+        })
+    );
     assert_eq!(json[0]["server_capabilities"]["semantic_tokens"], true);
     assert_eq!(
         json[0]["recovery_policy"],
@@ -2256,6 +2292,79 @@ fn multi_document_builds_project_lsp_start_plan_from_open_tabs() {
         })
     );
     assert_eq!(json[0]["workspace_folders"][0]["name"], "workspace");
+}
+
+#[test]
+fn multi_document_project_lsp_session_policy_keys_across_documents() {
+    let mut multi = MultiDocumentEditorUi::new();
+    multi.set_workspace_roots(["file:///workspace"]);
+    let rust_main = multi.open_tab("fn main() {}\n", 80);
+    let rust_lib = multi.open_tab("pub fn lib() {}\n", 80);
+    let swift_tab = multi.open_tab("print(\"hello\")\n", 80);
+    multi
+        .set_tab_document_uri(rust_main, Some("file:///workspace/main.rs".to_string()))
+        .unwrap();
+    multi
+        .set_tab_language_id(rust_main, Some("rust".to_string()))
+        .unwrap();
+    multi
+        .set_tab_document_uri(rust_lib, Some("file:///workspace/lib.rs".to_string()))
+        .unwrap();
+    multi
+        .set_tab_language_id(rust_lib, Some("rust".to_string()))
+        .unwrap();
+    multi
+        .set_tab_document_uri(swift_tab, Some("file:///workspace/App.swift".to_string()))
+        .unwrap();
+    multi
+        .set_tab_language_id(swift_tab, Some("swift".to_string()))
+        .unwrap();
+
+    multi
+        .set_project_lsp_server_configs(vec![
+            ProjectLspServerConfig {
+                key: "rust".to_string(),
+                command: "/bin/rust-analyzer".to_string(),
+                args: vec![],
+                language_id: "rust".to_string(),
+                language_name: "".to_string(),
+                server_capabilities: serde_json::json!({}),
+                shared_session: true,
+                session_policy: ProjectLspSessionPolicy::default(),
+                workspace_roots: vec![],
+                workspace_folders: vec![],
+                auto_start: true,
+                recovery_policy: ProjectLspRecoveryPolicy::default(),
+            },
+            ProjectLspServerConfig {
+                key: "swift".to_string(),
+                command: "/bin/sourcekit-lsp".to_string(),
+                args: vec![],
+                language_id: "swift".to_string(),
+                language_name: "".to_string(),
+                server_capabilities: serde_json::json!({}),
+                shared_session: false,
+                session_policy: ProjectLspSessionPolicy::default(),
+                workspace_roots: vec![],
+                workspace_folders: vec![],
+                auto_start: true,
+                recovery_policy: ProjectLspRecoveryPolicy::default(),
+            },
+        ])
+        .unwrap();
+
+    let plan = multi.project_lsp_start_plan();
+    assert_eq!(plan.len(), 3);
+    assert_eq!(plan[0].session_key, "workspace:rust:file:///workspace");
+    assert_eq!(plan[1].session_key, plan[0].session_key);
+    assert!(plan[0].session_policy.deduplicate);
+    assert!(plan[1].session_policy.deduplicate);
+    assert_eq!(
+        plan[2].session_key,
+        "document:swift:file:///workspace/App.swift"
+    );
+    assert_eq!(plan[2].session_policy.scope, "document");
+    assert!(!plan[2].session_policy.deduplicate);
 }
 
 #[test]
@@ -2291,6 +2400,7 @@ fn multi_document_builds_project_lsp_stop_plan_from_open_tabs() {
                 language_name: "".to_string(),
                 server_capabilities: serde_json::json!({}),
                 shared_session: true,
+                session_policy: ProjectLspSessionPolicy::default(),
                 workspace_roots: vec![],
                 workspace_folders: vec![],
                 auto_start: true,
@@ -2306,6 +2416,7 @@ fn multi_document_builds_project_lsp_stop_plan_from_open_tabs() {
                     "workspace_symbols": true
                 }),
                 shared_session: false,
+                session_policy: ProjectLspSessionPolicy::default(),
                 workspace_roots: vec!["file:///swift-root".to_string()],
                 workspace_folders: vec![ProjectLspWorkspaceFolder {
                     uri: " file:///swift-root ".to_string(),
@@ -2339,6 +2450,12 @@ fn multi_document_builds_project_lsp_stop_plan_from_open_tabs() {
     assert_eq!(plan[1].language_name, "Swift");
     assert_eq!(plan[1].server_capabilities["workspace_symbols"], true);
     assert!(!plan[1].shared_session);
+    assert_eq!(
+        plan[1].session_key,
+        "document:swift:file:///workspace/App.swift"
+    );
+    assert_eq!(plan[1].session_policy.scope, "document");
+    assert!(!plan[1].session_policy.deduplicate);
     assert_eq!(plan[1].workspace_roots, vec!["file:///swift-root"]);
     assert_eq!(
         plan[1].recovery_policy,
@@ -2362,6 +2479,19 @@ fn multi_document_builds_project_lsp_stop_plan_from_open_tabs() {
     assert_eq!(json[1]["operation"], "stop");
     assert_eq!(json[1]["attempt_id"], 2);
     assert_eq!(json[1]["command"], "/bin/sourcekit-lsp");
+    assert_eq!(
+        json[1]["session_key"],
+        "document:swift:file:///workspace/App.swift"
+    );
+    assert_eq!(
+        json[1]["session_policy"],
+        serde_json::json!({
+            "scope": "document",
+            "merge_strategy": "document",
+            "deduplicate": false,
+            "shutdown_policy": "document_close"
+        })
+    );
     assert_eq!(json[1]["server_capabilities"]["workspace_symbols"], true);
     assert_eq!(
         json[1]["recovery_policy"],
@@ -2407,6 +2537,7 @@ fn multi_document_builds_project_lsp_restart_plan_from_open_tabs() {
                 language_name: "Rust".to_string(),
                 server_capabilities: serde_json::json!({}),
                 shared_session: true,
+                session_policy: ProjectLspSessionPolicy::default(),
                 workspace_roots: vec![],
                 workspace_folders: vec![],
                 auto_start: true,
@@ -2422,6 +2553,7 @@ fn multi_document_builds_project_lsp_restart_plan_from_open_tabs() {
                     "diagnostics": true
                 }),
                 shared_session: false,
+                session_policy: ProjectLspSessionPolicy::default(),
                 workspace_roots: vec!["file:///swift-root".to_string()],
                 workspace_folders: vec![],
                 auto_start: false,
@@ -2451,6 +2583,12 @@ fn multi_document_builds_project_lsp_restart_plan_from_open_tabs() {
     assert_eq!(plan[1].language_name, "swift");
     assert_eq!(plan[1].server_capabilities["diagnostics"], true);
     assert!(!plan[1].shared_session);
+    assert_eq!(
+        plan[1].session_key,
+        "document:swift:file:///workspace/App.swift"
+    );
+    assert_eq!(plan[1].session_policy.scope, "document");
+    assert!(!plan[1].session_policy.deduplicate);
     assert_eq!(plan[1].workspace_roots, vec!["file:///swift-root"]);
     assert_eq!(
         plan[1].recovery_policy,
@@ -2467,6 +2605,19 @@ fn multi_document_builds_project_lsp_restart_plan_from_open_tabs() {
     assert_eq!(json[1]["operation"], "restart");
     assert_eq!(json[1]["attempt_id"], 2);
     assert_eq!(json[1]["command"], "/bin/sourcekit-lsp");
+    assert_eq!(
+        json[1]["session_key"],
+        "document:swift:file:///workspace/App.swift"
+    );
+    assert_eq!(
+        json[1]["session_policy"],
+        serde_json::json!({
+            "scope": "document",
+            "merge_strategy": "document",
+            "deduplicate": false,
+            "shutdown_policy": "document_close"
+        })
+    );
     assert_eq!(json[1]["server_capabilities"]["diagnostics"], true);
     assert_eq!(
         json[1]["recovery_policy"],
@@ -2502,6 +2653,8 @@ fn multi_document_records_project_lsp_start_outcomes() {
                 "hover": true
             }),
             shared_session: false,
+            session_key: "".to_string(),
+            session_policy: ProjectLspSessionPolicy::default(),
             server_key: "rust".to_string(),
             command: "/bin/rust-analyzer".to_string(),
             args: vec!["--stdio".to_string()],
@@ -2530,6 +2683,12 @@ fn multi_document_records_project_lsp_start_outcomes() {
     assert_eq!(started.server_capabilities["hover"], true);
     assert!(!started.shared_session);
     assert_eq!(
+        started.session_key,
+        "document:rust:file:///workspace/main.rs"
+    );
+    assert_eq!(started.session_policy.scope, "document");
+    assert!(!started.session_policy.deduplicate);
+    assert_eq!(
         started.recovery_policy,
         ProjectLspRecoveryPolicy {
             enabled: true,
@@ -2556,6 +2715,8 @@ fn multi_document_records_project_lsp_start_outcomes() {
             language_name: "".to_string(),
             server_capabilities: serde_json::json!({}),
             shared_session: true,
+            session_key: "".to_string(),
+            session_policy: ProjectLspSessionPolicy::default(),
             server_key: "rust".to_string(),
             command: "/bin/rust-analyzer".to_string(),
             args: vec![],
@@ -2584,6 +2745,8 @@ fn multi_document_records_project_lsp_start_outcomes() {
             language_name: "".to_string(),
             server_capabilities: serde_json::json!({}),
             shared_session: true,
+            session_key: "".to_string(),
+            session_policy: ProjectLspSessionPolicy::default(),
             server_key: "rust".to_string(),
             command: "/bin/rust-analyzer".to_string(),
             args: vec![],
@@ -2611,6 +2774,8 @@ fn multi_document_records_project_lsp_start_outcomes() {
             language_name: "".to_string(),
             server_capabilities: serde_json::json!({}),
             shared_session: true,
+            session_key: "".to_string(),
+            session_policy: ProjectLspSessionPolicy::default(),
             server_key: "rust".to_string(),
             command: "/bin/rust-analyzer".to_string(),
             args: vec![],
@@ -2640,6 +2805,8 @@ fn multi_document_records_project_lsp_start_outcomes() {
             language_name: "".to_string(),
             server_capabilities: serde_json::json!({}),
             shared_session: true,
+            session_key: "".to_string(),
+            session_policy: ProjectLspSessionPolicy::default(),
             server_key: "rust".to_string(),
             command: "/bin/rust-analyzer".to_string(),
             args: vec![],
@@ -2668,6 +2835,8 @@ fn multi_document_records_project_lsp_start_outcomes() {
             language_name: "".to_string(),
             server_capabilities: serde_json::json!({}),
             shared_session: true,
+            session_key: "".to_string(),
+            session_policy: ProjectLspSessionPolicy::default(),
             server_key: "rust".to_string(),
             command: "/bin/rust-analyzer".to_string(),
             args: vec![],
@@ -2704,6 +2873,19 @@ fn multi_document_records_project_lsp_start_outcomes() {
     assert_eq!(json["events"][0]["server_capabilities"]["hover"], true);
     assert_eq!(json["events"][0]["shared_session"], false);
     assert_eq!(
+        json["events"][0]["session_key"],
+        "document:rust:file:///workspace/main.rs"
+    );
+    assert_eq!(
+        json["events"][0]["session_policy"],
+        serde_json::json!({
+            "scope": "document",
+            "merge_strategy": "document",
+            "deduplicate": false,
+            "shutdown_policy": "document_close"
+        })
+    );
+    assert_eq!(
         json["events"][0]["recovery_policy"],
         serde_json::json!({
             "enabled": true,
@@ -2735,6 +2917,8 @@ fn multi_document_records_project_lsp_start_outcomes() {
             language_name: "".to_string(),
             server_capabilities: serde_json::json!({}),
             shared_session: true,
+            session_key: "".to_string(),
+            session_policy: ProjectLspSessionPolicy::default(),
             server_key: "rust".to_string(),
             command: "/bin/rust-analyzer".to_string(),
             args: vec![],
@@ -2765,6 +2949,8 @@ fn multi_document_records_project_lsp_start_outcomes() {
                 language_name: "".to_string(),
                 server_capabilities: serde_json::json!({}),
                 shared_session: true,
+                session_key: "".to_string(),
+                session_policy: ProjectLspSessionPolicy::default(),
                 server_key: "rust".to_string(),
                 command: "/bin/rust-analyzer".to_string(),
                 args: vec![],

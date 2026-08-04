@@ -1414,6 +1414,12 @@ fn ffi_project_lsp_servers_envelope_json_reports_success_and_errors() {
                     "semantic_tokens": true
                 },
                 "shared_session": true,
+                "session_policy": {
+                    "scope": "workspace",
+                    "merge_strategy": "server_workspace_roots",
+                    "deduplicate": true,
+                    "shutdown_policy": "last_document"
+                },
                 "workspace_roots": ["file:///other", "file:///workspace"],
                 "workspace_folders": [
                     {
@@ -1441,6 +1447,12 @@ fn ffi_project_lsp_servers_envelope_json_reports_success_and_errors() {
                 "language_name": "swift",
                 "server_capabilities": {},
                 "shared_session": false,
+                "session_policy": {
+                    "scope": "document",
+                    "merge_strategy": "document",
+                    "deduplicate": false,
+                    "shutdown_policy": "document_close"
+                },
                 "workspace_roots": [],
                 "workspace_folders": [],
                 "auto_start": false,
@@ -1537,6 +1549,19 @@ fn ffi_project_lsp_lifecycle_envelope_json_reports_success_and_errors() {
     );
     assert_eq!(start_envelope["value"][0]["shared_session"], true);
     assert_eq!(
+        start_envelope["value"][0]["session_key"],
+        "workspace:rust:file:///project"
+    );
+    assert_eq!(
+        start_envelope["value"][0]["session_policy"],
+        serde_json::json!({
+            "scope": "workspace",
+            "merge_strategy": "server_workspace_roots",
+            "deduplicate": true,
+            "shutdown_policy": "last_document"
+        })
+    );
+    assert_eq!(
         start_envelope["value"][0]["recovery_policy"],
         serde_json::json!({
             "enabled": true,
@@ -1558,6 +1583,19 @@ fn ffi_project_lsp_lifecycle_envelope_json_reports_success_and_errors() {
     assert_eq!(stop_envelope["operation"], "stop_plan");
     assert_eq!(stop_envelope["value"][0]["server_key"], "rust");
     assert_eq!(
+        stop_envelope["value"][0]["session_key"],
+        "workspace:rust:file:///project"
+    );
+    assert_eq!(
+        stop_envelope["value"][0]["session_policy"],
+        serde_json::json!({
+            "scope": "workspace",
+            "merge_strategy": "server_workspace_roots",
+            "deduplicate": true,
+            "shutdown_policy": "last_document"
+        })
+    );
+    assert_eq!(
         stop_envelope["value"][0]["recovery_policy"],
         serde_json::json!({
             "enabled": true,
@@ -1578,6 +1616,19 @@ fn ffi_project_lsp_lifecycle_envelope_json_reports_success_and_errors() {
     assert_eq!(restart_envelope["ok"], true);
     assert_eq!(restart_envelope["operation"], "restart_plan");
     assert_eq!(restart_envelope["value"][0]["server_key"], "rust");
+    assert_eq!(
+        restart_envelope["value"][0]["session_key"],
+        "workspace:rust:file:///project"
+    );
+    assert_eq!(
+        restart_envelope["value"][0]["session_policy"],
+        serde_json::json!({
+            "scope": "workspace",
+            "merge_strategy": "server_workspace_roots",
+            "deduplicate": true,
+            "shutdown_policy": "last_document"
+        })
+    );
     assert_eq!(
         restart_envelope["value"][0]["recovery_policy"],
         serde_json::json!({
@@ -1639,6 +1690,19 @@ fn ffi_project_lsp_lifecycle_envelope_json_reports_success_and_errors() {
     assert_eq!(
         events_envelope["value"]["events"][0]["shared_session"],
         false
+    );
+    assert_eq!(
+        events_envelope["value"]["events"][0]["session_key"],
+        "document:rust:file:///project/main.rs"
+    );
+    assert_eq!(
+        events_envelope["value"]["events"][0]["session_policy"],
+        serde_json::json!({
+            "scope": "document",
+            "merge_strategy": "document",
+            "deduplicate": false,
+            "shutdown_policy": "document_close"
+        })
     );
     assert_eq!(
         events_envelope["value"]["events"][0]["recovery_policy"],
@@ -2186,6 +2250,12 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                     "semantic_tokens": true
                 },
                 "shared_session": true,
+                "session_policy": {
+                    "scope": "workspace",
+                    "merge_strategy": "server_workspace_roots",
+                    "deduplicate": true,
+                    "shutdown_policy": "last_document"
+                },
                 "workspace_roots": ["file:///new", "file:///other"],
                 "workspace_folders": [
                     {
@@ -2212,6 +2282,12 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                 "language_name": "swift",
                 "server_capabilities": {},
                 "shared_session": false,
+                "session_policy": {
+                    "scope": "document",
+                    "merge_strategy": "document",
+                    "deduplicate": false,
+                    "shutdown_policy": "document_close"
+                },
                 "workspace_roots": [],
                 "workspace_folders": [],
                 "auto_start": false,
@@ -2248,6 +2324,13 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                     "semantic_tokens": true
                 },
                 "shared_session": true,
+                "session_key": "workspace:rust:file:///new|file:///other",
+                "session_policy": {
+                    "scope": "workspace",
+                    "merge_strategy": "server_workspace_roots",
+                    "deduplicate": true,
+                    "shutdown_policy": "last_document"
+                },
                 "server_key": "rust",
                 "command": "/bin/rust-analyzer",
                 "args": ["--stdio"],
@@ -2294,6 +2377,13 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                     "semantic_tokens": true
                 },
                 "shared_session": true,
+                "session_key": "workspace:rust:file:///new|file:///other",
+                "session_policy": {
+                    "scope": "workspace",
+                    "merge_strategy": "server_workspace_roots",
+                    "deduplicate": true,
+                    "shutdown_policy": "last_document"
+                },
                 "server_key": "rust",
                 "command": "/bin/rust-analyzer",
                 "args": ["--stdio"],
@@ -2324,6 +2414,13 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                 "language_name": "swift",
                 "server_capabilities": {},
                 "shared_session": false,
+                "session_key": "document:swift:file:///project/Beta.swift",
+                "session_policy": {
+                    "scope": "document",
+                    "merge_strategy": "document",
+                    "deduplicate": false,
+                    "shutdown_policy": "document_close"
+                },
                 "server_key": "swift",
                 "command": "/bin/sourcekit-lsp",
                 "args": [],
@@ -2372,6 +2469,13 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                     "semantic_tokens": true
                 },
                 "shared_session": true,
+                "session_key": "workspace:rust:file:///new|file:///other",
+                "session_policy": {
+                    "scope": "workspace",
+                    "merge_strategy": "server_workspace_roots",
+                    "deduplicate": true,
+                    "shutdown_policy": "last_document"
+                },
                 "server_key": "rust",
                 "command": "/bin/rust-analyzer",
                 "args": ["--stdio"],
@@ -2402,6 +2506,13 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                 "language_name": "swift",
                 "server_capabilities": {},
                 "shared_session": false,
+                "session_key": "document:swift:file:///project/Beta.swift",
+                "session_policy": {
+                    "scope": "document",
+                    "merge_strategy": "document",
+                    "deduplicate": false,
+                    "shutdown_policy": "document_close"
+                },
                 "server_key": "swift",
                 "command": "/bin/sourcekit-lsp",
                 "args": [],
@@ -2475,6 +2586,19 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
     assert_eq!(
         lifecycle_events_value["events"][0]["document_uri"],
         "file:///project/main.rs"
+    );
+    assert_eq!(
+        lifecycle_events_value["events"][0]["session_key"],
+        "workspace:rust:file:///new|file:///other"
+    );
+    assert_eq!(
+        lifecycle_events_value["events"][0]["session_policy"],
+        serde_json::json!({
+            "scope": "workspace",
+            "merge_strategy": "server_workspace_roots",
+            "deduplicate": true,
+            "shutdown_policy": "last_document"
+        })
     );
     assert_eq!(
         lifecycle_events_value["events"][0]["recovery_policy"],

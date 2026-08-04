@@ -224,6 +224,12 @@ extension EditorCoreUIFFITests {
             "semantic_tokens": .bool(true),
         ]))
         XCTAssertEqual(first["shared_session"], .bool(true))
+        XCTAssertEqual(first["session_policy"], .object([
+            "scope": .string("workspace"),
+            "merge_strategy": .string("server_workspace_roots"),
+            "deduplicate": .bool(true),
+            "shutdown_policy": .string("last_document"),
+        ]))
         XCTAssertEqual(first["workspace_roots"], .array([.string("file:///other"), .string("file:///workspace")]))
         XCTAssertEqual(first["workspace_folders"], .array([
             .object([
@@ -249,6 +255,12 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(second["language_name"], .string("swift"))
         XCTAssertEqual(second["server_capabilities"], .object([:]))
         XCTAssertEqual(second["shared_session"], .bool(false))
+        XCTAssertEqual(second["session_policy"], .object([
+            "scope": .string("document"),
+            "merge_strategy": .string("document"),
+            "deduplicate": .bool(false),
+            "shutdown_policy": .string("document_close"),
+        ]))
         XCTAssertEqual(second["workspace_roots"], .array([]))
         XCTAssertEqual(second["workspace_folders"], .array([]))
         XCTAssertEqual(second["auto_start"], .bool(false))
@@ -347,6 +359,13 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(firstStart["language_name"], .string("rust"))
         XCTAssertEqual(firstStart["server_capabilities"], .object([:]))
         XCTAssertEqual(firstStart["shared_session"], .bool(true))
+        XCTAssertEqual(firstStart["session_key"], .string("workspace:rust:file:///project"))
+        XCTAssertEqual(firstStart["session_policy"], .object([
+            "scope": .string("workspace"),
+            "merge_strategy": .string("server_workspace_roots"),
+            "deduplicate": .bool(true),
+            "shutdown_policy": .string("last_document"),
+        ]))
         XCTAssertEqual(firstStart["recovery_policy"], .object([
             "enabled": .bool(true),
             "max_attempts": .number(3),
@@ -367,6 +386,13 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(firstStop["language_name"], .string("rust"))
         XCTAssertEqual(firstStop["server_capabilities"], .object([:]))
         XCTAssertEqual(firstStop["shared_session"], .bool(true))
+        XCTAssertEqual(firstStop["session_key"], .string("workspace:rust:file:///project"))
+        XCTAssertEqual(firstStop["session_policy"], .object([
+            "scope": .string("workspace"),
+            "merge_strategy": .string("server_workspace_roots"),
+            "deduplicate": .bool(true),
+            "shutdown_policy": .string("last_document"),
+        ]))
         XCTAssertEqual(firstStop["recovery_policy"], .object([
             "enabled": .bool(true),
             "max_attempts": .number(3),
@@ -387,6 +413,13 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(firstRestart["language_name"], .string("rust"))
         XCTAssertEqual(firstRestart["server_capabilities"], .object([:]))
         XCTAssertEqual(firstRestart["shared_session"], .bool(true))
+        XCTAssertEqual(firstRestart["session_key"], .string("workspace:rust:file:///project"))
+        XCTAssertEqual(firstRestart["session_policy"], .object([
+            "scope": .string("workspace"),
+            "merge_strategy": .string("server_workspace_roots"),
+            "deduplicate": .bool(true),
+            "shutdown_policy": .string("last_document"),
+        ]))
         XCTAssertEqual(firstRestart["recovery_policy"], .object([
             "enabled": .bool(true),
             "max_attempts": .number(3),
@@ -421,6 +454,13 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(firstEvent["language_name"], .string("rust"))
         XCTAssertEqual(firstEvent["server_capabilities"], .object(["hover": .bool(true)]))
         XCTAssertEqual(firstEvent["shared_session"], .bool(false))
+        XCTAssertEqual(firstEvent["session_key"], .string("document:rust:file:///project/main.rs"))
+        XCTAssertEqual(firstEvent["session_policy"], .object([
+            "scope": .string("document"),
+            "merge_strategy": .string("document"),
+            "deduplicate": .bool(false),
+            "shutdown_policy": .string("document_close"),
+        ]))
         XCTAssertEqual(firstEvent["recovery_policy"], .object([
             "enabled": .bool(true),
             "max_attempts": .number(3),

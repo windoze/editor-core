@@ -14,7 +14,6 @@
 ## 阶段 6：Project / LSP Lifecycle Ownership
 
 - 将 LSP start / restart / stop / shutdown 的实际执行 ownership 从 Swift/AppKit 过渡到 core-owned typed lifecycle。
-- 明确跨独立 project session 的合并、隔离、去重和 shutdown 策略。
 
 ## 阶段 7：Result Panels 与 Workbench
 

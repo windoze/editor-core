@@ -12,6 +12,8 @@ struct AttoProjectLspLifecycleAction {
     let languageName: String
     let serverCapabilities: EcuJSONValue
     let sharedSession: Bool
+    let sessionKey: String
+    let sessionPolicy: EcuProjectLspSessionPolicy
     let serverKey: String
     let command: String
     let args: [String]
@@ -43,6 +45,8 @@ struct AttoProjectLspLifecycleAction {
             languageName: planEntry?.languageName ?? config.languageId,
             serverCapabilities: planEntry?.serverCapabilities ?? .object([:]),
             sharedSession: planEntry?.sharedSession ?? true,
+            sessionKey: planEntry?.sessionKey ?? "",
+            sessionPolicy: planEntry?.sessionPolicy ?? EcuProjectLspSessionPolicy(sharedSession: true),
             serverKey: planEntry?.serverKey ?? AttoEditorAreaViewController.projectLspServerConfigKey(for: config),
             command: planEntry?.command ?? config.command,
             args: planEntry?.args ?? AttoEditorAreaViewController.projectLspServerConfigArgs(from: config.args),
@@ -76,6 +80,8 @@ struct AttoProjectLspLifecycleAction {
             languageName: planEntry?.languageName ?? config.languageId,
             serverCapabilities: planEntry?.serverCapabilities ?? .object([:]),
             sharedSession: planEntry?.sharedSession ?? true,
+            sessionKey: planEntry?.sessionKey ?? "",
+            sessionPolicy: planEntry?.sessionPolicy ?? EcuProjectLspSessionPolicy(sharedSession: true),
             serverKey: planEntry?.serverKey ?? AttoEditorAreaViewController.projectLspServerConfigKey(for: config),
             command: planEntry?.command ?? config.command,
             args: planEntry?.args ?? AttoEditorAreaViewController.projectLspServerConfigArgs(from: config.args),
@@ -109,6 +115,8 @@ struct AttoProjectLspLifecycleAction {
             languageName: planEntry?.languageName ?? config.languageId,
             serverCapabilities: planEntry?.serverCapabilities ?? .object([:]),
             sharedSession: planEntry?.sharedSession ?? true,
+            sessionKey: planEntry?.sessionKey ?? "",
+            sessionPolicy: planEntry?.sessionPolicy ?? EcuProjectLspSessionPolicy(sharedSession: true),
             serverKey: planEntry?.serverKey ?? AttoEditorAreaViewController.projectLspServerConfigKey(for: config),
             command: planEntry?.command ?? config.command,
             args: planEntry?.args ?? AttoEditorAreaViewController.projectLspServerConfigArgs(from: config.args),
@@ -133,6 +141,8 @@ struct AttoProjectLspLifecycleAction {
             languageName: languageName,
             serverCapabilities: serverCapabilities,
             sharedSession: sharedSession,
+            sessionKey: sessionKey,
+            sessionPolicy: sessionPolicy,
             serverKey: serverKey,
             command: command,
             args: args,

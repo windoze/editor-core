@@ -1,3 +1,8 @@
+use super::project_lsp_session::{
+    ProjectLspSessionPolicy, default_project_lsp_session_policy,
+    normalize_project_lsp_session_policy, project_lsp_session_key,
+    project_lsp_session_policy_is_shared,
+};
 use crate::UiError;
 use std::collections::BTreeMap;
 
@@ -40,6 +45,8 @@ pub struct ProjectLspServerConfig {
     pub server_capabilities: serde_json::Value,
     #[serde(default = "default_project_lsp_shared_session")]
     pub shared_session: bool,
+    #[serde(default = "default_project_lsp_session_policy")]
+    pub session_policy: ProjectLspSessionPolicy,
     #[serde(default)]
     pub workspace_roots: Vec<String>,
     #[serde(default)]
@@ -64,6 +71,10 @@ pub struct ProjectLspStartPlanEntry {
     pub server_capabilities: serde_json::Value,
     #[serde(default = "default_project_lsp_shared_session")]
     pub shared_session: bool,
+    #[serde(default)]
+    pub session_key: String,
+    #[serde(default = "default_project_lsp_session_policy")]
+    pub session_policy: ProjectLspSessionPolicy,
     pub server_key: String,
     pub command: String,
     #[serde(default)]
@@ -90,6 +101,10 @@ pub struct ProjectLspStopPlanEntry {
     pub server_capabilities: serde_json::Value,
     #[serde(default = "default_project_lsp_shared_session")]
     pub shared_session: bool,
+    #[serde(default)]
+    pub session_key: String,
+    #[serde(default = "default_project_lsp_session_policy")]
+    pub session_policy: ProjectLspSessionPolicy,
     pub server_key: String,
     pub command: String,
     #[serde(default)]
@@ -116,6 +131,10 @@ pub struct ProjectLspRestartPlanEntry {
     pub server_capabilities: serde_json::Value,
     #[serde(default = "default_project_lsp_shared_session")]
     pub shared_session: bool,
+    #[serde(default)]
+    pub session_key: String,
+    #[serde(default = "default_project_lsp_session_policy")]
+    pub session_policy: ProjectLspSessionPolicy,
     pub server_key: String,
     pub command: String,
     #[serde(default)]
@@ -134,6 +153,12 @@ pub(crate) struct ProjectLspOpenDocument {
     pub active_view_index: usize,
     pub document_uri: Option<String>,
     pub language_id: Option<String>,
+}
+
+struct ProjectLspPlanSessionContext {
+    workspace_roots: Vec<String>,
+    workspace_folders: Vec<ProjectLspWorkspaceFolder>,
+    session_key: String,
 }
 
 fn default_auto_start() -> bool {
@@ -176,17 +201,12 @@ pub(crate) fn project_lsp_start_plan(
             {
                 continue;
             }
-            let (workspace_roots, workspace_folders) = if config.workspace_roots.is_empty() {
-                (
-                    fallback_workspace_roots.clone(),
-                    fallback_workspace_folders.clone(),
-                )
-            } else {
-                (
-                    config.workspace_roots.clone(),
-                    config.workspace_folders.clone(),
-                )
-            };
+            let context = project_lsp_plan_session_context(
+                config,
+                &document_uri,
+                &fallback_workspace_roots,
+                &fallback_workspace_folders,
+            );
             entries.push(ProjectLspStartPlanEntry {
                 operation: "start".to_string(),
                 attempt_id: next_project_lsp_plan_attempt_id(&mut next_attempt_id),
@@ -197,11 +217,13 @@ pub(crate) fn project_lsp_start_plan(
                 language_name: config.language_name.clone(),
                 server_capabilities: config.server_capabilities.clone(),
                 shared_session: config.shared_session,
+                session_key: context.session_key,
+                session_policy: config.session_policy.clone(),
                 server_key: config.key.clone(),
                 command: config.command.clone(),
                 args: config.args.clone(),
-                workspace_roots,
-                workspace_folders,
+                workspace_roots: context.workspace_roots,
+                workspace_folders: context.workspace_folders,
                 recovery_policy: config.recovery_policy.clone(),
             });
         }
@@ -233,17 +255,12 @@ pub(crate) fn project_lsp_stop_plan(
             if config.language_id.eq_ignore_ascii_case(&language_id) == false {
                 continue;
             }
-            let (workspace_roots, workspace_folders) = if config.workspace_roots.is_empty() {
-                (
-                    fallback_workspace_roots.clone(),
-                    fallback_workspace_folders.clone(),
-                )
-            } else {
-                (
-                    config.workspace_roots.clone(),
-                    config.workspace_folders.clone(),
-                )
-            };
+            let context = project_lsp_plan_session_context(
+                config,
+                &document_uri,
+                &fallback_workspace_roots,
+                &fallback_workspace_folders,
+            );
             entries.push(ProjectLspStopPlanEntry {
                 operation: "stop".to_string(),
                 attempt_id: next_project_lsp_plan_attempt_id(&mut next_attempt_id),
@@ -254,11 +271,13 @@ pub(crate) fn project_lsp_stop_plan(
                 language_name: config.language_name.clone(),
                 server_capabilities: config.server_capabilities.clone(),
                 shared_session: config.shared_session,
+                session_key: context.session_key,
+                session_policy: config.session_policy.clone(),
                 server_key: config.key.clone(),
                 command: config.command.clone(),
                 args: config.args.clone(),
-                workspace_roots,
-                workspace_folders,
+                workspace_roots: context.workspace_roots,
+                workspace_folders: context.workspace_folders,
                 recovery_policy: config.recovery_policy.clone(),
             });
         }
@@ -290,17 +309,12 @@ pub(crate) fn project_lsp_restart_plan(
             if config.language_id.eq_ignore_ascii_case(&language_id) == false {
                 continue;
             }
-            let (workspace_roots, workspace_folders) = if config.workspace_roots.is_empty() {
-                (
-                    fallback_workspace_roots.clone(),
-                    fallback_workspace_folders.clone(),
-                )
-            } else {
-                (
-                    config.workspace_roots.clone(),
-                    config.workspace_folders.clone(),
-                )
-            };
+            let context = project_lsp_plan_session_context(
+                config,
+                &document_uri,
+                &fallback_workspace_roots,
+                &fallback_workspace_folders,
+            );
             entries.push(ProjectLspRestartPlanEntry {
                 operation: "restart".to_string(),
                 attempt_id: next_project_lsp_plan_attempt_id(&mut next_attempt_id),
@@ -311,11 +325,13 @@ pub(crate) fn project_lsp_restart_plan(
                 language_name: config.language_name.clone(),
                 server_capabilities: config.server_capabilities.clone(),
                 shared_session: config.shared_session,
+                session_key: context.session_key,
+                session_policy: config.session_policy.clone(),
                 server_key: config.key.clone(),
                 command: config.command.clone(),
                 args: config.args.clone(),
-                workspace_roots,
-                workspace_folders,
+                workspace_roots: context.workspace_roots,
+                workspace_folders: context.workspace_folders,
                 recovery_policy: config.recovery_policy.clone(),
             });
         }
@@ -348,6 +364,9 @@ fn normalize_project_lsp_server(
         .collect();
     let (workspace_roots, workspace_folders) =
         normalize_project_lsp_workspace_schema(config.workspace_roots, config.workspace_folders);
+    let session_policy =
+        normalize_project_lsp_session_policy(config.session_policy, config.shared_session)?;
+    let shared_session = project_lsp_session_policy_is_shared(&session_policy);
 
     Ok(ProjectLspServerConfig {
         key,
@@ -356,12 +375,44 @@ fn normalize_project_lsp_server(
         language_id,
         language_name,
         server_capabilities,
-        shared_session: config.shared_session,
+        shared_session,
+        session_policy,
         workspace_roots,
         workspace_folders,
         auto_start: config.auto_start,
         recovery_policy,
     })
+}
+
+fn project_lsp_plan_session_context(
+    config: &ProjectLspServerConfig,
+    document_uri: &str,
+    fallback_workspace_roots: &[String],
+    fallback_workspace_folders: &[ProjectLspWorkspaceFolder],
+) -> ProjectLspPlanSessionContext {
+    let (workspace_roots, workspace_folders) = if config.workspace_roots.is_empty() {
+        (
+            fallback_workspace_roots.to_vec(),
+            fallback_workspace_folders.to_vec(),
+        )
+    } else {
+        (
+            config.workspace_roots.clone(),
+            config.workspace_folders.clone(),
+        )
+    };
+    let session_key = project_lsp_session_key(
+        &config.session_policy,
+        &config.key,
+        document_uri,
+        &workspace_roots,
+    );
+
+    ProjectLspPlanSessionContext {
+        workspace_roots,
+        workspace_folders,
+        session_key,
+    }
 }
 
 fn next_project_lsp_plan_attempt_id(next_attempt_id: &mut Option<u64>) -> Option<u64> {

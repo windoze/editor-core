@@ -100,6 +100,7 @@ extension AttoEditorAreaViewController {
                     languageName: existing.languageName,
                     serverCapabilities: existing.serverCapabilities,
                     sharedSession: existing.sharedSession,
+                    sessionPolicy: existing.sessionPolicy,
                     workspaceRoots: workspaceRoots,
                     autoStart: existing.autoStart || autoStart,
                     recoveryPolicy: existing.recoveryPolicy
@@ -202,6 +203,11 @@ extension AttoEditorAreaViewController {
         let enabled = policy.enabled ? "enabled" : "disabled"
         let baseDelay = formatProjectLspRecoverySeconds(projectLspRecoveryBaseDelaySeconds(policy.baseDelayMillis))
         return "\(enabled), max attempts \(policy.maxAttempts), base delay \(baseDelay)"
+    }
+
+    static func projectLspSessionPolicyDescription(_ policy: EcuProjectLspSessionPolicy) -> String {
+        let deduplicate = policy.deduplicate ? "deduplicate" : "no deduplicate"
+        return "\(policy.scope), merge \(policy.mergeStrategy), \(deduplicate), shutdown \(policy.shutdownPolicy)"
     }
 
     static func formatProjectLspRecoverySeconds(_ seconds: TimeInterval) -> String {

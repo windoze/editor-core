@@ -265,6 +265,7 @@ extension AttoEditorCommandTests {
         XCTAssertEqual(projectedRust.languageName, "rust")
         XCTAssertEqual(projectedRust.serverCapabilities, .object([:]))
         XCTAssertTrue(projectedRust.sharedSession)
+        XCTAssertEqual(projectedRust.sessionPolicy, EcuProjectLspSessionPolicy())
         XCTAssertEqual(projectedRust.workspaceRoots, [rootURI])
         XCTAssertTrue(projectedRust.autoStart)
         XCTAssertEqual(projectedRust.recoveryPolicy, EcuProjectLspRecoveryPolicy())
@@ -290,6 +291,7 @@ extension AttoEditorCommandTests {
         XCTAssertEqual(projectedSwift.languageName, "swift")
         XCTAssertEqual(projectedSwift.serverCapabilities, .object([:]))
         XCTAssertTrue(projectedSwift.sharedSession)
+        XCTAssertEqual(projectedSwift.sessionPolicy, EcuProjectLspSessionPolicy())
         XCTAssertFalse(projectedSwift.autoStart)
         XCTAssertEqual(projectedSwift.recoveryPolicy, EcuProjectLspRecoveryPolicy())
 
@@ -590,6 +592,7 @@ extension AttoEditorCommandTests {
         let projectedConfig = try XCTUnwrap(try vc._coreProjectLspServerConfigsForTesting().first)
         XCTAssertEqual(projectedConfig.command, scriptURL.path)
         XCTAssertFalse(projectedConfig.autoStart)
+        let expectedSessionKey = "workspace:\(projectedConfig.key):\(tempDir.standardizedFileURL.absoluteString)"
 
         let lifecycle = try XCTUnwrap(try vc._coreProjectLspLifecycleEventsForTesting())
         XCTAssertEqual(lifecycle.latestSequence, 2)
@@ -605,6 +608,11 @@ extension AttoEditorCommandTests {
         XCTAssertEqual(lifecycle.events.map(\.languageName), ["plaintext", "plaintext"])
         XCTAssertEqual(lifecycle.events.map(\.serverCapabilities), [.object([:]), .object([:])])
         XCTAssertEqual(lifecycle.events.map(\.sharedSession), [true, true])
+        XCTAssertEqual(lifecycle.events.map(\.sessionPolicy), [EcuProjectLspSessionPolicy(), EcuProjectLspSessionPolicy()])
+        XCTAssertEqual(lifecycle.events.map(\.sessionKey), [
+            expectedSessionKey,
+            expectedSessionKey,
+        ])
         XCTAssertEqual(lifecycle.events[0].command, scriptURL.path)
         XCTAssertEqual(lifecycle.events[1].command, scriptURL.path)
         let attemptId = try XCTUnwrap(lifecycle.events[0].attemptId)
