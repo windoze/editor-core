@@ -1514,6 +1514,7 @@ fn ffi_project_lsp_lifecycle_envelope_json_reports_success_and_errors() {
     assert_eq!(start_envelope["status"], "success");
     assert_eq!(start_envelope["version"], ECU_ABI_VERSION);
     assert_eq!(start_envelope["value"][0]["tab_id"], tab_id);
+    assert_eq!(start_envelope["value"][0]["attempt_id"], 1);
     assert_eq!(
         start_envelope["value"][0]["document_uri"],
         "file:///project/main.rs"
@@ -2184,6 +2185,7 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
         serde_json::json!([
             {
                 "operation": "start",
+                "attempt_id": 1,
                 "tab_id": alpha_id,
                 "active_view_index": 0,
                 "document_uri": "file:///project/main.rs",
@@ -2224,6 +2226,7 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
         serde_json::json!([
             {
                 "operation": "stop",
+                "attempt_id": 1,
                 "tab_id": alpha_id,
                 "active_view_index": 0,
                 "document_uri": "file:///project/main.rs",
@@ -2251,6 +2254,7 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
             },
             {
                 "operation": "stop",
+                "attempt_id": 2,
                 "tab_id": beta_id,
                 "active_view_index": 0,
                 "document_uri": "file:///project/Beta.swift",
@@ -2290,6 +2294,7 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
         serde_json::json!([
             {
                 "operation": "restart",
+                "attempt_id": 1,
                 "tab_id": alpha_id,
                 "active_view_index": 0,
                 "document_uri": "file:///project/main.rs",
@@ -2317,6 +2322,7 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
             },
             {
                 "operation": "restart",
+                "attempt_id": 2,
                 "tab_id": beta_id,
                 "active_view_index": 0,
                 "document_uri": "file:///project/Beta.swift",

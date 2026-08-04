@@ -35,6 +35,8 @@ pub struct ProjectLspServerConfig {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ProjectLspStartPlanEntry {
     pub operation: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attempt_id: Option<u64>,
     pub tab_id: u64,
     pub active_view_index: usize,
     pub document_uri: String,
@@ -57,6 +59,8 @@ pub struct ProjectLspStartPlanEntry {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ProjectLspStopPlanEntry {
     pub operation: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attempt_id: Option<u64>,
     pub tab_id: u64,
     pub active_view_index: usize,
     pub document_uri: String,
@@ -79,6 +83,8 @@ pub struct ProjectLspStopPlanEntry {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ProjectLspRestartPlanEntry {
     pub operation: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attempt_id: Option<u64>,
     pub tab_id: u64,
     pub active_view_index: usize,
     pub document_uri: String,
@@ -125,10 +131,12 @@ pub(crate) fn project_lsp_start_plan(
     configs: &BTreeMap<String, ProjectLspServerConfig>,
     workspace_roots: &[String],
     documents: impl IntoIterator<Item = ProjectLspOpenDocument>,
+    attempt_id_start: Option<u64>,
 ) -> Vec<ProjectLspStartPlanEntry> {
     let (fallback_workspace_roots, fallback_workspace_folders) =
         normalize_project_lsp_workspace_schema(workspace_roots.to_vec(), Vec::new());
     let mut entries = Vec::new();
+    let mut next_attempt_id = attempt_id_start;
 
     for document in documents {
         let Some(document_uri) = normalize_non_empty(document.document_uri.as_deref()) else {
@@ -157,6 +165,7 @@ pub(crate) fn project_lsp_start_plan(
             };
             entries.push(ProjectLspStartPlanEntry {
                 operation: "start".to_string(),
+                attempt_id: next_project_lsp_plan_attempt_id(&mut next_attempt_id),
                 tab_id: document.tab_id,
                 active_view_index: document.active_view_index,
                 document_uri: document_uri.clone(),
@@ -180,10 +189,12 @@ pub(crate) fn project_lsp_stop_plan(
     configs: &BTreeMap<String, ProjectLspServerConfig>,
     workspace_roots: &[String],
     documents: impl IntoIterator<Item = ProjectLspOpenDocument>,
+    attempt_id_start: Option<u64>,
 ) -> Vec<ProjectLspStopPlanEntry> {
     let (fallback_workspace_roots, fallback_workspace_folders) =
         normalize_project_lsp_workspace_schema(workspace_roots.to_vec(), Vec::new());
     let mut entries = Vec::new();
+    let mut next_attempt_id = attempt_id_start;
 
     for document in documents {
         let Some(document_uri) = normalize_non_empty(document.document_uri.as_deref()) else {
@@ -210,6 +221,7 @@ pub(crate) fn project_lsp_stop_plan(
             };
             entries.push(ProjectLspStopPlanEntry {
                 operation: "stop".to_string(),
+                attempt_id: next_project_lsp_plan_attempt_id(&mut next_attempt_id),
                 tab_id: document.tab_id,
                 active_view_index: document.active_view_index,
                 document_uri: document_uri.clone(),
@@ -233,10 +245,12 @@ pub(crate) fn project_lsp_restart_plan(
     configs: &BTreeMap<String, ProjectLspServerConfig>,
     workspace_roots: &[String],
     documents: impl IntoIterator<Item = ProjectLspOpenDocument>,
+    attempt_id_start: Option<u64>,
 ) -> Vec<ProjectLspRestartPlanEntry> {
     let (fallback_workspace_roots, fallback_workspace_folders) =
         normalize_project_lsp_workspace_schema(workspace_roots.to_vec(), Vec::new());
     let mut entries = Vec::new();
+    let mut next_attempt_id = attempt_id_start;
 
     for document in documents {
         let Some(document_uri) = normalize_non_empty(document.document_uri.as_deref()) else {
@@ -263,6 +277,7 @@ pub(crate) fn project_lsp_restart_plan(
             };
             entries.push(ProjectLspRestartPlanEntry {
                 operation: "restart".to_string(),
+                attempt_id: next_project_lsp_plan_attempt_id(&mut next_attempt_id),
                 tab_id: document.tab_id,
                 active_view_index: document.active_view_index,
                 document_uri: document_uri.clone(),
@@ -318,6 +333,14 @@ fn normalize_project_lsp_server(
         workspace_folders,
         auto_start: config.auto_start,
     })
+}
+
+fn next_project_lsp_plan_attempt_id(next_attempt_id: &mut Option<u64>) -> Option<u64> {
+    let attempt_id = *next_attempt_id;
+    if let Some(next) = next_attempt_id {
+        *next = (*next).saturating_add(1);
+    }
+    attempt_id
 }
 
 fn normalize_non_empty(value: Option<&str>) -> Option<String> {

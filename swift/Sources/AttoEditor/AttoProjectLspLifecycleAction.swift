@@ -4,6 +4,7 @@ import Foundation
 struct AttoProjectLspLifecycleAction {
     let coreTabID: UInt64?
     let operation: String
+    let attemptId: UInt64?
     let trigger: String
     let activeViewIndex: UInt32
     let documentURI: String
@@ -31,6 +32,7 @@ struct AttoProjectLspLifecycleAction {
         return AttoProjectLspLifecycleAction(
             coreTabID: tab.coreTabID,
             operation: planEntry?.operation ?? "start",
+            attemptId: planEntry?.attemptId,
             trigger: trigger,
             activeViewIndex: planEntry?.activeViewIndex ?? UInt32(clamping: tab.activePaneIndex),
             documentURI: planEntry?.documentURI ?? documentURL.standardizedFileURL.absoluteString,
@@ -60,6 +62,7 @@ struct AttoProjectLspLifecycleAction {
         return AttoProjectLspLifecycleAction(
             coreTabID: tab.coreTabID,
             operation: planEntry?.operation ?? "restart",
+            attemptId: planEntry?.attemptId,
             trigger: trigger,
             activeViewIndex: planEntry?.activeViewIndex ?? UInt32(clamping: tab.activePaneIndex),
             documentURI: planEntry?.documentURI ?? documentURL.standardizedFileURL.absoluteString,
@@ -89,6 +92,7 @@ struct AttoProjectLspLifecycleAction {
         return AttoProjectLspLifecycleAction(
             coreTabID: tab.coreTabID,
             operation: planEntry?.operation ?? "stop",
+            attemptId: planEntry?.attemptId,
             trigger: trigger,
             activeViewIndex: planEntry?.activeViewIndex ?? UInt32(clamping: tab.activePaneIndex),
             documentURI: planEntry?.documentURI ?? documentURL.standardizedFileURL.absoluteString,
@@ -126,7 +130,7 @@ struct AttoProjectLspLifecycleAction {
             workspaceFolders: workspaceFolders,
             trigger: trigger,
             status: status,
-            attemptId: attemptId,
+            attemptId: attemptId ?? self.attemptId,
             errorMessage: errorMessage
         )
     }

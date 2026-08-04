@@ -145,6 +145,10 @@ impl ProjectLspLifecycleEventStore {
         self.next_sequence.saturating_sub(1)
     }
 
+    pub(crate) fn next_attempt_id(&self) -> u64 {
+        self.next_sequence.max(1)
+    }
+
     pub(crate) fn events_after(&self, after_sequence: u64) -> ProjectLspLifecycleEventsSnapshot {
         ProjectLspLifecycleEventsSnapshot {
             latest_sequence: self.latest_sequence(),

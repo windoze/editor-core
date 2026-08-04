@@ -756,8 +756,8 @@ extension AttoEditorAreaViewController {
 
         do {
             try coreDocuments.recordProjectLspStartOutcome(outcome)
-            if let attemptId {
-                return attemptId
+            if let recordedAttemptId = outcome.attemptId {
+                return recordedAttemptId
             }
             if Self.isProjectLspRequestedStatus(status) {
                 return try? coreDocuments.projectLspLifecycleEventsLatestSequence()

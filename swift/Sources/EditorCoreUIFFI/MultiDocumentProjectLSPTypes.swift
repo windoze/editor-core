@@ -98,6 +98,7 @@ public struct EcuProjectLspWorkspaceFolder: Codable, Equatable, Sendable {
 
 public struct EcuProjectLspStartPlanEntry: Decodable, Equatable, Sendable {
     public let operation: String
+    public let attemptId: UInt64?
     public let tabId: UInt64
     public let activeViewIndex: UInt32
     public let documentURI: String
@@ -113,6 +114,7 @@ public struct EcuProjectLspStartPlanEntry: Decodable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case operation
+        case attemptId = "attempt_id"
         case tabId = "tab_id"
         case activeViewIndex = "active_view_index"
         case documentURI = "document_uri"
@@ -130,6 +132,7 @@ public struct EcuProjectLspStartPlanEntry: Decodable, Equatable, Sendable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         operation = try container.decodeIfPresent(String.self, forKey: .operation) ?? "start"
+        attemptId = try container.decodeIfPresent(UInt64.self, forKey: .attemptId)
         tabId = try container.decode(UInt64.self, forKey: .tabId)
         activeViewIndex = try container.decodeIfPresent(UInt32.self, forKey: .activeViewIndex) ?? 0
         documentURI = try container.decodeIfPresent(String.self, forKey: .documentURI) ?? ""
@@ -150,6 +153,7 @@ public struct EcuProjectLspStartPlanEntry: Decodable, Equatable, Sendable {
 
 public struct EcuProjectLspStopPlanEntry: Decodable, Equatable, Sendable {
     public let operation: String
+    public let attemptId: UInt64?
     public let tabId: UInt64
     public let activeViewIndex: UInt32
     public let documentURI: String
@@ -165,6 +169,7 @@ public struct EcuProjectLspStopPlanEntry: Decodable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case operation
+        case attemptId = "attempt_id"
         case tabId = "tab_id"
         case activeViewIndex = "active_view_index"
         case documentURI = "document_uri"
@@ -182,6 +187,7 @@ public struct EcuProjectLspStopPlanEntry: Decodable, Equatable, Sendable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         operation = try container.decodeIfPresent(String.self, forKey: .operation) ?? "stop"
+        attemptId = try container.decodeIfPresent(UInt64.self, forKey: .attemptId)
         tabId = try container.decode(UInt64.self, forKey: .tabId)
         activeViewIndex = try container.decodeIfPresent(UInt32.self, forKey: .activeViewIndex) ?? 0
         documentURI = try container.decodeIfPresent(String.self, forKey: .documentURI) ?? ""
@@ -202,6 +208,7 @@ public struct EcuProjectLspStopPlanEntry: Decodable, Equatable, Sendable {
 
 public struct EcuProjectLspRestartPlanEntry: Decodable, Equatable, Sendable {
     public let operation: String
+    public let attemptId: UInt64?
     public let tabId: UInt64
     public let activeViewIndex: UInt32
     public let documentURI: String
@@ -217,6 +224,7 @@ public struct EcuProjectLspRestartPlanEntry: Decodable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case operation
+        case attemptId = "attempt_id"
         case tabId = "tab_id"
         case activeViewIndex = "active_view_index"
         case documentURI = "document_uri"
@@ -234,6 +242,7 @@ public struct EcuProjectLspRestartPlanEntry: Decodable, Equatable, Sendable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         operation = try container.decodeIfPresent(String.self, forKey: .operation) ?? "restart"
+        attemptId = try container.decodeIfPresent(UInt64.self, forKey: .attemptId)
         tabId = try container.decode(UInt64.self, forKey: .tabId)
         activeViewIndex = try container.decodeIfPresent(UInt32.self, forKey: .activeViewIndex) ?? 0
         documentURI = try container.decodeIfPresent(String.self, forKey: .documentURI) ?? ""

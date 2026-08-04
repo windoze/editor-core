@@ -298,9 +298,13 @@ through `editor_core_ui_ffi_multi_document_project_lsp_lifecycle_envelope_json(.
 `operation_utf8` values of `start_plan`, `stop_plan`, `restart_plan`, or `lifecycle_events`.
 Each plan entry carries an explicit `operation` string (`start`, `stop`, or `restart`) alongside
 the tab id, active view index, document URI, language id/name, server capabilities, shared-session
-flag, server key, command, args, and workspace roots/folders so hosts can execute and record
-lifecycle outcomes from a single typed action descriptor instead of inferring ownership from the
-endpoint used to fetch the plan.
+flag, server key, command, args, workspace roots/folders, and optional proposed `attempt_id` so
+hosts can execute and record lifecycle outcomes from a single typed action descriptor instead of
+inferring ownership from the endpoint used to fetch the plan. Core derives the proposed
+`attempt_id` from the next lifecycle event sequence and expects hosts to echo it in requested,
+started, stopped, failed, or skipped outcomes for the same execution attempt; older outcome records
+without an explicit attempt id continue to use the recorded lifecycle sequence for requested
+events.
 The envelope value is the same payload as the corresponding legacy plan/event JSON surface, while
 invalid operations and null handles return `{ "ok": false, "operation": ..., "status": "error",
 "error": ..., "version": 1 }` instead of a null pointer.

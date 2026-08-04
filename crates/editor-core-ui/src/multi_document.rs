@@ -252,6 +252,7 @@ impl MultiDocumentEditorUi {
             &self.project_lsp_servers,
             &self.workspace_roots,
             documents,
+            Some(self.project_lsp_lifecycle_events.next_attempt_id()),
         )
     }
 
@@ -278,6 +279,7 @@ impl MultiDocumentEditorUi {
             &self.project_lsp_servers,
             &self.workspace_roots,
             documents,
+            Some(self.project_lsp_lifecycle_events.next_attempt_id()),
         )
     }
 
@@ -304,6 +306,7 @@ impl MultiDocumentEditorUi {
             &self.project_lsp_servers,
             &self.workspace_roots,
             documents,
+            Some(self.project_lsp_lifecycle_events.next_attempt_id()),
         )
     }
 

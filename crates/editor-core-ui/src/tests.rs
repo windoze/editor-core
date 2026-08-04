@@ -2198,6 +2198,7 @@ fn multi_document_builds_project_lsp_start_plan_from_open_tabs() {
     let plan = multi.project_lsp_start_plan();
     assert_eq!(plan.len(), 1);
     assert_eq!(plan[0].operation, "start");
+    assert_eq!(plan[0].attempt_id, Some(1));
     assert_eq!(plan[0].tab_id, rust_tab.get());
     assert_eq!(plan[0].active_view_index, 0);
     assert_eq!(plan[0].document_uri, "file:///workspace/main.rs");
@@ -2221,6 +2222,7 @@ fn multi_document_builds_project_lsp_start_plan_from_open_tabs() {
     let json: serde_json::Value =
         serde_json::from_str(&multi.project_lsp_start_plan_json().unwrap()).unwrap();
     assert_eq!(json[0]["operation"], "start");
+    assert_eq!(json[0]["attempt_id"], 1);
     assert_eq!(json[0]["server_key"], "rust");
     assert_eq!(json[0]["server_capabilities"]["semantic_tokens"], true);
     assert_eq!(json[0]["workspace_folders"][0]["name"], "workspace");
@@ -2287,6 +2289,7 @@ fn multi_document_builds_project_lsp_stop_plan_from_open_tabs() {
     let plan = multi.project_lsp_stop_plan();
     assert_eq!(plan.len(), 2);
     assert_eq!(plan[0].operation, "stop");
+    assert_eq!(plan[0].attempt_id, Some(1));
     assert_eq!(plan[0].tab_id, rust_tab.get());
     assert_eq!(plan[0].document_uri, "file:///workspace/main.rs");
     assert_eq!(plan[0].server_key, "rust");
@@ -2294,6 +2297,7 @@ fn multi_document_builds_project_lsp_stop_plan_from_open_tabs() {
     assert_eq!(plan[0].workspace_roots, vec!["file:///workspace"]);
     assert_eq!(plan[0].workspace_folders[0].name, "workspace");
     assert_eq!(plan[1].tab_id, swift_tab.get());
+    assert_eq!(plan[1].attempt_id, Some(2));
     assert_eq!(plan[1].document_uri, "file:///workspace/App.swift");
     assert_eq!(plan[1].server_key, "swift");
     assert_eq!(plan[1].language_name, "Swift");
@@ -2312,6 +2316,7 @@ fn multi_document_builds_project_lsp_stop_plan_from_open_tabs() {
     let json: serde_json::Value =
         serde_json::from_str(&multi.project_lsp_stop_plan_json().unwrap()).unwrap();
     assert_eq!(json[1]["operation"], "stop");
+    assert_eq!(json[1]["attempt_id"], 2);
     assert_eq!(json[1]["command"], "/bin/sourcekit-lsp");
     assert_eq!(json[1]["server_capabilities"]["workspace_symbols"], true);
     assert_eq!(json[1]["workspace_folders"][0]["root_alias"], "app");
@@ -2374,6 +2379,7 @@ fn multi_document_builds_project_lsp_restart_plan_from_open_tabs() {
     let plan = multi.project_lsp_restart_plan();
     assert_eq!(plan.len(), 2);
     assert_eq!(plan[0].operation, "restart");
+    assert_eq!(plan[0].attempt_id, Some(1));
     assert_eq!(plan[0].tab_id, rust_tab.get());
     assert_eq!(plan[0].document_uri, "file:///workspace/main.rs");
     assert_eq!(plan[0].server_key, "rust");
@@ -2381,6 +2387,7 @@ fn multi_document_builds_project_lsp_restart_plan_from_open_tabs() {
     assert_eq!(plan[0].workspace_roots, vec!["file:///workspace"]);
     assert_eq!(plan[0].workspace_folders[0].uri, "file:///workspace");
     assert_eq!(plan[1].tab_id, swift_tab.get());
+    assert_eq!(plan[1].attempt_id, Some(2));
     assert_eq!(plan[1].document_uri, "file:///workspace/App.swift");
     assert_eq!(plan[1].server_key, "swift");
     assert_eq!(plan[1].language_name, "swift");
@@ -2392,6 +2399,7 @@ fn multi_document_builds_project_lsp_restart_plan_from_open_tabs() {
     let json: serde_json::Value =
         serde_json::from_str(&multi.project_lsp_restart_plan_json().unwrap()).unwrap();
     assert_eq!(json[1]["operation"], "restart");
+    assert_eq!(json[1]["attempt_id"], 2);
     assert_eq!(json[1]["command"], "/bin/sourcekit-lsp");
     assert_eq!(json[1]["server_capabilities"]["diagnostics"], true);
     assert_eq!(json[1]["workspace_folders"][0]["uri"], "file:///swift-root");

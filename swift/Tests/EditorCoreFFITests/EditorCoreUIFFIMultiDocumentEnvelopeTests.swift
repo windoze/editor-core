@@ -331,6 +331,7 @@ extension EditorCoreUIFFITests {
             return
         }
         XCTAssertEqual(firstStart["tab_id"], .number(Double(tab)))
+        XCTAssertEqual(firstStart["attempt_id"], .number(1))
         XCTAssertEqual(firstStart["document_uri"], .string("file:///project/main.rs"))
         XCTAssertEqual(firstStart["server_key"], .string("rust"))
         XCTAssertEqual(firstStart["language_name"], .string("rust"))
@@ -347,6 +348,7 @@ extension EditorCoreUIFFITests {
             return
         }
         XCTAssertEqual(firstStop["server_key"], .string("rust"))
+        XCTAssertEqual(firstStop["attempt_id"], .number(1))
         XCTAssertEqual(firstStop["language_name"], .string("rust"))
         XCTAssertEqual(firstStop["server_capabilities"], .object([:]))
         XCTAssertEqual(firstStop["shared_session"], .bool(true))
@@ -361,6 +363,7 @@ extension EditorCoreUIFFITests {
             return
         }
         XCTAssertEqual(firstRestart["server_key"], .string("rust"))
+        XCTAssertEqual(firstRestart["attempt_id"], .number(1))
         XCTAssertEqual(firstRestart["language_name"], .string("rust"))
         XCTAssertEqual(firstRestart["server_capabilities"], .object([:]))
         XCTAssertEqual(firstRestart["shared_session"], .bool(true))
