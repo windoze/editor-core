@@ -133,14 +133,16 @@ extension AttoEditorAreaViewController {
             )
             problemsPanelController = controller
             let countText = AttoLspResultMetadataText.count(problems.count, singular: "problem", plural: "problems")
-            let stateText = entry.snapshot.staleReason.map(AttoLspResultMetadataText.diagnosticsStaleText)
-                ?? entry.state.displayText
             return controller.show(
                 relativeTo: window,
                 problems: problems,
                 title: entry.title.isEmpty ? "Problems" : entry.title,
                 placeholder: "Filter problems history...",
-                metadataText: AttoLspResultMetadataText.entry(entry, countText: countText, stateText: stateText)
+                metadataText: AttoLspResultMetadataText.entry(
+                    entry,
+                    countText: countText,
+                    stateText: diagnosticsLifecycleDisplayStateText(for: entry)
+                )
             )
 
         case .workspace:
@@ -156,14 +158,16 @@ extension AttoEditorAreaViewController {
             )
             workspaceProblemsPanelController = controller
             let countText = AttoLspResultMetadataText.count(problems.count, singular: "problem", plural: "problems")
-            let stateText = entry.snapshot.staleReason.map(AttoLspResultMetadataText.diagnosticsStaleText)
-                ?? entry.state.displayText
             return controller.show(
                 relativeTo: window,
                 problems: problems,
                 title: entry.title.isEmpty ? "Workspace Problems" : entry.title,
                 placeholder: "Filter workspace problems history...",
-                metadataText: AttoLspResultMetadataText.entry(entry, countText: countText, stateText: stateText)
+                metadataText: AttoLspResultMetadataText.entry(
+                    entry,
+                    countText: countText,
+                    stateText: diagnosticsLifecycleDisplayStateText(for: entry)
+                )
             )
         }
     }
@@ -260,11 +264,12 @@ extension AttoEditorAreaViewController {
             return false
         }
         guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
-            if showFeedback {
-                presentLspResultFeedback(AttoLspResultFeedback.unavailable(.workspaceDiagnostics), in: tab.editCore.editorView)
-            }
-            NSSound.beep()
-            return false
+            return failDiagnosticsLifecycleResult(
+                family: "diagnostics.workspace",
+                message: AttoLspResultFeedback.unavailable(.workspaceDiagnostics),
+                showFeedback: showFeedback,
+                editorView: tab.editCore.editorView
+            )
         }
 
         cancelHoverUI()
@@ -282,19 +287,22 @@ extension AttoEditorAreaViewController {
                 previousResultIdsJSON: workspaceProblemsStore.previousResultIdsJSON()
             )
         } catch {
-            if showFeedback {
-                presentLspResultFeedback(
-                    AttoLspResultFeedback.requestFailed(.workspaceDiagnostics, errorDescription: error.localizedDescription),
-                    in: tab.editCore.editorView
-                )
-            }
-            NSSound.beep()
-            return false
+            return failDiagnosticsLifecycleResult(
+                family: "diagnostics.workspace",
+                message: AttoLspResultFeedback.requestFailed(
+                    .workspaceDiagnostics,
+                    errorDescription: error.localizedDescription
+                ),
+                showFeedback: showFeedback,
+                editorView: tab.editCore.editorView
+            )
         }
 
         workspaceDiagnosticsContext = WorkspaceDiagnosticsRequestContext(tabID: tab.id, showFeedback: showFeedback)
         workspaceDiagnosticsStaleReason = .workspaceRefreshRequested
         recordWorkspaceDiagnosticsLifecycle(problems: workspaceDiagnosticProblems())
+        updateWorkspaceProblemsPanelIfVisible()
+        updateVisibleLspWorkbenchPanel()
         startWorkspaceDiagnosticsPollTimer(tabID: tab.id, editorView: tab.editCore.editorView)
         return true
     }
@@ -372,11 +380,13 @@ extension AttoEditorAreaViewController {
 
             if remainingTicks <= 0 {
                 let showFeedback = ctx.showFeedback
-                self.cancelWorkspaceDiagnosticsUI()
-                if showFeedback {
-                    self.presentLspResultFeedback(AttoLspResultFeedback.timeout(.workspaceDiagnostics), in: editorView)
-                }
-                NSSound.beep()
+                self.failDiagnosticsLifecycleResult(
+                    family: "diagnostics.workspace",
+                    message: AttoLspResultFeedback.timeout(.workspaceDiagnostics),
+                    showFeedback: showFeedback,
+                    editorView: editorView,
+                    cancel: self.cancelWorkspaceDiagnosticsUI
+                )
                 return
             }
             remainingTicks -= 1
@@ -390,6 +400,17 @@ extension AttoEditorAreaViewController {
             do {
                 result = try tab.editCore.editor.lspTakeLastWorkspaceDiagnosticResult()
             } catch {
+                let showFeedback = ctx.showFeedback
+                self.failDiagnosticsLifecycleResult(
+                    family: "diagnostics.workspace",
+                    message: AttoLspResultFeedback.failed(
+                        .workspaceDiagnostics,
+                        errorDescription: error.localizedDescription
+                    ),
+                    showFeedback: showFeedback,
+                    editorView: editorView,
+                    cancel: self.cancelWorkspaceDiagnosticsUI
+                )
                 return
             }
             guard let result else { return }

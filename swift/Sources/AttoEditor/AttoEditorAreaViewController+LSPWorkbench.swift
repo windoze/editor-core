@@ -685,6 +685,9 @@ extension AttoEditorAreaViewController {
         _ entry: AttoLspResultLifecycleEntry<AttoDiagnosticsLifecycleSnapshot>?
     ) -> AttoLspWorkbenchPanelController.ItemLifecycleState {
         guard let entry else { return .unknown }
+        if case .error = entry.state {
+            return .error
+        }
         if entry.snapshot.staleReason != nil {
             return .stale
         }
@@ -798,20 +801,7 @@ extension AttoEditorAreaViewController {
     private func lspWorkbenchDiagnosticsEntry(
         family: String
     ) -> AttoLspResultLifecycleEntry<AttoDiagnosticsLifecycleSnapshot>? {
-        diagnosticsLifecycleStore.historyEntries.reversed().first {
-            $0.family == family && lspWorkbenchDiagnosticsEntryMatchesCurrentScope($0)
-        }
-    }
-
-    private func lspWorkbenchDiagnosticsEntryMatchesCurrentScope(
-        _ entry: AttoLspResultLifecycleEntry<AttoDiagnosticsLifecycleSnapshot>
-    ) -> Bool {
-        switch entry.snapshot.scope {
-        case .activeTab:
-            return lspResultOwnerMatchesActiveDocument(entry.owner)
-        case .workspace:
-            return lspResultOwnerMatchesWorkspace(entry.owner)
-        }
+        currentDiagnosticsLifecycleEntry(family: family)
     }
 
     private func lspWorkbenchHierarchySnapshot() -> AttoHierarchyPanelController.Snapshot? {
@@ -823,9 +813,11 @@ extension AttoEditorAreaViewController {
         entry: AttoLspResultLifecycleEntry<AttoDiagnosticsLifecycleSnapshot>?
     ) -> String {
         guard let entry else { return countText }
-        let stateText = entry.snapshot.staleReason.map(AttoLspResultMetadataText.diagnosticsStaleText)
-            ?? entry.state.displayText
-        return AttoLspResultMetadataText.entry(entry, countText: countText, stateText: stateText)
+        return AttoLspResultMetadataText.entry(
+            entry,
+            countText: countText,
+            stateText: diagnosticsLifecycleDisplayStateText(for: entry)
+        )
     }
 
     func makeLspWorkbenchDockView() -> AttoLspWorkbenchDockView {

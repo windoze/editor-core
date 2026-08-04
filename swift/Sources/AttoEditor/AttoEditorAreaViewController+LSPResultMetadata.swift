@@ -27,25 +27,14 @@ extension AttoEditorAreaViewController {
         countText: String,
         family: String
     ) -> String? {
-        guard let entry = diagnosticsLifecycleStore.historyEntries.reversed().first(where: {
-            $0.family == family && lspDiagnosticsResultOwnerMatchesCurrentScope($0)
-        }) else {
+        guard let entry = currentDiagnosticsLifecycleEntry(family: family) else {
             return nil
         }
-        let stateText = entry.snapshot.staleReason.map(AttoLspResultMetadataText.diagnosticsStaleText)
-            ?? entry.state.displayText
-        return AttoLspResultMetadataText.entry(entry, countText: countText, stateText: stateText)
-    }
-
-    private func lspDiagnosticsResultOwnerMatchesCurrentScope(
-        _ entry: AttoLspResultLifecycleEntry<AttoDiagnosticsLifecycleSnapshot>
-    ) -> Bool {
-        switch entry.snapshot.scope {
-        case .activeTab:
-            return lspResultOwnerMatchesActiveDocument(entry.owner)
-        case .workspace:
-            return lspResultOwnerMatchesWorkspace(entry.owner)
-        }
+        return AttoLspResultMetadataText.entry(
+            entry,
+            countText: countText,
+            stateText: diagnosticsLifecycleDisplayStateText(for: entry)
+        )
     }
 
     func lspResultEvent(sequence: UInt64) -> AttoLspResultLifecycleEvent? {

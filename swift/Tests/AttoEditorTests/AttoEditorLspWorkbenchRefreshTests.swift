@@ -160,6 +160,181 @@ final class AttoEditorLspWorkbenchRefreshTests: XCTestCase {
         }
     }
 
+    func testActiveDiagnosticsEmptyResultClearsStaleLifecycleState() throws {
+        try withTemporaryWorkspace { tempDir in
+            let fileURL = tempDir.appendingPathComponent("active-diagnostics-empty.swift")
+            try "let value = 1\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+            let vc = makeEditorArea(workspaceRootURL: tempDir)
+            XCTAssertTrue(vc.openFile(url: fileURL, mode: .pinned))
+            let tab = try XCTUnwrap(vc.activeTab)
+            let editorView = tab.editCore.editorView
+            try editorView.editor.lspApplyDiagnosticsJSON("""
+            {
+              "uri": "\(fileURL.absoluteString)",
+              "diagnostics": [
+                {
+                  "range": {
+                    "start": { "line": 0, "character": 0 },
+                    "end": { "line": 0, "character": 3 }
+                  },
+                  "severity": 1,
+                  "source": "unit-test",
+                  "message": "active diagnostic"
+                }
+              ],
+              "version": 1
+            }
+            """)
+            vc._updateStatusBarForTesting()
+
+            try editorView.editor.insertText("!")
+            vc._updateStatusBarForTesting()
+            let staleEntry = try XCTUnwrap(vc.currentDiagnosticsLifecycleEntry(family: "diagnostics.active"))
+            XCTAssertTrue(staleEntry.snapshot.isStale)
+            XCTAssertEqual(staleEntry.snapshot.staleReason, .documentEdited)
+            let staleCursor = vc._latestDiagnosticsLifecycleSequenceForTesting()
+
+            try editorView.editor.lspApplyDiagnosticsJSON("""
+            {
+              "uri": "\(fileURL.absoluteString)",
+              "diagnostics": [],
+              "version": 2
+            }
+            """)
+            vc._updateStatusBarForTesting()
+
+            let refreshedEvent = try XCTUnwrap(vc._diagnosticsLifecycleEventsForTesting(after: staleCursor).last {
+                $0.family == "diagnostics.active"
+            })
+            XCTAssertEqual(refreshedEvent.snapshot.problems, [])
+            XCTAssertFalse(refreshedEvent.snapshot.isStale)
+            XCTAssertNil(refreshedEvent.snapshot.staleReason)
+            XCTAssertEqual(refreshedEvent.state, .fresh)
+            let workbenchItem = try XCTUnwrap(vc.lspWorkbenchItems().first { $0.id == "active_problems" })
+            XCTAssertEqual(workbenchItem.lifecycleState, .fresh)
+            XCTAssertTrue(workbenchItem.status.hasPrefix("0 problems | Fresh | Result #"))
+        }
+    }
+
+    func testWorkspaceDiagnosticsEmptyResultClearsRefreshStaleLifecycleState() throws {
+        try withTemporaryWorkspace { tempDir in
+            let fileURL = tempDir.appendingPathComponent("workspace-diagnostics-empty.swift")
+            try "first\nsecond\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+            let vc = makeEditorArea(workspaceRootURL: tempDir)
+            XCTAssertTrue(vc.openFile(url: fileURL, mode: .pinned))
+            XCTAssertTrue(vc.showWorkspaceDiagnosticsResultJSONInActiveTab("""
+            {
+              "items": [
+                {
+                  "uri": "\(fileURL.absoluteString)",
+                  "kind": "full",
+                  "resultId": "workspace-1",
+                  "items": [
+                    {
+                      "range": {
+                        "start": { "line": 0, "character": 0 },
+                        "end": { "line": 0, "character": 5 }
+                      },
+                      "severity": 1,
+                      "source": "unit-test",
+                      "message": "workspace diagnostic"
+                    }
+                  ]
+                }
+              ]
+            }
+            """))
+
+            vc.workspaceDiagnosticsStaleReason = .workspaceRefreshRequested
+            vc.recordWorkspaceDiagnosticsLifecycle(problems: vc.workspaceDiagnosticProblems())
+            let staleEntry = try XCTUnwrap(vc.currentDiagnosticsLifecycleEntry(family: "diagnostics.workspace"))
+            XCTAssertTrue(staleEntry.snapshot.isStale)
+            XCTAssertEqual(staleEntry.snapshot.staleReason, .workspaceRefreshRequested)
+            let staleCursor = vc._latestDiagnosticsLifecycleSequenceForTesting()
+
+            XCTAssertFalse(vc.showWorkspaceDiagnosticsResultJSONInActiveTab("""
+            {
+              "items": [
+                {
+                  "uri": "\(fileURL.absoluteString)",
+                  "kind": "full",
+                  "resultId": "workspace-2",
+                  "items": []
+                }
+              ]
+            }
+            """))
+
+            let refreshedEvent = try XCTUnwrap(vc._diagnosticsLifecycleEventsForTesting(after: staleCursor).last {
+                $0.family == "diagnostics.workspace"
+            })
+            XCTAssertEqual(refreshedEvent.snapshot.problems, [])
+            XCTAssertFalse(refreshedEvent.snapshot.isStale)
+            XCTAssertNil(refreshedEvent.snapshot.staleReason)
+            XCTAssertEqual(refreshedEvent.state, .fresh)
+            let workbenchItem = try XCTUnwrap(vc.lspWorkbenchItems().first { $0.id == "workspace_problems" })
+            XCTAssertEqual(workbenchItem.lifecycleState, .fresh)
+            XCTAssertTrue(workbenchItem.status.hasPrefix("0 problems | Fresh | Result #"))
+        }
+    }
+
+    func testWorkspaceDiagnosticsErrorMetadataOverridesRefreshStaleState() throws {
+        try withTemporaryWorkspace { tempDir in
+            let fileURL = tempDir.appendingPathComponent("workspace-diagnostics-error.swift")
+            try "first\nsecond\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+            let vc = makeEditorArea(workspaceRootURL: tempDir)
+            XCTAssertTrue(vc.openFile(url: fileURL, mode: .pinned))
+            XCTAssertTrue(vc.showWorkspaceDiagnosticsResultJSONInActiveTab("""
+            {
+              "items": [
+                {
+                  "uri": "\(fileURL.absoluteString)",
+                  "kind": "full",
+                  "resultId": "workspace-1",
+                  "items": [
+                    {
+                      "range": {
+                        "start": { "line": 1, "character": 0 },
+                        "end": { "line": 1, "character": 6 }
+                      },
+                      "severity": 2,
+                      "source": "unit-test",
+                      "message": "workspace warning"
+                    }
+                  ]
+                }
+              ]
+            }
+            """))
+
+            vc.workspaceDiagnosticsStaleReason = .workspaceRefreshRequested
+            vc.recordWorkspaceDiagnosticsLifecycle(problems: vc.workspaceDiagnosticProblems())
+            let message = AttoLspResultFeedback.timeout(.workspaceDiagnostics)
+
+            XCTAssertFalse(vc.failDiagnosticsLifecycleResult(
+                family: "diagnostics.workspace",
+                message: message,
+                showFeedback: false,
+                editorView: nil,
+                beep: false
+            ))
+
+            let entry = try XCTUnwrap(vc.currentDiagnosticsLifecycleEntry(family: "diagnostics.workspace"))
+            XCTAssertEqual(entry.state, .error(message: message.statusText))
+            XCTAssertTrue(entry.snapshot.isStale)
+            let resultEvent = try XCTUnwrap(vc._lspResultLifecycleEventsForTesting(after: 0).last {
+                $0.family == "diagnostics.workspace"
+            })
+            XCTAssertEqual(resultEvent.state, .error(message: message.statusText))
+            let workbenchItem = try XCTUnwrap(vc.lspWorkbenchItems().first { $0.id == "workspace_problems" })
+            XCTAssertEqual(workbenchItem.lifecycleState, .error)
+            XCTAssertTrue(workbenchItem.status.hasPrefix("1 problem | Error: Workspace diagnostics: timed out"))
+        }
+    }
+
     private func makeEditorArea(workspaceRootURL: URL) -> AttoEditorAreaViewController {
         AttoEditorAreaViewController(
             library: EditorCoreUIFFILibrary(),
