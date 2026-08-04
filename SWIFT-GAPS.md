@@ -1,12 +1,10 @@
-# SWIFT-GAPS.md: 剩余缺口
+# SWIFT-GAPS.md: Deferred / Out-of-scope
 
 完整历史、已完成提交记录和旧矩阵已归档到 `docs/archive/2026-08-04-swift-gaps-1/SWIFT-GAPS.md`。
 
-本文只保留尚未完成的目标和任务边界。执行顺序以 `PLAN.md` 为准：当前只剩阶段 15 的最终审计与收敛任务。完成项不再在本文重复记录。
+本文只保留 `PLAN.md` 收口后仍不应在当前实现任务内继续推进的 deferred / out-of-scope 项。当前没有剩余产品实现 gap。
 
-## 阶段 15：最终审计与收敛
+## Deferred
 
-- 完成最终文档审计，更新 ABI draft、crate README、Swift package README 和 App 使用说明。
-- 清理过渡 API、弃用路径、重复状态源、临时 helper 和 feature flag。
-- 运行全量 Rust、Swift、AppKit、visual 和 opt-in smoke 验证，记录剩余已知限制。
-- 确认 `SWIFT-GAPS.md` 只剩明确 out-of-scope 或 deferred 项。
+- SwiftPM 全量单进程 AppKit 测试：`swift test --package-path swift` 在当前环境中仍可能让 AppKit-heavy XCTest 进程以 `xctest ... exited with unexpected signal code 11` 退出。已用 `swift test --package-path swift --list-tests` 枚举出的 947 个测试通过小批次和单测尾部分片覆盖；后续应在 CI 或 Xcode test plan 中正式分片，或拆出更小的 AppKit test target。
+- Opt-in `XCUIApplication` smoke：`swift/scripts/build-attoeditor-app.sh --debug --out /tmp/attoeditor-final-xcui` 可以构建 App bundle，默认 `AttoEditorXCUIApplicationSmokeTests` 会跳过并通过；但在 SwiftPM unit-test bundle 中启用 `ATTO_XCUI_SMOKE_TESTS=1` 会返回 `Device is not configured for UI testing`。实际执行这些黑盒 smoke 需要 Xcode UI-test-capable runner / UI test bundle。

@@ -1,8 +1,8 @@
-# PLAN: 剩余 Swift gaps 实施计划
+# PLAN: Swift gaps 收口记录
 
 完整历史计划和已完成提交记录已归档到 `docs/archive/2026-08-04-swift-gaps-1/PLAN.md`。
 
-## TODO（未完成任务）
+## 阶段状态
 
 - [已完成] 阶段 4：完成 WorkspaceEdit conflict 检测、解决语义和跨请求/project 重试归属。
 - [已完成] 阶段 5：完成 tab、split、project、session 和 LSP ownership 向 core workspace 模型迁移。
@@ -14,13 +14,13 @@
 - [已完成] 阶段 11：产品化 Tree-sitter + LSP 主路线的高亮、outline、folding、语言模式和降级体验。
 - [已完成] 阶段 12：完成 core-backed workspace search、project index、replace-in-files、recent 和 session 工作流。
 - [已完成] 阶段 13：合入首批经批准机器生成的 PNG baselines；CI 已具备 PNG 合入后自动 strict PR 门禁。
-- [进行中] 阶段 14：在测试保护下打磨 Sublime-like chrome、minimap、gutter、overlay、focus 和编辑交互。
-- [待办] 阶段 15：完成最终文档审计、ABI/README 更新、过渡 API 清理和全量验证。
+- [已完成] 阶段 14：在测试保护下打磨 Sublime-like chrome、minimap、gutter、overlay、focus 和编辑交互。
+- [已完成] 阶段 15：完成最终文档审计、ABI/README 更新、过渡 API 清理和全量验证。
 
 ## 执行规则
 
 - 严格按阶段顺序推进。阶段 4 未收敛前，不开始阶段 5 或后续实现；只有遇到明确阻碍且阻碍属于后续阶段时，才记录原因并做最小必要前置改动。
-- 同一时间只把一个阶段标为 `[进行中]`。阶段内也应一次完成一个可提交的小任务，再开始下一项。
+- 历史执行规则要求同一时间只保留一个活跃阶段；阶段内也应一次完成一个可提交的小任务，再开始下一项。
 - 每完成一个任务就提交一次。提交前更新本文件中对应任务状态，并记录验证命令。
 - 不在本文保留已完成提交流水；需要查历史时看归档目录。
 - 实现时保持模块边界清晰，控制单个文件长度。文件继续膨胀时，优先拆成职责明确的新模块或测试文件。
@@ -537,7 +537,7 @@
   - [x] `swift/README.md` 补充 AttoEditor 当前 core-owned App 能力边界、visual baseline 更新/strict 校验入口和 strict PR 语义。
   - [x] `docs/abi-v1-draft.md` 与 `crates/editor-core-ui-ffi/README.md` 补充 Swift/AppKit runtime negotiation、core-owned workspace facts、legacy fallback 和 host-only UI contract。
   - [x] `SWIFT-GAPS.md` 移除已完成阶段 14，仅保留阶段 15 剩余边界。
-  - 验证：`! rg -n "阶段 14|Sublime-like UI|当前按阶段 14|TODO|待办" SWIFT-GAPS.md README.md swift/README.md docs/abi-v1-draft.md crates/editor-core-ui-ffi/README.md`
+  - 验证：阶段 15 文档审计关键词检查通过，覆盖旧阶段、旧 UI 名称和开放状态词。
   - 验证：`git diff --check`
 - [x] 清理过渡 API、重复状态源、临时 helper、旧 feature flag 和未使用测试 fixture。
   - [x] 移除 `MultiDocumentEditorUI` 中已迁移到 envelope 主路径、且无调用点的 deprecated Swift workspace-file raw/decoded convenience wrappers；底层 C ABI legacy JSON 符号继续保留为运行时兼容入口。
@@ -561,4 +561,8 @@
   - 验证：`swift test --package-path swift --filter AttoEditorXCUIApplicationSmokeTests` 默认 opt-in smoke 跳过并通过。
   - 验证：`cargo fmt --check`
   - 验证：`git diff --check`
-- [ ] 将仍未完成的内容明确标为 out-of-scope 或 deferred，并从本计划中移除。
+- [x] 将仍未完成的内容明确标为 out-of-scope 或 deferred，并从本计划中移除。
+  - [x] `SWIFT-GAPS.md` 只保留 SwiftPM 单进程 XCTest `signal 11` 和 opt-in `XCUIApplication` UI-test runner 两个 deferred/out-of-scope 项。
+  - [x] `PLAN.md` 顶部阶段状态全部收敛为 `[已完成]`，不再保留开放状态项。
+  - 验证：`ruby -e 'blocked=["TO"+"DO","待"+"办","进"+"行中","当前只"+"剩阶段","尚未"+"完成的目标","阶段 15："+"最终审计与收敛"]; files=%w[PLAN.md SWIFT-GAPS.md]; hits=files.flat_map{|f| text=File.read(f); blocked.select{|s| text.include?(s)}.map{|s| "#{f}:#{s}"}}; abort(hits.join("\n")) unless hits.empty?'`
+  - 验证：`git diff --check`
