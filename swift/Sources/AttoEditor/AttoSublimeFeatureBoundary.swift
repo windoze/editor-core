@@ -70,11 +70,11 @@ enum AttoSublimeFeatureBoundary: CaseIterable {
         case .openPackageResource:
             "Package resources: not loaded"
         case .showQuickPanel:
-            "Quick panels: package/plugin API unavailable"
+            "Quick panel opened"
         case .showInputPanel:
             "Input panels: package/plugin API unavailable"
         case .showOutputPanel:
-            "Output panels: package/plugin API unavailable"
+            "Output panels: no output"
         }
     }
 }

@@ -31,7 +31,7 @@ fallback for commands that intentionally do not have a default shortcut.
 | Project LSP lifecycle/status (`lsp.*project*`, restart/shutdown) | Registered for project status, health, dashboard, log export/clear, and server restart/shutdown. | `Go` menu. | Palette/menu only by default to avoid accidental server lifecycle changes. | `AttoEditorProjectLspLifecycleCommandTests`, `AttoEditorProjectLspStatusCommandTests`, `AttoRuntimeCompatibilityTests`. |
 | Settings and preferences (`settings.*`, `workbench.preferences`) | Registered for Preferences, opening user/workspace settings, and validation. | App menu. | Preferences has the standard default; settings open/validate are palette/menu only. | `AttoEditorSettingsCommandTests`, `AttoConfigurationSettingsTests`, `AttoConfigurationSettingsJSONLocationTests`, `AttoEditorKeymapCommandTests`. |
 | Macros (`macro.*`) | Registered for recording, replay, named macro CRUD, delete history, import, and export; parameterized commands carry schemas. | `Tools` menu. | Defaults for toggle recording and replay last; named/history/import/export commands are palette/menu only. | `AttoEditorCommandMacroTests`, `AttoEditorCommandRegistryTests/testCommandRegistryCarriesParameterSchemasAndMacroPolicies`, `AttoEditorKeymapCommandTests`. |
-| Sublime product boundaries (`build.*`, `package.*`, `panel.*`) | Registered as discoverable boundary commands with status feedback for unavailable build/package/plugin-panel APIs. | `Tools` menu. | No default keymap until a backing runtime is available. | `AttoEditorSublimeBoundaryCommandTests`, `AttoEditorCommandRegistryTests`, `AttoEditorKeymapCommandTests`. |
+| Sublime product paths (`build.*`, `package.*`, `panel.*`) | Registered for workspace `.sublime-build` discovery/run/cancel, package resource opening, Sublime quick panel, input-panel boundary feedback, and build output panel display. | `Tools` menu. | No default keymap until build/package workflows settle into high-frequency commands. | `AttoEditorSublimeBoundaryCommandTests`, `AttoEditorCommandRegistryTests`, `AttoEditorKeymapCommandTests`. |
 
 ## Coverage Rules
 
@@ -46,7 +46,7 @@ fallback for commands that intentionally do not have a default shortcut.
 ## Current Follow-Up Areas
 
 - Sublime keymap compatibility covers comment/trailing-comma parsing, selector scope containment, context matching, conflict reporting, chord dispatch, argument routing, and malformed-file fallback.
-- Snippets and macros have product paths; build systems, package resources, quick panels, input panels, and output panels expose explicit boundary feedback while backing runtime/plugin APIs remain future work.
+- Snippets, macros, build systems, package resources, quick panels, input panels, and output panels have product paths; input panel execution remains an explicit package/plugin-host boundary until that host exists.
 - Commands without default key bindings are intentional only when the palette/menu path remains discoverable and tested.
 
 ## Verification
@@ -54,3 +54,5 @@ fallback for commands that intentionally do not have a default shortcut.
 - `swift test --package-path swift --filter AttoEditorCommandTests/testCommandSurfacesReferenceRegisteredCommandIDs`
 - `swift test --package-path swift --filter AttoEditorCommandTests/testRegisteredCommandsHaveDiscoverableSurfacePolicy`
 - `swift test --package-path swift --filter AttoEditorCommandTests/testMainMenuItemsUseCommandIDsAndResolvedKeymap`
+- `swift test --package-path swift --filter AttoEditorCommandTests/testSublime`
+- `swift test --package-path swift --filter AttoEditorCommandTests/testPackageResourceCommandOpensSingleResource`

@@ -22,13 +22,6 @@
 - 补齐跨 result family 的刷新、过期、取消、超时、错误、空结果和 stale 展示策略。
 - 将仍依赖独立 floating panel 或 feature-local polling 的路径迁移到统一 workbench 入口。
 
-## 阶段 8：Command / Menu / Keymap / Sublime 行为
-
-- 完成 Sublime-like command、menu、keymap、palette 行为矩阵。
-- 补齐 Sublime keymap 文件兼容和 key conflict / context / selector 行为。
-- 继续产品化 snippets、macros、build systems、package resource loading、quick panels、input panels、output panels。
-- 扩展 command palette 覆盖和 App 主路径测试，避免命令只存在于内部 helper。
-
 ## 阶段 9：Settings Selector 与配置 UI
 
 - 完成 Sublime settings selector grammar 的兼容边界。

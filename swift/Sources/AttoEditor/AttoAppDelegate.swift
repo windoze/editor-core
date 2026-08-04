@@ -170,6 +170,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     private var macroDeleteHistoryPanelController: AttoDeletedMacroHistoryPanelController?
     private var settingsValidationPanelController: AttoSettingsValidationPanelController?
     private var preferencesWindowController: AttoPreferencesWindowController?
+    private lazy var sublimeProductCoordinator = AttoSublimeProductCoordinator(
+        activeWindowProvider: { [weak self] in self?.activeWindow() }
+    )
 
     private let library = EditorCoreUIFFILibrary()
     private let sessionManager: AttoSessionManager
@@ -932,8 +935,21 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         }
     }
 
-    private func reportSublimeFeatureBoundary(_ feature: AttoSublimeFeatureBoundary) {
-        activeWindow()?.editorAreaController.setTransientStatusText(feature.statusText)
+    private func runSublimeFeature(_ feature: AttoSublimeFeatureBoundary) {
+        switch feature {
+        case .runBuildSystem:
+            _ = sublimeProductCoordinator.runBuildSystem()
+        case .cancelBuildSystem:
+            _ = sublimeProductCoordinator.cancelBuildSystem()
+        case .openPackageResource:
+            _ = sublimeProductCoordinator.openPackageResource()
+        case .showQuickPanel:
+            _ = sublimeProductCoordinator.showQuickPanel()
+        case .showInputPanel:
+            _ = sublimeProductCoordinator.showInputPanel()
+        case .showOutputPanel:
+            _ = sublimeProductCoordinator.showOutputPanel()
+        }
     }
 
     private func keymapResolutionForCurrentContext() -> AttoKeymapResolution {
@@ -1458,7 +1474,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     private func sublimeFeatureBoundaryCommands() -> [AttoCommandPaletteCommand] {
         AttoSublimeFeatureBoundary.allCases.map { feature in
             AttoCommandPaletteCommand(id: feature.commandID, title: feature.commandTitle) { [weak self] in
-                self?.reportSublimeFeatureBoundary(feature)
+                self?.runSublimeFeature(feature)
             }
         }
     }
@@ -1578,6 +1594,10 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
 
     func _setRuntimeInfoForTesting(_ runtimeInfo: EditorCoreUIFFIRuntimeInfo) {
         runtimeCompatibilityReport = AttoRuntimeCompatibility.evaluate(runtimeInfo: runtimeInfo)
+    }
+
+    func _sublimeOutputTextForTesting() -> String {
+        sublimeProductCoordinator.outputTextForTesting
     }
 
     func _createWindowForTesting(workspaceRootURL: URL) -> AttoWindowContext {

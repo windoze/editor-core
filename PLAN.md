@@ -7,8 +7,8 @@
 - [已完成] 阶段 4：完成 WorkspaceEdit conflict 检测、解决语义和跨请求/project 重试归属。
 - [已完成] 阶段 5：完成 tab、split、project、session 和 LSP ownership 向 core workspace 模型迁移。
 - [进行中] 阶段 6：完成 core-owned project/LSP lifecycle schema、server ownership、恢复策略和 dashboard 产品化。
-- [待办] 阶段 7：完成跨 tab/project result panels、统一 dock/workbench 容器和刷新/过期策略。
-- [待办] 阶段 8：完成 Sublime-like command/keymap 行为矩阵、keymap 文件兼容和 snippets/macros/build systems 边界。
+- [已完成] 阶段 7：完成跨 tab/project result panels、统一 dock/workbench 容器和刷新/过期策略。
+- [已完成] 阶段 8：完成 Sublime-like command/keymap 行为矩阵、keymap 文件兼容和 snippets/macros/build systems 边界。
 - [待办] 阶段 9：完成 settings selector、schema-aware settings UI、runtime override 持久化和跨 schema 字段迁移。
 - [待办] 阶段 10：完成剩余 JSON result envelope 覆盖、错误模型统一和 host capability negotiation。
 - [待办] 阶段 11：产品化 Tree-sitter + LSP 主路线的高亮、outline、folding、语言模式和降级体验。
@@ -313,11 +313,14 @@
 - [x] 补齐 Sublime keymap 文件解析、context、selector、conflict 和 fallback 行为。
   - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testSublimeKeymap`
   - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testKeymap`
-- [ ] 产品化 snippets、macros、build systems、package resources、quick panels、input panels、output panels。
+- [x] 产品化 snippets、macros、build systems、package resources、quick panels、input panels、output panels。
   - [x] 建立 build/package/panel 的 command/menu/palette 边界和可发现反馈，保留 snippets/macros 现有产品化路径。
     - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testSublimeBoundaryCommandsExposeDiscoverableFeedback`
     - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testDefaultCommandPaletteIncludesCoreEditorCommandIDs`
     - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testMainMenuItemsUseCommandIDsAndResolvedKeymap`
+  - [x] 增加 `.sublime-build` discovery/run/cancel/output panel、package resource open 和 Sublime quick panel 主路径；input panel 在未引入 package/plugin host 前提供明确边界反馈。
+    - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testSublime`
+    - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testPackageResourceCommandOpensSingleResource`
 - [x] 确保新增命令都有 palette/menu/keymap 入口、可发现反馈和测试。
   - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testRegisteredCommandsHaveDiscoverableSurfacePolicy`
   - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testCommandSurfacesReferenceRegisteredCommandIDs`
