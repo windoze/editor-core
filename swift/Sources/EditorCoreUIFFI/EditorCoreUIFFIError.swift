@@ -18,10 +18,9 @@ public enum EditorCoreUIFFIError: Error, CustomStringConvertible {
         case let .missingSymbol(name):
             return "missingSymbol(\(name))"
         case let .ffiStatus(code, context, message):
-            return "ffiStatus(code=\(code), context=\(context), message=\(message))"
+            return "ffiStatus(code=\(code), label=\(code.abiLabel), context=\(context), message=\(message))"
         }
     }
 
     public var localizedDescription: String { description }
 }
-

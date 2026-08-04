@@ -18,11 +18,24 @@ final class AttoLspHoverFormatterTests: XCTestCase {
         XCTAssertEqual(AttoLspHoverFormatter.displayText(fromHoverResultJSON: json), "a\n\nb")
     }
 
+    func testHoverFormatterConsumesTypedResult() throws {
+        let result = try JSONDecoder().decode(EcuLspHoverResult.self, from: Data("""
+        {
+          "contents": [
+            "a",
+            { "language": "swift", "value": "let b = 1" }
+          ]
+        }
+        """.utf8))
+
+        XCTAssertEqual(AttoLspHoverFormatter.displayText(fromHoverResult: result), "a\n\nlet b = 1")
+    }
+
     func testLspRequestHoverThrowsWhenLspDisabled() throws {
         let lib = EditorCoreUIFFILibrary()
         let editor = try EditorUI(library: lib, initialText: "abc", viewportWidthCells: 80)
         XCTAssertThrowsError(try editor.lspRequestHover(logicalLine: 0, logicalColumn: 0))
         XCTAssertNil(try editor.lspTakeLastHoverResultJSON())
+        XCTAssertNil(try editor.lspTakeLastHoverResult())
     }
 }
-

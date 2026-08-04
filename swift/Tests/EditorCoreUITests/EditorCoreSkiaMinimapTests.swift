@@ -85,6 +85,38 @@ final class EditorCoreSkiaMinimapTests: XCTestCase {
         XCTAssertEqual(grid.actualLineCount, 3)
     }
 
+    func testMinimapDiagnosticMarkersMapLogicalLinesToRects() throws {
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
+        let editorView = try EditorCoreSkiaView(library: lib, initialText: "a\nb\nc\nd\n", viewportWidthCells: 80)
+        let container = EditorCoreSkiaMinimapContainer(editorView: editorView, showsMinimap: true, minimapWidth: 120)
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 700, height: 400),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = container
+        window.makeKeyAndOrderFront(nil)
+        window.makeFirstResponder(editorView)
+        container.layoutSubtreeIfNeeded()
+
+        let markers = [
+            EditorCoreSkiaMinimapMarker(logicalLine: 1, kind: .warning),
+            EditorCoreSkiaMinimapMarker(logicalLine: 3, kind: .error),
+        ]
+        container.minimapView.diagnosticMarkers = markers
+        container.minimapView._refreshNowForTesting()
+
+        XCTAssertEqual(container.minimapView._diagnosticMarkersForTesting, markers)
+        let rects = try container.minimapView._diagnosticMarkerRectsForTesting()
+        XCTAssertEqual(rects.count, 2)
+        XCTAssertLessThan(rects[0].minY, rects[1].minY)
+        XCTAssertGreaterThan(rects[0].width, 0)
+        XCTAssertGreaterThan(rects[0].height, 0)
+        XCTAssertEqual(rects[0].maxX, container.minimapView.bounds.width, accuracy: 0.5)
+    }
+
     func testMinimapOpacityDefaultsToHalfAndIsConfigurable() throws {
         let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let editorView = try EditorCoreSkiaView(library: lib, initialText: "a\nb\nc\n", viewportWidthCells: 80)

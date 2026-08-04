@@ -1,0 +1,339 @@
+import EditorCoreUIFFI
+@testable import AttoEditor
+import XCTest
+
+final class AttoLspCompletionParserTests: XCTestCase {
+    func testCompletionListParsesItemsAndDisplayTitle() throws {
+        let json = """
+        {
+          "isIncomplete": false,
+          "items": [
+            {
+              "label": "print",
+              "kind": 3,
+              "detail": "(value: Any)",
+              "documentation": {
+                "kind": "markdown",
+                "value": "Writes a value."
+              },
+              "commitCharacters": ["(", "."]
+            },
+            {
+              "label": "private",
+              "kind": 14
+            }
+          ]
+        }
+        """
+
+        let items = AttoLspCompletionParser.items(fromCompletionResultJSON: json)
+        XCTAssertEqual(items.count, 2)
+        XCTAssertEqual(items[0].label, "print")
+        XCTAssertEqual(items[0].kindLabel, "Function")
+        XCTAssertEqual(items[0].documentation, "Writes a value.")
+        XCTAssertEqual(items[0].commitCharacters, ["(", "."])
+        XCTAssertEqual(AttoLspCompletionParser.displayTitle(for: items[0]), "print  [Function] (value: Any)")
+        XCTAssertEqual(
+            AttoLspCompletionParser.previewText(for: items[0]),
+            "print\nFunction  (value: Any)\n\nWrites a value.\n\nCommit characters: ( ."
+        )
+        XCTAssertTrue(AttoLspCompletionParser.isCommitCharacter("(", for: items[0]))
+        XCTAssertTrue(AttoLspCompletionParser.isCommitCharacter(".", for: items[0]))
+        XCTAssertFalse(AttoLspCompletionParser.isCommitCharacter(")", for: items[0]))
+        XCTAssertEqual(AttoLspCompletionParser.displayTitle(for: items[1]), "private  [Keyword]")
+    }
+
+    func testCompletionPreviewParsesStringDocumentation() throws {
+        let item = try XCTUnwrap(AttoLspCompletionParser.items(
+            fromCompletionResultJSON: #"[{"label":"map","documentation":"Transform values"}]"#
+        ).first)
+
+        XCTAssertEqual(item.documentation, "Transform values")
+        XCTAssertEqual(AttoLspCompletionParser.previewText(for: item), "map\n\nTransform values")
+    }
+
+    func testArrayCompletionResultParsesItems() throws {
+        let items = AttoLspCompletionParser.items(fromCompletionResultJSON: #"[{"label":"abc"}]"#)
+        XCTAssertEqual(items.map(\.label), ["abc"])
+    }
+
+    func testTypedCompletionResultParsesItemsAndApplicationPlan() throws {
+        let result = try JSONDecoder().decode(EcuLspCompletionResult.self, from: Data("""
+        {
+          "isIncomplete": false,
+          "items": [
+            {
+              "label": "typedPrint",
+              "kind": 3,
+              "documentation": {
+                "kind": "markdown",
+                "value": "Typed completion."
+              },
+              "textEdit": {
+                "insert": {
+                  "start": { "line": 0, "character": 0 },
+                  "end": { "line": 0, "character": 5 }
+                },
+                "replace": {
+                  "start": { "line": 0, "character": 0 },
+                  "end": { "line": 0, "character": 10 }
+                },
+                "newText": "typedPrint()"
+              },
+              "additionalTextEdits": [
+                {
+                  "range": {
+                    "start": { "line": 0, "character": 0 },
+                    "end": { "line": 0, "character": 0 }
+                  },
+                  "newText": "import Typed\\n"
+                }
+              ],
+              "data": { "id": 9 }
+            }
+          ]
+        }
+        """.utf8))
+
+        let item = try XCTUnwrap(AttoLspCompletionParser.items(fromCompletionResult: result).first)
+        XCTAssertEqual(item.label, "typedPrint")
+        XCTAssertEqual(item.kindLabel, "Function")
+        XCTAssertEqual(AttoLspCompletionParser.previewText(for: item), "typedPrint\nFunction\n\nTyped completion.")
+        XCTAssertNotNil(AttoLspCompletionParser.rawJSON(for: item))
+
+        let plan = try XCTUnwrap(AttoLspCompletionParser.applicationPlan(
+            for: item,
+            documentText: "typedValue",
+            fallbackStart: 0,
+            fallbackEnd: 10
+        ))
+        XCTAssertEqual(plan.start, 0)
+        XCTAssertEqual(plan.end, 5)
+        XCTAssertEqual(plan.text, "typedPrint()")
+        XCTAssertEqual(plan.additionalEdits, [EcuTextEdit(start: 0, end: 0, text: "import Typed\n")])
+    }
+
+    func testFilteredItemsUsePrefixAndFilterText() throws {
+        let items = AttoLspCompletionParser.items(
+            fromCompletionResultJSON: #"[{"label":"print"},{"label":"private"},{"label":"println","filterText":"writeLine"},{"label":"map"}]"#
+        )
+
+        XCTAssertEqual(AttoLspCompletionParser.filteredItems(items, prefix: "").map(\.label), [
+            "print",
+            "private",
+            "println",
+            "map",
+        ])
+        XCTAssertEqual(AttoLspCompletionParser.filteredItems(items, prefix: "pr").map(\.label), [
+            "print",
+            "private",
+        ])
+        XCTAssertEqual(AttoLspCompletionParser.filteredItems(items, prefix: "WRITE").map(\.label), [
+            "println",
+        ])
+        XCTAssertTrue(AttoLspCompletionParser.filteredItems(items, prefix: "ri").isEmpty)
+    }
+
+    func testCompletionPrefixUsesOriginalReplacementStart() throws {
+        XCTAssertEqual(
+            AttoLspCompletionParser.completionPrefix(in: "object.pri", start: 7, caretOffset: 10),
+            "pri"
+        )
+        XCTAssertEqual(
+            AttoLspCompletionParser.completionPrefix(in: "hello", start: 0, caretOffset: 0),
+            ""
+        )
+        XCTAssertNil(AttoLspCompletionParser.completionPrefix(in: "hello", start: 4, caretOffset: 3))
+    }
+
+    func testResolvedCompletionItemSerializesAndAddsEditsToPlan() throws {
+        let unresolved = try XCTUnwrap(AttoLspCompletionParser.items(fromCompletionResultJSON: #"[{"label":"foo","data":{"id":1}}]"#).first)
+        XCTAssertNotNil(AttoLspCompletionParser.rawJSON(for: unresolved))
+
+        let resolvedJSON = """
+        {
+          "label": "foo",
+          "insertText": "foo()",
+          "additionalTextEdits": [
+            {
+              "range": {
+                "start": { "line": 0, "character": 0 },
+                "end": { "line": 0, "character": 0 }
+              },
+              "newText": "import Foo\\n"
+            }
+          ]
+        }
+        """
+        let resolved = try XCTUnwrap(AttoLspCompletionParser.item(fromCompletionItemJSON: resolvedJSON))
+        let plan = try XCTUnwrap(AttoLspCompletionParser.applicationPlan(
+            for: resolved,
+            documentText: "fo",
+            fallbackStart: 0,
+            fallbackEnd: 2
+        ))
+
+        XCTAssertEqual(plan.start, 0)
+        XCTAssertEqual(plan.end, 2)
+        XCTAssertEqual(plan.text, "foo()")
+        XCTAssertEqual(plan.additionalEdits, [EcuTextEdit(start: 0, end: 0, text: "import Foo\n")])
+    }
+
+    func testApplicationPlanUsesTextEditAndAdditionalTextEdits() throws {
+        let json = """
+        [
+          {
+            "label": "bar",
+            "textEdit": {
+              "range": {
+                "start": { "line": 1, "character": 0 },
+                "end": { "line": 1, "character": 3 }
+              },
+              "newText": "bar()"
+            },
+            "additionalTextEdits": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 0 },
+                  "end": { "line": 0, "character": 0 }
+                },
+                "newText": "import x\\n"
+              }
+            ]
+          }
+        ]
+        """
+        let item = try XCTUnwrap(AttoLspCompletionParser.items(fromCompletionResultJSON: json).first)
+        let plan = try XCTUnwrap(AttoLspCompletionParser.applicationPlan(
+            for: item,
+            documentText: "abc\nfoo\n",
+            fallbackStart: 7,
+            fallbackEnd: 7
+        ))
+
+        XCTAssertEqual(plan.start, 4)
+        XCTAssertEqual(plan.end, 7)
+        XCTAssertEqual(plan.text, "bar()")
+        XCTAssertFalse(plan.isSnippet)
+        XCTAssertEqual(plan.additionalEdits, [EcuTextEdit(start: 0, end: 0, text: "import x\n")])
+    }
+
+    func testApplicationPlanParsesAdditionalTextDocumentEdits() throws {
+        let json = """
+        [
+          {
+            "label": "print",
+            "insertTextFormat": 2,
+            "textEdit": {
+              "range": {
+                "start": { "line": 0, "character": 0 },
+                "end": { "line": 0, "character": 3 }
+              },
+              "newText": "print(${1:value})$0"
+            },
+            "attoAdditionalTextDocumentEdits": [
+              {
+                "textDocument": { "uri": "file:///tmp/Imports.swift" },
+                "edits": [
+                  {
+                    "range": {
+                      "start": { "line": 0, "character": 0 },
+                      "end": { "line": 0, "character": 10 }
+                    },
+                    "newText": "import Foundation"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+        """
+        let item = try XCTUnwrap(AttoLspCompletionParser.items(fromCompletionResultJSON: json).first)
+        let plan = try XCTUnwrap(AttoLspCompletionParser.applicationPlan(
+            for: item,
+            documentText: "pri\n",
+            fallbackStart: 0,
+            fallbackEnd: 3
+        ))
+
+        XCTAssertEqual(plan.start, 0)
+        XCTAssertEqual(plan.end, 3)
+        XCTAssertEqual(plan.text, "print(${1:value})$0")
+        XCTAssertTrue(plan.isSnippet)
+        XCTAssertTrue(plan.additionalEdits.isEmpty)
+        XCTAssertEqual(
+            plan.additionalDocumentEdits,
+            [
+                AttoLspCompletionParser.DocumentTextEdits(
+                    documentURI: "file:///tmp/Imports.swift",
+                    edits: [
+                        AttoLspCompletionParser.RawTextEdit(
+                            startLine: 0,
+                            startUTF16Character: 0,
+                            endLine: 0,
+                            endUTF16Character: 10,
+                            text: "import Foundation"
+                        ),
+                    ]
+                ),
+            ]
+        )
+    }
+
+    func testApplicationPlanUsesInsertRangeForInsertReplaceEdit() throws {
+        let json = """
+        [
+          {
+            "label": "foobar",
+            "textEdit": {
+              "insert": {
+                "start": { "line": 0, "character": 3 },
+                "end": { "line": 0, "character": 6 }
+              },
+              "replace": {
+                "start": { "line": 0, "character": 0 },
+                "end": { "line": 0, "character": 6 }
+              },
+              "newText": "foobar"
+            }
+          }
+        ]
+        """
+        let item = try XCTUnwrap(AttoLspCompletionParser.items(fromCompletionResultJSON: json).first)
+        let plan = try XCTUnwrap(AttoLspCompletionParser.applicationPlan(
+            for: item,
+            documentText: "foobaz",
+            fallbackStart: 0,
+            fallbackEnd: 6
+        ))
+
+        XCTAssertEqual(plan.start, 3)
+        XCTAssertEqual(plan.end, 6)
+        XCTAssertEqual(plan.text, "foobar")
+    }
+
+    func testSnippetFallbackReplacesIdentifierPrefix() throws {
+        let json = """
+        [
+          {
+            "label": "print",
+            "insertText": "print(${1:value})$0",
+            "insertTextFormat": 2
+          }
+        ]
+        """
+        let item = try XCTUnwrap(AttoLspCompletionParser.items(fromCompletionResultJSON: json).first)
+        let fallback = AttoLspCompletionParser.identifierFallbackRange(in: "pri", caretOffset: 3)
+        let plan = try XCTUnwrap(AttoLspCompletionParser.applicationPlan(
+            for: item,
+            documentText: "pri",
+            fallbackStart: fallback.start,
+            fallbackEnd: fallback.end
+        ))
+
+        XCTAssertEqual(plan.start, 0)
+        XCTAssertEqual(plan.end, 3)
+        XCTAssertEqual(plan.text, "print(${1:value})$0")
+        XCTAssertTrue(plan.isSnippet)
+    }
+}

@@ -53,6 +53,216 @@ final class EditorStateCoreTests: XCTestCase {
         XCTAssertNotNil(minimap["lines"])
     }
 
+    func testMinimapEnvelope() throws {
+        let library = try EditorCoreFFITestSupport.shared.loadLibrary()
+        let state = try EditorState(library: library, initialText: "hello\nworld\n", viewportWidth: 80)
+
+        let envelope = try state.minimapEnvelope(startVisualRow: 0, rowCount: 20)
+        XCTAssertTrue(envelope.ok)
+        XCTAssertEqual(envelope.statusKind, .success)
+        XCTAssertEqual(envelope.surface, "editor_state_minimap")
+        XCTAssertNil(envelope.viewId)
+        XCTAssertEqual(envelope.startVisualRow, 0)
+        XCTAssertEqual(envelope.count, 20)
+        XCTAssertNil(envelope.error)
+        XCTAssertEqual(envelope.version, library.abiVersion)
+        guard case let .object(value)? = envelope.value else {
+            return XCTFail("expected object minimap value")
+        }
+        XCTAssertNotNil(value["lines"])
+
+        let rawJSON = try state.minimapEnvelopeJSON(startVisualRow: 1, rowCount: 2)
+        let direct = try JSONDecoder().decode(EcfMinimapEnvelope.self, from: Data(rawJSON.utf8))
+        XCTAssertEqual(direct.startVisualRow, 1)
+        XCTAssertEqual(direct.count, 2)
+    }
+
+    func testViewportEnvelope() throws {
+        let library = try EditorCoreFFITestSupport.shared.loadLibrary()
+        let state = try EditorState(library: library, initialText: "hello\nworld\n", viewportWidth: 80)
+
+        let styled = try state.viewportStyledEnvelope(startVisualRow: 0, rowCount: 20)
+        XCTAssertTrue(styled.ok)
+        XCTAssertEqual(styled.statusKind, .success)
+        XCTAssertEqual(styled.surface, "editor_state_viewport_styled")
+        XCTAssertNil(styled.viewId)
+        XCTAssertEqual(styled.startVisualRow, 0)
+        XCTAssertEqual(styled.count, 20)
+        XCTAssertNil(styled.error)
+        XCTAssertEqual(styled.version, library.abiVersion)
+        guard case let .object(styledValue)? = styled.value else {
+            return XCTFail("expected object styled viewport value")
+        }
+        XCTAssertNotNil(styledValue["lines"])
+
+        let composed = try state.viewportComposedEnvelope(startVisualRow: 0, rowCount: 20)
+        XCTAssertTrue(composed.ok)
+        XCTAssertEqual(composed.statusKind, .success)
+        XCTAssertEqual(composed.surface, "editor_state_viewport_composed")
+        XCTAssertNil(composed.viewId)
+        XCTAssertEqual(composed.startVisualRow, 0)
+        XCTAssertEqual(composed.count, 20)
+        XCTAssertNil(composed.error)
+        XCTAssertEqual(composed.version, library.abiVersion)
+        guard case let .object(composedValue)? = composed.value else {
+            return XCTFail("expected object composed viewport value")
+        }
+        XCTAssertNotNil(composedValue["lines"])
+    }
+
+    func testEditorStateQueryEnvelope() throws {
+        let library = try EditorCoreFFITestSupport.shared.loadLibrary()
+        let state = try EditorState(library: library, initialText: "hello\nworld\n", viewportWidth: 80)
+
+        let full = try state.fullStateEnvelope()
+        XCTAssertTrue(full.ok)
+        XCTAssertEqual(full.statusKind, .success)
+        XCTAssertEqual(full.operation, "full_state")
+        XCTAssertEqual(full.version, library.abiVersion)
+        XCTAssertNil(full.error)
+        guard case .object(let fullValue)? = full.value else {
+            return XCTFail("expected full-state object")
+        }
+        XCTAssertNotNil(fullValue["document"])
+        XCTAssertNotNil(fullValue["viewport"])
+
+        let text = try state.textEnvelope()
+        XCTAssertTrue(text.ok)
+        XCTAssertEqual(text.operation, "text")
+        guard case .object(let textValue)? = text.value else {
+            return XCTFail("expected text object")
+        }
+        XCTAssertEqual(textValue["text"], .string("hello\nworld\n"))
+
+        try state.setLineEnding("crlf")
+        let lineEnding = try state.lineEndingEnvelope()
+        XCTAssertTrue(lineEnding.ok)
+        XCTAssertEqual(lineEnding.operation, "line_ending")
+        guard case .object(let lineEndingValue)? = lineEnding.value else {
+            return XCTFail("expected line-ending object")
+        }
+        XCTAssertEqual(lineEndingValue["line_ending"], .string("crlf"))
+
+        let saving = try state.textForSavingEnvelope()
+        XCTAssertTrue(saving.ok)
+        XCTAssertEqual(saving.operation, "text_for_saving")
+        guard case .object(let savingValue)? = saving.value,
+              case .string(let savingText)? = savingValue["text"] else {
+            return XCTFail("expected save text object")
+        }
+        XCTAssertEqual(savingValue["line_ending"], .string("crlf"))
+        XCTAssertTrue(savingText.contains("\r\n"))
+
+        try state.insertText("!")
+        let lastDelta = try state.lastTextDeltaEnvelope()
+        XCTAssertTrue(lastDelta.ok)
+        XCTAssertEqual(lastDelta.operation, "last_text_delta")
+        guard case .object(let lastDeltaValue)? = lastDelta.value else {
+            return XCTFail("expected last delta object")
+        }
+        XCTAssertNotEqual(lastDeltaValue["delta"], .null)
+
+        let takenDelta = try state.takeLastTextDeltaEnvelope()
+        XCTAssertTrue(takenDelta.ok)
+        XCTAssertEqual(takenDelta.operation, "take_last_text_delta")
+        guard case .object(let takenDeltaValue)? = takenDelta.value else {
+            return XCTFail("expected taken delta object")
+        }
+        XCTAssertNotEqual(takenDeltaValue["delta"], .null)
+
+        let afterTake = try state.lastTextDeltaEnvelope()
+        XCTAssertTrue(afterTake.ok)
+        XCTAssertEqual(afterTake.operation, "last_text_delta")
+        guard case .object(let afterTakeValue)? = afterTake.value else {
+            return XCTFail("expected post-take delta object")
+        }
+        XCTAssertEqual(afterTakeValue["delta"], .null)
+    }
+
+    func testEditorStateQueryEnvelopeDecodesFutureFieldsAndUnknownStatus() throws {
+        let success = try JSONTestHelpers.decode(EcfEditorStateQueryEnvelope.self, from: """
+        {
+          "ok": true,
+          "status": "future_success",
+          "operation": "text",
+          "value": {
+            "text": "hello",
+            "future_value_field": 42
+          },
+          "error": null,
+          "version": 99,
+          "future_top_level": "ignored"
+        }
+        """)
+        XCTAssertTrue(success.ok)
+        XCTAssertEqual(success.statusKind, .unknown("future_success"))
+        XCTAssertEqual(success.operation, "text")
+        XCTAssertEqual(success.version, 99)
+        guard case .object(let successValue)? = success.value else {
+            return XCTFail("expected object value")
+        }
+        XCTAssertEqual(successValue["future_value_field"], .number(42))
+
+        let failure = try JSONTestHelpers.decode(EcfEditorStateQueryEnvelope.self, from: """
+        {
+          "ok": false,
+          "status": "error",
+          "operation": "text",
+          "value": null,
+          "error": {
+            "code": "future_code",
+            "status": 12345,
+            "message": "future failure",
+            "future_error_field": true
+          },
+          "version": 99
+        }
+        """)
+        XCTAssertFalse(failure.ok)
+        XCTAssertEqual(failure.statusKind, .error)
+        XCTAssertEqual(failure.operation, "text")
+        XCTAssertEqual(failure.value, .null)
+        XCTAssertEqual(failure.error?.code, "future_code")
+        XCTAssertNil(failure.error?.status)
+        XCTAssertEqual(failure.error?.message, "future failure")
+    }
+
+    func testDerivedSnapshotEnvelope() throws {
+        let library = try EditorCoreFFITestSupport.shared.loadLibrary()
+        let state = try EditorState(library: library, initialText: "hello\nworld\n", viewportWidth: 80)
+
+        for (snapshot, expectedKey) in [
+            ("document_symbols", "symbols"),
+            ("diagnostics", "diagnostics"),
+            ("decorations", "layers"),
+        ] {
+            let envelope = try state.derivedSnapshotEnvelope(snapshot)
+            XCTAssertTrue(envelope.ok)
+            XCTAssertEqual(envelope.statusKind, .success)
+            XCTAssertEqual(envelope.snapshot, snapshot)
+            XCTAssertNil(envelope.error)
+            XCTAssertEqual(envelope.version, library.abiVersion)
+            guard case let .object(value)? = envelope.value else {
+                return XCTFail("expected object derived snapshot value")
+            }
+            XCTAssertNotNil(value[expectedKey])
+        }
+
+        let failure = try state.derivedSnapshotEnvelope("unknown")
+        XCTAssertFalse(failure.ok)
+        XCTAssertEqual(failure.statusKind, .error)
+        XCTAssertEqual(failure.snapshot, "unknown")
+        XCTAssertEqual(failure.value, .null)
+        XCTAssertEqual(failure.error?.code, "invalid_argument")
+        XCTAssertEqual(failure.error?.status, .invalidArgument)
+        XCTAssertTrue(failure.error?.message.contains("unknown editor state derived snapshot") ?? false)
+
+        let rawJSON = try state.derivedSnapshotEnvelopeJSON("diagnostics")
+        let direct = try JSONDecoder().decode(EcfDerivedSnapshotEnvelope.self, from: Data(rawJSON.utf8))
+        XCTAssertEqual(direct.snapshot, "diagnostics")
+        XCTAssertEqual(direct.statusKind, .success)
+    }
+
     func testApplyProcessingEditsAffectsStylesFoldsDecorationsDiagnostics() throws {
         let library = try EditorCoreFFITestSupport.shared.loadLibrary()
         let state = try EditorState(library: library, initialText: "let value = 1\nsecond line\n", viewportWidth: 80)
@@ -155,4 +365,3 @@ final class EditorStateCoreTests: XCTestCase {
         XCTAssertTrue(foundVirtualCell)
     }
 }
-

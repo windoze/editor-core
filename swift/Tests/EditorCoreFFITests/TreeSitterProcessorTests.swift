@@ -63,6 +63,30 @@ final class TreeSitterProcessorTests: XCTestCase {
         XCTAssertTrue(ops.contains("replace_style_layer"))
         XCTAssertTrue(ops.contains("replace_folding_regions"))
 
+        let processEnvelopeOnly = try TreeSitterProcessor(
+            library: library,
+            languageId: "rust",
+            wasmPath: rustTreeSitterWasmPath(),
+            highlightsQuery: highlightsQuery,
+            foldsQuery: foldsQuery,
+            captureStylesJSON: captureStylesJSON,
+            styleLayer: 424242,
+            preserveCollapsedFolds: true
+        )
+        let processEnvelope = try processEnvelopeOnly.processEnvelope(state: state)
+        XCTAssertTrue(processEnvelope.ok)
+        XCTAssertEqual(processEnvelope.statusKind, .success)
+        XCTAssertEqual(processEnvelope.operation, "treesitter_process")
+        guard case let .object(processValue)? = processEnvelope.value else {
+            XCTFail("expected process envelope value object")
+            return
+        }
+        guard case let .array(envelopeEdits)? = processValue["edits"] else {
+            XCTFail("expected process envelope edits array")
+            return
+        }
+        XCTAssertEqual(envelopeEdits.count, edits.count)
+
         // apply API: actually mutates derived state inside editor
         let processor = try TreeSitterProcessor(
             library: library,
@@ -87,6 +111,14 @@ final class TreeSitterProcessorTests: XCTestCase {
 
         let mode1 = try processor.lastUpdateMode()
         XCTAssertEqual(mode1, "initial")
+        let modeEnvelope1 = try processor.lastUpdateModeEnvelope()
+        XCTAssertTrue(modeEnvelope1.ok)
+        XCTAssertEqual(modeEnvelope1.operation, "treesitter_last_update_mode")
+        guard case let .object(modeValue1)? = modeEnvelope1.value else {
+            XCTFail("expected mode envelope value object")
+            return
+        }
+        XCTAssertEqual(modeValue1["mode"], .string("initial"))
 
         // make a small edit; next update should not be "initial" or "skipped"
         try state.moveTo(line: 1, column: 0)
@@ -95,6 +127,14 @@ final class TreeSitterProcessorTests: XCTestCase {
         let mode2 = try processor.lastUpdateMode()
         XCTAssertNotEqual(mode2, "initial")
         XCTAssertNotEqual(mode2, "skipped")
+        let modeEnvelope2 = try processor.lastUpdateModeEnvelope()
+        XCTAssertTrue(modeEnvelope2.ok)
+        guard case let .object(modeValue2)? = modeEnvelope2.value else {
+            XCTFail("expected mode envelope value object")
+            return
+        }
+        XCTAssertNotEqual(modeValue2["mode"], .string("initial"))
+        XCTAssertNotEqual(modeValue2["mode"], .string("skipped"))
     }
 
     func testTreeSitterFoldPreserveCollapsedFlag() throws {

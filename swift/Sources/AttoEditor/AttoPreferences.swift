@@ -1,4 +1,49 @@
+import EditorCoreUIFFI
 import Foundation
+
+struct AttoCommentConfiguration: Equatable, Codable {
+    var line: String?
+    var blockStart: String?
+    var blockEnd: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case line
+        case blockStart = "block_start"
+        case blockEnd = "block_end"
+    }
+
+    var jsonObject: [String: String] {
+        var out: [String: String] = [:]
+        if let line { out["line"] = line }
+        if let blockStart { out["block_start"] = blockStart }
+        if let blockEnd { out["block_end"] = blockEnd }
+        return out
+    }
+
+    var normalized: Self? {
+        let line = line?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        let blockStart = blockStart?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        let blockEnd = blockEnd?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+
+        if blockStart != nil, blockEnd == nil { return nil }
+        if blockStart == nil, blockEnd != nil { return nil }
+        if line == nil, blockStart == nil { return nil }
+
+        return Self(line: line, blockStart: blockStart, blockEnd: blockEnd)
+    }
+
+    static func line(_ token: String) -> Self {
+        Self(line: token, blockStart: nil, blockEnd: nil)
+    }
+
+    static func block(_ start: String, _ end: String) -> Self {
+        Self(line: nil, blockStart: start, blockEnd: end)
+    }
+
+    static func lineAndBlock(_ line: String, _ start: String, _ end: String) -> Self {
+        Self(line: line, blockStart: start, blockEnd: end)
+    }
+}
 
 extension Notification.Name {
     static let attoPreferencesDidChange = Notification.Name("AttoEditor.attoPreferencesDidChange")
@@ -18,7 +63,27 @@ final class AttoPreferences: NSObject {
         static let fontFaces = "AttoEditor.preferences.fontFaces"
         static let fontSizePoints = "AttoEditor.preferences.fontSizePoints"
         static let ligaturesEnabled = "AttoEditor.preferences.ligaturesEnabled"
+        static let autoPairsEnabled = "AttoEditor.preferences.autoPairsEnabled"
+        static let wrapMode = "AttoEditor.preferences.wrapMode"
+        static let wrapIndent = "AttoEditor.preferences.wrapIndent"
+        static let findCaseSensitive = "AttoEditor.preferences.findCaseSensitive"
+        static let findWholeWord = "AttoEditor.preferences.findWholeWord"
+        static let findRegex = "AttoEditor.preferences.findRegex"
+        static let wordBoundaryAsciiBoundaryChars = "AttoEditor.preferences.wordBoundaryAsciiBoundaryChars"
+        static let findInFilesDefaultScope = "AttoEditor.preferences.findInFilesDefaultScope"
+        static let workspaceSearchIncludeGlobs = "AttoEditor.preferences.workspaceSearchIncludeGlobs"
+        static let workspaceSearchExcludeGlobs = "AttoEditor.preferences.workspaceSearchExcludeGlobs"
         static let themeName = "AttoEditor.preferences.themeName"
+        static let commentConfigurations = "AttoEditor.preferences.commentConfigurations"
+        static let semanticHighlightingEnabled = "AttoEditor.preferences.semanticHighlightingEnabled"
+        static let formatOnSaveEnabled = "AttoEditor.preferences.formatOnSaveEnabled"
+        static let formatOnTypeEnabled = "AttoEditor.preferences.formatOnTypeEnabled"
+        static let lspAutoRestartEnabled = "AttoEditor.preferences.lspAutoRestartEnabled"
+        static let lspAutoRestartMaxAttempts = "AttoEditor.preferences.lspAutoRestartMaxAttempts"
+        static let lspAutoRestartBaseDelaySeconds = "AttoEditor.preferences.lspAutoRestartBaseDelaySeconds"
+        static let lspAutoRestartDisabledServerKeys = "AttoEditor.preferences.lspAutoRestartDisabledServerKeys"
+        static let lspAutoRestartServerMaxAttempts = "AttoEditor.preferences.lspAutoRestartServerMaxAttempts"
+        static let lspAutoRestartServerBaseDelaySeconds = "AttoEditor.preferences.lspAutoRestartServerBaseDelaySeconds"
     }
 
     private let defaults: UserDefaults
@@ -52,6 +117,36 @@ final class AttoPreferences: NSObject {
         return (env["ATTO_EDITOR_ENABLE_LIGATURES"] == "1") || (env["EDITOR_CORE_APPKIT_ENABLE_LIGATURES"] == "1")
     }
 
+    var effectiveAutoPairsEnabled: Bool {
+        if let stored = storedAutoPairsEnabled { return stored }
+        if let parsed = Self.parseBoolEnv(env["ATTO_EDITOR_AUTO_PAIRS"])
+            ?? Self.parseBoolEnv(env["EDITOR_CORE_APPKIT_AUTO_PAIRS"])
+        {
+            return parsed
+        }
+        return true
+    }
+
+    var effectiveWrapMode: EcuWrapMode {
+        if let stored = storedWrapMode { return stored }
+        if let parsed = Self.parseWrapModeEnv(env["ATTO_EDITOR_WRAP_MODE"])
+            ?? Self.parseWrapModeEnv(env["EDITOR_CORE_APPKIT_WRAP_MODE"])
+        {
+            return parsed
+        }
+        return .char
+    }
+
+    var effectiveWrapIndent: EcuWrapIndent {
+        if let stored = storedWrapIndent { return stored }
+        if let parsed = Self.parseWrapIndentString(env["ATTO_EDITOR_WRAP_INDENT"])
+            ?? Self.parseWrapIndentString(env["EDITOR_CORE_APPKIT_WRAP_INDENT"])
+        {
+            return parsed
+        }
+        return .none
+    }
+
     var effectiveThemeName: String {
         if let stored = storedThemeName, stored.isEmpty == false { return stored }
 
@@ -62,6 +157,114 @@ final class AttoPreferences: NSObject {
         }
 
         return AttoThemeManager.defaultThemeName
+    }
+
+    var effectiveFindCaseSensitive: Bool {
+        if let stored = storedFindCaseSensitive { return stored }
+        if let parsed = Self.parseBoolEnv(env["ATTO_EDITOR_FIND_CASE_SENSITIVE"]) {
+            return parsed
+        }
+        return true
+    }
+
+    var effectiveFindWholeWord: Bool {
+        if let stored = storedFindWholeWord { return stored }
+        if let parsed = Self.parseBoolEnv(env["ATTO_EDITOR_FIND_WHOLE_WORD"]) {
+            return parsed
+        }
+        return false
+    }
+
+    var effectiveFindRegex: Bool {
+        if let stored = storedFindRegex { return stored }
+        if let parsed = Self.parseBoolEnv(env["ATTO_EDITOR_FIND_REGEX"]) {
+            return parsed
+        }
+        return false
+    }
+
+    var effectiveFindInFilesDefaultScope: String {
+        if let stored = storedFindInFilesDefaultScope { return stored }
+        if let parsed = Self.normalizeFindInFilesDefaultScope(env["ATTO_EDITOR_FIND_IN_FILES_DEFAULT_SCOPE"]) {
+            return parsed
+        }
+        return AttoWorkspacePreferenceSnapshot.defaultFindInFilesScope
+    }
+
+    var effectiveWorkspaceSearchIncludeGlobs: [String] {
+        if let stored = storedWorkspaceSearchIncludeGlobs { return stored }
+        if let parsed = Self.parseWorkspaceSearchGlobsEnv(env["ATTO_EDITOR_WORKSPACE_SEARCH_INCLUDE_GLOBS"]) {
+            return parsed
+        }
+        return []
+    }
+
+    var effectiveWorkspaceSearchExcludeGlobs: [String] {
+        if let stored = storedWorkspaceSearchExcludeGlobs { return stored }
+        if let parsed = Self.parseWorkspaceSearchGlobsEnv(env["ATTO_EDITOR_WORKSPACE_SEARCH_EXCLUDE_GLOBS"]) {
+            return parsed
+        }
+        return []
+    }
+
+    var effectiveLspAutoRestartEnabled: Bool {
+        if let stored = storedLspAutoRestartEnabled { return stored }
+        if let parsed = Self.parseBoolEnv(env["ATTO_EDITOR_LSP_AUTO_RESTART"])
+            ?? Self.parseBoolEnv(env["EDITOR_CORE_APPKIT_LSP_AUTO_RESTART"])
+        {
+            return parsed
+        }
+        return true
+    }
+
+    var effectiveSemanticHighlightingEnabled: Bool {
+        if let stored = storedSemanticHighlightingEnabled { return stored }
+        if let parsed = Self.parseBoolEnv(env["ATTO_EDITOR_SEMANTIC_HIGHLIGHTING"])
+            ?? Self.parseBoolEnv(env["EDITOR_CORE_APPKIT_SEMANTIC_HIGHLIGHTING"])
+        {
+            return parsed
+        }
+        return true
+    }
+
+    var effectiveFormatOnSaveEnabled: Bool {
+        if let stored = storedFormatOnSaveEnabled { return stored }
+        if let parsed = Self.parseBoolEnv(env["ATTO_EDITOR_FORMAT_ON_SAVE"])
+            ?? Self.parseBoolEnv(env["EDITOR_CORE_APPKIT_FORMAT_ON_SAVE"])
+        {
+            return parsed
+        }
+        return false
+    }
+
+    var effectiveFormatOnTypeEnabled: Bool {
+        if let stored = storedFormatOnTypeEnabled { return stored }
+        if let parsed = Self.parseBoolEnv(env["ATTO_EDITOR_FORMAT_ON_TYPE"])
+            ?? Self.parseBoolEnv(env["EDITOR_CORE_APPKIT_FORMAT_ON_TYPE"])
+        {
+            return parsed
+        }
+        return true
+    }
+
+    var effectiveLspAutoRestartMaxAttempts: Int {
+        if let stored = storedLspAutoRestartMaxAttempts { return stored }
+        if let parsed = Self.parseIntEnv(env["ATTO_EDITOR_LSP_AUTO_RESTART_MAX_ATTEMPTS"])
+            ?? Self.parseIntEnv(env["EDITOR_CORE_APPKIT_LSP_AUTO_RESTART_MAX_ATTEMPTS"])
+        {
+            return Self.normalizeLspAutoRestartMaxAttempts(parsed)
+        }
+        return 3
+    }
+
+    var effectiveLspAutoRestartBaseDelaySeconds: Double {
+        if let stored = storedLspAutoRestartBaseDelaySeconds { return stored }
+        if let parsed = Self.parseDoubleEnv(env["ATTO_EDITOR_LSP_AUTO_RESTART_BASE_DELAY_SECONDS"])
+            ?? Self.parseDoubleEnv(env["EDITOR_CORE_APPKIT_LSP_AUTO_RESTART_BASE_DELAY_SECONDS"])
+        {
+            return Self.normalizeLspAutoRestartBaseDelaySeconds(parsed)
+        }
+        return 5.0
     }
 
     // MARK: - Stored (explicit user preference)
@@ -79,10 +282,115 @@ final class AttoPreferences: NSObject {
         defaults.object(forKey: Keys.ligaturesEnabled) as? Bool
     }
 
+    var storedAutoPairsEnabled: Bool? {
+        defaults.object(forKey: Keys.autoPairsEnabled) as? Bool
+    }
+
+    var storedWrapMode: EcuWrapMode? {
+        guard let raw = defaults.string(forKey: Keys.wrapMode) else { return nil }
+        return EcuWrapMode(rawValue: raw)
+    }
+
+    var storedWrapIndent: EcuWrapIndent? {
+        Self.parseWrapIndentString(defaults.string(forKey: Keys.wrapIndent))
+    }
+
     var storedThemeName: String? {
         guard let raw = defaults.string(forKey: Keys.themeName) else { return nil }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    var storedFindCaseSensitive: Bool? {
+        defaults.object(forKey: Keys.findCaseSensitive) as? Bool
+    }
+
+    var storedFindWholeWord: Bool? {
+        defaults.object(forKey: Keys.findWholeWord) as? Bool
+    }
+
+    var storedFindRegex: Bool? {
+        defaults.object(forKey: Keys.findRegex) as? Bool
+    }
+
+    var storedWordBoundaryAsciiBoundaryChars: String? {
+        Self.normalizedOptionalString(defaults.string(forKey: Keys.wordBoundaryAsciiBoundaryChars))
+    }
+
+    var effectiveWordBoundaryAsciiBoundaryChars: String? {
+        storedWordBoundaryAsciiBoundaryChars
+    }
+
+    var storedFindInFilesDefaultScope: String? {
+        Self.normalizeFindInFilesDefaultScope(defaults.string(forKey: Keys.findInFilesDefaultScope))
+    }
+
+    var storedWorkspaceSearchIncludeGlobs: [String]? {
+        defaults.stringArray(forKey: Keys.workspaceSearchIncludeGlobs).map(Self.normalizeWorkspaceSearchGlobs)
+    }
+
+    var storedWorkspaceSearchExcludeGlobs: [String]? {
+        defaults.stringArray(forKey: Keys.workspaceSearchExcludeGlobs).map(Self.normalizeWorkspaceSearchGlobs)
+    }
+
+    var storedCommentConfigurations: [String: AttoCommentConfiguration] {
+        commentConfigurationStorage().compactMapValues(Self.parseCommentConfiguration)
+    }
+
+    var storedSemanticHighlightingEnabled: Bool? {
+        defaults.object(forKey: Keys.semanticHighlightingEnabled) as? Bool
+    }
+
+    var storedFormatOnSaveEnabled: Bool? {
+        defaults.object(forKey: Keys.formatOnSaveEnabled) as? Bool
+    }
+
+    var storedFormatOnTypeEnabled: Bool? {
+        defaults.object(forKey: Keys.formatOnTypeEnabled) as? Bool
+    }
+
+    var storedLspAutoRestartEnabled: Bool? {
+        defaults.object(forKey: Keys.lspAutoRestartEnabled) as? Bool
+    }
+
+    var storedLspAutoRestartMaxAttempts: Int? {
+        guard let raw = defaults.object(forKey: Keys.lspAutoRestartMaxAttempts) else { return nil }
+        if let value = raw as? NSNumber {
+            return Self.normalizeLspAutoRestartMaxAttempts(value.intValue)
+        }
+        if let value = raw as? Int {
+            return Self.normalizeLspAutoRestartMaxAttempts(value)
+        }
+        return nil
+    }
+
+    var storedLspAutoRestartBaseDelaySeconds: Double? {
+        guard let raw = defaults.object(forKey: Keys.lspAutoRestartBaseDelaySeconds) else { return nil }
+        if let value = raw as? NSNumber {
+            return Self.normalizeLspAutoRestartBaseDelaySeconds(value.doubleValue)
+        }
+        if let value = raw as? Double {
+            return Self.normalizeLspAutoRestartBaseDelaySeconds(value)
+        }
+        return nil
+    }
+
+    var storedLspAutoRestartDisabledServerKeys: [String] {
+        Self.normalizeLspAutoRestartServerKeys(
+            defaults.stringArray(forKey: Keys.lspAutoRestartDisabledServerKeys) ?? []
+        )
+    }
+
+    var storedLspAutoRestartServerMaxAttempts: [String: Int] {
+        Self.normalizeLspAutoRestartServerMaxAttempts(
+            defaults.dictionary(forKey: Keys.lspAutoRestartServerMaxAttempts) ?? [:]
+        )
+    }
+
+    var storedLspAutoRestartServerBaseDelaySeconds: [String: Double] {
+        Self.normalizeLspAutoRestartServerBaseDelaySeconds(
+            defaults.dictionary(forKey: Keys.lspAutoRestartServerBaseDelaySeconds) ?? [:]
+        )
     }
 
     func setFontFaces(_ faces: [String]) {
@@ -101,12 +409,261 @@ final class AttoPreferences: NSObject {
         postDidChange()
     }
 
+    func setAutoPairsEnabled(_ enabled: Bool) {
+        defaults.set(enabled, forKey: Keys.autoPairsEnabled)
+        postDidChange()
+    }
+
+    func clearAutoPairsEnabled() {
+        defaults.removeObject(forKey: Keys.autoPairsEnabled)
+        postDidChange()
+    }
+
+    func setWrapMode(_ mode: EcuWrapMode?) {
+        if let mode {
+            defaults.set(mode.rawValue, forKey: Keys.wrapMode)
+        } else {
+            defaults.removeObject(forKey: Keys.wrapMode)
+        }
+        postDidChange()
+    }
+
+    func setWrapIndent(_ indent: EcuWrapIndent?) {
+        if let indent {
+            defaults.set(Self.wrapIndentStorageString(indent), forKey: Keys.wrapIndent)
+        } else {
+            defaults.removeObject(forKey: Keys.wrapIndent)
+        }
+        postDidChange()
+    }
+
     func setThemeName(_ name: String?) {
         let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let trimmed, trimmed.isEmpty == false {
             defaults.set(trimmed, forKey: Keys.themeName)
         } else {
             defaults.removeObject(forKey: Keys.themeName)
+        }
+        postDidChange()
+    }
+
+    func setFindCaseSensitive(_ enabled: Bool) {
+        defaults.set(enabled, forKey: Keys.findCaseSensitive)
+        postDidChange()
+    }
+
+    func setFindWholeWord(_ enabled: Bool) {
+        defaults.set(enabled, forKey: Keys.findWholeWord)
+        postDidChange()
+    }
+
+    func setFindRegex(_ enabled: Bool) {
+        defaults.set(enabled, forKey: Keys.findRegex)
+        postDidChange()
+    }
+
+    func setWordBoundaryAsciiBoundaryChars(_ boundaryChars: String?) {
+        if let value = Self.normalizedOptionalString(boundaryChars) {
+            defaults.set(value, forKey: Keys.wordBoundaryAsciiBoundaryChars)
+        } else {
+            defaults.removeObject(forKey: Keys.wordBoundaryAsciiBoundaryChars)
+        }
+        postDidChange()
+    }
+
+    func setFindInFilesDefaultScope(_ scope: String?) {
+        if let normalized = Self.normalizeFindInFilesDefaultScope(scope) {
+            defaults.set(normalized, forKey: Keys.findInFilesDefaultScope)
+        } else {
+            defaults.removeObject(forKey: Keys.findInFilesDefaultScope)
+        }
+        postDidChange()
+    }
+
+    func setWorkspaceSearchIncludeGlobs(_ patterns: [String]) {
+        defaults.set(Self.normalizeWorkspaceSearchGlobs(patterns), forKey: Keys.workspaceSearchIncludeGlobs)
+        postDidChange()
+    }
+
+    func setWorkspaceSearchExcludeGlobs(_ patterns: [String]) {
+        defaults.set(Self.normalizeWorkspaceSearchGlobs(patterns), forKey: Keys.workspaceSearchExcludeGlobs)
+        postDidChange()
+    }
+
+    func setLspAutoRestartEnabled(_ enabled: Bool) {
+        defaults.set(enabled, forKey: Keys.lspAutoRestartEnabled)
+        postDidChange()
+    }
+
+    func setSemanticHighlightingEnabled(_ enabled: Bool?) {
+        if let enabled {
+            defaults.set(enabled, forKey: Keys.semanticHighlightingEnabled)
+        } else {
+            defaults.removeObject(forKey: Keys.semanticHighlightingEnabled)
+        }
+        postDidChange()
+    }
+
+    func setFormatOnSaveEnabled(_ enabled: Bool?) {
+        if let enabled {
+            defaults.set(enabled, forKey: Keys.formatOnSaveEnabled)
+        } else {
+            defaults.removeObject(forKey: Keys.formatOnSaveEnabled)
+        }
+        postDidChange()
+    }
+
+    func setFormatOnTypeEnabled(_ enabled: Bool?) {
+        if let enabled {
+            defaults.set(enabled, forKey: Keys.formatOnTypeEnabled)
+        } else {
+            defaults.removeObject(forKey: Keys.formatOnTypeEnabled)
+        }
+        postDidChange()
+    }
+
+    func setLspAutoRestartMaxAttempts(_ attempts: Int) {
+        defaults.set(Self.normalizeLspAutoRestartMaxAttempts(attempts), forKey: Keys.lspAutoRestartMaxAttempts)
+        postDidChange()
+    }
+
+    func setLspAutoRestartBaseDelaySeconds(_ seconds: Double) {
+        defaults.set(Self.normalizeLspAutoRestartBaseDelaySeconds(seconds), forKey: Keys.lspAutoRestartBaseDelaySeconds)
+        postDidChange()
+    }
+
+    func effectiveLspAutoRestartMaxAttempts(serverName: String?, serverCommand: String?) -> Int {
+        guard let key = Self.lspAutoRestartServerKey(serverName: serverName, serverCommand: serverCommand) else {
+            return effectiveLspAutoRestartMaxAttempts
+        }
+        return storedLspAutoRestartServerMaxAttempts[key] ?? effectiveLspAutoRestartMaxAttempts
+    }
+
+    func effectiveLspAutoRestartBaseDelaySeconds(serverName: String?, serverCommand: String?) -> Double {
+        guard let key = Self.lspAutoRestartServerKey(serverName: serverName, serverCommand: serverCommand) else {
+            return effectiveLspAutoRestartBaseDelaySeconds
+        }
+        return storedLspAutoRestartServerBaseDelaySeconds[key] ?? effectiveLspAutoRestartBaseDelaySeconds
+    }
+
+    func hasLspAutoRestartPolicyOverrideForServer(serverName: String?, serverCommand: String?) -> Bool {
+        guard let key = Self.lspAutoRestartServerKey(serverName: serverName, serverCommand: serverCommand) else {
+            return false
+        }
+        return storedLspAutoRestartDisabledServerKeys.contains(key)
+            || storedLspAutoRestartServerMaxAttempts.keys.contains(key)
+            || storedLspAutoRestartServerBaseDelaySeconds.keys.contains(key)
+    }
+
+    func isLspAutoRestartDisabledForServer(serverName: String?, serverCommand: String?) -> Bool {
+        guard let key = Self.lspAutoRestartServerKey(serverName: serverName, serverCommand: serverCommand) else {
+            return false
+        }
+        return storedLspAutoRestartDisabledServerKeys.contains(key)
+    }
+
+    func setLspAutoRestartDisabled(
+        _ disabled: Bool,
+        forServerName serverName: String?,
+        serverCommand: String?
+    ) {
+        guard let key = Self.lspAutoRestartServerKey(serverName: serverName, serverCommand: serverCommand) else {
+            return
+        }
+        var keys = Set(storedLspAutoRestartDisabledServerKeys)
+        if disabled {
+            keys.insert(key)
+        } else {
+            keys.remove(key)
+        }
+        let sorted = keys.sorted()
+        if sorted.isEmpty {
+            defaults.removeObject(forKey: Keys.lspAutoRestartDisabledServerKeys)
+        } else {
+            defaults.set(sorted, forKey: Keys.lspAutoRestartDisabledServerKeys)
+        }
+        postDidChange()
+    }
+
+    func setLspAutoRestartMaxAttempts(
+        _ attempts: Int,
+        forServerName serverName: String?,
+        serverCommand: String?
+    ) {
+        guard let key = Self.lspAutoRestartServerKey(serverName: serverName, serverCommand: serverCommand) else {
+            return
+        }
+        var overrides = storedLspAutoRestartServerMaxAttempts
+        overrides[key] = Self.normalizeLspAutoRestartMaxAttempts(attempts)
+        defaults.set(overrides, forKey: Keys.lspAutoRestartServerMaxAttempts)
+        postDidChange()
+    }
+
+    func setLspAutoRestartBaseDelaySeconds(
+        _ seconds: Double,
+        forServerName serverName: String?,
+        serverCommand: String?
+    ) {
+        guard let key = Self.lspAutoRestartServerKey(serverName: serverName, serverCommand: serverCommand) else {
+            return
+        }
+        var overrides = storedLspAutoRestartServerBaseDelaySeconds
+        overrides[key] = Self.normalizeLspAutoRestartBaseDelaySeconds(seconds)
+        defaults.set(overrides, forKey: Keys.lspAutoRestartServerBaseDelaySeconds)
+        postDidChange()
+    }
+
+    func resetLspAutoRestartPolicy(forServerName serverName: String?, serverCommand: String?) {
+        guard let key = Self.lspAutoRestartServerKey(serverName: serverName, serverCommand: serverCommand) else {
+            return
+        }
+
+        var disabledKeys = Set(storedLspAutoRestartDisabledServerKeys)
+        disabledKeys.remove(key)
+        if disabledKeys.isEmpty {
+            defaults.removeObject(forKey: Keys.lspAutoRestartDisabledServerKeys)
+        } else {
+            defaults.set(disabledKeys.sorted(), forKey: Keys.lspAutoRestartDisabledServerKeys)
+        }
+
+        var maxAttempts = storedLspAutoRestartServerMaxAttempts
+        maxAttempts.removeValue(forKey: key)
+        if maxAttempts.isEmpty {
+            defaults.removeObject(forKey: Keys.lspAutoRestartServerMaxAttempts)
+        } else {
+            defaults.set(maxAttempts, forKey: Keys.lspAutoRestartServerMaxAttempts)
+        }
+
+        var baseDelay = storedLspAutoRestartServerBaseDelaySeconds
+        baseDelay.removeValue(forKey: key)
+        if baseDelay.isEmpty {
+            defaults.removeObject(forKey: Keys.lspAutoRestartServerBaseDelaySeconds)
+        } else {
+            defaults.set(baseDelay, forKey: Keys.lspAutoRestartServerBaseDelaySeconds)
+        }
+
+        postDidChange()
+    }
+
+    func commentConfigurationOverride(forLanguageKey languageKey: String) -> AttoCommentConfiguration? {
+        storedCommentConfigurations[Self.normalizeCommentConfigurationKey(languageKey)]
+    }
+
+    func setCommentConfiguration(_ configuration: AttoCommentConfiguration?, forLanguageKey rawKey: String) {
+        let key = Self.normalizeCommentConfigurationKey(rawKey)
+        guard key.isEmpty == false else { return }
+
+        var storage = commentConfigurationStorage()
+        if let normalized = configuration?.normalized {
+            storage[key] = Self.commentConfigurationStorageObject(normalized)
+        } else {
+            storage.removeValue(forKey: key)
+        }
+
+        if storage.isEmpty {
+            defaults.removeObject(forKey: Keys.commentConfigurations)
+        } else {
+            defaults.set(storage, forKey: Keys.commentConfigurations)
         }
         postDidChange()
     }
@@ -134,6 +691,14 @@ final class AttoPreferences: NSObject {
         return faces.joined(separator: "\n")
     }
 
+    func workspaceSearchIncludeGlobsTextForUI() -> String {
+        effectiveWorkspaceSearchIncludeGlobs.joined(separator: "\n")
+    }
+
+    func workspaceSearchExcludeGlobsTextForUI() -> String {
+        effectiveWorkspaceSearchExcludeGlobs.joined(separator: "\n")
+    }
+
     static func parseMultilineFontFaces(_ text: String) -> [String] {
         text
             .split(whereSeparator: \.isNewline)
@@ -143,6 +708,14 @@ final class AttoPreferences: NSObject {
     static func parseCSVFontFaces(_ csv: String) -> [String] {
         csv
             .split(separator: ",")
+            .map { String($0) }
+    }
+
+    static func parseWorkspaceSearchGlobsText(_ text: String) -> [String] {
+        text
+            .split { char in
+                char == "," || char.isNewline
+            }
             .map { String($0) }
     }
 
@@ -169,6 +742,10 @@ final class AttoPreferences: NSObject {
 
     // MARK: - Normalization
 
+    private static func normalizedOptionalString(_ raw: String?) -> String? {
+        raw?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+    }
+
     private static func normalizeFontFaces(_ faces: [String]) -> [String] {
         var out: [String] = []
         out.reserveCapacity(faces.count)
@@ -191,7 +768,227 @@ final class AttoPreferences: NSObject {
         return min(max(v, 6.0), 72.0)
     }
 
+    private static func normalizeLspAutoRestartMaxAttempts(_ v: Int) -> Int {
+        min(max(v, 0), 10)
+    }
+
+    private static func normalizeLspAutoRestartBaseDelaySeconds(_ v: Double) -> Double {
+        guard v.isFinite else { return 5.0 }
+        return min(max(v, 0.0), 3_600.0)
+    }
+
+    static func lspAutoRestartServerKey(serverName: String?, serverCommand: String?) -> String? {
+        let raw = serverName?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            ?? serverCommand?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        guard let raw else { return nil }
+        return raw.lowercased()
+    }
+
+    private static func normalizeLspAutoRestartServerKeys(_ keys: [String]) -> [String] {
+        Array(Set(keys.compactMap { raw in
+            let key = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return key.isEmpty ? nil : key
+        })).sorted()
+    }
+
+    private static func normalizeLspAutoRestartServerMaxAttempts(_ raw: [String: Any]) -> [String: Int] {
+        var out: [String: Int] = [:]
+        for (rawKey, rawValue) in raw {
+            let key = rawKey.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard key.isEmpty == false else { continue }
+            guard let value = parseStoredInt(rawValue) else { continue }
+            out[key] = normalizeLspAutoRestartMaxAttempts(value)
+        }
+        return out
+    }
+
+    private static func normalizeLspAutoRestartServerBaseDelaySeconds(_ raw: [String: Any]) -> [String: Double] {
+        var out: [String: Double] = [:]
+        for (rawKey, rawValue) in raw {
+            let key = rawKey.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard key.isEmpty == false else { continue }
+            guard let value = parseStoredDouble(rawValue) else { continue }
+            out[key] = normalizeLspAutoRestartBaseDelaySeconds(value)
+        }
+        return out
+    }
+
+    static func normalizeCommentConfigurationKey(_ raw: String) -> String {
+        raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    static func normalizeFindInFilesDefaultScope(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let normalized = raw
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "-", with: "_")
+        switch normalized {
+        case "folder", "folders", "workspace", "workspace_files":
+            return "workspace"
+        case "open", "opened", "open_files", "opened_files", "tabs", "open_tabs":
+            return AttoWorkspacePreferenceSnapshot.defaultFindInFilesScope
+        default:
+            return nil
+        }
+    }
+
+    static func normalizeWorkspaceSearchGlobs(_ patterns: [String]) -> [String] {
+        var seen: Set<String> = []
+        var out: [String] = []
+        out.reserveCapacity(patterns.count)
+
+        for pattern in patterns {
+            var normalized = pattern
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: "\\", with: "/")
+            while normalized.contains("//") {
+                normalized = normalized.replacingOccurrences(of: "//", with: "/")
+            }
+            if normalized.hasPrefix("./") {
+                normalized.removeFirst(2)
+            }
+            if normalized.hasSuffix("/") {
+                normalized.append("**")
+            }
+            guard normalized.isEmpty == false else { continue }
+            guard seen.insert(normalized).inserted else { continue }
+            out.append(normalized)
+        }
+
+        return out
+    }
+
+    private static func parseWorkspaceSearchGlobsEnv(_ raw: String?) -> [String]? {
+        guard let raw else { return nil }
+        let patterns = normalizeWorkspaceSearchGlobs(parseWorkspaceSearchGlobsText(raw))
+        return patterns.isEmpty ? nil : patterns
+    }
+
+    private func commentConfigurationStorage() -> [String: [String: String]] {
+        guard let raw = defaults.dictionary(forKey: Keys.commentConfigurations) else { return [:] }
+
+        var out: [String: [String: String]] = [:]
+        for (rawKey, rawValue) in raw {
+            let key = Self.normalizeCommentConfigurationKey(rawKey)
+            guard key.isEmpty == false else { continue }
+
+            if let value = rawValue as? [String: String] {
+                out[key] = value
+            } else if let value = rawValue as? [String: Any] {
+                out[key] = value.compactMapValues { $0 as? String }
+            }
+        }
+        return out
+    }
+
+    private static func parseCommentConfiguration(_ raw: [String: String]) -> AttoCommentConfiguration? {
+        AttoCommentConfiguration(
+            line: raw["line"],
+            blockStart: raw["block_start"],
+            blockEnd: raw["block_end"]
+        ).normalized
+    }
+
+    private static func commentConfigurationStorageObject(_ configuration: AttoCommentConfiguration) -> [String: String] {
+        configuration.jsonObject
+    }
+
+    private static func parseBoolEnv(_ raw: String?) -> Bool? {
+        guard let raw else { return nil }
+        switch raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "1", "true", "yes", "on":
+            return true
+        case "0", "false", "no", "off":
+            return false
+        default:
+            return nil
+        }
+    }
+
+    private static func parseIntEnv(_ raw: String?) -> Int? {
+        guard let raw else { return nil }
+        return Int(raw.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    private static func parseDoubleEnv(_ raw: String?) -> Double? {
+        guard let raw else { return nil }
+        return Double(raw.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    private static func parseStoredInt(_ raw: Any) -> Int? {
+        if let value = raw as? Int {
+            return value
+        }
+        if let value = raw as? NSNumber {
+            return value.intValue
+        }
+        if let value = raw as? String {
+            return Int(value.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        return nil
+    }
+
+    private static func parseStoredDouble(_ raw: Any) -> Double? {
+        if let value = raw as? Double {
+            return value
+        }
+        if let value = raw as? NSNumber {
+            return value.doubleValue
+        }
+        if let value = raw as? String {
+            return Double(value.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        return nil
+    }
+
+    private static func parseWrapModeEnv(_ raw: String?) -> EcuWrapMode? {
+        guard let raw else { return nil }
+        return EcuWrapMode(rawValue: raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+    }
+
+    static func wrapIndentStorageString(_ indent: EcuWrapIndent) -> String {
+        switch indent {
+        case .none:
+            return "none"
+        case .sameAsLineIndent:
+            return "same_as_line_indent"
+        case let .fixedCells(cells):
+            return "fixed_cells:\(cells)"
+        }
+    }
+
+    static func parseWrapIndentString(_ raw: String?) -> EcuWrapIndent? {
+        guard let raw else { return nil }
+        let s = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard s.isEmpty == false else { return nil }
+
+        switch s {
+        case "none", "off":
+            return EcuWrapIndent.none
+        case "same_as_line_indent", "same-as-line-indent", "same":
+            return .sameAsLineIndent
+        default:
+            break
+        }
+
+        for prefix in ["fixed_cells:", "fixed-cells:", "fixed:"] {
+            guard s.hasPrefix(prefix) else { continue }
+            let rawNumber = String(s.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let cells = UInt32(rawNumber) else { return nil }
+            return .fixedCells(cells)
+        }
+
+        return nil
+    }
+
     private func postDidChange() {
         NotificationCenter.default.post(name: .attoPreferencesDidChange, object: self)
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
     }
 }

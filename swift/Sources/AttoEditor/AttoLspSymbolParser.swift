@@ -1,0 +1,417 @@
+import EditorCoreUIFFI
+import Foundation
+
+enum AttoLspSymbolParser {
+    struct Symbol: Equatable {
+        let name: String
+        let detail: String?
+        let kindLabel: String?
+        let containerName: String?
+        let target: AttoLspDefinitionParser.Target
+        let depth: Int
+    }
+
+    static func documentSymbols(fromResultJSON json: String, documentURI: String) -> [Symbol] {
+        if let data = json.data(using: .utf8),
+           let result = try? JSONDecoder().decode(EcuLspDocumentSymbolResult.self, from: data)
+        {
+            return documentSymbols(fromResult: result, documentURI: documentURI)
+        }
+
+        guard let root = jsonRoot(json) else { return [] }
+        guard let arr = root as? [Any] else { return [] }
+
+        var out: [Symbol] = []
+        for item in arr {
+            appendDocumentSymbol(item, documentURI: documentURI, depth: 0, into: &out)
+        }
+        return out
+    }
+
+    static func documentSymbols(fromResult result: EcuLspDocumentSymbolResult, documentURI: String) -> [Symbol] {
+        var out: [Symbol] = []
+        for item in result.items {
+            switch item {
+            case .documentSymbol(let symbol):
+                appendDocumentSymbol(symbol, documentURI: documentURI, depth: 0, into: &out)
+            case .symbolInformation(let symbol):
+                appendSymbolInformation(symbol, depth: 0, into: &out)
+            case .unknown:
+                continue
+            }
+        }
+        return out
+    }
+
+    static func sortedWorkspaceSymbols(_ symbols: [Symbol]) -> [Symbol] {
+        symbols.enumerated()
+            .sorted { lhs, rhs in
+                let lhsGroup = symbolKindGroup(for: lhs.element.kindLabel)
+                let rhsGroup = symbolKindGroup(for: rhs.element.kindLabel)
+                if lhsGroup.rank != rhsGroup.rank {
+                    return lhsGroup.rank < rhsGroup.rank
+                }
+
+                let nameCompare = normalizedSortKey(lhs.element.name)
+                    .localizedStandardCompare(normalizedSortKey(rhs.element.name))
+                if nameCompare != .orderedSame {
+                    return nameCompare == .orderedAscending
+                }
+
+                let containerCompare = normalizedSortKey(lhs.element.containerName ?? "")
+                    .localizedStandardCompare(normalizedSortKey(rhs.element.containerName ?? ""))
+                if containerCompare != .orderedSame {
+                    return containerCompare == .orderedAscending
+                }
+
+                let pathCompare = normalizedSortKey(lhs.element.target.uri)
+                    .localizedStandardCompare(normalizedSortKey(rhs.element.target.uri))
+                if pathCompare != .orderedSame {
+                    return pathCompare == .orderedAscending
+                }
+
+                if lhs.element.target.line != rhs.element.target.line {
+                    return lhs.element.target.line < rhs.element.target.line
+                }
+                if lhs.element.target.utf16Character != rhs.element.target.utf16Character {
+                    return lhs.element.target.utf16Character < rhs.element.target.utf16Character
+                }
+                return lhs.offset < rhs.offset
+            }
+            .map(\.element)
+    }
+
+    static func kindGroupLabel(for symbol: Symbol) -> String {
+        symbolKindGroup(for: symbol.kindLabel).label
+    }
+
+    static func documentSymbols(
+        snapshot: EcuDocumentSymbolsSnapshot,
+        documentURI: String,
+        documentText: String
+    ) -> [Symbol] {
+        var out: [Symbol] = []
+        for symbol in snapshot.symbols {
+            appendDocumentSymbol(symbol, documentURI: documentURI, documentText: documentText, depth: 0, into: &out)
+        }
+        return out
+    }
+
+    static func workspaceSymbols(fromResultJSON json: String) -> [Symbol] {
+        if let data = json.data(using: .utf8),
+           let result = try? JSONDecoder().decode(EcuLspWorkspaceSymbolResult.self, from: data)
+        {
+            return workspaceSymbols(fromResult: result)
+        }
+
+        guard let root = jsonRoot(json) else { return [] }
+        guard let arr = root as? [Any] else { return [] }
+
+        var out: [Symbol] = []
+        for item in arr {
+            guard let dict = item as? [String: Any] else { continue }
+            guard let name = nonEmptyString(dict["name"]) else { continue }
+            guard let location = dict["location"] as? [String: Any] else { continue }
+            guard let target = parseTarget(fromLocation: location) else { continue }
+
+            out.append(Symbol(
+                name: name,
+                detail: nonEmptyString(dict["detail"]),
+                kindLabel: kindLabel(dict["kind"]),
+                containerName: nonEmptyString(dict["containerName"]),
+                target: target,
+                depth: 0
+            ))
+        }
+        return sortedWorkspaceSymbols(out)
+    }
+
+    static func workspaceSymbols(fromResult result: EcuLspWorkspaceSymbolResult) -> [Symbol] {
+        let symbols = result.symbols.compactMap(symbol(fromWorkspaceSymbol:))
+        return sortedWorkspaceSymbols(symbols)
+    }
+
+    private static func appendDocumentSymbol(
+        _ any: Any,
+        documentURI: String,
+        depth: Int,
+        into out: inout [Symbol]
+    ) {
+        guard let dict = any as? [String: Any] else { return }
+        guard let name = nonEmptyString(dict["name"]) else { return }
+
+        let target: AttoLspDefinitionParser.Target?
+        if let location = dict["location"] as? [String: Any] {
+            target = parseTarget(fromLocation: location)
+        } else {
+            let selection = (dict["selectionRange"] as? [String: Any])
+                ?? (dict["selection_range"] as? [String: Any])
+                ?? (dict["range"] as? [String: Any])
+            target = parseTarget(fromRange: selection, uri: documentURI)
+        }
+
+        if let target {
+            out.append(Symbol(
+                name: name,
+                detail: nonEmptyString(dict["detail"]),
+                kindLabel: kindLabel(dict["kind"]),
+                containerName: nonEmptyString(dict["containerName"]),
+                target: target,
+                depth: depth
+            ))
+        }
+
+        guard let children = dict["children"] as? [Any] else { return }
+        for child in children {
+            appendDocumentSymbol(child, documentURI: documentURI, depth: depth + 1, into: &out)
+        }
+    }
+
+    private static func appendDocumentSymbol(
+        _ symbol: EcuLspDocumentSymbol,
+        documentURI: String,
+        depth: Int,
+        into out: inout [Symbol]
+    ) {
+        out.append(Symbol(
+            name: symbol.name,
+            detail: nonEmptyString(symbol.detail),
+            kindLabel: kindLabel(symbol.kind),
+            containerName: nil,
+            target: parseTarget(fromRange: symbol.selectionRange, uri: documentURI),
+            depth: depth
+        ))
+
+        for child in symbol.children {
+            appendDocumentSymbol(child, documentURI: documentURI, depth: depth + 1, into: &out)
+        }
+    }
+
+    private static func appendDocumentSymbol(
+        _ symbol: EcuDocumentSymbol,
+        documentURI: String,
+        documentText: String,
+        depth: Int,
+        into out: inout [Symbol]
+    ) {
+        let position = lspPosition(in: documentText, charOffset: symbol.selectionRange.start)
+        out.append(Symbol(
+            name: symbol.name,
+            detail: nonEmptyString(symbol.detail),
+            kindLabel: kindLabel(symbol.kind),
+            containerName: nil,
+            target: AttoLspDefinitionParser.Target(
+                uri: documentURI,
+                line: position.line,
+                utf16Character: position.character
+            ),
+            depth: depth
+        ))
+
+        for child in symbol.children {
+            appendDocumentSymbol(child, documentURI: documentURI, documentText: documentText, depth: depth + 1, into: &out)
+        }
+    }
+
+    private static func appendSymbolInformation(
+        _ symbol: EcuLspSymbolInformation,
+        depth: Int,
+        into out: inout [Symbol]
+    ) {
+        out.append(Symbol(
+            name: symbol.name,
+            detail: nil,
+            kindLabel: kindLabel(symbol.kind),
+            containerName: nonEmptyString(symbol.containerName),
+            target: parseTarget(fromLocation: symbol.location),
+            depth: depth
+        ))
+    }
+
+    private static func symbol(fromWorkspaceSymbol symbol: EcuLspWorkspaceSymbol) -> Symbol? {
+        guard let location = symbol.location, let lspTarget = location.target else { return nil }
+        return Symbol(
+            name: symbol.name,
+            detail: nonEmptyString(symbol.detail),
+            kindLabel: kindLabel(symbol.kind),
+            containerName: nonEmptyString(symbol.containerName),
+            target: target(from: lspTarget),
+            depth: 0
+        )
+    }
+
+    private static func parseTarget(fromLocation location: [String: Any]) -> AttoLspDefinitionParser.Target? {
+        guard let uri = nonEmptyString(location["uri"]) else { return nil }
+        if let range = location["range"] as? [String: Any] {
+            return parseTarget(fromRange: range, uri: uri)
+        }
+
+        // LSP 3.17 `WorkspaceSymbol.location` can be `{ uri }` without a range.
+        return AttoLspDefinitionParser.Target(uri: uri, line: 0, utf16Character: 0)
+    }
+
+    private static func parseTarget(fromLocation location: EcuLspLocation) -> AttoLspDefinitionParser.Target {
+        parseTarget(fromRange: location.range, uri: location.uri)
+    }
+
+    private static func parseTarget(fromRange range: [String: Any]?, uri: String) -> AttoLspDefinitionParser.Target? {
+        guard let range else { return nil }
+        guard let start = range["start"] as? [String: Any] else { return nil }
+        guard let line = intValue(start["line"]), let character = intValue(start["character"]) else {
+            return nil
+        }
+        return AttoLspDefinitionParser.Target(uri: uri, line: line, utf16Character: character)
+    }
+
+    private static func parseTarget(fromRange range: EcuLspRange, uri: String) -> AttoLspDefinitionParser.Target {
+        AttoLspDefinitionParser.Target(
+            uri: uri,
+            line: Int(range.start.line),
+            utf16Character: Int(range.start.utf16Character)
+        )
+    }
+
+    private static func target(from target: EcuLspLocationTarget) -> AttoLspDefinitionParser.Target {
+        AttoLspDefinitionParser.Target(
+            uri: target.uri,
+            line: Int(target.selectionRange.start.line),
+            utf16Character: Int(target.selectionRange.start.utf16Character)
+        )
+    }
+
+    private static func jsonRoot(_ json: String) -> Any? {
+        guard let data = json.data(using: .utf8) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data, options: [])
+    }
+
+    private static func nonEmptyString(_ any: Any?) -> String? {
+        guard let s = any as? String else { return nil }
+        let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : s
+    }
+
+    private static func intValue(_ any: Any?) -> Int? {
+        if let v = any as? Int { return v }
+        if let n = any as? NSNumber { return n.intValue }
+        return nil
+    }
+
+    private static func kindLabel(_ any: Any?) -> String? {
+        if let label = stringKindLabel(any) { return label }
+        guard let n = intValue(any) else { return nil }
+        return lspKindLabels[n]
+    }
+
+    private static func kindLabel(_ value: Int) -> String? {
+        lspKindLabels[value]
+    }
+
+    private static func kindLabel(_ value: EcuJSONValue) -> String? {
+        if let label = stringKindLabel(value) { return label }
+        guard let n = intValue(value) else { return nil }
+        return lspKindLabels[n]
+    }
+
+    private static func stringKindLabel(_ any: Any?) -> String? {
+        if let s = any as? String {
+            return s
+        }
+        if let dict = any as? [String: Any] {
+            if let s = dict["kind"] as? String { return s }
+            if let n = intValue(dict["value"]) { return lspKindLabels[n] }
+        }
+        return nil
+    }
+
+    private static func stringKindLabel(_ value: EcuJSONValue) -> String? {
+        switch value {
+        case .string(let s):
+            return s
+        case .object(let dict):
+            if let kind = dict["kind"], case .string(let s) = kind {
+                return s
+            }
+            if let value = dict["value"], let n = intValue(value) {
+                return lspKindLabels[n]
+            }
+            return nil
+        default:
+            return nil
+        }
+    }
+
+    private static func intValue(_ value: EcuJSONValue) -> Int? {
+        switch value {
+        case .number(let n):
+            return Int(n)
+        default:
+            return nil
+        }
+    }
+
+    private static func lspPosition(in text: String, charOffset: UInt32) -> (line: Int, character: Int) {
+        let limit = min(Int(charOffset), text.unicodeScalars.count)
+        var line = 0
+        var utf16Column = 0
+
+        for scalar in text.unicodeScalars.prefix(limit) {
+            if scalar == "\n" {
+                line += 1
+                utf16Column = 0
+            } else {
+                utf16Column += String(scalar).utf16.count
+            }
+        }
+
+        return (line, utf16Column)
+    }
+
+    private static func normalizedSortKey(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).folding(
+            options: [.caseInsensitive, .diacriticInsensitive],
+            locale: .current
+        )
+    }
+
+    private static func symbolKindGroup(for kindLabel: String?) -> (rank: Int, label: String) {
+        switch normalizedSortKey(kindLabel ?? "") {
+        case "file", "module", "namespace", "package", "class", "interface", "struct", "enum", "type parameter":
+            return (0, "Types")
+        case "constructor", "method", "function", "operator":
+            return (1, "Functions")
+        case "property", "field", "variable", "constant", "enum member":
+            return (2, "Values")
+        default:
+            return (3, "Other")
+        }
+    }
+
+    private static let lspKindLabels: [Int: String] = [
+        1: "file",
+        2: "module",
+        3: "namespace",
+        4: "package",
+        5: "class",
+        6: "method",
+        7: "property",
+        8: "field",
+        9: "constructor",
+        10: "enum",
+        11: "interface",
+        12: "function",
+        13: "variable",
+        14: "constant",
+        15: "string",
+        16: "number",
+        17: "boolean",
+        18: "array",
+        19: "object",
+        20: "key",
+        21: "null",
+        22: "enum member",
+        23: "struct",
+        24: "event",
+        25: "operator",
+        26: "type parameter",
+    ]
+}

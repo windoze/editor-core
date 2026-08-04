@@ -2,9 +2,259 @@ import CEditorCoreUIFFI
 import Foundation
 import Metal
 
+public struct EcuLspResultEvent: Decodable, Equatable, Sendable {
+    public let sequence: UInt64
+    public let family: String
+    public let title: String
+    public let slot: String
+    public let method: String
+    public let viewId: UInt64
+    public let requestId: UInt64
+    public let status: String
+    public let hasResult: Bool
+    public let resultJSONLength: Int
+    public let errorCode: Int64?
+    public let errorMessage: String?
+
+    enum CodingKeys: String, CodingKey {
+        case sequence
+        case family
+        case title
+        case slot
+        case method
+        case viewId = "view_id"
+        case requestId = "request_id"
+        case status
+        case hasResult = "has_result"
+        case resultJSONLength = "result_json_len"
+        case errorCode = "error_code"
+        case errorMessage = "error_message"
+    }
+}
+
+public struct EcuLspResultEventsSnapshot: Decodable, Equatable, Sendable {
+    public let latestSequence: UInt64
+    public let events: [EcuLspResultEvent]
+
+    enum CodingKeys: String, CodingKey {
+        case latestSequence = "latest_sequence"
+        case events
+    }
+}
+
+public struct EcuLspRequestEvent: Decodable, Equatable, Sendable {
+    public let sequence: UInt64
+    public let family: String
+    public let title: String
+    public let slot: String
+    public let method: String
+    public let viewId: UInt64
+    public let requestId: UInt64
+    public let phase: String
+    public let status: String
+    public let resultSequence: UInt64?
+    public let errorCode: Int64?
+    public let errorMessage: String?
+
+    enum CodingKeys: String, CodingKey {
+        case sequence
+        case family
+        case title
+        case slot
+        case method
+        case viewId = "view_id"
+        case requestId = "request_id"
+        case phase
+        case status
+        case resultSequence = "result_sequence"
+        case errorCode = "error_code"
+        case errorMessage = "error_message"
+    }
+}
+
+public struct EcuLspRequestEventsSnapshot: Decodable, Equatable, Sendable {
+    public let latestSequence: UInt64
+    public let events: [EcuLspRequestEvent]
+
+    enum CodingKeys: String, CodingKey {
+        case latestSequence = "latest_sequence"
+        case events
+    }
+}
+
+public struct EcuEditorUITextStateEvent: Decodable, Equatable, Sendable {
+    public let textVersion: UInt64
+    public let charLen: Int
+    public let isModified: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case textVersion = "text_version"
+        case charLen = "char_len"
+        case isModified = "is_modified"
+    }
+}
+
+public struct EcuEditorUIDirtyStateEvent: Decodable, Equatable, Sendable {
+    public let isModified: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case isModified = "is_modified"
+    }
+}
+
+public struct EcuEditorUIPositionStateEvent: Decodable, Equatable, Sendable {
+    public let line: Int
+    public let column: Int
+    public let offset: Int
+}
+
+public struct EcuEditorUISelectionRangeStateEvent: Decodable, Equatable, Sendable {
+    public let start: Int
+    public let end: Int
+    public let anchor: Int
+    public let active: Int
+}
+
+public struct EcuEditorUISelectionStateEvent: Decodable, Equatable, Sendable {
+    public let viewVersion: UInt64
+    public let primary: EcuEditorUIPositionStateEvent
+    public let primarySelectionIndex: Int
+    public let selectionCount: Int
+    public let hasSelection: Bool
+    public let selections: [EcuEditorUISelectionRangeStateEvent]
+
+    enum CodingKeys: String, CodingKey {
+        case viewVersion = "view_version"
+        case primary
+        case primarySelectionIndex = "primary_selection_index"
+        case selectionCount = "selection_count"
+        case hasSelection = "has_selection"
+        case selections
+    }
+}
+
+public struct EcuEditorUIViewportRangeStateEvent: Decodable, Equatable, Sendable {
+    public let start: Int
+    public let end: Int
+}
+
+public struct EcuEditorUIViewportStateEvent: Decodable, Equatable, Sendable {
+    public let viewVersion: UInt64
+    public let width: Int
+    public let height: Int?
+    public let scrollTop: Int
+    public let subRowOffset: UInt16
+    public let overscanRows: Int
+    public let visibleLines: EcuEditorUIViewportRangeStateEvent
+    public let prefetchLines: EcuEditorUIViewportRangeStateEvent
+    public let totalVisualLines: Int
+
+    enum CodingKeys: String, CodingKey {
+        case viewVersion = "view_version"
+        case width
+        case height
+        case scrollTop = "scroll_top"
+        case subRowOffset = "sub_row_offset"
+        case overscanRows = "overscan_rows"
+        case visibleLines = "visible_lines"
+        case prefetchLines = "prefetch_lines"
+        case totalVisualLines = "total_visual_lines"
+    }
+}
+
+public struct EcuEditorUILayoutStateEvent: Decodable, Equatable, Sendable {
+    public let widthPx: UInt32
+    public let heightPx: UInt32
+    public let scale: Float
+    public let fontSize: Float
+    public let lineHeightPx: Float
+    public let cellWidthPx: Float
+    public let paddingXPx: Float
+    public let paddingYPx: Float
+    public let gutterWidthCells: UInt32
+    public let tabWidthCells: UInt32
+    public let textVerticalAlign: String
+
+    enum CodingKeys: String, CodingKey {
+        case widthPx = "width_px"
+        case heightPx = "height_px"
+        case scale
+        case fontSize = "font_size"
+        case lineHeightPx = "line_height_px"
+        case cellWidthPx = "cell_width_px"
+        case paddingXPx = "padding_x_px"
+        case paddingYPx = "padding_y_px"
+        case gutterWidthCells = "gutter_width_cells"
+        case tabWidthCells = "tab_width_cells"
+        case textVerticalAlign = "text_vertical_align"
+    }
+}
+
+public struct EcuEditorUIDerivedStateEvent: Decodable, Equatable, Sendable {
+    public let status: String
+    public let reason: String
+    public let textVersion: UInt64
+    public let editCount: Int
+    public let families: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case reason
+        case textVersion = "text_version"
+        case editCount = "edit_count"
+        case families
+    }
+}
+
+public struct EcuEditorUIStateEvent: Decodable, Equatable, Sendable {
+    public let sequence: UInt64
+    public let kind: String
+    public let family: String
+    public let title: String
+    public let viewId: UInt64
+    public let sourceSequence: UInt64
+    public let lspRequest: EcuLspRequestEvent?
+    public let lspResult: EcuLspResultEvent?
+    public let lspStatus: EcuLspStatusSnapshot?
+    public let text: EcuEditorUITextStateEvent?
+    public let dirty: EcuEditorUIDirtyStateEvent?
+    public let selection: EcuEditorUISelectionStateEvent?
+    public let viewport: EcuEditorUIViewportStateEvent?
+    public let layout: EcuEditorUILayoutStateEvent?
+    public let derivedState: EcuEditorUIDerivedStateEvent?
+
+    enum CodingKeys: String, CodingKey {
+        case sequence
+        case kind
+        case family
+        case title
+        case viewId = "view_id"
+        case sourceSequence = "source_sequence"
+        case lspRequest = "lsp_request"
+        case lspResult = "lsp_result"
+        case lspStatus = "lsp_status"
+        case text
+        case dirty
+        case selection
+        case viewport
+        case layout
+        case derivedState = "derived_state"
+    }
+}
+
+public struct EcuEditorUIStateEventsSnapshot: Decodable, Equatable, Sendable {
+    public let latestSequence: UInt64
+    public let events: [EcuEditorUIStateEvent]
+
+    enum CodingKeys: String, CodingKey {
+        case latestSequence = "latest_sequence"
+        case events
+    }
+}
+
 public final class EditorUI {
     public let library: EditorCoreUIFFILibrary
-    private let handle: OpaquePointer
+    let handle: OpaquePointer
 
     public enum TextVerticalAlign: UInt8 {
         case top = 0
@@ -29,7 +279,7 @@ public final class EditorUI {
         case triangle = 2
     }
 
-    private init(library: EditorCoreUIFFILibrary, handle: OpaquePointer) {
+    init(library: EditorCoreUIFFILibrary, handle: OpaquePointer) {
         self.library = library
         self.handle = handle
     }
@@ -173,1010 +423,4 @@ public final class EditorUI {
     /// Notes:
     /// - `rootURI` / `documentURI` should be `file:///...` URIs for best server behavior.
     /// - `args` is a single whitespace-separated string (best-effort; no shell quoting).
-    public func lspEnable(command: String, args: String? = nil, rootURI: String, documentURI: String, languageId: String) throws {
-        let status: Int32 = command.withCString { cmdCStr in
-            rootURI.withCString { rootCStr in
-                documentURI.withCString { docCStr in
-                    languageId.withCString { langCStr in
-                        if let args {
-                            return args.withCString { argsCStr in
-                                editor_core_ui_ffi_editor_ui_lsp_enable(handle, cmdCStr, argsCStr, rootCStr, docCStr, langCStr)
-                            }
-                        }
-                        return editor_core_ui_ffi_editor_ui_lsp_enable(handle, cmdCStr, nil, rootCStr, docCStr, langCStr)
-                    }
-                }
-            }
-        }
-        try library.ensureStatus(status, context: "editor_ui_lsp_enable")
-    }
-
-    public func lspDisable() {
-        editor_core_ui_ffi_editor_ui_lsp_disable(handle)
-    }
-
-    public func lspIsEnabled() throws -> Bool {
-        var out: UInt8 = 0
-        let status = editor_core_ui_ffi_editor_ui_lsp_is_enabled(handle, &out)
-        try library.ensureStatus(status, context: "editor_ui_lsp_is_enabled")
-        return out != 0
-    }
-
-    /// Get a best-effort LSP status snapshot as JSON.
-    ///
-    /// This is intended for status bars and debugging overlays.
-    public func lspStatusJSON() throws -> String {
-        var ptr: UnsafeMutablePointer<CChar>?
-        let status = editor_core_ui_ffi_editor_ui_lsp_status_json(handle, &ptr)
-        try library.ensureStatus(status, context: "editor_ui_lsp_status_json")
-        guard let ptr else {
-            return "{}"
-        }
-        defer { editor_core_ui_ffi_string_free(ptr) }
-        return String(cString: ptr)
-    }
-
-    /// Request an LSP hover (`textDocument/hover`) for a logical position.
-    ///
-    /// Notes:
-    /// - `logicalLine` / `logicalColumn` are 0-based and counted in Unicode scalars.
-    /// - This request is non-blocking; the result is delivered via internal LSP polling.
-    public func lspRequestHover(logicalLine: UInt32, logicalColumn: UInt32) throws -> UInt64 {
-        var out: UInt64 = 0
-        let status = editor_core_ui_ffi_editor_ui_lsp_request_hover(handle, logicalLine, logicalColumn, &out)
-        try library.ensureStatus(status, context: "editor_ui_lsp_request_hover")
-        return out
-    }
-
-    /// Take the last LSP hover `result` payload as JSON (`Hover | null`).
-    ///
-    /// Returns `nil` when there is no new hover result.
-    public func lspTakeLastHoverResultJSON() throws -> String? {
-        var has: UInt8 = 0
-        var ptr: UnsafeMutablePointer<CChar>?
-        let status = editor_core_ui_ffi_editor_ui_lsp_take_last_hover_json(handle, &has, &ptr)
-        try library.ensureStatus(status, context: "editor_ui_lsp_take_last_hover_json")
-        guard has != 0, let ptr else { return nil }
-        defer { editor_core_ui_ffi_string_free(ptr) }
-        return String(cString: ptr)
-    }
-
-    /// Request LSP go-to-definition (`textDocument/definition`) for a logical position.
-    ///
-    /// Notes:
-    /// - `logicalLine` / `logicalColumn` are 0-based and counted in Unicode scalars.
-    /// - This request is non-blocking; the result is delivered via internal LSP polling.
-    public func lspRequestDefinition(logicalLine: UInt32, logicalColumn: UInt32) throws -> UInt64 {
-        var out: UInt64 = 0
-        let status = editor_core_ui_ffi_editor_ui_lsp_request_definition(handle, logicalLine, logicalColumn, &out)
-        try library.ensureStatus(status, context: "editor_ui_lsp_request_definition")
-        return out
-    }
-
-    /// Take the last LSP definition `result` payload as JSON (`Definition | null`).
-    ///
-    /// Returns `nil` when there is no new definition result.
-    public func lspTakeLastDefinitionResultJSON() throws -> String? {
-        var has: UInt8 = 0
-        var ptr: UnsafeMutablePointer<CChar>?
-        let status = editor_core_ui_ffi_editor_ui_lsp_take_last_definition_json(handle, &has, &ptr)
-        try library.ensureStatus(status, context: "editor_ui_lsp_take_last_definition_json")
-        guard has != 0, let ptr else { return nil }
-        defer { editor_core_ui_ffi_string_free(ptr) }
-        return String(cString: ptr)
-    }
-
-    /// Format the current document via LSP (`textDocument/formatting`) and apply edits locally.
-    ///
-    /// Notes:
-    /// - This is a blocking request intended for explicit user actions (e.g. "Format Document").
-    /// - `formattingOptionsJSON` should match LSP `FormattingOptions`.
-    @discardableResult
-    public func lspFormatDocument(formattingOptionsJSON: String? = nil, timeoutMs: UInt32 = 2000) throws -> Bool {
-        var applied: UInt8 = 0
-        let status: Int32
-        if let formattingOptionsJSON {
-            status = formattingOptionsJSON.withCString { cstr in
-                editor_core_ui_ffi_editor_ui_lsp_format_document(handle, cstr, timeoutMs, &applied)
-            }
-        } else {
-            status = editor_core_ui_ffi_editor_ui_lsp_format_document(handle, nil, timeoutMs, &applied)
-        }
-        try library.ensureStatus(status, context: "editor_ui_lsp_format_document")
-        return applied != 0
-    }
-
-    /// Poll and apply any completed async processing (Tree-sitter highlighting/folding).
-    ///
-    /// This call is non-blocking: it never waits for background work.
-    ///
-    /// - Returns:
-    ///   - `applied`: whether new processing edits were applied.
-    ///   - `pending`: whether there is still work pending in the background.
-    public func pollProcessing() throws -> (applied: Bool, pending: Bool) {
-        var applied: UInt8 = 0
-        var pending: UInt8 = 0
-        let status = editor_core_ui_ffi_editor_ui_poll_processing(handle, &applied, &pending)
-        try library.ensureStatus(status, context: "editor_ui_poll_processing")
-        return (applied != 0, pending != 0)
-    }
-
-    public func treeSitterStyleId(forCapture captureName: String) throws -> UInt32 {
-        var out: UInt32 = 0
-        let status = captureName.withCString { cstr in
-            editor_core_ui_ffi_editor_ui_treesitter_style_id_for_capture(handle, cstr, &out)
-        }
-        try library.ensureStatus(status, context: "editor_ui_treesitter_style_id_for_capture")
-        return out
-    }
-
-    public func treeSitterCapture(forStyleId styleId: UInt32) throws -> String {
-        guard let ptr = editor_core_ui_ffi_editor_ui_treesitter_capture_for_style_id(handle, styleId) else {
-            throw EditorCoreUIFFIError.ffiStatus(code: .internal, context: "editor_ui_treesitter_capture_for_style_id", message: library.lastErrorMessageString())
-        }
-        defer { editor_core_ui_ffi_string_free(ptr) }
-        return String(cString: ptr)
-    }
-
-    public func lspApplyDiagnosticsJSON(_ publishDiagnosticsParamsJSON: String) throws {
-        let status = publishDiagnosticsParamsJSON.withCString { cstr in
-            editor_core_ui_ffi_editor_ui_lsp_apply_diagnostics_json(handle, cstr)
-        }
-        try library.ensureStatus(status, context: "editor_ui_lsp_apply_diagnostics_json")
-    }
-
-    public func lspApplyInlayHintsJSON(_ inlayHintsResultJSON: String) throws {
-        let status = inlayHintsResultJSON.withCString { cstr in
-            editor_core_ui_ffi_editor_ui_lsp_apply_inlay_hints_json(handle, cstr)
-        }
-        try library.ensureStatus(status, context: "editor_ui_lsp_apply_inlay_hints_json")
-    }
-
-    public func lspApplyCodeLensJSON(_ codeLensResultJSON: String) throws {
-        let status = codeLensResultJSON.withCString { cstr in
-            editor_core_ui_ffi_editor_ui_lsp_apply_code_lens_json(handle, cstr)
-        }
-        try library.ensureStatus(status, context: "editor_ui_lsp_apply_code_lens_json")
-    }
-
-    public func lspApplyDocumentLinksJSON(_ documentLinksResultJSON: String) throws {
-        let status = documentLinksResultJSON.withCString { cstr in
-            editor_core_ui_ffi_editor_ui_lsp_apply_document_links_json(handle, cstr)
-        }
-        try library.ensureStatus(status, context: "editor_ui_lsp_apply_document_links_json")
-    }
-
-    public func lspApplyDocumentHighlightsJSON(_ documentHighlightsResultJSON: String) throws {
-        let status = documentHighlightsResultJSON.withCString { cstr in
-            editor_core_ui_ffi_editor_ui_lsp_apply_document_highlights_json(handle, cstr)
-        }
-        try library.ensureStatus(status, context: "editor_ui_lsp_apply_document_highlights_json")
-    }
-
-    public func lspApplySemanticTokens(_ data: [UInt32]) throws {
-        let status = data.withUnsafeBufferPointer { ptr in
-            editor_core_ui_ffi_editor_ui_lsp_apply_semantic_tokens(handle, ptr.baseAddress, UInt32(ptr.count))
-        }
-        try library.ensureStatus(status, context: "editor_ui_lsp_apply_semantic_tokens")
-    }
-
-    public func setRenderMetrics(fontSize: Float, lineHeightPx: Float, cellWidthPx: Float, paddingXPx: Float, paddingYPx: Float) throws {
-        let status = editor_core_ui_ffi_editor_ui_set_render_metrics(handle, fontSize, lineHeightPx, cellWidthPx, paddingXPx, paddingYPx)
-        try library.ensureStatus(status, context: "editor_ui_set_render_metrics")
-    }
-
-    public func setTextVerticalAlign(_ align: TextVerticalAlign) throws {
-        let status = editor_core_ui_ffi_editor_ui_set_text_vertical_align(handle, align.rawValue)
-        try library.ensureStatus(status, context: "editor_ui_set_text_vertical_align")
-    }
-
-    /// Configure a font fallback list for rendering (comma-separated family names).
-    ///
-    /// Example: `"Menlo, PingFang SC, Apple Color Emoji"`.
-    ///
-    /// Notes:
-    /// - This affects glyph rasterization only; layout remains monospace-grid based.
-    public func setFontFamiliesCSV(_ families: String) throws {
-        let status = families.withCString { cstr in
-            editor_core_ui_ffi_editor_ui_set_font_families_csv(handle, cstr)
-        }
-        try library.ensureStatus(status, context: "editor_ui_set_font_families_csv")
-    }
-
-    /// Enable/disable font ligatures (e.g. Fira Code `->`, `!=`) in the Skia renderer.
-    ///
-    /// Notes:
-    /// - This is visual-only; the editor model and hit-testing remain monospace-grid based.
-    public func setFontLigaturesEnabled(_ enabled: Bool) throws {
-        let status = editor_core_ui_ffi_editor_ui_set_font_ligatures_enabled(handle, enabled ? 1 : 0)
-        try library.ensureStatus(status, context: "editor_ui_set_font_ligatures_enabled")
-    }
-
-    /// Set caret width in pixels (minimum 1px when visible).
-    ///
-    /// Notes:
-    /// - This is an absolute pixel width; if you want a "point" width, multiply by the view's backing scale.
-    public func setCaretWidthPx(_ widthPx: Float) throws {
-        let status = editor_core_ui_ffi_editor_ui_set_caret_width_px(handle, widthPx)
-        try library.ensureStatus(status, context: "editor_ui_set_caret_width_px")
-    }
-
-    /// Show/hide carets during rendering.
-    ///
-    /// Useful for UI-side caret blinking and focus handling.
-    public func setCaretVisible(_ visible: Bool) throws {
-        let status = editor_core_ui_ffi_editor_ui_set_caret_visible(handle, visible ? 1 : 0)
-        try library.ensureStatus(status, context: "editor_ui_set_caret_visible")
-    }
-
-    public func setIndentGuidesEnabled(_ enabled: Bool) throws {
-        let status = editor_core_ui_ffi_editor_ui_set_indent_guides_enabled(handle, enabled ? 1 : 0)
-        try library.ensureStatus(status, context: "editor_ui_set_indent_guides_enabled")
-    }
-
-    public func setWhitespaceRenderMode(_ mode: WhitespaceRenderMode) throws {
-        let status = editor_core_ui_ffi_editor_ui_set_whitespace_render_mode(handle, mode.rawValue)
-        try library.ensureStatus(status, context: "editor_ui_set_whitespace_render_mode")
-    }
-
-    public func setFoldMarkerStyle(_ style: FoldMarkerStyle) throws {
-        let status = editor_core_ui_ffi_editor_ui_set_fold_marker_style(handle, style.rawValue)
-        try library.ensureStatus(status, context: "editor_ui_set_fold_marker_style")
-    }
-
-    public func setTabWidth(_ widthCells: UInt32) throws {
-        let status = editor_core_ui_ffi_editor_ui_set_tab_width(handle, widthCells)
-        try library.ensureStatus(status, context: "editor_ui_set_tab_width")
-    }
-
-    public func setTabKeyBehavior(_ behavior: TabKeyBehavior) throws {
-        let status = editor_core_ui_ffi_editor_ui_set_tab_key_behavior(handle, behavior.rawValue)
-        try library.ensureStatus(status, context: "editor_ui_set_tab_key_behavior")
-    }
-
-    /// Enable/disable auto-pairs behavior for typed characters.
-    ///
-    /// When enabled, single-character typing is routed through auto-pairs rules (auto-close,
-    /// wrap selection, skip-over closing, delete-pair).
-    public func setAutoPairsEnabled(_ enabled: Bool) throws {
-        let status = editor_core_ui_ffi_editor_ui_set_auto_pairs_enabled(handle, enabled ? 1 : 0)
-        try library.ensureStatus(status, context: "editor_ui_set_auto_pairs_enabled")
-    }
-
-    /// Enable/disable bracket-match highlighting.
-    ///
-    /// When enabled, the UI wrapper updates `StyleLayerId::BRACKET_MATCHES` after cursor moves and
-    /// edits so the renderer can highlight matching delimiters.
-    public func setBracketMatchHighlightsEnabled(_ enabled: Bool) throws {
-        let status = editor_core_ui_ffi_editor_ui_set_bracket_match_highlights_enabled(handle, enabled ? 1 : 0)
-        try library.ensureStatus(status, context: "editor_ui_set_bracket_match_highlights_enabled")
-    }
-
-    /// Configure the ASCII word-boundary character set for editor-friendly "word" operations.
-    ///
-    /// This is similar in spirit to VSCode's `wordSeparators`.
-    ///
-    /// Notes:
-    /// - Only ASCII characters are configurable here; non-ASCII characters are always treated as boundaries.
-    /// - ASCII whitespace is always treated as a boundary.
-    public func setWordBoundaryAsciiBoundaryChars(_ boundaryChars: String) throws {
-        let status = boundaryChars.withCString { cstr in
-            editor_core_ui_ffi_editor_ui_set_word_boundary_ascii_boundary_chars(handle, cstr)
-        }
-        try library.ensureStatus(status, context: "editor_ui_set_word_boundary_ascii_boundary_chars")
-    }
-
-    /// Reset word-boundary configuration to the default (ASCII identifier-like words).
-    public func resetWordBoundaryDefaults() throws {
-        let status = editor_core_ui_ffi_editor_ui_reset_word_boundary_defaults(handle)
-        try library.ensureStatus(status, context: "editor_ui_reset_word_boundary_defaults")
-    }
-
-    public func setGutterWidthCells(_ widthCells: UInt32) throws {
-        let status = editor_core_ui_ffi_editor_ui_set_gutter_width_cells(handle, widthCells)
-        try library.ensureStatus(status, context: "editor_ui_set_gutter_width_cells")
-    }
-
-    public func logicalLineCount() throws -> UInt32 {
-        var out: UInt32 = 0
-        let status = editor_core_ui_ffi_editor_ui_get_logical_line_count(handle, &out)
-        try library.ensureStatus(status, context: "editor_ui_get_logical_line_count")
-        return out
-    }
-
-    public func gutterWidthCells() throws -> UInt32 {
-        var out: UInt32 = 0
-        let status = editor_core_ui_ffi_editor_ui_get_gutter_width_cells(handle, &out)
-        try library.ensureStatus(status, context: "editor_ui_get_gutter_width_cells")
-        return out
-    }
-
-    public func setViewportPx(widthPx: UInt32, heightPx: UInt32, scale: Float) throws {
-        let status = editor_core_ui_ffi_editor_ui_set_viewport_px(handle, widthPx, heightPx, scale)
-        try library.ensureStatus(status, context: "editor_ui_set_viewport_px")
-    }
-
-    public func scrollByRows(_ deltaRows: Int32) {
-        editor_core_ui_ffi_editor_ui_scroll_by_rows(handle, deltaRows)
-    }
-
-    /// Smooth-scroll by a pixel delta (positive = scroll down, reveal later lines).
-    public func scrollByPixels(_ deltaYPx: Float) {
-        editor_core_ui_ffi_editor_ui_scroll_by_pixels(handle, deltaYPx)
-    }
-
-    public func viewportState() throws -> EcuViewportState {
-        var ffi = CEditorCoreUIFFI.EcuViewportState(
-            width_cells: 0,
-            height_rows: 0,
-            has_height: 0,
-            scroll_top: 0,
-            sub_row_offset: 0,
-            overscan_rows: 0,
-            visible_start: 0,
-            visible_end: 0,
-            prefetch_start: 0,
-            prefetch_end: 0,
-            total_visual_lines: 0
-        )
-        let status = withUnsafeMutablePointer(to: &ffi) { ptr in
-            editor_core_ui_ffi_editor_ui_get_viewport_state(handle, ptr)
-        }
-        try library.ensureStatus(status, context: "editor_ui_get_viewport_state")
-        return EcuViewportState(ffi: ffi)
-    }
-
-    /// Set the smooth-scroll position directly.
-    ///
-    /// - Parameters:
-    ///   - topVisualRow: Top visual row anchor (after wrapping/folding).
-    ///   - subRowOffset: Normalized 0..=65535 fraction within the row.
-    public func setSmoothScrollState(topVisualRow: UInt32, subRowOffset: UInt32) {
-        editor_core_ui_ffi_editor_ui_set_smooth_scroll_state(handle, topVisualRow, subRowOffset)
-    }
-
-    /// Adjust scroll position to ensure the primary caret is visible (best-effort).
-    public func revealPrimaryCaret() throws {
-        let status = editor_core_ui_ffi_editor_ui_reveal_primary_caret(handle)
-        try library.ensureStatus(status, context: "editor_ui_reveal_primary_caret")
-    }
-
-    public func insertText(_ text: String) throws {
-        let status = text.withCString { cstr in
-            editor_core_ui_ffi_editor_ui_insert_text(handle, cstr)
-        }
-        try library.ensureStatus(status, context: "editor_ui_insert_text")
-    }
-
-    public func insertTab() throws {
-        let status = editor_core_ui_ffi_editor_ui_insert_tab(handle)
-        try library.ensureStatus(status, context: "editor_ui_insert_tab")
-    }
-
-    public func insertBacktab() throws {
-        let status = editor_core_ui_ffi_editor_ui_insert_backtab(handle)
-        try library.ensureStatus(status, context: "editor_ui_insert_backtab")
-    }
-
-    public func hasActiveSnippetSession() throws -> Bool {
-        var out: UInt8 = 0
-        let status = editor_core_ui_ffi_editor_ui_has_active_snippet_session(handle, &out)
-        try library.ensureStatus(status, context: "editor_ui_has_active_snippet_session")
-        return out != 0
-    }
-
-    public func backspace() throws {
-        let status = editor_core_ui_ffi_editor_ui_backspace(handle)
-        try library.ensureStatus(status, context: "editor_ui_backspace")
-    }
-
-    public func deleteForward() throws {
-        let status = editor_core_ui_ffi_editor_ui_delete_forward(handle)
-        try library.ensureStatus(status, context: "editor_ui_delete_forward")
-    }
-
-    public func deleteWordBack() throws {
-        let status = editor_core_ui_ffi_editor_ui_delete_word_back(handle)
-        try library.ensureStatus(status, context: "editor_ui_delete_word_back")
-    }
-
-    public func deleteWordForward() throws {
-        let status = editor_core_ui_ffi_editor_ui_delete_word_forward(handle)
-        try library.ensureStatus(status, context: "editor_ui_delete_word_forward")
-    }
-
-    public func addStyle(start: UInt32, end: UInt32, styleId: UInt32) throws {
-        let status = editor_core_ui_ffi_editor_ui_add_style(handle, start, end, styleId)
-        try library.ensureStatus(status, context: "editor_ui_add_style")
-    }
-
-    public func removeStyle(start: UInt32, end: UInt32, styleId: UInt32) throws {
-        let status = editor_core_ui_ffi_editor_ui_remove_style(handle, start, end, styleId)
-        try library.ensureStatus(status, context: "editor_ui_remove_style")
-    }
-
-    /// Replace match highlight ranges (e.g. search matches) as a dedicated overlay layer.
-    ///
-    /// Passing an empty array clears the layer.
-    public func setMatchHighlights(_ ranges: [EcuSelectionRange]) throws {
-        let ffi = ranges.map { $0.ffi }
-        let status = ffi.withUnsafeBufferPointer { ptr in
-            editor_core_ui_ffi_editor_ui_set_match_highlights(handle, ptr.baseAddress, UInt32(ptr.count))
-        }
-        try library.ensureStatus(status, context: "editor_ui_set_match_highlights")
-    }
-
-    /// Set an active search query and update match highlights accordingly.
-    ///
-    /// Returns the match count.
-    public func setSearchQuery(_ query: String, options: EcuSearchOptions = EcuSearchOptions()) throws -> UInt32 {
-        var count: UInt32 = 0
-        let status = query.withCString { cstr in
-            editor_core_ui_ffi_editor_ui_search_set_query(handle, cstr, options.ffiCaseSensitive, options.ffiWholeWord, options.ffiRegex, &count)
-        }
-        try library.ensureStatus(status, context: "editor_ui_search_set_query")
-        return count
-    }
-
-    public func clearSearchQuery() throws {
-        let status = editor_core_ui_ffi_editor_ui_search_clear(handle)
-        try library.ensureStatus(status, context: "editor_ui_search_clear")
-    }
-
-    /// Find the next occurrence of `query` and select it (primary selection only).
-    ///
-    /// Returns `true` when a match was found.
-    public func findNext(_ query: String, options: EcuSearchOptions = EcuSearchOptions()) throws -> Bool {
-        var found: UInt8 = 0
-        let status = query.withCString { cstr in
-            editor_core_ui_ffi_editor_ui_find_next(handle, cstr, options.ffiCaseSensitive, options.ffiWholeWord, options.ffiRegex, &found)
-        }
-        try library.ensureStatus(status, context: "editor_ui_find_next")
-        return found != 0
-    }
-
-    /// Find the previous occurrence of `query` and select it (primary selection only).
-    ///
-    /// Returns `true` when a match was found.
-    public func findPrev(_ query: String, options: EcuSearchOptions = EcuSearchOptions()) throws -> Bool {
-        var found: UInt8 = 0
-        let status = query.withCString { cstr in
-            editor_core_ui_ffi_editor_ui_find_prev(handle, cstr, options.ffiCaseSensitive, options.ffiWholeWord, options.ffiRegex, &found)
-        }
-        try library.ensureStatus(status, context: "editor_ui_find_prev")
-        return found != 0
-    }
-
-    /// Replace the current match (based on selection/caret) and return how many occurrences were replaced.
-    public func replaceCurrent(
-        query: String,
-        replacement: String,
-        options: EcuSearchOptions = EcuSearchOptions()
-    ) throws -> UInt32 {
-        var replaced: UInt32 = 0
-        let status = query.withCString { queryCStr in
-            replacement.withCString { replCStr in
-                editor_core_ui_ffi_editor_ui_replace_current(
-                    handle,
-                    queryCStr,
-                    replCStr,
-                    options.ffiCaseSensitive,
-                    options.ffiWholeWord,
-                    options.ffiRegex,
-                    &replaced
-                )
-            }
-        }
-        try library.ensureStatus(status, context: "editor_ui_replace_current")
-        return replaced
-    }
-
-    /// Replace all matches and return how many occurrences were replaced.
-    public func replaceAll(
-        query: String,
-        replacement: String,
-        options: EcuSearchOptions = EcuSearchOptions()
-    ) throws -> UInt32 {
-        var replaced: UInt32 = 0
-        let status = query.withCString { queryCStr in
-            replacement.withCString { replCStr in
-                editor_core_ui_ffi_editor_ui_replace_all(
-                    handle,
-                    queryCStr,
-                    replCStr,
-                    options.ffiCaseSensitive,
-                    options.ffiWholeWord,
-                    options.ffiRegex,
-                    &replaced
-                )
-            }
-        }
-        try library.ensureStatus(status, context: "editor_ui_replace_all")
-        return replaced
-    }
-
-    public func undo() throws {
-        let status = editor_core_ui_ffi_editor_ui_undo(handle)
-        try library.ensureStatus(status, context: "editor_ui_undo")
-    }
-
-    public func redo() throws {
-        let status = editor_core_ui_ffi_editor_ui_redo(handle)
-        try library.ensureStatus(status, context: "editor_ui_redo")
-    }
-
-    public func moveVisualByRows(_ deltaRows: Int32) throws {
-        let status = editor_core_ui_ffi_editor_ui_move_visual_by_rows(handle, deltaRows)
-        try library.ensureStatus(status, context: "editor_ui_move_visual_by_rows")
-    }
-
-    public func moveGraphemeLeft() throws {
-        let status = editor_core_ui_ffi_editor_ui_move_grapheme_left(handle)
-        try library.ensureStatus(status, context: "editor_ui_move_grapheme_left")
-    }
-
-    public func moveGraphemeRight() throws {
-        let status = editor_core_ui_ffi_editor_ui_move_grapheme_right(handle)
-        try library.ensureStatus(status, context: "editor_ui_move_grapheme_right")
-    }
-
-    public func moveWordLeft() throws {
-        let status = editor_core_ui_ffi_editor_ui_move_word_left(handle)
-        try library.ensureStatus(status, context: "editor_ui_move_word_left")
-    }
-
-    public func moveWordRight() throws {
-        let status = editor_core_ui_ffi_editor_ui_move_word_right(handle)
-        try library.ensureStatus(status, context: "editor_ui_move_word_right")
-    }
-
-    /// Jump the primary caret to the matching bracket (if any).
-    public func moveToMatchingBracket() throws {
-        let status = editor_core_ui_ffi_editor_ui_move_to_matching_bracket(handle)
-        try library.ensureStatus(status, context: "editor_ui_move_to_matching_bracket")
-    }
-
-    // MARK: - Bookmarks / marks / jump list
-
-    /// Toggle a bookmark at the current cursor line.
-    ///
-    /// Returns `true` if a bookmark was added, or `false` if an existing bookmark on that line was removed.
-    @discardableResult
-    public func toggleBookmarkAtCursorLine() throws -> Bool {
-        var out: UInt8 = 0
-        let status = editor_core_ui_ffi_editor_ui_toggle_bookmark_at_cursor_line(handle, &out)
-        try library.ensureStatus(status, context: "editor_ui_toggle_bookmark_at_cursor_line")
-        return out != 0
-    }
-
-    /// Move the caret to the next bookmark (wraps to the first bookmark).
-    public func goToNextBookmark() throws {
-        let status = editor_core_ui_ffi_editor_ui_goto_next_bookmark(handle)
-        try library.ensureStatus(status, context: "editor_ui_goto_next_bookmark")
-    }
-
-    /// Move the caret to the previous bookmark (wraps to the last bookmark).
-    public func goToPrevBookmark() throws {
-        let status = editor_core_ui_ffi_editor_ui_goto_prev_bookmark(handle)
-        try library.ensureStatus(status, context: "editor_ui_goto_prev_bookmark")
-    }
-
-    /// Set (or replace) a named mark at the current caret position.
-    public func setMarkAtCursor(_ name: String) throws {
-        let status: Int32 = name.withCString { cstr in
-            editor_core_ui_ffi_editor_ui_set_mark_at_cursor(handle, cstr)
-        }
-        try library.ensureStatus(status, context: "editor_ui_set_mark_at_cursor")
-    }
-
-    /// Move the caret to a named mark (if present).
-    public func goToMark(_ name: String) throws {
-        let status: Int32 = name.withCString { cstr in
-            editor_core_ui_ffi_editor_ui_goto_mark(handle, cstr)
-        }
-        try library.ensureStatus(status, context: "editor_ui_goto_mark")
-    }
-
-    /// Record the current caret location into the jump list.
-    public func pushJumpLocation() throws {
-        let status = editor_core_ui_ffi_editor_ui_push_jump_location(handle)
-        try library.ensureStatus(status, context: "editor_ui_push_jump_location")
-    }
-
-    /// Jump back in the jump list (no-op when empty).
-    public func jumpBack() throws {
-        let status = editor_core_ui_ffi_editor_ui_jump_back(handle)
-        try library.ensureStatus(status, context: "editor_ui_jump_back")
-    }
-
-    /// Jump forward in the jump list (no-op when empty).
-    public func jumpForward() throws {
-        let status = editor_core_ui_ffi_editor_ui_jump_forward(handle)
-        try library.ensureStatus(status, context: "editor_ui_jump_forward")
-    }
-
-    public func moveToVisualLineStart() throws {
-        let status = editor_core_ui_ffi_editor_ui_move_to_visual_line_start(handle)
-        try library.ensureStatus(status, context: "editor_ui_move_to_visual_line_start")
-    }
-
-    public func moveToVisualLineEnd() throws {
-        let status = editor_core_ui_ffi_editor_ui_move_to_visual_line_end(handle)
-        try library.ensureStatus(status, context: "editor_ui_move_to_visual_line_end")
-    }
-
-    public func moveToDocumentStart() throws {
-        let status = editor_core_ui_ffi_editor_ui_move_to_document_start(handle)
-        try library.ensureStatus(status, context: "editor_ui_move_to_document_start")
-    }
-
-    public func moveToDocumentEnd() throws {
-        let status = editor_core_ui_ffi_editor_ui_move_to_document_end(handle)
-        try library.ensureStatus(status, context: "editor_ui_move_to_document_end")
-    }
-
-    public func moveVisualByPages(_ deltaPages: Int32) throws {
-        let status = editor_core_ui_ffi_editor_ui_move_visual_by_pages(handle, deltaPages)
-        try library.ensureStatus(status, context: "editor_ui_move_visual_by_pages")
-    }
-
-    public func moveGraphemeLeftAndModifySelection() throws {
-        let status = editor_core_ui_ffi_editor_ui_move_grapheme_left_and_modify_selection(handle)
-        try library.ensureStatus(status, context: "editor_ui_move_grapheme_left_and_modify_selection")
-    }
-
-    public func moveGraphemeRightAndModifySelection() throws {
-        let status = editor_core_ui_ffi_editor_ui_move_grapheme_right_and_modify_selection(handle)
-        try library.ensureStatus(status, context: "editor_ui_move_grapheme_right_and_modify_selection")
-    }
-
-    public func moveWordLeftAndModifySelection() throws {
-        let status = editor_core_ui_ffi_editor_ui_move_word_left_and_modify_selection(handle)
-        try library.ensureStatus(status, context: "editor_ui_move_word_left_and_modify_selection")
-    }
-
-    public func moveWordRightAndModifySelection() throws {
-        let status = editor_core_ui_ffi_editor_ui_move_word_right_and_modify_selection(handle)
-        try library.ensureStatus(status, context: "editor_ui_move_word_right_and_modify_selection")
-    }
-
-    public func moveToVisualLineStartAndModifySelection() throws {
-        let status = editor_core_ui_ffi_editor_ui_move_to_visual_line_start_and_modify_selection(handle)
-        try library.ensureStatus(status, context: "editor_ui_move_to_visual_line_start_and_modify_selection")
-    }
-
-    public func moveToVisualLineEndAndModifySelection() throws {
-        let status = editor_core_ui_ffi_editor_ui_move_to_visual_line_end_and_modify_selection(handle)
-        try library.ensureStatus(status, context: "editor_ui_move_to_visual_line_end_and_modify_selection")
-    }
-
-    public func moveToDocumentStartAndModifySelection() throws {
-        let status = editor_core_ui_ffi_editor_ui_move_to_document_start_and_modify_selection(handle)
-        try library.ensureStatus(status, context: "editor_ui_move_to_document_start_and_modify_selection")
-    }
-
-    public func moveToDocumentEndAndModifySelection() throws {
-        let status = editor_core_ui_ffi_editor_ui_move_to_document_end_and_modify_selection(handle)
-        try library.ensureStatus(status, context: "editor_ui_move_to_document_end_and_modify_selection")
-    }
-
-    public func moveVisualByPagesAndModifySelection(_ deltaPages: Int32) throws {
-        let status = editor_core_ui_ffi_editor_ui_move_visual_by_pages_and_modify_selection(handle, deltaPages)
-        try library.ensureStatus(status, context: "editor_ui_move_visual_by_pages_and_modify_selection")
-    }
-
-    public func moveVisualByRowsAndModifySelection(_ deltaRows: Int32) throws {
-        let status = editor_core_ui_ffi_editor_ui_move_visual_by_rows_and_modify_selection(handle, deltaRows)
-        try library.ensureStatus(status, context: "editor_ui_move_visual_by_rows_and_modify_selection")
-    }
-
-    public func setMarkedText(_ text: String) throws {
-        let status = text.withCString { cstr in
-            editor_core_ui_ffi_editor_ui_set_marked_text(handle, cstr)
-        }
-        try library.ensureStatus(status, context: "editor_ui_set_marked_text")
-    }
-
-    /// Set IME marked text (preedit) with selection and optional replacement range.
-    ///
-    /// - `selectedStart/selectedLen`: selection within `text` (Unicode scalar offsets).
-    /// - `replaceStart/replaceLen`: document char-offset range to replace.
-    ///   Pass `UInt32.max` for `replaceStart` to let Rust pick (existing marked range / current selection).
-    public func setMarkedText(
-        _ text: String,
-        selectedStart: UInt32,
-        selectedLen: UInt32,
-        replaceStart: UInt32 = UInt32.max,
-        replaceLen: UInt32 = 0
-    ) throws {
-        let status = text.withCString { cstr in
-            editor_core_ui_ffi_editor_ui_set_marked_text_ex(handle, cstr, selectedStart, selectedLen, replaceStart, replaceLen)
-        }
-        try library.ensureStatus(status, context: "editor_ui_set_marked_text_ex")
-    }
-
-    public func unmarkText() {
-        editor_core_ui_ffi_editor_ui_unmark_text(handle)
-    }
-
-    public func commitText(_ text: String) throws {
-        let status = text.withCString { cstr in
-            editor_core_ui_ffi_editor_ui_commit_text(handle, cstr)
-        }
-        try library.ensureStatus(status, context: "editor_ui_commit_text")
-    }
-
-    /// Paste text from the clipboard.
-    ///
-    /// Notes:
-    /// - This always uses the bulk insert path in Rust (no auto-pairs), even for a single character,
-    ///   to match typical editor semantics for paste operations.
-    public func pasteText(_ text: String) throws {
-        let status = text.withCString { cstr in
-            editor_core_ui_ffi_editor_ui_paste_text(handle, cstr)
-        }
-        try library.ensureStatus(status, context: "editor_ui_paste_text")
-    }
-
-    public func mouseDown(xPx: Float, yPx: Float) throws {
-        try mouseDownEx(xPx: xPx, yPx: yPx, modifiers: 0, clickCount: 1)
-    }
-
-    /// Mouse down with modifier + click-count support.
-    ///
-    /// - Parameters:
-    ///   - modifiers: bit layout mirrors the C header (`editor_core_ui_ffi.h`)
-    ///   - clickCount: 1=single, 2=double, 3=triple, 4+=paragraph.
-    public func mouseDownEx(
-        xPx: Float,
-        yPx: Float,
-        modifiers: UInt32,
-        clickCount: UInt32
-    ) throws {
-        let status = editor_core_ui_ffi_editor_ui_mouse_down_ex(handle, xPx, yPx, modifiers, clickCount)
-        try library.ensureStatus(status, context: "editor_ui_mouse_down_ex")
-    }
-
-    public func mouseDragged(xPx: Float, yPx: Float) throws {
-        let status = editor_core_ui_ffi_editor_ui_mouse_dragged(handle, xPx, yPx)
-        try library.ensureStatus(status, context: "editor_ui_mouse_dragged")
-    }
-
-    public func mouseUp() {
-        editor_core_ui_ffi_editor_ui_mouse_up(handle)
-    }
-
-    public func renderRGBA(into buffer: inout [UInt8]) throws -> Int {
-        var required: UInt32 = 0
-        var status = editor_core_ui_ffi_editor_ui_render_rgba(handle, nil, 0, &required)
-        guard let code = EcuStatus(rawValue: status) else {
-            throw EditorCoreUIFFIError.ffiStatus(code: .internal, context: "editor_ui_render_rgba(size_query)", message: "unknown status \(status)")
-        }
-        guard code == .bufferTooSmall || code == .ok else {
-            throw EditorCoreUIFFIError.ffiStatus(code: code, context: "editor_ui_render_rgba(size_query)", message: library.lastErrorMessageString())
-        }
-
-        let requiredCount = Int(required)
-        if buffer.count != requiredCount {
-            buffer = Array(repeating: 0, count: requiredCount)
-        }
-
-        status = buffer.withUnsafeMutableBufferPointer { ptr in
-            editor_core_ui_ffi_editor_ui_render_rgba(handle, ptr.baseAddress, UInt32(ptr.count), &required)
-        }
-        try library.ensureStatus(status, context: "editor_ui_render_rgba")
-        return requiredCount
-    }
-
-    // MARK: - Metal / GPU rendering (macOS)
-
-    public func enableMetal(device: MTLDevice, commandQueue: MTLCommandQueue) throws {
-        let devicePtr = Unmanaged.passUnretained(device).toOpaque()
-        let queuePtr = Unmanaged.passUnretained(commandQueue).toOpaque()
-        let status = editor_core_ui_ffi_editor_ui_enable_metal(handle, devicePtr, queuePtr)
-        try library.ensureStatus(status, context: "editor_ui_enable_metal")
-    }
-
-    public func renderMetal(into texture: MTLTexture) throws {
-        let texPtr = Unmanaged.passUnretained(texture).toOpaque()
-        let status = editor_core_ui_ffi_editor_ui_render_metal(handle, texPtr)
-        try library.ensureStatus(status, context: "editor_ui_render_metal")
-    }
-
-    public func text() throws -> String {
-        guard let ptr = editor_core_ui_ffi_editor_ui_get_text(handle) else {
-            throw EditorCoreUIFFIError.ffiStatus(code: .internal, context: "editor_ui_get_text", message: library.lastErrorMessageString())
-        }
-        defer { editor_core_ui_ffi_string_free(ptr) }
-        return String(cString: ptr)
-    }
-
-    public func isModified() throws -> Bool {
-        var out: UInt8 = 0
-        let status = editor_core_ui_ffi_editor_ui_is_modified(handle, &out)
-        try library.ensureStatus(status, context: "editor_ui_is_modified")
-        return out != 0
-    }
-
-    public func markSaved() throws {
-        let status = editor_core_ui_ffi_editor_ui_mark_saved(handle)
-        try library.ensureStatus(status, context: "editor_ui_mark_saved")
-    }
-
-    /// Get selected text (primary + secondary selections), joined with `\\n`.
-    public func selectedText() throws -> String {
-        guard let ptr = editor_core_ui_ffi_editor_ui_get_selected_text(handle) else {
-            throw EditorCoreUIFFIError.ffiStatus(code: .internal, context: "editor_ui_get_selected_text", message: library.lastErrorMessageString())
-        }
-        defer { editor_core_ui_ffi_string_free(ptr) }
-        return String(cString: ptr)
-    }
-
-    public func minimapJSON(startVisualRow: UInt32, rowCount: UInt32) throws -> String {
-        guard let ptr = editor_core_ui_ffi_editor_ui_minimap_json(handle, startVisualRow, rowCount) else {
-            throw EditorCoreUIFFIError.ffiStatus(code: .internal, context: "editor_ui_minimap_json", message: library.lastErrorMessageString())
-        }
-        defer { editor_core_ui_ffi_string_free(ptr) }
-        return String(cString: ptr)
-    }
-
-    public func selectionOffsets() throws -> (start: UInt32, end: UInt32) {
-        var start: UInt32 = 0
-        var end: UInt32 = 0
-        let status = editor_core_ui_ffi_editor_ui_get_selection_offsets(handle, &start, &end)
-        try library.ensureStatus(status, context: "editor_ui_get_selection_offsets")
-        return (start, end)
-    }
-
-    /// Delete only non-empty selections (primary + secondary), keeping empty carets intact.
-    ///
-    /// Intended for clipboard "cut" behavior.
-    public func deleteSelectionsOnly() throws {
-        let status = editor_core_ui_ffi_editor_ui_delete_selections_only(handle)
-        try library.ensureStatus(status, context: "editor_ui_delete_selections_only")
-    }
-
-    public func selections() throws -> (ranges: [EcuSelectionRange], primaryIndex: UInt32) {
-        var required: UInt32 = 0
-        var primary: UInt32 = 0
-        var status = editor_core_ui_ffi_editor_ui_get_selections(handle, nil, 0, &required, &primary)
-        guard let code = EcuStatus(rawValue: status) else {
-            throw EditorCoreUIFFIError.ffiStatus(code: .internal, context: "editor_ui_get_selections(size_query)", message: "unknown status \(status)")
-        }
-        guard code == .bufferTooSmall || code == .ok else {
-            throw EditorCoreUIFFIError.ffiStatus(code: code, context: "editor_ui_get_selections(size_query)", message: library.lastErrorMessageString())
-        }
-
-        var ffiRanges = Array(repeating: CEditorCoreUIFFI.EcuSelectionRange(start: 0, end: 0), count: Int(required))
-        status = ffiRanges.withUnsafeMutableBufferPointer { ptr in
-            editor_core_ui_ffi_editor_ui_get_selections(handle, ptr.baseAddress, UInt32(ptr.count), &required, &primary)
-        }
-        try library.ensureStatus(status, context: "editor_ui_get_selections")
-        let ranges = ffiRanges.map { EcuSelectionRange(start: $0.start, end: $0.end) }
-        return (ranges, primary)
-    }
-
-    public func setSelections(_ ranges: [EcuSelectionRange], primaryIndex: UInt32) throws {
-        let ffi = ranges.map { $0.ffi }
-        let status = ffi.withUnsafeBufferPointer { ptr in
-            editor_core_ui_ffi_editor_ui_set_selections(handle, ptr.baseAddress, UInt32(ptr.count), primaryIndex)
-        }
-        try library.ensureStatus(status, context: "editor_ui_set_selections")
-    }
-
-    public func setRectSelection(anchorOffset: UInt32, activeOffset: UInt32) throws {
-        let status = editor_core_ui_ffi_editor_ui_set_rect_selection(handle, anchorOffset, activeOffset)
-        try library.ensureStatus(status, context: "editor_ui_set_rect_selection")
-    }
-
-    public func clearSecondarySelections() throws {
-        let status = editor_core_ui_ffi_editor_ui_clear_secondary_selections(handle)
-        try library.ensureStatus(status, context: "editor_ui_clear_secondary_selections")
-    }
-
-    public func addCursorAbove() throws {
-        let status = editor_core_ui_ffi_editor_ui_add_cursor_above(handle)
-        try library.ensureStatus(status, context: "editor_ui_add_cursor_above")
-    }
-
-    public func addCursorBelow() throws {
-        let status = editor_core_ui_ffi_editor_ui_add_cursor_below(handle)
-        try library.ensureStatus(status, context: "editor_ui_add_cursor_below")
-    }
-
-    public func addNextOccurrence() throws {
-        let status = editor_core_ui_ffi_editor_ui_add_next_occurrence(handle)
-        try library.ensureStatus(status, context: "editor_ui_add_next_occurrence")
-    }
-
-    public func addAllOccurrences() throws {
-        let status = editor_core_ui_ffi_editor_ui_add_all_occurrences(handle)
-        try library.ensureStatus(status, context: "editor_ui_add_all_occurrences")
-    }
-
-    public func selectWord() throws {
-        let status = editor_core_ui_ffi_editor_ui_select_word(handle)
-        try library.ensureStatus(status, context: "editor_ui_select_word")
-    }
-
-    public func selectLine() throws {
-        let status = editor_core_ui_ffi_editor_ui_select_line(handle)
-        try library.ensureStatus(status, context: "editor_ui_select_line")
-    }
-
-    public func setLineSelection(anchorOffset: UInt32, activeOffset: UInt32) throws {
-        let status = editor_core_ui_ffi_editor_ui_set_line_selection_offsets(handle, anchorOffset, activeOffset)
-        try library.ensureStatus(status, context: "editor_ui_set_line_selection_offsets")
-    }
-
-    public func selectParagraph(atCharOffset charOffset: UInt32) throws {
-        let status = editor_core_ui_ffi_editor_ui_select_paragraph_at_char_offset(handle, charOffset)
-        try library.ensureStatus(status, context: "editor_ui_select_paragraph_at_char_offset")
-    }
-
-    public func setParagraphSelection(anchorOffset: UInt32, activeOffset: UInt32) throws {
-        let status = editor_core_ui_ffi_editor_ui_set_paragraph_selection_offsets(handle, anchorOffset, activeOffset)
-        try library.ensureStatus(status, context: "editor_ui_set_paragraph_selection_offsets")
-    }
-
-    public func expandSelection() throws {
-        let status = editor_core_ui_ffi_editor_ui_expand_selection(handle)
-        try library.ensureStatus(status, context: "editor_ui_expand_selection")
-    }
-
-    public func expandSelectionBy(unit: EcuExpandSelectionUnit, count: UInt32, direction: EcuExpandSelectionDirection) throws {
-        let status = editor_core_ui_ffi_editor_ui_expand_selection_by(handle, unit.rawValue, count, direction.rawValue)
-        try library.ensureStatus(status, context: "editor_ui_expand_selection_by")
-    }
-
-    public func addCaret(atCharOffset charOffset: UInt32, makePrimary: Bool) throws {
-        let status = editor_core_ui_ffi_editor_ui_add_caret_at_char_offset(handle, charOffset, makePrimary ? 1 : 0)
-        try library.ensureStatus(status, context: "editor_ui_add_caret_at_char_offset")
-    }
-
-    public func markedRange() throws -> (hasMarked: Bool, start: UInt32, len: UInt32) {
-        var has: UInt8 = 0
-        var start: UInt32 = 0
-        var len: UInt32 = 0
-        let status = editor_core_ui_ffi_editor_ui_get_marked_range(handle, &has, &start, &len)
-        try library.ensureStatus(status, context: "editor_ui_get_marked_range")
-        return (has != 0, start, len)
-    }
-
-    public func charOffsetToLogicalPosition(offset: UInt32) throws -> (line: UInt32, column: UInt32) {
-        var line: UInt32 = 0
-        var col: UInt32 = 0
-        let status = editor_core_ui_ffi_editor_ui_char_offset_to_logical_position(handle, offset, &line, &col)
-        try library.ensureStatus(status, context: "editor_ui_char_offset_to_logical_position")
-        return (line, col)
-    }
-
-    public func charOffsetToViewPoint(offset: UInt32) throws -> (xPx: Float, yPx: Float, lineHeightPx: Float) {
-        var x: Float = 0
-        var y: Float = 0
-        var lineH: Float = 0
-        let status = editor_core_ui_ffi_editor_ui_char_offset_to_view_point(handle, offset, &x, &y, &lineH)
-        try library.ensureStatus(status, context: "editor_ui_char_offset_to_view_point")
-        return (x, y, lineH)
-    }
-
-    public func viewPointToCharOffset(xPx: Float, yPx: Float) throws -> UInt32 {
-        var offset: UInt32 = 0
-        let status = editor_core_ui_ffi_editor_ui_view_point_to_char_offset(handle, xPx, yPx, &offset)
-        try library.ensureStatus(status, context: "editor_ui_view_point_to_char_offset")
-        return offset
-    }
-
-    /// Hit-test a view point and return the raw LSP `DocumentLink` JSON payload (if present).
-    public func documentLinkJSONAtViewPoint(xPx: Float, yPx: Float) throws -> String? {
-        var has: UInt8 = 0
-        var ptr: UnsafeMutablePointer<CChar>?
-        let status = editor_core_ui_ffi_editor_ui_get_document_link_json_at_view_point(handle, xPx, yPx, &has, &ptr)
-        try library.ensureStatus(status, context: "editor_ui_get_document_link_json_at_view_point")
-        guard has != 0, let ptr else {
-            return nil
-        }
-        defer { editor_core_ui_ffi_string_free(ptr) }
-        return String(cString: ptr)
-    }
 }

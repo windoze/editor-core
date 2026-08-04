@@ -2,6 +2,23 @@ import AppKit
 import EditorCoreUIFFI
 import Foundation
 
+public struct EditorCoreSkiaMinimapMarker: Equatable {
+    public enum Kind: Equatable {
+        case error
+        case warning
+        case information
+        case hint
+    }
+
+    public var logicalLine: UInt32
+    public var kind: Kind
+
+    public init(logicalLine: UInt32, kind: Kind) {
+        self.logicalLine = logicalLine
+        self.kind = kind
+    }
+}
+
 @MainActor
 public final class EditorCoreSkiaMinimapView: NSView {
     public let editorView: EditorCoreSkiaView
@@ -33,6 +50,10 @@ public final class EditorCoreSkiaMinimapView: NSView {
     /// Background color for the minimap area (including unused space when the content is shorter
     /// than the minimap height).
     public var backgroundColor: NSColor = .windowBackgroundColor
+
+    public var diagnosticMarkers: [EditorCoreSkiaMinimapMarker] = [] {
+        didSet { needsDisplay = true }
+    }
 
     private var viewportObserverToken: EditorCoreSkiaView.ViewportStateObserverToken?
     private var refreshPending: Bool = false
@@ -118,6 +139,14 @@ public final class EditorCoreSkiaMinimapView: NSView {
             ctx.setFillColor(NSColor.labelColor.withAlphaComponent(0.05).cgColor)
             ctx.fill(CGRect(x: 0, y: 0, width: bounds.width, height: bounds.height))
         }
+
+        drawDiagnosticMarkers(
+            ctx: ctx,
+            grid: cachedGrid,
+            lineHeightPx: lineHeightPx,
+            contentHeightPx: contentHeightPx,
+            widthPx: widthPx
+        )
 
         // Viewport indicator (including smooth-scroll sub-row offset).
         let rect = viewportIndicatorRect(
@@ -227,9 +256,24 @@ public final class EditorCoreSkiaMinimapView: NSView {
     // MARK: - Testing hooks
 
     var _cachedGridForTesting: MinimapGridDTO? { cachedGrid }
+    public var _diagnosticMarkersForTesting: [EditorCoreSkiaMinimapMarker] { diagnosticMarkers }
 
     static func _minimapBarWidthPxForTesting(viewportWidthCells: UInt32, lineTotalCells: UInt32, widthPx: CGFloat) -> CGFloat {
         minimapBarWidthPx(viewportWidthCells: viewportWidthCells, lineTotalCells: lineTotalCells, widthPx: widthPx)
+    }
+
+    func _diagnosticMarkerRectsForTesting() throws -> [CGRect] {
+        let vp = try editor.viewportState()
+        let totalRows = CGFloat(max(1, vp.totalVisualLines))
+        let heightPx = max(1, bounds.height)
+        let widthPx = max(1, bounds.width)
+        let (lineHeightPx, contentHeightPx) = minimapContentMetrics(totalRows: totalRows, heightPx: heightPx)
+        return diagnosticMarkerRects(
+            grid: cachedGrid,
+            lineHeightPx: lineHeightPx,
+            contentHeightPx: contentHeightPx,
+            widthPx: widthPx
+        )
     }
 
     func _refreshNowForTesting() {
@@ -286,6 +330,53 @@ public final class EditorCoreSkiaMinimapView: NSView {
         let y = min(max(0, yTop), max(0, contentHeightPx - h))
 
         return CGRect(x: 0, y: y, width: bounds.width, height: h)
+    }
+
+    private func drawDiagnosticMarkers(
+        ctx: CGContext,
+        grid: MinimapGridDTO?,
+        lineHeightPx: CGFloat,
+        contentHeightPx: CGFloat,
+        widthPx: CGFloat
+    ) {
+        for (marker, rect) in zip(
+            diagnosticMarkers,
+            diagnosticMarkerRects(
+                grid: grid,
+                lineHeightPx: lineHeightPx,
+                contentHeightPx: contentHeightPx,
+                widthPx: widthPx
+            )
+        ) {
+            ctx.setFillColor(marker.kind.minimapColor.cgColor)
+            ctx.fill(rect)
+        }
+    }
+
+    private func diagnosticMarkerRects(
+        grid: MinimapGridDTO?,
+        lineHeightPx: CGFloat,
+        contentHeightPx: CGFloat,
+        widthPx: CGFloat
+    ) -> [CGRect] {
+        guard diagnosticMarkers.isEmpty == false else { return [] }
+        guard lineHeightPx.isFinite, lineHeightPx > 0, contentHeightPx.isFinite, contentHeightPx > 0 else {
+            return []
+        }
+
+        let markerWidth = max(3, min(6, widthPx * 0.08))
+        let markerHeight = max(2, min(5, lineHeightPx * 2))
+        return diagnosticMarkers.compactMap { marker in
+            let visualRow = grid?.firstVisualRow(forLogicalLine: marker.logicalLine) ?? marker.logicalLine
+            let y = floor(CGFloat(visualRow) * lineHeightPx).clamped(to: 0...max(0, contentHeightPx - markerHeight))
+            guard y.isFinite else { return nil }
+            return CGRect(
+                x: max(0, widthPx - markerWidth),
+                y: y,
+                width: markerWidth,
+                height: markerHeight
+            )
+        }
     }
 
     private func applyViewportDrag(at point: NSPoint, vp: EcuViewportState) {
@@ -368,6 +459,28 @@ private extension MinimapGridDTO {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         return try decoder.decode(MinimapGridDTO.self, from: data)
+    }
+
+    func firstVisualRow(forLogicalLine logicalLine: UInt32) -> UInt32? {
+        guard let index = lines.firstIndex(where: { $0.logicalLineIndex == logicalLine }) else {
+            return nil
+        }
+        return startVisualRow + UInt32(index)
+    }
+}
+
+private extension EditorCoreSkiaMinimapMarker.Kind {
+    var minimapColor: NSColor {
+        switch self {
+        case .error:
+            return NSColor.systemRed.withAlphaComponent(0.9)
+        case .warning:
+            return NSColor.systemOrange.withAlphaComponent(0.9)
+        case .information:
+            return NSColor.systemBlue.withAlphaComponent(0.85)
+        case .hint:
+            return NSColor.systemGray.withAlphaComponent(0.85)
+        }
     }
 }
 

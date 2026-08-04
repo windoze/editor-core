@@ -1,0 +1,1967 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "id": "editor-chrome-light-unicode",
+      "description": "Light editor chrome with an opened Unicode document and the find bar visible.",
+      "fixture": "VisualFixtures/editor-chrome-light-unicode.txt",
+      "baseline": "VisualBaselines/editor-chrome-light-unicode.png",
+      "artifactName": "editor-chrome-light-unicode",
+      "theme": "defaultLight",
+      "window": {
+        "width": 640,
+        "height": 420
+      },
+      "scale": 1.0,
+      "showFindBar": true,
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "editor-chrome-light-replace",
+      "description": "Light editor chrome with find and replace controls visible.",
+      "fixture": "VisualFixtures/editor-chrome-light-unicode.txt",
+      "baseline": "VisualBaselines/editor-chrome-light-replace.png",
+      "artifactName": "editor-chrome-light-replace",
+      "theme": "defaultLight",
+      "window": {
+        "width": 720,
+        "height": 460
+      },
+      "scale": 1.0,
+      "showFindBar": true,
+      "showReplaceBar": true,
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "editor-chrome-dark-tabs",
+      "description": "Dark editor chrome with two pinned tabs and the second tab active.",
+      "fixture": "VisualFixtures/editor-chrome-dark-primary.txt",
+      "additionalFixtures": [
+        "VisualFixtures/editor-chrome-dark-secondary.txt"
+      ],
+      "activeFixture": "VisualFixtures/editor-chrome-dark-secondary.txt",
+      "baseline": "VisualBaselines/editor-chrome-dark-tabs.png",
+      "artifactName": "editor-chrome-dark-tabs",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 760,
+        "height": 480
+      },
+      "scale": 1.0,
+      "showFindBar": false,
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "editor-chrome-light-split-minimap",
+      "description": "Light editor chrome with a split pane and long lines that exercise minimap and horizontal clipping.",
+      "fixture": "VisualFixtures/split-minimap-long-lines.txt",
+      "baseline": "VisualBaselines/editor-chrome-light-split-minimap.png",
+      "artifactName": "editor-chrome-light-split-minimap",
+      "theme": "defaultLight",
+      "window": {
+        "width": 820,
+        "height": 500
+      },
+      "scale": 1.0,
+      "showFindBar": false,
+      "splitActiveTabRight": true,
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "editor-chrome-dark-semantic-diagnostics-folding",
+      "description": "Dark editor chrome with semantic tokens, a collapsed folding range, gutter diagnostics, and minimap markers.",
+      "fixture": "VisualFixtures/semantic-diagnostics-folding.rs",
+      "baseline": "VisualBaselines/editor-chrome-dark-semantic-diagnostics-folding.png",
+      "artifactName": "editor-chrome-dark-semantic-diagnostics-folding",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 820,
+        "height": 520
+      },
+      "scale": 1.0,
+      "foldingRanges": [
+        {
+          "startLine": 0,
+          "endLine": 6,
+          "kind": "region"
+        },
+        {
+          "startLine": 2,
+          "endLine": 4,
+          "kind": "region",
+          "collapsedText": "if status ... "
+        }
+      ],
+      "collapsedFolds": [
+        {
+          "startLine": 2,
+          "endLine": 4
+        }
+      ],
+      "semanticTokens": {
+        "resultId": "visual-semantic-1",
+        "data": [
+          0, 0, 2, 15, 0,
+          0, 3, 13, 12, 0,
+          0, 14, 5, 7, 0,
+          0, 7, 3, 1, 0,
+          0, 8, 6, 1, 0,
+          1, 4, 3, 15, 0,
+          0, 4, 6, 8, 0,
+          0, 9, 14, 12, 0,
+          0, 15, 5, 7, 0,
+          1, 4, 2, 15, 0,
+          0, 3, 6, 8, 0,
+          0, 7, 8, 13, 0,
+          1, 8, 6, 15, 0,
+          0, 7, 7, 18, 0,
+          2, 4, 6, 8, 0
+        ]
+      },
+      "diagnosticMarkers": [
+        {
+          "logicalLine": 1,
+          "charOffset": 8,
+          "severity": "warning",
+          "source": "active"
+        },
+        {
+          "logicalLine": 2,
+          "charOffset": 7,
+          "severity": "error",
+          "source": "active"
+        },
+        {
+          "logicalLine": 5,
+          "charOffset": 4,
+          "severity": "hint",
+          "source": "workspace"
+        }
+      ],
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "editor-chrome-light-font-multicursor",
+      "description": "Light editor chrome with a fixed font matrix and multiple selected occurrences.",
+      "fixture": "VisualFixtures/font-multicursor.txt",
+      "baseline": "VisualBaselines/editor-chrome-light-font-multicursor.png",
+      "artifactName": "editor-chrome-light-font-multicursor",
+      "theme": "defaultLight",
+      "window": {
+        "width": 760,
+        "height": 460
+      },
+      "scale": 1.0,
+      "fontFamilies": [
+        "Menlo",
+        "SF Mono",
+        "Monaco"
+      ],
+      "fontSizePoints": 16,
+      "selectionRanges": [
+        {
+          "start": 0,
+          "end": 13
+        },
+        {
+          "start": 17,
+          "end": 30
+        },
+        {
+          "start": 34,
+          "end": 47
+        }
+      ],
+      "primarySelectionIndex": 2,
+      "showFindBar": true,
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "editor-chrome-dark-narrow-minimap-overlays",
+      "description": "Dark narrow editor chrome with find bar, collapsed fold, selections, diagnostics, and minimap markers.",
+      "fixture": "VisualFixtures/overlay-narrow-diagnostics.rs",
+      "baseline": "VisualBaselines/editor-chrome-dark-narrow-minimap-overlays.png",
+      "artifactName": "editor-chrome-dark-narrow-minimap-overlays",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 608,
+        "height": 380
+      },
+      "scale": 1.0,
+      "showFindBar": true,
+      "foldingRanges": [
+        {
+          "startLine": 2,
+          "endLine": 11,
+          "kind": "region"
+        },
+        {
+          "startLine": 5,
+          "endLine": 8,
+          "kind": "region",
+          "collapsedText": "if index ... "
+        }
+      ],
+      "collapsedFolds": [
+        {
+          "startLine": 5,
+          "endLine": 8
+        }
+      ],
+      "selectionRanges": [
+        {
+          "start": 0,
+          "end": 5
+        },
+        {
+          "start": 21,
+          "end": 26
+        }
+      ],
+      "primarySelectionIndex": 1,
+      "diagnosticMarkers": [
+        {
+          "logicalLine": 0,
+          "charOffset": 0,
+          "severity": "warning",
+          "source": "active"
+        },
+        {
+          "logicalLine": 5,
+          "charOffset": 148,
+          "severity": "error",
+          "source": "active"
+        },
+        {
+          "logicalLine": 14,
+          "charOffset": 305,
+          "severity": "information",
+          "source": "workspace"
+        }
+      ],
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "editor-chrome-dark-long-file-minimap-overlays",
+      "description": "Dark editor chrome with a long file, collapsed fold, multi-cursor selections, diagnostics, and dense minimap projection.",
+      "fixture": "VisualFixtures/long-file-minimap-overlays.txt",
+      "baseline": "VisualBaselines/editor-chrome-dark-long-file-minimap-overlays.png",
+      "artifactName": "editor-chrome-dark-long-file-minimap-overlays",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 760,
+        "height": 420
+      },
+      "scale": 1.0,
+      "showFindBar": true,
+      "foldingRanges": [
+        {
+          "startLine": 10,
+          "endLine": 28,
+          "kind": "region",
+          "collapsedText": "fold block ... "
+        }
+      ],
+      "collapsedFolds": [
+        {
+          "startLine": 10,
+          "endLine": 28
+        }
+      ],
+      "selectionRanges": [
+        {
+          "start": 0,
+          "end": 3
+        },
+        {
+          "start": 89,
+          "end": 96
+        }
+      ],
+      "primarySelectionIndex": 1,
+      "diagnosticMarkers": [
+        {
+          "logicalLine": 0,
+          "charOffset": 0,
+          "severity": "warning",
+          "source": "active"
+        }
+      ],
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "editor-chrome-light-wide-split-overlays",
+      "description": "Light wide editor chrome with split panes, long-line minimap density, multi-selections, and diagnostics.",
+      "fixture": "VisualFixtures/wide-split-overlay-primary.txt",
+      "additionalFixtures": [
+        "VisualFixtures/wide-split-overlay-secondary.txt"
+      ],
+      "activeFixture": "VisualFixtures/wide-split-overlay-secondary.txt",
+      "baseline": "VisualBaselines/editor-chrome-light-wide-split-overlays.png",
+      "artifactName": "editor-chrome-light-wide-split-overlays",
+      "theme": "defaultLight",
+      "window": {
+        "width": 980,
+        "height": 540
+      },
+      "scale": 1.0,
+      "splitActiveTabRight": true,
+      "fontFamilies": [
+        "Menlo",
+        "SF Mono",
+        "Monaco"
+      ],
+      "fontSizePoints": 15,
+      "selectionRanges": [
+        {
+          "start": 0,
+          "end": 5
+        },
+        {
+          "start": 19,
+          "end": 24
+        },
+        {
+          "start": 38,
+          "end": 43
+        }
+      ],
+      "primarySelectionIndex": 2,
+      "diagnosticMarkers": [
+        {
+          "logicalLine": 0,
+          "charOffset": 0,
+          "severity": "hint",
+          "source": "active"
+        },
+        {
+          "logicalLine": 5,
+          "charOffset": 290,
+          "severity": "warning",
+          "source": "workspace"
+        },
+        {
+          "logicalLine": 7,
+          "charOffset": 492,
+          "severity": "error",
+          "source": "active"
+        }
+      ],
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "floating-symbol-results-dark",
+      "description": "Dark LSP symbol results floating panel with grouped document symbols.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/floating-symbol-results-dark.png",
+      "artifactName": "floating-symbol-results-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 820,
+        "height": 520
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.LSP.SymbolResults.Panel",
+        "width": 640,
+        "height": 360
+      },
+      "lspSymbolResults": {
+        "placeholder": "Filter document symbols...",
+        "symbols": [
+          {
+            "name": "PaletteFixture",
+            "kindLabel": "Struct",
+            "line": 0,
+            "utf16Character": 7
+          },
+          {
+            "name": "primaryValue",
+            "kindLabel": "Property",
+            "containerName": "PaletteFixture",
+            "line": 1,
+            "utf16Character": 8,
+            "depth": 1
+          },
+          {
+            "name": "renderLine",
+            "detail": "() -> String",
+            "kindLabel": "Method",
+            "containerName": "PaletteFixture",
+            "line": 3,
+            "utf16Character": 9,
+            "depth": 1
+          }
+        ]
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "floating-completion-popup-dark",
+      "description": "Dark completion popup with detail and documentation preview.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/floating-completion-popup-dark.png",
+      "artifactName": "floating-completion-popup-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 760,
+        "height": 420
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.Completion.Panel",
+        "width": 680,
+        "height": 83
+      },
+      "selectionRanges": [
+        {
+          "start": 3,
+          "end": 3
+        }
+      ],
+      "completionPopup": {
+        "items": [
+          {
+            "label": "print",
+            "kind": 3,
+            "detail": "(value: Any)",
+            "documentation": "Write a value to the debug console."
+          },
+          {
+            "label": "primaryValue",
+            "kind": 10,
+            "detail": "Int"
+          },
+          {
+            "label": "PaletteFixture",
+            "kind": 7,
+            "detail": "struct"
+          }
+        ]
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "floating-location-results-dark",
+      "description": "Dark LSP location results floating panel with multiple reference targets.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/floating-location-results-dark.png",
+      "artifactName": "floating-location-results-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 820,
+        "height": 520
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.LSP.LocationResults.Panel",
+        "width": 640,
+        "height": 360
+      },
+      "lspLocationResults": {
+        "kind": "references",
+        "targets": [
+          {
+            "line": 0,
+            "utf16Character": 7,
+            "length": 14
+          },
+          {
+            "line": 1,
+            "utf16Character": 8,
+            "length": 12
+          },
+          {
+            "line": 4,
+            "utf16Character": 8,
+            "length": 5
+          }
+        ]
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "floating-code-actions-dark",
+      "description": "Dark code actions floating panel with quickfix and refactor actions.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/floating-code-actions-dark.png",
+      "artifactName": "floating-code-actions-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 820,
+        "height": 520
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.LSP.CodeActions.Panel",
+        "width": 640,
+        "height": 360
+      },
+      "codeActionResults": {
+        "items": [
+          {
+            "title": "Fix unresolved print import",
+            "kind": "quickfix",
+            "isPreferred": true
+          },
+          {
+            "title": "Extract renderLine helper",
+            "kind": "refactor.extract"
+          },
+          {
+            "title": "Organize imports",
+            "kind": "source.organizeImports"
+          }
+        ]
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "persistent-locations-panel-dark",
+      "description": "Dark persistent Locations panel with metadata and multiple references.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/persistent-locations-panel-dark.png",
+      "artifactName": "persistent-locations-panel-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 860,
+        "height": 540
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.LSP.LocationPanel.Panel",
+        "width": 700,
+        "height": 360
+      },
+      "lspLocationResults": {
+        "kind": "references",
+        "presentation": "persistentPanel",
+        "targets": [
+          {
+            "line": 0,
+            "utf16Character": 7,
+            "length": 14
+          },
+          {
+            "line": 1,
+            "utf16Character": 8,
+            "length": 12
+          },
+          {
+            "line": 4,
+            "utf16Character": 8,
+            "length": 5
+          }
+        ]
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "persistent-symbols-panel-dark",
+      "description": "Dark persistent Symbols panel with metadata and nested document symbols.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/persistent-symbols-panel-dark.png",
+      "artifactName": "persistent-symbols-panel-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 900,
+        "height": 560
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.LSP.SymbolPanel.Panel",
+        "width": 760,
+        "height": 420
+      },
+      "lspSymbolResults": {
+        "title": "Document Symbols",
+        "placeholder": "Filter document symbols...",
+        "presentation": "persistentPanel",
+        "symbols": [
+          {
+            "name": "PaletteFixture",
+            "kindLabel": "Struct",
+            "line": 0,
+            "utf16Character": 7
+          },
+          {
+            "name": "primaryValue",
+            "kindLabel": "Property",
+            "containerName": "PaletteFixture",
+            "line": 1,
+            "utf16Character": 8,
+            "depth": 1
+          },
+          {
+            "name": "renderLine",
+            "detail": "() -> String",
+            "kindLabel": "Method",
+            "containerName": "PaletteFixture",
+            "line": 3,
+            "utf16Character": 9,
+            "depth": 1
+          }
+        ]
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "popup-hover-dark",
+      "description": "Dark LSP hover popover with markdown-derived symbol documentation.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/popup-hover-dark.png",
+      "artifactName": "popup-hover-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 760,
+        "height": 420
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "hoverPopover",
+        "width": 420,
+        "height": 94
+      },
+      "hoverPopover": {
+        "text": "PaletteFixture\nstruct PaletteFixture\n\nRenders the sample line and returns the display label.",
+        "viewX": 160,
+        "viewY": 140,
+        "logicalLine": 0,
+        "logicalColumn": 7,
+        "charOffset": 7
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "popup-signature-help-dark",
+      "description": "Dark signature help popover with active parameter highlighting.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/popup-signature-help-dark.png",
+      "artifactName": "popup-signature-help-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 760,
+        "height": 420
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "signatureHelpPopover",
+        "width": 420,
+        "height": 112
+      },
+      "signatureHelpPopover": {
+        "text": "renderLine(value: Int, mode: Mode)\nparameter: value\n\nRender a sample line using the selected value.",
+        "activeParameterRanges": [
+          {
+            "location": 11,
+            "length": 5
+          },
+          {
+            "location": 46,
+            "length": 5
+          }
+        ]
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "persistent-problems-panel-dark",
+      "description": "Dark active Problems panel with active and workspace diagnostics.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/persistent-problems-panel-dark.png",
+      "artifactName": "persistent-problems-panel-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 860,
+        "height": 540
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.LSP.ProblemsPanel.Panel",
+        "width": 700,
+        "height": 360
+      },
+      "activeDiagnostics": {
+        "items": [
+          {
+            "line": 4,
+            "utf16Character": 8,
+            "length": 5,
+            "severity": 1,
+            "source": "swift",
+            "message": "print is unavailable in production palette",
+            "code": "ATTO001"
+          },
+          {
+            "line": 1,
+            "utf16Character": 8,
+            "length": 12,
+            "severity": 2,
+            "source": "swift",
+            "message": "primaryValue is never mutated",
+            "code": "ATTO002"
+          }
+        ]
+      },
+      "workspaceDiagnostics": {
+        "documents": [
+          {
+            "resultId": "active-workspace-problems",
+            "items": [
+              {
+                "line": 3,
+                "utf16Character": 9,
+                "length": 10,
+                "severity": 2,
+                "source": "workspace",
+                "message": "renderLine has stale project metadata",
+                "code": "ATTO101"
+              }
+            ]
+          }
+        ]
+      },
+      "persistentPanel": "problemsPanel",
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "persistent-workspace-problems-panel-dark",
+      "description": "Dark Workspace Problems panel with diagnostics from multiple workspace documents.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/persistent-workspace-problems-panel-dark.png",
+      "artifactName": "persistent-workspace-problems-panel-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 880,
+        "height": 540
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.LSP.WorkspaceProblemsPanel.Panel",
+        "width": 720,
+        "height": 380
+      },
+      "workspaceDiagnostics": {
+        "documents": [
+          {
+            "resultId": "workspace-active-problems",
+            "items": [
+              {
+                "line": 0,
+                "utf16Character": 7,
+                "length": 14,
+                "severity": 1,
+                "source": "workspace",
+                "message": "PaletteFixture is missing generated registration",
+                "code": "ATTO201"
+              }
+            ]
+          },
+          {
+            "fileName": "palette-secondary.swift",
+            "resultId": "workspace-secondary-problems",
+            "items": [
+              {
+                "line": 2,
+                "utf16Character": 4,
+                "length": 9,
+                "severity": 2,
+                "source": "workspace",
+                "message": "secondary palette import is unused",
+                "code": "ATTO202"
+              },
+              {
+                "line": 8,
+                "utf16Character": 12,
+                "length": 5,
+                "severity": 3,
+                "source": "workspace",
+                "message": "consider extracting shared fixture state",
+                "code": "ATTO203"
+              }
+            ]
+          }
+        ]
+      },
+      "persistentPanel": "workspaceProblemsPanel",
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "persistent-workbench-panel-dark",
+      "description": "Dark LSP Workbench panel summarizing diagnostics lifecycle state.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/persistent-workbench-panel-dark.png",
+      "artifactName": "persistent-workbench-panel-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 920,
+        "height": 580
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.LSP.WorkbenchPanel.Panel",
+        "width": 780,
+        "height": 440
+      },
+      "activeDiagnostics": {
+        "items": [
+          {
+            "line": 4,
+            "utf16Character": 8,
+            "length": 5,
+            "severity": 1,
+            "source": "swift",
+            "message": "print is unavailable in production palette",
+            "code": "ATTO001"
+          }
+        ]
+      },
+      "workspaceDiagnostics": {
+        "documents": [
+          {
+            "resultId": "workbench-workspace-problems",
+            "items": [
+              {
+                "line": 1,
+                "utf16Character": 8,
+                "length": 12,
+                "severity": 2,
+                "source": "workspace",
+                "message": "primaryValue is stale in workspace index",
+                "code": "ATTO301"
+              }
+            ]
+          }
+        ]
+      },
+      "persistentPanel": "lspWorkbenchPanel",
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "persistent-hierarchy-panel-dark",
+      "description": "Dark Hierarchy panel with incoming call results and related range counts.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/persistent-hierarchy-panel-dark.png",
+      "artifactName": "persistent-hierarchy-panel-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 900,
+        "height": 560
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.LSP.HierarchyPanel.Panel",
+        "width": 760,
+        "height": 400
+      },
+      "hierarchyResults": {
+        "kind": "callIncoming",
+        "entries": [
+          {
+            "name": "renderPreview",
+            "detail": "PalettePreview.swift",
+            "lspKind": 12,
+            "line": 3,
+            "utf16Character": 9,
+            "length": 10,
+            "relatedRangeCount": 2
+          },
+          {
+            "name": "refreshPalette",
+            "detail": "PaletteController.swift",
+            "lspKind": 6,
+            "line": 4,
+            "utf16Character": 8,
+            "length": 12,
+            "relatedRangeCount": 1
+          },
+          {
+            "name": "applyTheme",
+            "detail": "ThemePipeline.swift",
+            "lspKind": 6,
+            "line": 0,
+            "utf16Character": 7,
+            "length": 14,
+            "relatedRangeCount": 3
+          }
+        ]
+      },
+      "persistentPanel": "hierarchyPanel",
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "persistent-code-lens-panel-dark",
+      "description": "Dark Code Lens panel with runnable and reference actions.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/persistent-code-lens-panel-dark.png",
+      "artifactName": "persistent-code-lens-panel-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 900,
+        "height": 560
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.LSP.CodeLensPanel.Panel",
+        "width": 720,
+        "height": 380
+      },
+      "codeLensResults": {
+        "items": [
+          {
+            "title": "Run PaletteFixture tests",
+            "command": "atto.test.runPaletteFixture",
+            "line": 0,
+            "utf16Character": 0
+          },
+          {
+            "title": "Find references",
+            "command": "atto.references.find",
+            "line": 3,
+            "utf16Character": 4
+          },
+          {
+            "title": "Open generated preview",
+            "command": "atto.preview.openGenerated",
+            "line": 4,
+            "utf16Character": 8
+          }
+        ]
+      },
+      "persistentPanel": "codeLensPanel",
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "persistent-inlay-hints-panel-dark",
+      "description": "Dark Inlay Hints panel with type and parameter hints.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/persistent-inlay-hints-panel-dark.png",
+      "artifactName": "persistent-inlay-hints-panel-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 900,
+        "height": 560
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.LSP.InlayHintPanel.Panel",
+        "width": 720,
+        "height": 380
+      },
+      "inlayHints": {
+        "items": [
+          {
+            "label": ": Int",
+            "kind": 1,
+            "line": 1,
+            "utf16Character": 20
+          },
+          {
+            "label": "value:",
+            "kind": 2,
+            "line": 4,
+            "utf16Character": 14
+          },
+          {
+            "label": "-> String",
+            "kind": 1,
+            "line": 3,
+            "utf16Character": 28
+          }
+        ]
+      },
+      "persistentPanel": "inlayHintPanel",
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "persistent-document-links-panel-dark",
+      "description": "Dark Document Links panel with resolved and unresolved links.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/persistent-document-links-panel-dark.png",
+      "artifactName": "persistent-document-links-panel-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 900,
+        "height": 560
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.LSP.DocumentLinkPanel.Panel",
+        "width": 740,
+        "height": 380
+      },
+      "documentLinks": {
+        "items": [
+          {
+            "line": 0,
+            "utf16Character": 7,
+            "length": 14,
+            "target": "https://atto.example/docs/palette-fixture",
+            "tooltip": "Open PaletteFixture documentation"
+          },
+          {
+            "line": 3,
+            "utf16Character": 9,
+            "length": 10,
+            "tooltip": "Resolve renderLine symbol",
+            "dataID": 42
+          },
+          {
+            "line": 4,
+            "utf16Character": 14,
+            "length": 12,
+            "target": "file:///workspace/generated/PalettePreview.swift",
+            "tooltip": "Open generated preview"
+          }
+        ]
+      },
+      "persistentPanel": "documentLinkPanel",
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "persistent-document-colors-panel-dark",
+      "description": "Dark Document Colors panel with multiple color swatches.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/persistent-document-colors-panel-dark.png",
+      "artifactName": "persistent-document-colors-panel-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 900,
+        "height": 560
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.LSP.DocumentColorPanel.Panel",
+        "width": 720,
+        "height": 380
+      },
+      "documentColors": {
+        "items": [
+          {
+            "line": 0,
+            "utf16Character": 7,
+            "length": 14,
+            "red": 0.86,
+            "green": 0.22,
+            "blue": 0.23,
+            "alpha": 1
+          },
+          {
+            "line": 1,
+            "utf16Character": 8,
+            "length": 12,
+            "red": 0.2,
+            "green": 0.58,
+            "blue": 0.95,
+            "alpha": 1
+          },
+          {
+            "line": 4,
+            "utf16Character": 14,
+            "length": 12,
+            "red": 0.14,
+            "green": 0.74,
+            "blue": 0.45,
+            "alpha": 0.85
+          }
+        ]
+      },
+      "persistentPanel": "documentColorPanel",
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "popup-workspace-edit-failure-dark",
+      "description": "Dark WorkspaceEdit failure popover with rollback detail.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/popup-workspace-edit-failure-dark.png",
+      "artifactName": "popup-workspace-edit-failure-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 760,
+        "height": 420
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "workspaceEditPopover",
+        "width": 460,
+        "height": 112
+      },
+      "failurePopover": {
+        "text": "Workspace edit failed.\nAtomic apply rolled back because generated/PalettePreview.swift changed on disk.\nNo files were modified."
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "popup-lsp-failure-dark",
+      "description": "Dark LSP request failure popover with server error detail.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/popup-lsp-failure-dark.png",
+      "artifactName": "popup-lsp-failure-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 760,
+        "height": 420
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "workspaceEditPopover",
+        "width": 420,
+        "height": 94
+      },
+      "failurePopover": {
+        "text": "LSP failed.\nCode lens refresh request failed.\nserver closed the request stream."
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "workspace-edit-preview-panel-dark",
+      "description": "Dark WorkspaceEdit preview panel with text edits, a resource operation, and conflict detail.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/workspace-edit-preview-panel-dark.png",
+      "artifactName": "workspace-edit-preview-panel-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 980,
+        "height": 620
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.WorkspaceEditPreview.Panel",
+        "width": 880,
+        "height": 560
+      },
+      "workspaceEditPreview": {
+        "appliedEditCount": 3,
+        "appliedResourceOperationCount": 1,
+        "appliedFiles": [
+          "floating-panels.swift",
+          "generated/PalettePreview.swift"
+        ],
+        "documents": [
+          {
+            "fileName": "floating-panels.swift",
+            "editCount": 2,
+            "isOpen": true
+          },
+          {
+            "fileName": "generated/PalettePreview.swift",
+            "editCount": 1,
+            "isOpen": false
+          }
+        ],
+        "resourceOperations": [
+          {
+            "kind": "create",
+            "fileName": "generated/PalettePreview.swift",
+            "affectedFiles": [
+              "generated/PalettePreview.swift"
+            ],
+            "supported": true,
+            "applied": false
+          }
+        ],
+        "conflicts": [
+          {
+            "fileName": "generated/PalettePreview.swift",
+            "kind": "existing_file",
+            "reason": "target_exists",
+            "operation": "create",
+            "message": "preview target already exists"
+          }
+        ],
+        "sections": [
+          {
+            "fileName": "floating-panels.swift",
+            "title": "floating-panels.swift",
+            "subtitle": "2 edits, open",
+            "detailText": "--- floating-panels.swift\n+++ floating-panels.swift\n@@\n-        return \"primary\"\n+        return renderPreview(primaryValue)\n\n@@\n-    let accent = \"blue\"\n+    let accent = previewAccent(for: palette)"
+          },
+          {
+            "fileName": "generated/PalettePreview.swift",
+            "title": "Create PalettePreview.swift",
+            "subtitle": "create file",
+            "detailText": "Create file\nPath: generated/PalettePreview.swift\n\nstruct PalettePreview {\n    let title: String\n    let accent: String\n}"
+          },
+          {
+            "fileName": "generated/PalettePreview.swift",
+            "title": "generated/PalettePreview.swift",
+            "subtitle": "existing_file: create: target_exists",
+            "detailText": "Conflict\nKind: existing_file\nOperation: create\nReason: target_exists\nMessage: preview target already exists"
+          }
+        ]
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "workspace-edit-secondary-rollback-preview-light-narrow",
+      "description": "Light narrow WorkspaceEdit preview panel with secondary filesystem rollback failure metadata.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/workspace-edit-secondary-rollback-preview-light-narrow.png",
+      "artifactName": "workspace-edit-secondary-rollback-preview-light-narrow",
+      "theme": "defaultLight",
+      "window": {
+        "width": 720,
+        "height": 500
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.WorkspaceEditPreview.Panel",
+        "width": 620,
+        "height": 420
+      },
+      "workspaceEditPreview": {
+        "mode": "apply",
+        "applyMode": "atomic",
+        "applied": false,
+        "documents": [
+          {
+            "fileName": "rollback-target.swift",
+            "editCount": 1,
+            "isOpen": false
+          }
+        ],
+        "skippedFiles": [
+          "rollback-target.swift"
+        ],
+        "conflicts": [
+          {
+            "fileName": "rollback-target.swift",
+            "kind": "secondary_rollback_failure",
+            "severity": "error",
+            "applyImpact": "blocks_atomic_apply",
+            "resolution": "manual_recovery",
+            "reason": "secondary_filesystem_rollback_failed",
+            "operation": "rollback",
+            "message": "filesystem rollback failed after atomic WorkspaceEdit apply failure: destination already exists"
+          }
+        ],
+        "sections": [
+          {
+            "fileName": "rollback-target.swift",
+            "title": "rollback-target.swift",
+            "subtitle": "secondary_rollback_failure: rollback: secondary_filesystem_rollback_failed",
+            "detailText": "Conflict\nKind: secondary_rollback_failure\nCategory: Secondary rollback failure\nSeverity: error\nApply impact: Blocks atomic apply\nSuggested action: Inspect the workspace and recover files or tabs manually before retrying.\nOperation: rollback\nReason: secondary_filesystem_rollback_failed\nMessage: filesystem rollback failed after atomic WorkspaceEdit apply failure: destination already exists"
+          }
+        ]
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "workspace-edit-mixed-conflicts-preview-dark-wide",
+      "description": "Dark wide WorkspaceEdit preview panel with dirty, version, and overlapping edit conflicts.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/workspace-edit-mixed-conflicts-preview-dark-wide.png",
+      "artifactName": "workspace-edit-mixed-conflicts-preview-dark-wide",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 1020,
+        "height": 640
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.WorkspaceEditPreview.Panel",
+        "width": 900,
+        "height": 520
+      },
+      "workspaceEditPreview": {
+        "mode": "preview",
+        "applyMode": "atomic",
+        "applied": false,
+        "documents": [
+          {
+            "fileName": "dirty.swift",
+            "editCount": 0,
+            "isOpen": true,
+            "isDirty": true
+          },
+          {
+            "fileName": "stale.swift",
+            "editCount": 1,
+            "versionMismatch": true
+          },
+          {
+            "fileName": "overlap.swift",
+            "editCount": 2,
+            "hasOverlappingEdits": true
+          }
+        ],
+        "dirtyFiles": [
+          "dirty.swift"
+        ],
+        "skippedFiles": [
+          "dirty.swift",
+          "stale.swift",
+          "overlap.swift"
+        ],
+        "conflicts": [
+          {
+            "fileName": "dirty.swift",
+            "kind": "dirty_document",
+            "severity": "error",
+            "applyImpact": "blocks_atomic_apply",
+            "resolution": "save_or_discard",
+            "reason": "resource_operation_dirty_target",
+            "operation": "delete",
+            "message": "open tab has unsaved changes"
+          },
+          {
+            "fileName": "stale.swift",
+            "kind": "version",
+            "severity": "error",
+            "applyImpact": "blocks_atomic_apply",
+            "resolution": "refresh_document",
+            "reason": "version_mismatch",
+            "operation": "text_edit",
+            "message": "document changed after the request was prepared"
+          },
+          {
+            "fileName": "overlap.swift",
+            "kind": "overlap",
+            "severity": "error",
+            "applyImpact": "blocks_atomic_apply",
+            "resolution": "recompute_edit",
+            "reason": "overlapping_text_edits",
+            "operation": "text_edit",
+            "message": "text edits for this URI overlap and cannot be applied safely"
+          }
+        ],
+        "sections": [
+          {
+            "fileName": "dirty.swift",
+            "title": "dirty.swift",
+            "subtitle": "Dirty document: delete: resource_operation_dirty_target",
+            "detailText": "Conflict\nKind: dirty_document\nSeverity: error\nApply impact: Blocks atomic apply\nSuggested action: Save or discard the dirty file, then retry.\nOperation: delete\nReason: resource_operation_dirty_target\nMessage: open tab has unsaved changes"
+          },
+          {
+            "fileName": "stale.swift",
+            "title": "stale.swift",
+            "subtitle": "version: text_edit: version_mismatch",
+            "detailText": "Conflict\nKind: version\nSeverity: error\nApply impact: Blocks atomic apply\nSuggested action: Refresh the source request or reload the document before applying.\nOperation: text_edit\nReason: version_mismatch\nMessage: document changed after the request was prepared"
+          },
+          {
+            "fileName": "overlap.swift",
+            "title": "overlap.swift",
+            "subtitle": "overlap: text_edit: overlapping_text_edits",
+            "detailText": "Conflict\nKind: overlap\nSeverity: error\nApply impact: Blocks atomic apply\nSuggested action: Recompute the WorkspaceEdit request with non-overlapping edits.\nOperation: text_edit\nReason: overlapping_text_edits\nMessage: text edits for this URI overlap and cannot be applied safely"
+          }
+        ]
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "workspace-edit-json-preview-panel-dark",
+      "description": "Dark WorkspaceEdit preview panel generated through the App WorkspaceEdit JSON helper.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/workspace-edit-json-preview-panel-dark.png",
+      "artifactName": "workspace-edit-json-preview-panel-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 980,
+        "height": 620
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.WorkspaceEditPreview.Panel",
+        "width": 880,
+        "height": 560
+      },
+      "workspaceEditJSONPreview": {
+        "supportFiles": [
+          {
+            "fileName": "workspace-edit-preview-target.swift",
+            "text": "struct WorkspacePreviewTarget {\n    func label() -> String {\n        return \"old\"\n    }\n}\n"
+          }
+        ],
+        "documents": [
+          {
+            "fileName": "floating-panels.swift",
+            "edits": [
+              {
+                "startLine": 4,
+                "startUTF16Character": 8,
+                "endUTF16Character": 8,
+                "newText": "let previewValue = primaryValue\n        "
+              }
+            ]
+          },
+          {
+            "fileName": "workspace-edit-preview-target.swift",
+            "edits": [
+              {
+                "startLine": 2,
+                "startUTF16Character": 16,
+                "endUTF16Character": 19,
+                "newText": "preview"
+              }
+            ]
+          }
+        ]
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "workspace-edit-dirty-delete-failure-dark",
+      "description": "Dark WorkspaceEdit summary popover generated by a dirty open-tab delete failure.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/workspace-edit-dirty-delete-failure-dark.png",
+      "artifactName": "workspace-edit-dirty-delete-failure-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 760,
+        "height": 420
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "workspaceEditPopover",
+        "width": 420,
+        "height": 112
+      },
+      "workspaceEditJSONApplySummary": {
+        "makeActiveDocumentDirty": true,
+        "expectedApplied": false,
+        "resourceOperations": [
+          {
+            "kind": "delete",
+            "fileName": "floating-panels.swift"
+          }
+        ]
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "workspace-edit-atomic-rollback-failure-dark",
+      "description": "Dark WorkspaceEdit summary popover generated by an atomic runtime rollback.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/workspace-edit-atomic-rollback-failure-dark.png",
+      "artifactName": "workspace-edit-atomic-rollback-failure-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 760,
+        "height": 420
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "workspaceEditPopover",
+        "width": 480,
+        "height": 132
+      },
+      "workspaceEditJSONApplySummary": {
+        "supportFiles": [
+          {
+            "fileName": "workspace-edit-invalid.swift",
+            "hexBytes": "ff"
+          }
+        ],
+        "applyMode": "atomic",
+        "expectedApplied": false,
+        "expectedActiveTextAfterApply": "struct PaletteFixture {\n    let primaryValue: Int\n\n    func renderLine() -> String {\n        print(primaryValue)\n        return \"primary\"\n    }\n}\n",
+        "documents": [
+          {
+            "fileName": "floating-panels.swift",
+            "edits": [
+              {
+                "startLine": 5,
+                "startUTF16Character": 16,
+                "endUTF16Character": 23,
+                "newText": "rolled"
+              }
+            ]
+          },
+          {
+            "fileName": "workspace-edit-invalid.swift",
+            "edits": [
+              {
+                "startLine": 0,
+                "startUTF16Character": 0,
+                "endUTF16Character": 0,
+                "newText": "invalid"
+              }
+            ]
+          }
+        ]
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "workspace-edit-partial-runtime-failure-dark",
+      "description": "Dark WorkspaceEdit summary popover generated by a partial runtime failure.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/workspace-edit-partial-runtime-failure-dark.png",
+      "artifactName": "workspace-edit-partial-runtime-failure-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 760,
+        "height": 420
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "workspaceEditPopover",
+        "width": 480,
+        "height": 132
+      },
+      "workspaceEditJSONApplySummary": {
+        "supportFiles": [
+          {
+            "fileName": "workspace-edit-partial-invalid.swift",
+            "hexBytes": "ff"
+          }
+        ],
+        "expectedApplied": true,
+        "expectedActiveTextAfterApply": "struct PaletteFixture {\n    let primaryValue: Int\n\n    func renderLine() -> String {\n        print(primaryValue)\n        return \"partial\"\n    }\n}\n",
+        "documents": [
+          {
+            "fileName": "floating-panels.swift",
+            "edits": [
+              {
+                "startLine": 5,
+                "startUTF16Character": 16,
+                "endUTF16Character": 23,
+                "newText": "partial"
+              }
+            ]
+          },
+          {
+            "fileName": "workspace-edit-partial-invalid.swift",
+            "edits": [
+              {
+                "startLine": 0,
+                "startUTF16Character": 0,
+                "endUTF16Character": 0,
+                "newText": "invalid"
+              }
+            ]
+          }
+        ]
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "workspace-edit-version-mismatch-failure-dark",
+      "description": "Dark WorkspaceEdit summary popover generated by a document version mismatch.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/workspace-edit-version-mismatch-failure-dark.png",
+      "artifactName": "workspace-edit-version-mismatch-failure-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 760,
+        "height": 420
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "workspaceEditPopover",
+        "width": 440,
+        "height": 112
+      },
+      "workspaceEditJSONApplySummary": {
+        "expectedApplied": false,
+        "expectedActiveTextAfterApply": "struct PaletteFixture {\n    let primaryValue: Int\n\n    func renderLine() -> String {\n        print(primaryValue)\n        return \"primary\"\n    }\n}\n",
+        "documents": [
+          {
+            "fileName": "floating-panels.swift",
+            "version": 1,
+            "edits": [
+              {
+                "startLine": 5,
+                "startUTF16Character": 16,
+                "endUTF16Character": 23,
+                "newText": "version"
+              }
+            ]
+          }
+        ]
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "workspace-edit-resource-conflict-partial-dark",
+      "description": "Dark WorkspaceEdit summary popover generated by a skipped resource operation after an applied text edit.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/workspace-edit-resource-conflict-partial-dark.png",
+      "artifactName": "workspace-edit-resource-conflict-partial-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 760,
+        "height": 420
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "workspaceEditPopover",
+        "width": 480,
+        "height": 132
+      },
+      "workspaceEditJSONApplySummary": {
+        "expectedApplied": true,
+        "expectedActiveTextAfterApply": "struct PaletteFixture {\n    let primaryValue: Int\n\n    func renderLine() -> String {\n        print(primaryValue)\n        return \"conflict\"\n    }\n}\n",
+        "documents": [
+          {
+            "fileName": "floating-panels.swift",
+            "edits": [
+              {
+                "startLine": 5,
+                "startUTF16Character": 16,
+                "endUTF16Character": 23,
+                "newText": "conflict"
+              }
+            ]
+          }
+        ],
+        "resourceOperations": [
+          {
+            "kind": "create",
+            "fileName": "floating-panels.swift"
+          }
+        ]
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "workspace-edit-resource-dependency-failure-dark",
+      "description": "Dark WorkspaceEdit summary popover generated by a skipped resource operation blocking a later text edit.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/workspace-edit-resource-dependency-failure-dark.png",
+      "artifactName": "workspace-edit-resource-dependency-failure-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 760,
+        "height": 420
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "workspaceEditPopover",
+        "width": 480,
+        "height": 132
+      },
+      "workspaceEditJSONApplySummary": {
+        "expectedApplied": false,
+        "expectedActiveTextAfterApply": "struct PaletteFixture {\n    let primaryValue: Int\n\n    func renderLine() -> String {\n        print(primaryValue)\n        return \"primary\"\n    }\n}\n",
+        "orderedChanges": [
+          {
+            "kind": "create",
+            "fileName": "floating-panels.swift"
+          },
+          {
+            "fileName": "floating-panels.swift",
+            "edits": [
+              {
+                "startLine": 5,
+                "startUTF16Character": 16,
+                "endUTF16Character": 23,
+                "newText": "blocked"
+              }
+            ]
+          }
+        ]
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "workspace-edit-unsupported-operation-partial-dark",
+      "description": "Dark WorkspaceEdit partial summary popover generated by an unsupported resource operation after an applied text edit.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/workspace-edit-unsupported-operation-partial-dark.png",
+      "artifactName": "workspace-edit-unsupported-operation-partial-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 760,
+        "height": 420
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "workspaceEditPopover",
+        "width": 520,
+        "height": 132
+      },
+      "workspaceEditJSONApplySummary": {
+        "expectedApplied": true,
+        "expectedActiveTextAfterApply": "struct PaletteFixture {\n    let primaryValue: Int\n\n    func renderLine() -> String {\n        print(primaryValue)\n        return \"edge\"\n    }\n}\n",
+        "documents": [
+          {
+            "fileName": "floating-panels.swift",
+            "edits": [
+              {
+                "startLine": 5,
+                "startUTF16Character": 16,
+                "endUTF16Character": 23,
+                "newText": "edge"
+              }
+            ]
+          }
+        ],
+        "resourceOperations": [
+          {
+            "kind": "rename",
+            "oldURI": "file:///atto-visual-outside/UnsupportedOld.swift",
+            "newURI": "file:///atto-visual-outside/UnsupportedNew.swift"
+          }
+        ]
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "workspace-edit-resource-runtime-rollback-dark",
+      "description": "Dark WorkspaceEdit failure popover generated by a resource operation runtime failure after rollback.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/workspace-edit-resource-runtime-rollback-dark.png",
+      "artifactName": "workspace-edit-resource-runtime-rollback-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 760,
+        "height": 420
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "workspaceEditPopover",
+        "width": 520,
+        "height": 116
+      },
+      "workspaceEditJSONApplySummary": {
+        "supportFiles": [
+          {
+            "fileName": "workspace-edit-rollback-old.swift",
+            "text": "let old = true\n"
+          },
+          {
+            "fileName": "workspace-edit-rollback-target.swift",
+            "text": "let target = true\n"
+          },
+          {
+            "fileName": "workspace-edit-rollback-blocker",
+            "text": "blocker\n"
+          }
+        ],
+        "applyMode": "atomic",
+        "expectedApplied": false,
+        "expectedFileContentsAfterApply": [
+          {
+            "fileName": "workspace-edit-rollback-old.swift",
+            "text": "let old = true\n"
+          },
+          {
+            "fileName": "workspace-edit-rollback-target.swift",
+            "text": "let target = true\n"
+          },
+          {
+            "fileName": "workspace-edit-rollback-blocker",
+            "text": "blocker\n"
+          }
+        ],
+        "expectedMissingFilesAfterApply": [
+          "workspace-edit-rollback-generated/Created.swift",
+          "workspace-edit-rollback-generated",
+          "workspace-edit-rollback-blocker/Child.swift"
+        ],
+        "resourceOperations": [
+          {
+            "kind": "create",
+            "fileName": "workspace-edit-rollback-generated/Created.swift"
+          },
+          {
+            "kind": "rename",
+            "oldFileName": "workspace-edit-rollback-old.swift",
+            "newFileName": "workspace-edit-rollback-target.swift",
+            "options": {
+              "overwrite": true
+            }
+          },
+          {
+            "kind": "create",
+            "fileName": "workspace-edit-rollback-blocker/Child.swift"
+          }
+        ]
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "workspace-edit-history-panel-dark",
+      "description": "Dark WorkspaceEdit history panel after a core transaction event is recorded.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/workspace-edit-history-panel-dark.png",
+      "artifactName": "workspace-edit-history-panel-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 900,
+        "height": 560
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.WorkspaceEditHistory.Panel",
+        "width": 760,
+        "height": 400
+      },
+      "workspaceEditJSONApplySummary": {
+        "expectedApplied": true,
+        "documents": [
+          {
+            "fileName": "floating-panels.swift",
+            "edits": [
+              {
+                "startLine": 5,
+                "startUTF16Character": 16,
+                "endUTF16Character": 23,
+                "newText": "history"
+              }
+            ]
+          }
+        ]
+      },
+      "persistentPanel": "workspaceEditHistoryPanel",
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "workspace-edit-undo-status-dark",
+      "description": "Dark editor chrome after a WorkspaceEdit transaction is undone.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/workspace-edit-undo-status-dark.png",
+      "artifactName": "workspace-edit-undo-status-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 760,
+        "height": 420
+      },
+      "scale": 1.0,
+      "workspaceEditJSONApplySummary": {
+        "expectedApplied": true,
+        "undoAfterApply": true,
+        "expectedUndo": true,
+        "documents": [
+          {
+            "fileName": "floating-panels.swift",
+            "edits": [
+              {
+                "startLine": 5,
+                "startUTF16Character": 16,
+                "endUTF16Character": 23,
+                "newText": "undoable"
+              }
+            ]
+          }
+        ]
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "workspace-edit-multifile-undo-status-dark",
+      "description": "Dark editor chrome after a multi-file WorkspaceEdit transaction is undone.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/workspace-edit-multifile-undo-status-dark.png",
+      "artifactName": "workspace-edit-multifile-undo-status-dark",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 760,
+        "height": 420
+      },
+      "scale": 1.0,
+      "workspaceEditJSONApplySummary": {
+        "supportFiles": [
+          {
+            "fileName": "workspace-edit-undo-other.swift",
+            "text": "let other = \"old\"\n"
+          }
+        ],
+        "expectedApplied": true,
+        "undoAfterApply": true,
+        "expectedUndo": true,
+        "expectedActiveTextAfterApply": "struct PaletteFixture {\n    let primaryValue: Int\n\n    func renderLine() -> String {\n        print(primaryValue)\n        return \"multi\"\n    }\n}\n",
+        "expectedActiveTextAfterUndo": "struct PaletteFixture {\n    let primaryValue: Int\n\n    func renderLine() -> String {\n        print(primaryValue)\n        return \"primary\"\n    }\n}\n",
+        "expectedFileContentsAfterApply": [
+          {
+            "fileName": "workspace-edit-undo-other.swift",
+            "text": "let other = \"new\"\n"
+          }
+        ],
+        "expectedFileContentsAfterUndo": [
+          {
+            "fileName": "workspace-edit-undo-other.swift",
+            "text": "let other = \"old\"\n"
+          }
+        ],
+        "documents": [
+          {
+            "fileName": "floating-panels.swift",
+            "edits": [
+              {
+                "startLine": 5,
+                "startUTF16Character": 16,
+                "endUTF16Character": 23,
+                "newText": "multi"
+              }
+            ]
+          },
+          {
+            "fileName": "workspace-edit-undo-other.swift",
+            "edits": [
+              {
+                "startLine": 0,
+                "startUTF16Character": 13,
+                "endUTF16Character": 16,
+                "newText": "new"
+              }
+            ]
+          }
+        ]
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    }
+  ]
+}

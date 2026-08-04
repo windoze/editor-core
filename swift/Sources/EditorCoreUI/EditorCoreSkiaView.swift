@@ -74,6 +74,48 @@ public struct EditorCoreSkiaContextMenuContext {
     }
 }
 
+public enum EditorCoreLSPFormattingResult: Equatable {
+    case applied
+    case noEdits
+    case unavailable(String)
+    case failed(String)
+
+    public var didApply: Bool {
+        if case .applied = self { return true }
+        return false
+    }
+
+    public var message: String? {
+        switch self {
+        case .applied:
+            return nil
+        case .noEdits:
+            return "No formatting edits were returned."
+        case .unavailable(let reason), .failed(let reason):
+            return reason
+        }
+    }
+}
+
+public struct EditorCoreSkiaGutterDiagnosticMarker: Equatable {
+    public enum Kind: Equatable {
+        case error
+        case warning
+        case information
+        case hint
+    }
+
+    public var logicalLine: UInt32
+    public var charOffset: UInt32
+    public var kind: Kind
+
+    public init(logicalLine: UInt32, charOffset: UInt32, kind: Kind) {
+        self.logicalLine = logicalLine
+        self.charOffset = charOffset
+        self.kind = kind
+    }
+}
+
 /// 自绘版 AppKit 组件（Option 2）：
 /// - Rust: editor-core + editor-core-ui + Skia（Metal/GPU 直接绘制到 `MTLTexture`）
 /// - Swift/AppKit: `MTKView` 负责承接事件并把 `CAMetalDrawable` 呈现到屏幕
@@ -96,6 +138,23 @@ public final class EditorCoreSkiaView: MTKView {
         NSWorkspace.shared.open(url)
     }
 
+    /// Called when Cmd-click hits an LSP `DocumentLink` that has no direct target URL.
+    ///
+    /// Hosts can use this to run `documentLink/resolve` and open the resolved target.
+    public var onDocumentLinkClick: ((String) -> Bool)?
+
+    /// Called when Cmd-click hits LSP inlay hint virtual text.
+    ///
+    /// The payload is the raw `InlayHint` JSON returned by the Rust hit-test. Hosts can use this
+    /// to run `inlayHint/resolve` and display or apply the resolved hint.
+    public var onInlayHintClick: ((String) -> Bool)?
+
+    /// Called when Cmd-click hits LSP code lens virtual text.
+    ///
+    /// The payload is the raw `CodeLens` JSON returned by the Rust hit-test. Hosts should parse and
+    /// execute it, resolving the lens first when needed.
+    public var onCodeLensClick: ((String) -> Bool)?
+
     /// Called when the editor's viewport state (scroll position / total lines / viewport size) may have changed.
     ///
     /// Hosts can use this to keep native scrollbars in sync.
@@ -108,6 +167,19 @@ public final class EditorCoreSkiaView: MTKView {
     /// - auto-pin preview tabs (VSCode behavior)
     /// - trigger external indexing, etc.
     public var onDidMutateDocumentText: (() -> Void)?
+
+    /// Called after committed text mutates the document through `insertText`.
+    ///
+    /// This is only for finalized text commits. IME marked/preedit updates use `setMarkedText`
+    /// and do not call this hook until the system commits text through `insertText`.
+    public var onDidCommitText: ((String) -> Void)?
+
+    /// Called after the selection/caret may have changed.
+    ///
+    /// `causedByTextMutation` is `true` when the selection moved as part of an edit, such as typing,
+    /// paste, delete, undo/redo, or formatting. Hosts can use this to distinguish normal linked
+    /// multi-cursor continuation from explicit navigation/click selection changes.
+    public var onDidChangeSelection: ((_ causedByTextMutation: Bool) -> Void)?
 
     /// Called when the mouse hovers over a new character offset in the document.
     ///
@@ -142,14 +214,21 @@ public final class EditorCoreSkiaView: MTKView {
     /// - When not provided, the view falls back to a conservative default (`onCommandClick != nil`).
     public var onCommandHover: ((EditorCoreSkiaContextMenuContext) -> Bool)?
 
+    /// Called after the view becomes first responder.
+    ///
+    /// Hosts with multiple editor views for the same document use this to track the active pane.
+    public var onDidBecomeFirstResponder: (() -> Void)?
+
     /// Enable/disable Cmd-hover visual feedback (underline + pointing-hand cursor).
     ///
     /// This is enabled by default because it is an important discoverability affordance.
     public var commandHoverLinkFeedbackEnabled: Bool = true
 
-    /// Called when async derived-state processing (e.g. Tree-sitter) applied new edits.
+    /// Called when async derived-state processing applied edits or a short poll window finishes.
     ///
-    /// This is primarily useful for tests and for hosts that want explicit "derived state updated" signals.
+    /// This is primarily useful for tests and for hosts that want explicit derived-state/status
+    /// update signals. A poll window can finish without applied edits when an async provider only
+    /// changed status, such as an LSP request error.
     public var onDidApplyAsyncProcessing: (() -> Void)?
 
     // MARK: - Caret appearance (width + blinking)
@@ -214,23 +293,23 @@ public final class EditorCoreSkiaView: MTKView {
         }
     }
 
-    private var caretBlinkPhaseVisible: Bool = true
+    var caretBlinkPhaseVisible: Bool = true
     // 注意：`Timer` 不是 `Sendable`，而 `deinit` 是非隔离上下文；
     // 这里用 `nonisolated(unsafe)` 允许在 `deinit` 中把 timer 转交给主线程做 invalidate。
-    nonisolated(unsafe) private var caretBlinkTimer: Timer?
-    private let caretBlinkTimerDisabledForTests: Bool = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
-    private var lastAppliedCaretWidthPx: Float?
-    private var lastAppliedCaretVisible: Bool?
-    private var lastAppliedTextVerticalAlign: EditorUI.TextVerticalAlign?
+    nonisolated(unsafe) var caretBlinkTimer: Timer?
+    let caretBlinkTimerDisabledForTests: Bool = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    var lastAppliedCaretWidthPx: Float?
+    var lastAppliedCaretVisible: Bool?
+    var lastAppliedTextVerticalAlign: EditorUI.TextVerticalAlign?
 
     // MARK: - Viewport observers (multi-subscriber)
 
     @MainActor
     public final class ViewportStateObserverToken {
-        fileprivate weak var view: EditorCoreSkiaView?
-        fileprivate let id: UUID
+        weak var view: EditorCoreSkiaView?
+        let id: UUID
 
-        fileprivate init(view: EditorCoreSkiaView, id: UUID) {
+        init(view: EditorCoreSkiaView, id: UUID) {
             self.view = view
             self.id = id
         }
@@ -248,7 +327,7 @@ public final class EditorCoreSkiaView: MTKView {
         }
     }
 
-    private var viewportObservers: [UUID: () -> Void] = [:]
+    var viewportObservers: [UUID: () -> Void] = [:]
 
     /// Add an additional viewport-state observer without overwriting `onViewportStateDidChange`.
     ///
@@ -260,44 +339,45 @@ public final class EditorCoreSkiaView: MTKView {
         return ViewportStateObserverToken(view: self, id: id)
     }
 
-    private func removeViewportStateObserver(_ id: UUID) {
+    func removeViewportStateObserver(_ id: UUID) {
         viewportObservers[id] = nil
     }
 
     func notifyViewportStateDidChange() {
+        gutterDiagnosticOverlayView.needsDisplay = true
         onViewportStateDidChange?()
         for f in viewportObservers.values {
             f()
         }
     }
 
-    private let metalCommandQueue: MTLCommandQueue
-    private var viewportWidthPx: UInt32 = 0
-    private var viewportHeightPx: UInt32 = 0
-    private var scaleFactor: CGFloat = 1
-    private var didLogScaleDebugOnce: Bool = false
-    private var lastInputDebugLogUptime: TimeInterval = 0
-    private var drawScheduled: Bool = false
-    private var didPresentFirstFrame: Bool = false
-    private var didLogDrawSetupOnce: Bool = false
-    private let textCacheDebugEnabled: Bool = ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_TEXT_CACHE"] == "1"
-    private let perfDebugEnabled: Bool = ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_PERF"] == "1"
+    let metalCommandQueue: MTLCommandQueue
+    var viewportWidthPx: UInt32 = 0
+    var viewportHeightPx: UInt32 = 0
+    var scaleFactor: CGFloat = 1
+    var didLogScaleDebugOnce: Bool = false
+    var lastInputDebugLogUptime: TimeInterval = 0
+    var drawScheduled: Bool = false
+    var didPresentFirstFrame: Bool = false
+    var didLogDrawSetupOnce: Bool = false
+    let textCacheDebugEnabled: Bool = ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_TEXT_CACHE"] == "1"
+    let perfDebugEnabled: Bool = ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_PERF"] == "1"
 
     // MARK: - Perf counters (debug only)
 
-    private var perfLastReportUptime: TimeInterval = 0
-    private var perfInsertTextCount: Int = 0
-    private var perfInsertTextTotalMs: Double = 0
-    private var perfSetMarkedCount: Int = 0
-    private var perfSetMarkedTotalMs: Double = 0
-    private var perfDoCommandCount: Int = 0
-    private var perfDoCommandTotalMs: Double = 0
-    private var perfRenderMetalCount: Int = 0
-    private var perfRenderMetalTotalMs: Double = 0
+    var perfLastReportUptime: TimeInterval = 0
+    var perfInsertTextCount: Int = 0
+    var perfInsertTextTotalMs: Double = 0
+    var perfSetMarkedCount: Int = 0
+    var perfSetMarkedTotalMs: Double = 0
+    var perfDoCommandCount: Int = 0
+    var perfDoCommandTotalMs: Double = 0
+    var perfRenderMetalCount: Int = 0
+    var perfRenderMetalTotalMs: Double = 0
 
     // MARK: - Caret appearance helpers
 
-    private func desiredCaretVisibleForRender() -> Bool {
+    func desiredCaretVisibleForRender() -> Bool {
         if let caretVisibleOverride {
             return caretVisibleOverride
         }
@@ -311,7 +391,7 @@ public final class EditorCoreSkiaView: MTKView {
         return true
     }
 
-    private func applyCaretAppearanceIfNeeded(force: Bool) {
+    func applyCaretAppearanceIfNeeded(force: Bool) {
         // Keep caret width stable across DPI changes (points -> px).
         let widthPx = Float(max(1.0, caretWidthPoints * scaleFactor))
         let visible = desiredCaretVisibleForRender()
@@ -330,7 +410,7 @@ public final class EditorCoreSkiaView: MTKView {
         }
     }
 
-    private func applyTextVerticalAlignIfNeeded(force: Bool) {
+    func applyTextVerticalAlignIfNeeded(force: Bool) {
         let align = textVerticalAlign
         if force == false, lastAppliedTextVerticalAlign == align {
             return
@@ -343,7 +423,7 @@ public final class EditorCoreSkiaView: MTKView {
         }
     }
 
-    private func updateCaretBlinkTimer() {
+    func updateCaretBlinkTimer() {
         caretBlinkTimer?.invalidate()
         caretBlinkTimer = nil
 
@@ -371,7 +451,7 @@ public final class EditorCoreSkiaView: MTKView {
         requestRedraw()
     }
 
-    private func perfReportIfNeeded(force: Bool = false) {
+    func perfReportIfNeeded(force: Bool = false) {
         guard perfDebugEnabled else { return }
         let now = ProcessInfo.processInfo.systemUptime
         if force == false, perfLastReportUptime > 0, now - perfLastReportUptime < 1.0 {
@@ -410,24 +490,31 @@ public final class EditorCoreSkiaView: MTKView {
 
     /// AppKit/NSTextInputClient 在输入过程中会频繁查询 `selectedRange/markedRange/firstRect/...`。
     /// 如果每次都跨 FFI 拉整份文档字符串，会造成明显卡顿（尤其是长文档 + 频繁回调）。
-    private var docContentEpoch: UInt64 = 1
-    private var docTextCacheEpoch: UInt64 = 0
-    private var docTextCache: String?
-    private var docTextCacheScalarCount: Int = 0
-    private var cachedSelectedRange: (epoch: UInt64, start: UInt32, end: UInt32, value: NSRange)?
-    private var cachedMarkedRange: (epoch: UInt64, start: UInt32, len: UInt32, value: NSRange)?
+    var docContentEpoch: UInt64 = 1
+    var docTextCacheEpoch: UInt64 = 0
+    var docTextCache: String?
+    var docTextCacheScalarCount: Int = 0
+    var cachedSelectedRange: (epoch: UInt64, start: UInt32, end: UInt32, value: NSRange)?
+    var cachedMarkedRange: (epoch: UInt64, start: UInt32, len: UInt32, value: NSRange)?
 
-    private var lineHeightPx: Float = 18
-    private struct RenderMetricsSnapshot: Equatable {
+    var lineHeightPx: Float = 18
+    var cellWidthPx: Float = 8
+    var paddingPx: Float = 8
+    struct RenderMetricsSnapshot: Equatable {
         let fontSizePx: Float
         let lineHeightPx: Float
         let cellWidthPx: Float
         let paddingPx: Float
     }
 
-    private var lastAppliedRenderMetrics: RenderMetricsSnapshot?
+    var lastAppliedRenderMetrics: RenderMetricsSnapshot?
     /// 当前 gutter 宽度（以 cell 为单位）；用于避免频繁跨 FFI 发送重复的 set 操作。
-    private var gutterWidthCells: UInt32 = 4
+    var gutterWidthCells: UInt32 = 4
+    let gutterDiagnosticOverlayView = EditorCoreSkiaGutterDiagnosticOverlayView()
+
+    public var gutterDiagnosticMarkers: [EditorCoreSkiaGutterDiagnosticMarker] = [] {
+        didSet { gutterDiagnosticOverlayView.needsDisplay = true }
+    }
 
     /// gutter 的最小宽度（以 cell 为单位）。
     ///
@@ -442,21 +529,21 @@ public final class EditorCoreSkiaView: MTKView {
         }
     }
 
-    private var hoverTrackingArea: NSTrackingArea?
-    private var lastHoverCharOffset: UInt32?
-    private var lastHoverModifierFlags: NSEvent.ModifierFlags = []
-    private var lastHoverContextForCommandHover: EditorCoreSkiaContextMenuContext?
-    private var lastHoverDocumentLinkJSONForCommandHover: String?
+    var hoverTrackingArea: NSTrackingArea?
+    var lastHoverCharOffset: UInt32?
+    var lastHoverModifierFlags: NSEvent.ModifierFlags = []
+    var lastHoverContextForCommandHover: EditorCoreSkiaContextMenuContext?
+    var lastHoverDocumentLinkJSONForCommandHover: String?
 
-    private var commandHoverActiveRange: EcuSelectionRange?
-    private var commandHoverCursorIsPointing: Bool = false
+    var commandHoverActiveRange: EcuSelectionRange?
+    var commandHoverCursorIsPointing: Bool = false
 
-    private var lastHoverScalarIndex: (epoch: UInt64, offset: Int, index: String.UnicodeScalarView.Index)?
+    var lastHoverScalarIndex: (epoch: UInt64, offset: Int, index: String.UnicodeScalarView.Index)?
 
-    private lazy var textInputContext = NSTextInputContext(client: self)
+    lazy var textInputContext = NSTextInputContext(client: self)
 
-    private var processingPollTimer: DispatchSourceTimer?
-    private var processingPollDeadlineUptime: TimeInterval = 0
+    var processingPollTimer: DispatchSourceTimer?
+    var processingPollDeadlineUptime: TimeInterval = 0
     /// If `true`, keep polling `editor.pollProcessing()` continuously.
     ///
     /// This is useful for live LSP demos where server-driven updates (diagnostics, semantic tokens,
@@ -469,162 +556,6 @@ public final class EditorCoreSkiaView: MTKView {
         }
     }
 
-    private func didMutateDocumentText() {
-        docContentEpoch &+= 1
-        docTextCacheEpoch = 0
-        docTextCache = nil
-        docTextCacheScalarCount = 0
-        cachedSelectedRange = nil
-        cachedMarkedRange = nil
-        lastHoverScalarIndex = nil
-        clearCommandHoverFeedback()
-        updateGutterWidthIfNeeded()
-        startProcessingPoll()
-        onDidMutateDocumentText?()
-    }
-
-    @discardableResult
-    private func updateGutterWidthIfNeeded() -> Bool {
-        do {
-            let lineCount = try editor.logicalLineCount()
-            let required = max(minimumGutterWidthCells, Self.requiredGutterWidthCells(lineCount: lineCount))
-            if required == gutterWidthCells { return false }
-
-            gutterWidthCells = required
-            try editor.setGutterWidthCells(required)
-            return true
-        } catch {
-            // Gutter resizing is best-effort; never break input/rendering because of it.
-            return false
-        }
-    }
-
-    /// 根据逻辑行数计算需要的 gutter 宽度（cell）。
-    ///
-    /// 说明：
-    /// - renderer 会在 gutter 的前 2 个 cell 预留给 fold marker（更接近 VSCode 的 glyph margin 宽度），
-    ///   因此行号至少需要 `2 + digits`。
-    /// - `EditorCoreSkiaView` 当前的 `cellWidthPx` 是“固定网格”近似值（并非严格基于 font metrics），
-    ///   当行号位数变大时，Skia 的字形 advance 误差会累积，导致行号靠近分隔线时出现轻微裁切/重叠。
-    ///   因此从 5 位数（>= 10K 行）开始，我们额外预留 1 个 padding cell。
-    internal static func requiredGutterWidthCells(lineCount: UInt32) -> UInt32 {
-        let maxLineNo = max(1, lineCount)
-        let digits = UInt32(String(maxLineNo).count)
-        let extraPadding: UInt32 = digits >= 5 ? 1 : 0
-        let foldMarkerCells: UInt32 = 2
-        return max(4, foldMarkerCells + digits + extraPadding)
-    }
-
-    private func documentTextForInputQueries() -> String? {
-        if docTextCacheEpoch == docContentEpoch, let cached = docTextCache {
-            return cached
-        }
-
-        let t0 = CFAbsoluteTimeGetCurrent()
-        do {
-            let text = try editor.text()
-            docTextCache = text
-            docTextCacheEpoch = docContentEpoch
-            docTextCacheScalarCount = text.unicodeScalars.count
-
-            if textCacheDebugEnabled {
-                let dtMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000.0
-                NSLog("EditorCoreSkiaView text cache miss: fetched %d chars in %.2fms", text.count, dtMs)
-            }
-
-            return text
-        } catch {
-            if textCacheDebugEnabled {
-                NSLog("EditorCoreSkiaView text cache miss: fetch failed: %@", String(describing: error))
-            }
-            return nil
-        }
-    }
-
-    private func invalidateIMECharacterCoordinates() {
-        // 用于 IME 候选窗定位：当 caret/marked range 或 viewport 变化时，需要通知系统重新查询 firstRect。
-        textInputContext.invalidateCharacterCoordinates()
-    }
-
-    private func startProcessingPoll() {
-        // Extend the deadline on each edit burst.
-        processingPollDeadlineUptime = ProcessInfo.processInfo.systemUptime + 2.0
-
-        if processingPollTimer != nil {
-            return
-        }
-
-        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.main)
-        timer.schedule(deadline: .now(), repeating: .milliseconds(16), leeway: .milliseconds(2))
-        timer.setEventHandler { [weak self] in
-            guard let self else { return }
-            self.pollProcessingTick()
-        }
-        processingPollTimer = timer
-        timer.resume()
-    }
-
-    /// Best-effort: start a short-lived async processing poll window.
-    ///
-    /// This is useful when a host enables Tree-sitter (or other async processors) on a fresh
-    /// document without any edits yet, so the initial highlight/folding pass can be applied.
-    public func kickProcessingPoll() {
-        startProcessingPoll()
-    }
-
-    private func stopProcessingPoll() {
-        processingPollTimer?.cancel()
-        processingPollTimer = nil
-    }
-
-    private func pollProcessingTick() {
-        if alwaysPollProcessing == false, ProcessInfo.processInfo.systemUptime > processingPollDeadlineUptime {
-            stopProcessingPoll()
-            return
-        }
-
-        do {
-            let r = try editor.pollProcessing()
-            if r.applied {
-                requestRedraw()
-                invalidateIMECharacterCoordinates()
-                notifyViewportStateDidChange()
-                onDidApplyAsyncProcessing?()
-            }
-            if r.pending == false, alwaysPollProcessing == false {
-                stopProcessingPoll()
-            }
-        } catch {
-            stopProcessingPoll()
-            NSLog("EditorCoreSkiaView pollProcessing failed: %@", String(describing: error))
-        }
-    }
-
-    public override var acceptsFirstResponder: Bool { true }
-    public override var isFlipped: Bool { true }
-    public override var inputContext: NSTextInputContext? { textInputContext }
-
-    public override func resetCursorRects() {
-        super.resetCursorRects()
-        // VSCode-like: show text cursor when hovering over the editor content.
-        addCursorRect(bounds, cursor: .iBeam)
-    }
-
-    public override func becomeFirstResponder() -> Bool {
-        let ok = super.becomeFirstResponder()
-        if ok {
-            updateCaretBlinkTimer()
-        }
-        return ok
-    }
-
-    public override func resignFirstResponder() -> Bool {
-        let ok = super.resignFirstResponder()
-        if ok {
-            updateCaretBlinkTimer()
-        }
-        return ok
-    }
 
     public init(
         library: EditorCoreUIFFILibrary,
@@ -660,6 +591,7 @@ public final class EditorCoreSkiaView: MTKView {
         framebufferOnly = false
         colorPixelFormat = .bgra8Unorm
         delegate = self
+        configureGutterDiagnosticOverlay()
 
         // 让 Rust/Skia 走 Metal 后端渲染到 `CAMetalDrawable.texture`。
         try editor.enableMetal(device: device, commandQueue: queue)
@@ -709,6 +641,7 @@ public final class EditorCoreSkiaView: MTKView {
         framebufferOnly = false
         colorPixelFormat = .bgra8Unorm
         delegate = self
+        configureGutterDiagnosticOverlay()
 
         // 让 Rust/Skia 走 Metal 后端渲染到 `CAMetalDrawable.texture`。
         try editor.enableMetal(device: device, commandQueue: queue)
@@ -724,6 +657,13 @@ public final class EditorCoreSkiaView: MTKView {
         }
     }
 
+    func configureGutterDiagnosticOverlay() {
+        gutterDiagnosticOverlayView.editorView = self
+        gutterDiagnosticOverlayView.frame = bounds
+        gutterDiagnosticOverlayView.autoresizingMask = [.width, .height]
+        addSubview(gutterDiagnosticOverlayView)
+    }
+
     @available(*, unavailable, message: "请使用 init(library:initialText:viewportWidthCells:) 构造。")
     public override init(frame frameRect: NSRect, device: MTLDevice?) {
         fatalError("unavailable")
@@ -734,221 +674,6 @@ public final class EditorCoreSkiaView: MTKView {
         fatalError("unavailable")
     }
 
-    public override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        // Hover requires mouse moved events.
-        window?.acceptsMouseMovedEvents = true
-        updateLayerContentsScaleIfNeeded()
-        updateViewportIfNeeded()
-        updateCaretBlinkTimer()
-
-        if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_DRAW"] == "1", didLogDrawSetupOnce == false {
-            didLogDrawSetupOnce = true
-            let layerDesc = layer.map { String(describing: type(of: $0)) } ?? "nil"
-            let delegateDesc = delegate.map { String(describing: type(of: $0)) } ?? "nil"
-            NSLog(
-                "EditorCoreSkiaView setup: window=%@ wantsLayer=%d layer=%@ device=%@ delegate=%@ paused=%d setNeeds=%d fps=%d bounds(points)=%@ drawableSize(px)=%@",
-                String(describing: window),
-                wantsLayer ? 1 : 0,
-                layerDesc,
-                device.map { String(describing: $0) } ?? "nil",
-                delegateDesc,
-                isPaused ? 1 : 0,
-                enableSetNeedsDisplay ? 1 : 0,
-                preferredFramesPerSecond,
-                NSStringFromSize(bounds.size),
-                NSStringFromSize(drawableSize)
-            )
-        }
-    }
-
-    public override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-
-        if let hoverTrackingArea {
-            removeTrackingArea(hoverTrackingArea)
-        }
-
-        let options: NSTrackingArea.Options = [
-            .activeInKeyWindow,
-            .inVisibleRect,
-            .mouseMoved,
-            .mouseEnteredAndExited,
-        ]
-        let area = NSTrackingArea(rect: .zero, options: options, owner: self, userInfo: nil)
-        addTrackingArea(area)
-        hoverTrackingArea = area
-    }
-
-    public override func viewDidChangeBackingProperties() {
-        super.viewDidChangeBackingProperties()
-        updateLayerContentsScaleIfNeeded()
-        updateViewportIfNeeded()
-        requestRedraw()
-    }
-
-    public override func layout() {
-        super.layout()
-        updateViewportIfNeeded()
-    }
-
-    public override func setNeedsDisplay(_ invalidRect: NSRect) {
-        super.setNeedsDisplay(invalidRect)
-        // 对 `MTKView`（on-demand 模式）来说，仅标记 needsDisplay 在某些系统版本上不会触发 GPU draw。
-        // 我们在这里统一把它转成一次 `draw()`，这样外部（demo/scroll container/test）只要
-        // 继续用 `needsDisplay = true` 就能可靠刷新画面。
-        scheduleDrawIfPossible()
-    }
-
-    private func updateLayerContentsScaleIfNeeded() {
-        guard let window else { return }
-        // 在某些 layer-backed 组合/缩放配置下，如果 contentsScale 不跟随 window 的 backingScaleFactor，
-        // 会导致“画面贴屏”和“事件坐标 hit-test”不在同一套像素坐标系里（表现为点击/光标不对齐）。
-        if layer?.contentsScale != window.backingScaleFactor {
-            layer?.contentsScale = window.backingScaleFactor
-        }
-    }
-
-    private static let defaultFontSizePoints: CGFloat = 13.0
-    private static let defaultLineHeightMultiple: CGFloat = 18.0 / 13.0
-    private static let defaultCellWidthMultiple: CGFloat = 8.0 / 13.0
-    private static let defaultPaddingMultiple: CGFloat = 8.0 / 13.0
-
-    private static func normalizeFontSizePoints(_ v: CGFloat) -> CGFloat {
-        guard v.isFinite else { return defaultFontSizePoints }
-        return min(max(v, 6.0), 72.0)
-    }
-
-    private func applyRenderMetricsIfNeeded(force: Bool) -> Bool {
-        let fontPt = Self.normalizeFontSizePoints(fontSizePoints)
-        let scale = max(1.0, scaleFactor)
-
-        let fontSizePx: Float = Float(fontPt * scale)
-        let lineHeightPx: Float = Float(fontPt * Self.defaultLineHeightMultiple * scale)
-        let cellWidthPx: Float = Float(fontPt * Self.defaultCellWidthMultiple * scale)
-        let paddingPx: Float = Float(fontPt * Self.defaultPaddingMultiple * scale)
-
-        let snapshot = RenderMetricsSnapshot(
-            fontSizePx: fontSizePx,
-            lineHeightPx: lineHeightPx,
-            cellWidthPx: cellWidthPx,
-            paddingPx: paddingPx
-        )
-
-        if force == false, lastAppliedRenderMetrics == snapshot {
-            return false
-        }
-
-        do {
-            try editor.setRenderMetrics(
-                fontSize: fontSizePx,
-                lineHeightPx: lineHeightPx,
-                cellWidthPx: cellWidthPx,
-                paddingXPx: paddingPx,
-                paddingYPx: paddingPx
-            )
-            self.lineHeightPx = lineHeightPx
-            lastAppliedRenderMetrics = snapshot
-            applyTextVerticalAlignIfNeeded(force: false)
-            return true
-        } catch {
-            NSLog("EditorCoreSkiaView setRenderMetrics failed: %@", String(describing: error))
-            return false
-        }
-    }
-
-    private func updateViewportIfNeeded() {
-        let pointsSize = bounds.size
-        let fallbackScale = window?.backingScaleFactor ?? (NSScreen.main?.backingScaleFactor ?? 1)
-        let safeScale = max(1, fallbackScale)
-
-        let backingSize: NSSize
-        if window != nil,
-           pointsSize.width.isFinite,
-           pointsSize.height.isFinite,
-           pointsSize.width > 0,
-           pointsSize.height > 0
-        {
-            let converted = convertToBacking(pointsSize)
-            if converted.width.isFinite, converted.height.isFinite {
-                backingSize = converted
-            } else {
-                // 在某些布局阶段（比如 view 还未有有效 bounds 时），MTKView 的内部缩放因子可能导致
-                // convertToBacking 返回 NaN/Inf。这里回退到 window 的 backingScaleFactor。
-                backingSize = NSSize(width: pointsSize.width * safeScale, height: pointsSize.height * safeScale)
-            }
-        } else {
-            // 当 bounds 为 0 或未就绪时，不要调用 convertToBacking（可能产生 NaN/Inf 并触发 Swift runtime trap）。
-            let w = pointsSize.width.isFinite ? pointsSize.width : 0
-            let h = pointsSize.height.isFinite ? pointsSize.height : 0
-            backingSize = NSSize(width: w * safeScale, height: h * safeScale)
-        }
-
-        let backingWidth = backingSize.width.isFinite ? backingSize.width : 0
-        let backingHeight = backingSize.height.isFinite ? backingSize.height : 0
-        let widthPx = UInt32(max(1, Int(max(0, backingWidth).rounded())))
-        let heightPx = UInt32(max(1, Int(max(0, backingHeight).rounded())))
-
-        let newScale: CGFloat
-        if pointsSize.width > 0, pointsSize.height > 0, backingWidth > 0, backingHeight > 0 {
-            let sx = backingWidth / pointsSize.width
-            let sy = backingHeight / pointsSize.height
-            if sx.isFinite, sy.isFinite, sx > 0, sy > 0 {
-                newScale = (sx + sy) * 0.5
-            } else {
-                newScale = safeScale
-            }
-        } else {
-            newScale = safeScale
-        }
-
-        let viewportChanged = (widthPx != viewportWidthPx) || (heightPx != viewportHeightPx) || (newScale != scaleFactor)
-        if viewportChanged {
-            viewportWidthPx = widthPx
-            viewportHeightPx = heightPx
-            scaleFactor = newScale
-
-            // MTKView 的 drawableSize 以“像素”为单位；这里保持与 Rust viewport 一致。
-            let newDrawableSize = CGSize(width: CGFloat(widthPx), height: CGFloat(heightPx))
-            if drawableSize != newDrawableSize {
-                drawableSize = newDrawableSize
-            }
-        }
-
-        let metricsChanged = applyRenderMetricsIfNeeded(force: false)
-
-        if viewportChanged {
-            do {
-                try editor.setViewportPx(widthPx: widthPx, heightPx: heightPx, scale: Float(newScale))
-            } catch {
-                NSLog("EditorCoreSkiaView setViewportPx failed: %@", String(describing: error))
-            }
-        }
-
-        if viewportChanged, ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_SCALE"] == "1" {
-            if didLogScaleDebugOnce == false {
-                didLogScaleDebugOnce = true
-                NSLog(
-                    "EditorCoreSkiaView scale debug: bounds(points)=%@ backingSize(px)=%@ newScale=%.3f window.backingScaleFactor=%.3f layer.contentsScale=%.3f",
-                    NSStringFromSize(pointsSize),
-                    NSStringFromSize(backingSize),
-                    Double(newScale),
-                    Double(window?.backingScaleFactor ?? 0),
-                    Double(layer?.contentsScale ?? 0)
-                )
-            }
-        }
-
-        if viewportChanged {
-            applyCaretAppearanceIfNeeded(force: false)
-        }
-
-        if viewportChanged || metricsChanged {
-            requestRedraw()
-            invalidateIMECharacterCoordinates()
-            notifyViewportStateDidChange()
-        }
-    }
 
     deinit {
         processingPollTimer?.cancel()
@@ -959,1513 +684,69 @@ public final class EditorCoreSkiaView: MTKView {
             timer?.invalidate()
         }
     }
+}
+struct EditorCoreSkiaGutterDiagnosticMarkerLayout {
+    let marker: EditorCoreSkiaGutterDiagnosticMarker
+    let rect: CGRect
+}
 
-    public override func draw(_ dirtyRect: NSRect) {
-        // 在 macOS 26.3 上观察到：`MTKViewDelegate.draw(in:)` 有时不会被调用（导致“编辑区空白”），
-        // 但 AppKit 的 view-based draw pipeline 仍然会触发 `draw(_:)`。
-        //
-        // 因此这里把 Metal 渲染放到 `draw(_:)` 里作为兜底（并保持 `MTKViewDelegate` 的实现）。
-        if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_DRAW"] == "1" {
-            NSLog("EditorCoreSkiaView drawRect: dirty=%@ bounds(points)=%@ drawableSize(px)=%@",
-                  NSStringFromRect(dirtyRect),
-                  NSStringFromSize(bounds.size),
-                  NSStringFromSize(drawableSize))
-        }
-        updateViewportIfNeeded()
-        renderToCurrentDrawable(debugSource: "drawRect")
+@MainActor
+final class EditorCoreSkiaGutterDiagnosticOverlayView: NSView {
+    weak var editorView: EditorCoreSkiaView?
+
+    override var isFlipped: Bool { true }
+    override var isOpaque: Bool { false }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
     }
 
-    // MARK: - Mouse
+    override func draw(_ dirtyRect: NSRect) {
+        guard let editorView, let ctx = NSGraphicsContext.current?.cgContext else { return }
 
-    private func debugLogInput(_ event: NSEvent, xPx: Float, yPx: Float, phase: String, force: Bool) {
-        guard ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_INPUT"] == "1" else { return }
-
-        let now = ProcessInfo.processInfo.systemUptime
-        if force == false, now - lastInputDebugLogUptime < 0.1 {
-            return
-        }
-        lastInputDebugLogUptime = now
-
-        let windowPoint = event.locationInWindow
-        let viewPoint = convert(windowPoint, from: nil)
-        let boundsSize = bounds.size
-        let backingSize = convertToBacking(boundsSize)
-        let sx = boundsSize.width > 0 ? (backingSize.width / boundsSize.width) : 0
-        let sy = boundsSize.height > 0 ? (backingSize.height / boundsSize.height) : 0
-
-        var extra = ""
-        if let scalar = try? editor.viewPointToCharOffset(xPx: xPx, yPx: yPx) {
-            if let snapped = try? editor.charOffsetToViewPoint(offset: scalar) {
-                let dx = snapped.xPx - xPx
-                let dy = snapped.yPx - yPx
-                extra = String(format: " off=%u snapped=(%.1f,%.1f) d=(%.1f,%.1f)", scalar, snapped.xPx, snapped.yPx, dx, dy)
-            } else {
-                extra = " off=\(scalar)"
-            }
-        }
-
-        NSLog(
-            "EditorCoreSkiaView input %@: window=%@ view=%@ sx=%.3f sy=%.3f -> px=(%.1f,%.1f) viewport=%ux%u%@",
-            phase,
-            NSStringFromPoint(windowPoint),
-            NSStringFromPoint(viewPoint),
-            Double(sx),
-            Double(sy),
-            Double(xPx),
-            Double(yPx),
-            viewportWidthPx,
-            viewportHeightPx,
-            extra
-        )
-    }
-
-    private func clearCommandHoverFeedback() {
-        if let range = commandHoverActiveRange {
-            do {
-                try editor.removeStyle(
-                    start: range.start,
-                    end: range.end,
-                    styleId: EditorCoreSkiaBuiltinStyleId.commandHoverLink
-                )
-            } catch {
-                // Hover feedback is best-effort; ignore failures.
-            }
-            commandHoverActiveRange = nil
-        }
-
-        if commandHoverCursorIsPointing {
-            NSCursor.iBeam.set()
-            commandHoverCursorIsPointing = false
+        for layout in editorView.gutterDiagnosticMarkerLayouts() where layout.rect.intersects(dirtyRect) {
+            draw(layout.marker.kind, in: layout.rect, ctx: ctx)
         }
     }
 
-    /// Dismiss host hover UI (e.g. LSP hover popovers) on any explicit user action.
-    ///
-    /// Rationale:
-    /// - Hover is triggered by mouse movement, but should not "stick" when the user starts typing,
-    ///   moves the caret, clicks, scrolls, etc.
-    /// - Cmd-hover feedback (underline + pointing cursor) can also become stale when the document
-    ///   changes without further mouse movement.
-    private func dismissHoverUIForUserAction() {
-        clearCommandHoverFeedback()
-        lastHoverModifierFlags = []
-        lastHoverContextForCommandHover = nil
-        lastHoverDocumentLinkJSONForCommandHover = nil
+    func draw(_ kind: EditorCoreSkiaGutterDiagnosticMarker.Kind, in rect: CGRect, ctx: CGContext) {
+        let color = kind.gutterColor
+        let r = rect.insetBy(dx: max(0.5, rect.width * 0.08), dy: max(0.5, rect.height * 0.08))
 
-        if lastHoverCharOffset != nil {
-            lastHoverCharOffset = nil
-            onHoverExit?()
+        switch kind {
+        case .error:
+            ctx.setFillColor(color.cgColor)
+            ctx.fillEllipse(in: r)
+        case .warning:
+            ctx.setFillColor(color.cgColor)
+            ctx.beginPath()
+            ctx.move(to: CGPoint(x: r.midX, y: r.minY))
+            ctx.addLine(to: CGPoint(x: r.maxX, y: r.maxY))
+            ctx.addLine(to: CGPoint(x: r.minX, y: r.maxY))
+            ctx.closePath()
+            ctx.fillPath()
+        case .information:
+            ctx.setFillColor(color.cgColor)
+            ctx.fillEllipse(in: r)
+        case .hint:
+            ctx.setStrokeColor(color.cgColor)
+            ctx.setLineWidth(max(1, min(r.width, r.height) * 0.16))
+            ctx.strokeEllipse(in: r)
         }
     }
-
-    private func updateCommandHoverFeedbackIfNeeded(
-        eventFlags: NSEvent.ModifierFlags,
-        hoverContext: EditorCoreSkiaContextMenuContext,
-        documentLinkJSON: String?
-    ) {
-        guard commandHoverLinkFeedbackEnabled else {
-            clearCommandHoverFeedback()
-            return
-        }
-
-        // Cmd+Option is reserved for multi-cursor; do not show "clickable symbol" affordance.
-        let isCmdHover = eventFlags.contains(.command) && eventFlags.contains(.option) == false
-        guard isCmdHover else {
-            clearCommandHoverFeedback()
-            return
-        }
-
-        var wantsPointer = false
-        var wantsUnderlineRange: EcuSelectionRange?
-
-        // Document links are always Cmd-clickable.
-        if documentLinkJSON != nil {
-            wantsPointer = true
-        }
-
-        let hostAllows = onCommandHover?(hoverContext) ?? (onCommandClick != nil)
-        if hostAllows {
-            if let text = documentTextForInputQueries() {
-                wantsUnderlineRange = tokenRangeForCommandHover(
-                    in: text,
-                    atCharOffset: hoverContext.charOffset
-                )
-                if wantsUnderlineRange != nil {
-                    wantsPointer = true
-                }
-            }
-        }
-
-        if wantsUnderlineRange != commandHoverActiveRange {
-            if let old = commandHoverActiveRange {
-                do {
-                    try editor.removeStyle(
-                        start: old.start,
-                        end: old.end,
-                        styleId: EditorCoreSkiaBuiltinStyleId.commandHoverLink
-                    )
-                } catch {
-                    // Best-effort.
-                }
-                commandHoverActiveRange = nil
-            }
-
-            if let next = wantsUnderlineRange {
-                do {
-                    try editor.addStyle(
-                        start: next.start,
-                        end: next.end,
-                        styleId: EditorCoreSkiaBuiltinStyleId.commandHoverLink
-                    )
-                    commandHoverActiveRange = next
-                } catch {
-                    commandHoverActiveRange = nil
-                }
-            }
-
-            requestRedraw()
-        }
-
-        if wantsPointer {
-            if commandHoverCursorIsPointing == false {
-                NSCursor.pointingHand.set()
-                commandHoverCursorIsPointing = true
-            } else {
-                // Keep pointer cursor stable across moves.
-                NSCursor.pointingHand.set()
-            }
-        } else {
-            if commandHoverCursorIsPointing {
-                NSCursor.iBeam.set()
-                commandHoverCursorIsPointing = false
-            }
-        }
-    }
-
-    private static func isNewlineScalar(_ s: UnicodeScalar) -> Bool {
-        s.value == 10 /* \n */ || s.value == 13 /* \r */
-    }
-
-    private static func isAsciiWordScalar(_ s: UnicodeScalar) -> Bool {
-        guard s.isASCII else { return false }
-        switch s.value {
-        case 48...57: // 0-9
-            return true
-        case 65...90: // A-Z
-            return true
-        case 97...122: // a-z
-            return true
-        case 95: // _
-            return true
-        default:
-            return false
-        }
-    }
-
-    private static func isWordTokenScalar(_ s: UnicodeScalar) -> Bool {
-        if s.properties.isWhitespace {
-            return false
-        }
-        if s.isASCII {
-            return isAsciiWordScalar(s)
-        }
-        // Match the kernel's editor-friendly word model: treat non-ASCII as a single "word unit".
-        return true
-    }
-
-    private func scalarIndexForCachedText(
-        scalars: String.UnicodeScalarView,
-        targetOffset: Int
-    ) -> String.UnicodeScalarView.Index? {
-        guard targetOffset >= 0 else { return nil }
-        guard docTextCacheScalarCount > 0 else { return nil }
-        guard targetOffset < docTextCacheScalarCount else { return nil }
-
-        let epoch = docContentEpoch
-        if let cached = lastHoverScalarIndex, cached.epoch == epoch {
-            if cached.offset == targetOffset {
-                return cached.index
-            }
-
-            var idx = cached.index
-            var off = cached.offset
-            if targetOffset > off {
-                while off < targetOffset, idx != scalars.endIndex {
-                    idx = scalars.index(after: idx)
-                    off += 1
-                }
-            } else {
-                while off > targetOffset, idx != scalars.startIndex {
-                    idx = scalars.index(before: idx)
-                    off -= 1
-                }
-            }
-
-            lastHoverScalarIndex = (epoch: epoch, offset: off, index: idx)
-            return idx
-        }
-
-        let idx = scalars.index(scalars.startIndex, offsetBy: targetOffset)
-        lastHoverScalarIndex = (epoch: epoch, offset: targetOffset, index: idx)
-        return idx
-    }
-
-    private func tokenRangeForCommandHover(in text: String, atCharOffset offset: UInt32) -> EcuSelectionRange? {
-        let scalarCount = docTextCacheScalarCount
-        guard scalarCount > 0 else { return nil }
-
-        let requested = Int(offset)
-        let clamped = min(max(0, requested), scalarCount - 1)
-        let scalars = text.unicodeScalars
-        guard let anchorIndex = scalarIndexForCachedText(scalars: scalars, targetOffset: clamped) else {
-            return nil
-        }
-
-        func tokenSpanAt(foundOffset: Int, foundIndex: String.UnicodeScalarView.Index) -> (start: Int, end: Int)? {
-            let s = scalars[foundIndex]
-            guard Self.isWordTokenScalar(s) else { return nil }
-
-            // ASCII word runs expand; non-ASCII token chars are single-char units.
-            if Self.isAsciiWordScalar(s) {
-                var startOffset = foundOffset
-                var startIndex = foundIndex
-                while startOffset > 0 {
-                    let prev = scalars.index(before: startIndex)
-                    let ps = scalars[prev]
-                    if Self.isNewlineScalar(ps) { break }
-                    if Self.isAsciiWordScalar(ps) {
-                        startOffset -= 1
-                        startIndex = prev
-                    } else {
-                        break
-                    }
-                }
-
-                var endOffset = foundOffset + 1
-                var endIndex = scalars.index(after: foundIndex)
-                while endOffset < scalarCount, endIndex != scalars.endIndex {
-                    let ns = scalars[endIndex]
-                    if Self.isNewlineScalar(ns) { break }
-                    if Self.isAsciiWordScalar(ns) {
-                        endOffset += 1
-                        endIndex = scalars.index(after: endIndex)
-                    } else {
-                        break
-                    }
-                }
-                return (startOffset, endOffset)
-            }
-
-            return (foundOffset, foundOffset + 1)
-        }
-
-        // Prefer token under the cursor; if not a token, search within the same logical line.
-        if let span = tokenSpanAt(foundOffset: clamped, foundIndex: anchorIndex) {
-            return EcuSelectionRange(start: UInt32(span.start), end: UInt32(span.end))
-        }
-
-        // Search right.
-        var rightOffset = clamped
-        var rightIndex = anchorIndex
-        while rightOffset + 1 < scalarCount {
-            rightOffset += 1
-            rightIndex = scalars.index(after: rightIndex)
-            if rightIndex == scalars.endIndex { break }
-            let s = scalars[rightIndex]
-            if Self.isNewlineScalar(s) { break }
-            if let span = tokenSpanAt(foundOffset: rightOffset, foundIndex: rightIndex) {
-                return EcuSelectionRange(start: UInt32(span.start), end: UInt32(span.end))
-            }
-        }
-
-        // Search left.
-        if clamped > 0 {
-            var leftOffset = clamped
-            var leftIndex = anchorIndex
-            while leftOffset > 0 {
-                leftOffset -= 1
-                leftIndex = scalars.index(before: leftIndex)
-                let s = scalars[leftIndex]
-                if Self.isNewlineScalar(s) { break }
-                if let span = tokenSpanAt(foundOffset: leftOffset, foundIndex: leftIndex) {
-                    return EcuSelectionRange(start: UInt32(span.start), end: UInt32(span.end))
-                }
-            }
-        }
-
-        return nil
-    }
-
-    public override func mouseMoved(with event: NSEvent) {
-        updateViewportIfNeeded()
-
-        let windowPoint = event.locationInWindow
-        let viewPoint = convert(windowPoint, from: nil)
-        let (xPx, yPx) = EditorCoreCoordinateMapping.windowPointToViewBackingPx(
-            windowPoint: windowPoint,
-            view: self
-        )
-
-        do {
-            let offset = try editor.viewPointToCharOffset(xPx: xPx, yPx: yPx)
-            let pos = try editor.charOffsetToLogicalPosition(offset: offset)
-            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-            let shouldQueryLink = (onHover != nil) || (flags.contains(.command) && flags.contains(.option) == false)
-            let linkJSON = shouldQueryLink ? (try? editor.documentLinkJSONAtViewPoint(xPx: xPx, yPx: yPx)) : nil
-
-            let ctx = EditorCoreSkiaContextMenuContext(
-                charOffset: offset,
-                logicalLine: pos.line,
-                logicalColumn: pos.column,
-                windowPoint: windowPoint,
-                viewPoint: viewPoint,
-                viewBackingXPx: xPx,
-                viewBackingYPx: yPx
-            )
-            lastHoverContextForCommandHover = ctx
-            lastHoverDocumentLinkJSONForCommandHover = linkJSON ?? nil
-
-            let didChangeOffset = (offset != lastHoverCharOffset)
-            if didChangeOffset {
-                lastHoverCharOffset = offset
-            }
-
-            if didChangeOffset, onHover != nil {
-                onHover?(
-                    EditorCoreSkiaHoverInfo(
-                        charOffset: offset,
-                        logicalLine: pos.line,
-                        logicalColumn: pos.column,
-                        windowPoint: windowPoint,
-                        viewPoint: viewPoint,
-                        viewBackingXPx: xPx,
-                        viewBackingYPx: yPx,
-                        documentLinkJSON: linkJSON ?? nil
-                    )
-                )
-            }
-
-            lastHoverModifierFlags = flags
-            updateCommandHoverFeedbackIfNeeded(
-                eventFlags: flags,
-                hoverContext: ctx,
-                documentLinkJSON: linkJSON ?? nil
-            )
-        } catch {
-            // Hover is best-effort: never beep or disrupt input.
-        }
-    }
-
-    public override func flagsChanged(with event: NSEvent) {
-        super.flagsChanged(with: event)
-
-        guard commandHoverLinkFeedbackEnabled else { return }
-        guard let ctx = lastHoverContextForCommandHover else { return }
-
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let isCmdHover = flags.contains(.command) && flags.contains(.option) == false
-
-        let linkJSON: String?
-        if isCmdHover {
-            // If the user toggles Cmd without moving the mouse, re-query link hit-test using the
-            // last known hover point so cursor feedback stays responsive.
-            linkJSON = (try? editor.documentLinkJSONAtViewPoint(xPx: ctx.viewBackingXPx, yPx: ctx.viewBackingYPx))
-                ?? lastHoverDocumentLinkJSONForCommandHover
-        } else {
-            linkJSON = nil
-        }
-
-        updateCommandHoverFeedbackIfNeeded(
-            eventFlags: flags,
-            hoverContext: ctx,
-            documentLinkJSON: linkJSON
-        )
-    }
-
-    public override func mouseExited(with event: NSEvent) {
-        clearCommandHoverFeedback()
-        lastHoverModifierFlags = []
-        lastHoverContextForCommandHover = nil
-        lastHoverDocumentLinkJSONForCommandHover = nil
-        if lastHoverCharOffset != nil {
-            lastHoverCharOffset = nil
-            onHoverExit?()
-        }
-        super.mouseExited(with: event)
-    }
-
-    public override func menu(for event: NSEvent) -> NSMenu? {
-        let context = buildContextMenuContext(for: event)
-        if let menu = contextMenuProvider?(context) {
-            return menu
-        }
-        return defaultContextMenu(for: context)
-    }
-
-    public override func rightMouseDown(with event: NSEvent) {
-        dismissHoverUIForUserAction()
-
-        // Ensure we become first responder so standard actions (copy/cut/paste) go through our overrides.
-        window?.makeFirstResponder(self)
-
-        if let menu = menu(for: event) {
-            NSMenu.popUpContextMenu(menu, with: event, for: self)
-            return
-        }
-        super.rightMouseDown(with: event)
-    }
-
-    private func buildContextMenuContext(for event: NSEvent) -> EditorCoreSkiaContextMenuContext {
-        updateViewportIfNeeded()
-
-        let windowPoint = event.locationInWindow
-        let viewPoint = convert(windowPoint, from: nil)
-        let (xPx, yPx) = EditorCoreCoordinateMapping.windowPointToViewBackingPx(
-            windowPoint: windowPoint,
-            view: self
-        )
-
-        let offset = (try? editor.viewPointToCharOffset(xPx: xPx, yPx: yPx)) ?? 0
-        let pos = (try? editor.charOffsetToLogicalPosition(offset: offset)) ?? (line: 0, column: 0)
-
-        return EditorCoreSkiaContextMenuContext(
-            charOffset: offset,
-            logicalLine: pos.line,
-            logicalColumn: pos.column,
-            windowPoint: windowPoint,
-            viewPoint: viewPoint,
-            viewBackingXPx: xPx,
-            viewBackingYPx: yPx
-        )
-    }
-
-    private func defaultContextMenu(for context: EditorCoreSkiaContextMenuContext) -> NSMenu {
-        let menu = NSMenu(title: "Editor")
-        menu.autoenablesItems = false
-
-        let hasSelection: Bool
-        do {
-            let s = try editor.selectionOffsets()
-            hasSelection = s.start != s.end
-        } catch {
-            hasSelection = false
-        }
-
-        let canPaste = pasteboard.string(forType: .string) != nil
-
-        let cut = NSMenuItem(title: "Cut", action: #selector(cut(_:)), keyEquivalent: "")
-        cut.target = self
-        cut.isEnabled = hasSelection
-
-        let copy = NSMenuItem(title: "Copy", action: #selector(copy(_:)), keyEquivalent: "")
-        copy.target = self
-        copy.isEnabled = hasSelection
-
-        let paste = NSMenuItem(title: "Paste", action: #selector(paste(_:)), keyEquivalent: "")
-        paste.target = self
-        paste.isEnabled = canPaste
-
-        let selectAll = NSMenuItem(title: "Select All", action: #selector(selectAll(_:)), keyEquivalent: "")
-        selectAll.target = self
-        selectAll.isEnabled = true
-
-        menu.addItem(cut)
-        menu.addItem(copy)
-        menu.addItem(paste)
-        menu.addItem(.separator())
-        menu.addItem(selectAll)
-
-        // Keep `context` referenced (future-proof: allow providers to attach representedObject via userInfo).
-        _ = context
-        return menu
-    }
-
-    public override func mouseDown(with event: NSEvent) {
-        dismissHoverUIForUserAction()
-
-        window?.makeFirstResponder(self)
-        let (xPx, yPx) = EditorCoreCoordinateMapping.windowPointToViewBackingPx(
-            windowPoint: event.locationInWindow,
-            view: self
-        )
-        debugLogInput(event, xPx: xPx, yPx: yPx, phase: "down", force: true)
-
-        do {
-            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-
-            // Cmd+Click 依然保留给“文档链接 / go-to-definition”等 host 级 hook。
-            // 但 Cmd+Option+Click 需要保留给 multi-cursor（避免与 cmd-click hook 冲突）。
-            if flags.contains(.command), flags.contains(.option) == false {
-                if event.clickCount == 1, openDocumentLinkIfPresent(xPx: xPx, yPx: yPx) {
-                    return
-                }
-
-                if event.clickCount == 1, let onCommandClick {
-                    let ctx = buildContextMenuContext(for: event)
-                    if onCommandClick(ctx) {
-                        return
-                    }
-                }
-
-                // Cmd-click hook 未处理：退化成“普通点选/选择”。
-                // 注意：这里刻意 strip `.command`，避免 Rust 的 mouse policy 把 Cmd 解释成 multi-cursor。
-                let stripped = flags.subtracting(.command)
-                let mods = Self.ecuMouseModifiers(from: stripped)
-                try editor.mouseDownEx(
-                    xPx: xPx,
-                    yPx: yPx,
-                    modifiers: mods,
-                    clickCount: UInt32(max(1, event.clickCount))
-                )
-            } else {
-                let mods = Self.ecuMouseModifiers(from: flags)
-                try editor.mouseDownEx(
-                    xPx: xPx,
-                    yPx: yPx,
-                    modifiers: mods,
-                    clickCount: UInt32(max(1, event.clickCount))
-                )
-            }
-        } catch {
-            NSSound.beep()
-        }
-        requestRedraw()
-        invalidateIMECharacterCoordinates()
-        notifyViewportStateDidChange()
-    }
-
-    /// Try to open an LSP document link at the given view point (in backing pixels).
-    ///
-    /// Returns `true` when a link was found and opened.
-    @discardableResult
-    public func openDocumentLinkIfPresent(xPx: Float, yPx: Float) -> Bool {
-        do {
-            guard let json = try editor.documentLinkJSONAtViewPoint(xPx: xPx, yPx: yPx) else {
-                return false
-            }
-            guard let url = Self.documentLinkTargetURL(from: json) else {
-                return false
-            }
-            onOpenURL(url)
-            return true
-        } catch {
-            return false
-        }
-    }
-
-    private static func documentLinkTargetURL(from json: String) -> URL? {
-        guard let data = json.data(using: .utf8) else { return nil }
-        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-        guard let target = obj["target"] as? String, target.isEmpty == false else { return nil }
-
-        // LSP `DocumentLink.target` is typically a URI string (file://, https://, ...).
-        if let url = URL(string: target), url.scheme != nil {
-            return url
-        }
-        // Fallback: treat it as a filesystem path.
-        return URL(fileURLWithPath: target)
-    }
-
-    public override func mouseDragged(with event: NSEvent) {
-        dismissHoverUIForUserAction()
-
-        let (xPx, yPx) = EditorCoreCoordinateMapping.windowPointToViewBackingPx(
-            windowPoint: event.locationInWindow,
-            view: self
-        )
-        debugLogInput(event, xPx: xPx, yPx: yPx, phase: "drag", force: false)
-        do {
-            try editor.mouseDragged(xPx: xPx, yPx: yPx)
-        } catch {
-            NSSound.beep()
-        }
-        requestRedraw()
-        invalidateIMECharacterCoordinates()
-        notifyViewportStateDidChange()
-    }
-
-    public override func mouseUp(with event: NSEvent) {
-        dismissHoverUIForUserAction()
-
-        editor.mouseUp()
-        requestRedraw()
-        invalidateIMECharacterCoordinates()
-        notifyViewportStateDidChange()
-    }
-
-    private static func ecuMouseModifiers(from flags: NSEvent.ModifierFlags) -> UInt32 {
-        // Bit layout mirrors `editor_core_ui::Modifiers` (see `editor_core_ui_ffi.h`):
-        // - bit0: shift
-        // - bit1: ctrl
-        // - bit2: alt/option
-        // - bit3: meta/cmd
-        var out: UInt32 = 0
-        if flags.contains(.shift) { out |= 0b0001 }
-        if flags.contains(.control) { out |= 0b0010 }
-        if flags.contains(.option) { out |= 0b0100 }
-        if flags.contains(.command) { out |= 0b1000 }
-        return out
-    }
-
-    public override func scrollWheel(with event: NSEvent) {
-        handleScroll(deltaYPoints: event.scrollingDeltaY, hasPreciseScrollingDeltas: event.hasPreciseScrollingDeltas)
-    }
-
-    // MARK: - Smooth scroll helper (testable)
-
-    /// Smooth-scroll handler shared by `scrollWheel(with:)` and unit tests.
-    ///
-    /// - Parameters:
-    ///   - deltaYPoints: For precise scrolling events, this is the point delta. For coarse scrolling
-    ///     (mouse wheel), AppKit's delta is closer to “line units”.
-    ///   - hasPreciseScrollingDeltas: Mirrors `NSEvent.hasPreciseScrollingDeltas`.
-    func handleScroll(
-        deltaYPoints: CGFloat,
-        hasPreciseScrollingDeltas: Bool
-    ) {
-        dismissHoverUIForUserAction()
-
-        // 平滑滚动：
-        // - trackpad（hasPreciseScrollingDeltas == true）给出的是 point 级连续 delta
-        // - 传统鼠标滚轮（hasPreciseScrollingDeltas == false）更接近“行数”delta
-        //
-        // UI 侧统一换算成“backing pixels”的 delta，再交给 Rust UI 层维护
-        // `(scroll_top, sub_row_offset)`，并在渲染/hit-test 中使用子行偏移。
-        var scale = window?.backingScaleFactor ?? (NSScreen.main?.backingScaleFactor ?? 1)
-        scale = max(1, scale)
-
-        var deltaPt = deltaYPoints
-        if hasPreciseScrollingDeltas == false {
-            // 注意：这里不能直接用 `convertToBacking/convertFromBacking` 来换算 delta，
-            // 因为 `NSSize` 在语义上是“尺寸”，某些情况下系统可能会丢掉符号位（导致滚动方向错）。
-            //
-            // 我们使用明确的 `backingScaleFactor` 做乘除，确保 delta 的正负号稳定。
-            let lineHeightPt = CGFloat(max(1, lineHeightPx)) / scale
-            if lineHeightPt > 0 {
-                deltaPt *= lineHeightPt
-            }
-        }
-
-        let deltaPx = deltaPt * scale
-        if deltaPx != 0 {
-            // 约定：Rust `scrollByPixels` 的正值表示“向下滚动”（内容向上，显示更靠后的行）。
-            // AppKit: scrollingDeltaY > 0 通常表示“向上滚动”（内容向下）。
-            // 我们约定 Rust `scrollByPixels` 的正值表示“向下滚动”（内容向上），因此取负号。
-            editor.scrollByPixels(Float(-deltaPx))
-            requestRedraw()
-            invalidateIMECharacterCoordinates()
-            notifyViewportStateDidChange()
-        }
-    }
-
-    // MARK: - Keyboard / Text input
-
-    public override func keyDown(with event: NSEvent) {
-        dismissHoverUIForUserAction()
-
-        // 说明：
-        // - `interpretKeyEvents` 主要处理“文本系统 key binding”（比如方向键、delete、Option+Left 等），
-        //   最终回调到 `insertText` / `setMarkedText` / `doCommand(by:)`。
-        // - 但像 Cmd+C / Cmd+V / Cmd+X 这类“菜单快捷键”在没有 NSMenu 的 demo 环境里不会被触发，
-        //   导致看起来“剪贴板命令不存在”。
-        //
-        // 为了让组件在“无菜单”场景也能工作，我们在这里直接拦截常用 Cmd 快捷键。
-        if handleCommandShortcutsIfNeeded(event: event) {
-            return
-        }
-
-        // 让系统把按键解释成 insertText / setMarkedText / doCommand(by:)
-        interpretKeyEvents([event])
-    }
-
-    /// Handle common “menu-like” Cmd shortcuts for menu-less hosts (e.g. our SwiftPM demo).
-    ///
-    /// Returns `true` when the event is handled.
-    private func handleCommandShortcutsIfNeeded(event: NSEvent) -> Bool {
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        guard flags.contains(.command) else { return false }
-
-        // We only handle simple single-character shortcuts here.
-        guard let chars = event.charactersIgnoringModifiers, chars.count == 1 else { return false }
-        let key = chars.lowercased()
-
-        switch key {
-        case "c":
-            copy(nil)
-            return true
-        case "x":
-            cut(nil)
-            return true
-        case "v":
-            paste(nil)
-            return true
-        case "a":
-            selectAll(nil)
-            return true
-        case "z":
-            // macOS convention: Cmd+Z undo, Shift+Cmd+Z redo.
-            if flags.contains(.shift) {
-                redo(nil)
-            } else {
-                undo(nil)
-            }
-            return true
-        case "y":
-            // Some editors support Cmd+Y for redo.
-            redo(nil)
-            return true
-        default:
-            return false
-        }
-    }
-
-    public func insertText(_ string: Any, replacementRange: NSRange) {
-        dismissHoverUIForUserAction()
-
-        updateViewportIfNeeded()
-        let text: String
-        if let s = string as? String {
-            text = s
-        } else if let a = string as? NSAttributedString {
-            text = a.string
-        } else {
-            text = String(describing: string)
-        }
-
-        let t0 = perfDebugEnabled ? CFAbsoluteTimeGetCurrent() : 0
-        do {
-            try editor.commitText(text)
-            didMutateDocumentText()
-            if perfDebugEnabled {
-                let dtMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000.0
-                perfInsertTextCount += 1
-                perfInsertTextTotalMs += dtMs
-                perfReportIfNeeded()
-            }
-        } catch {
-            if perfDebugEnabled {
-                let dtMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000.0
-                perfInsertTextCount += 1
-                perfInsertTextTotalMs += dtMs
-                perfReportIfNeeded()
-            }
-            NSSound.beep()
-        }
-        requestRedraw()
-        invalidateIMECharacterCoordinates()
-        notifyViewportStateDidChange()
-    }
-
-    public func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
-        dismissHoverUIForUserAction()
-
-        updateViewportIfNeeded()
-        let text: String
-        if let s = string as? String {
-            text = s
-        } else if let a = string as? NSAttributedString {
-            text = a.string
-        } else {
-            text = String(describing: string)
-        }
-
-        let t0 = perfDebugEnabled ? CFAbsoluteTimeGetCurrent() : 0
-        do {
-            // `selectedRange` 是 marked string 内部的 UTF-16 range（caret/selection in preedit）。
-            // 我们转换成 Unicode scalar offsets 并交给 Rust，以支持 inline/preedit 模式下
-            // caret 在组合串内部移动（例如拼音候选、选词时）。
-            let selStartScalar = Self.scalarOffset(fromUTF16Offset: selectedRange.location, in: text)
-            let selEndScalar = Self.scalarOffset(fromUTF16Offset: selectedRange.location + selectedRange.length, in: text)
-            let selLenScalar = max(0, selEndScalar - selStartScalar)
-
-            // `replacementRange` 是 document 内的 UTF-16 range；大多数情况下为 NSNotFound，
-            // 此时 Rust 会优先替换“已有 marked range”，否则替换当前 selection/caret。
-            var replaceStart: UInt32 = UInt32.max
-            var replaceLen: UInt32 = 0
-            if replacementRange.location != NSNotFound {
-                let doc: String
-                if let cached = documentTextForInputQueries() {
-                    doc = cached
-                } else {
-                    doc = try editor.text()
-                }
-                let a = Self.scalarOffset(fromUTF16Offset: replacementRange.location, in: doc)
-                let b = Self.scalarOffset(fromUTF16Offset: replacementRange.location + replacementRange.length, in: doc)
-                replaceStart = UInt32(max(0, a))
-                replaceLen = UInt32(max(0, b - a))
-            }
-
-            try editor.setMarkedText(
-                text,
-                selectedStart: UInt32(max(0, selStartScalar)),
-                selectedLen: UInt32(selLenScalar),
-                replaceStart: replaceStart,
-                replaceLen: replaceLen
-            )
-            didMutateDocumentText()
-            if perfDebugEnabled {
-                let dtMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000.0
-                perfSetMarkedCount += 1
-                perfSetMarkedTotalMs += dtMs
-                perfReportIfNeeded()
-            }
-        } catch {
-            if perfDebugEnabled {
-                let dtMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000.0
-                perfSetMarkedCount += 1
-                perfSetMarkedTotalMs += dtMs
-                perfReportIfNeeded()
-            }
-            NSSound.beep()
-        }
-        requestRedraw()
-        invalidateIMECharacterCoordinates()
-        notifyViewportStateDidChange()
-    }
-
-    public func unmarkText() {
-        dismissHoverUIForUserAction()
-
-        editor.unmarkText()
-        requestRedraw()
-        invalidateIMECharacterCoordinates()
-        notifyViewportStateDidChange()
-    }
-
-    public override func doCommand(by selector: Selector) {
-        dismissHoverUIForUserAction()
-
-        updateViewportIfNeeded()
-        let t0 = perfDebugEnabled ? CFAbsoluteTimeGetCurrent() : 0
-        var didEditText = false
-        do {
-            switch selector {
-            case #selector(copy(_:)):
-                copy(nil)
-            case #selector(cut(_:)):
-                cut(nil)
-            case #selector(paste(_:)):
-                paste(nil)
-            case #selector(moveLeft(_:)):
-                // 非 shift：如果有选区，先折叠选区到起点（符合多数编辑器习惯）。
-                let sel = try editor.selectionOffsets()
-                if sel.start != sel.end {
-                    try editor.setSelections([EcuSelectionRange(start: sel.start, end: sel.start)], primaryIndex: 0)
-                } else {
-                    try editor.moveGraphemeLeft()
-                }
-            case #selector(moveRight(_:)):
-                let sel = try editor.selectionOffsets()
-                if sel.start != sel.end {
-                    try editor.setSelections([EcuSelectionRange(start: sel.end, end: sel.end)], primaryIndex: 0)
-                } else {
-                    try editor.moveGraphemeRight()
-                }
-            case #selector(moveWordLeft(_:)):
-                let sel = try editor.selectionOffsets()
-                if sel.start != sel.end {
-                    try editor.setSelections([EcuSelectionRange(start: sel.start, end: sel.start)], primaryIndex: 0)
-                }
-                try editor.moveWordLeft()
-            case #selector(moveWordRight(_:)):
-                let sel = try editor.selectionOffsets()
-                if sel.start != sel.end {
-                    try editor.setSelections([EcuSelectionRange(start: sel.end, end: sel.end)], primaryIndex: 0)
-                }
-                try editor.moveWordRight()
-            case #selector(moveToBeginningOfLine(_:)):
-                try editor.moveToVisualLineStart()
-            case #selector(moveToEndOfLine(_:)):
-                try editor.moveToVisualLineEnd()
-            case #selector(moveToLeftEndOfLine(_:)):
-                // Some keybindings (Home / Cmd+Left in certain layouts) map to the bidi-aware variants.
-                try editor.moveToVisualLineStart()
-            case #selector(moveToRightEndOfLine(_:)):
-                try editor.moveToVisualLineEnd()
-            case #selector(moveToBeginningOfDocument(_:)):
-                try editor.moveToDocumentStart()
-            case #selector(moveToEndOfDocument(_:)):
-                try editor.moveToDocumentEnd()
-            case #selector(scrollToBeginningOfDocument(_:)):
-                // Home key in some contexts is dispatched as a "scroll" action.
-                // We treat it as a caret move for editor behavior consistency.
-                try editor.moveToDocumentStart()
-            case #selector(scrollToEndOfDocument(_:)):
-                try editor.moveToDocumentEnd()
-            case #selector(pageUp(_:)):
-                try editor.moveVisualByPages(-1)
-            case #selector(pageDown(_:)):
-                try editor.moveVisualByPages(1)
-            case #selector(scrollPageUp(_:)):
-                try editor.moveVisualByPages(-1)
-            case #selector(scrollPageDown(_:)):
-                try editor.moveVisualByPages(1)
-            case #selector(moveUp(_:)):
-                try editor.moveVisualByRows(-1)
-            case #selector(moveDown(_:)):
-                try editor.moveVisualByRows(1)
-            case #selector(moveLeftAndModifySelection(_:)):
-                try editor.moveGraphemeLeftAndModifySelection()
-            case #selector(moveRightAndModifySelection(_:)):
-                try editor.moveGraphemeRightAndModifySelection()
-            case #selector(moveWordLeftAndModifySelection(_:)):
-                try editor.moveWordLeftAndModifySelection()
-            case #selector(moveWordRightAndModifySelection(_:)):
-                try editor.moveWordRightAndModifySelection()
-            case #selector(moveToBeginningOfLineAndModifySelection(_:)):
-                try editor.moveToVisualLineStartAndModifySelection()
-            case #selector(moveToEndOfLineAndModifySelection(_:)):
-                try editor.moveToVisualLineEndAndModifySelection()
-            case #selector(moveToLeftEndOfLineAndModifySelection(_:)):
-                try editor.moveToVisualLineStartAndModifySelection()
-            case #selector(moveToRightEndOfLineAndModifySelection(_:)):
-                try editor.moveToVisualLineEndAndModifySelection()
-            case #selector(moveToBeginningOfDocumentAndModifySelection(_:)):
-                try editor.moveToDocumentStartAndModifySelection()
-            case #selector(moveToEndOfDocumentAndModifySelection(_:)):
-                try editor.moveToDocumentEndAndModifySelection()
-            case Selector(("scrollToBeginningOfDocumentAndModifySelection:")):
-                try editor.moveToDocumentStartAndModifySelection()
-            case Selector(("scrollToEndOfDocumentAndModifySelection:")):
-                try editor.moveToDocumentEndAndModifySelection()
-            case #selector(pageUpAndModifySelection(_:)):
-                try editor.moveVisualByPagesAndModifySelection(-1)
-            case #selector(pageDownAndModifySelection(_:)):
-                try editor.moveVisualByPagesAndModifySelection(1)
-            case Selector(("scrollPageUpAndModifySelection:")):
-                try editor.moveVisualByPagesAndModifySelection(-1)
-            case Selector(("scrollPageDownAndModifySelection:")):
-                try editor.moveVisualByPagesAndModifySelection(1)
-            case #selector(moveUpAndModifySelection(_:)):
-                try editor.moveVisualByRowsAndModifySelection(-1)
-            case #selector(moveDownAndModifySelection(_:)):
-                try editor.moveVisualByRowsAndModifySelection(1)
-            case #selector(deleteBackward(_:)):
-                try editor.backspace()
-                didEditText = true
-            case #selector(deleteForward(_:)):
-                try editor.deleteForward()
-                didEditText = true
-            case #selector(deleteWordBackward(_:)):
-                try editor.deleteWordBack()
-                didEditText = true
-            case #selector(deleteWordForward(_:)):
-                try editor.deleteWordForward()
-                didEditText = true
-            case #selector(insertNewline(_:)):
-                try editor.commitText("\n")
-                didEditText = true
-            case #selector(insertTab(_:)):
-                let wasSnippet = try editor.hasActiveSnippetSession()
-                try editor.insertTab()
-                didEditText = !wasSnippet
-            case #selector(insertBacktab(_:)):
-                let wasSnippet = try editor.hasActiveSnippetSession()
-                try editor.insertBacktab()
-                didEditText = !wasSnippet
-            case #selector(cancelOperation(_:)):
-                // Escape: cancel marked text / composition (restore original replaced range).
-                let marked = try editor.markedRange()
-                if marked.hasMarked {
-                    try editor.setMarkedText("", selectedStart: 0, selectedLen: 0)
-                    didEditText = true
-                }
-            case #selector(undo(_:)):
-                try editor.undo()
-                didEditText = true
-            case #selector(redo(_:)):
-                try editor.redo()
-                didEditText = true
-            default:
-                break
-            }
-        } catch {
-            NSSound.beep()
-        }
-        if didEditText {
-            didMutateDocumentText()
-        }
-        if perfDebugEnabled {
-            let dtMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000.0
-            perfDoCommandCount += 1
-            perfDoCommandTotalMs += dtMs
-            perfReportIfNeeded()
-        }
-        requestRedraw()
-        invalidateIMECharacterCoordinates()
-        notifyViewportStateDidChange()
-    }
-
-    /// Jump the primary caret to the matching bracket (if any).
-    ///
-    /// This is a convenience wrapper that also triggers redraw + viewport observer callbacks,
-    /// so hosts can wire it into command palettes / menus without re-implementing bookkeeping.
-    public func moveToMatchingBracket() {
-        dismissHoverUIForUserAction()
-
-        updateViewportIfNeeded()
-        do {
-            try editor.moveToMatchingBracket()
-        } catch {
-            NSSound.beep()
-            return
-        }
-        requestRedraw()
-        invalidateIMECharacterCoordinates()
-        notifyViewportStateDidChange()
-    }
-
-    /// Jump back in the editor jump list (no-op when empty).
-    public func jumpBack() {
-        dismissHoverUIForUserAction()
-
-        updateViewportIfNeeded()
-        do {
-            try editor.jumpBack()
-        } catch {
-            NSSound.beep()
-            return
-        }
-        requestRedraw()
-        invalidateIMECharacterCoordinates()
-        notifyViewportStateDidChange()
-    }
-
-    /// Jump forward in the editor jump list (no-op when empty).
-    public func jumpForward() {
-        dismissHoverUIForUserAction()
-
-        updateViewportIfNeeded()
-        do {
-            try editor.jumpForward()
-        } catch {
-            NSSound.beep()
-            return
-        }
-        requestRedraw()
-        invalidateIMECharacterCoordinates()
-        notifyViewportStateDidChange()
-    }
-
-    /// Format the current document via LSP (`textDocument/formatting`) and apply edits locally.
-    ///
-    /// This is intended for explicit user actions (command palette / menu item).
-    public func formatDocumentWithLSP(timeoutMs: UInt32 = 2000) {
-        dismissHoverUIForUserAction()
-
-        updateViewportIfNeeded()
-        do {
-            guard try editor.lspIsEnabled() else {
-                NSSound.beep()
-                return
-            }
-
-            // Small, VSCode-ish defaults.
-            let optionsJSON = """
-            { "tabSize": 4, "insertSpaces": true }
-            """
-            let applied = try editor.lspFormatDocument(formattingOptionsJSON: optionsJSON, timeoutMs: timeoutMs)
-            if applied {
-                didMutateDocumentText()
-            }
-        } catch {
-            NSSound.beep()
-            return
-        }
-
-        requestRedraw()
-        invalidateIMECharacterCoordinates()
-        notifyViewportStateDidChange()
-    }
-
-    // MARK: - Clipboard
-
-    public override func selectAll(_ sender: Any?) {
-        dismissHoverUIForUserAction()
-
-        do {
-            // EditorCoreUI 使用 Unicode scalar offset（与 Rust `char` 索引一致），这里用 unicodeScalars 计数。
-            let text: String
-            if let cached = documentTextForInputQueries() {
-                text = cached
-            } else {
-                text = try editor.text()
-            }
-            let end = UInt32(text.unicodeScalars.count)
-            try editor.setSelections([EcuSelectionRange(start: 0, end: end)], primaryIndex: 0)
-        } catch {
-            NSSound.beep()
-        }
-        requestRedraw()
-        invalidateIMECharacterCoordinates()
-        notifyViewportStateDidChange()
-    }
-
-    @objc(undo:)
-    public func undo(_ sender: Any?) {
-        dismissHoverUIForUserAction()
-
-        do {
-            try editor.undo()
-            didMutateDocumentText()
-        } catch {
-            NSSound.beep()
-        }
-        requestRedraw()
-        invalidateIMECharacterCoordinates()
-        notifyViewportStateDidChange()
-    }
-
-    @objc(redo:)
-    public func redo(_ sender: Any?) {
-        dismissHoverUIForUserAction()
-
-        do {
-            try editor.redo()
-            didMutateDocumentText()
-        } catch {
-            NSSound.beep()
-        }
-        requestRedraw()
-        invalidateIMECharacterCoordinates()
-        notifyViewportStateDidChange()
-    }
-
-    @objc(copy:)
-    public func copy(_ sender: Any?) {
-        dismissHoverUIForUserAction()
-
-        do {
-            let text = try editor.selectedText()
-            guard text.isEmpty == false else { return }
-            pasteboard.clearContents()
-            pasteboard.setString(text, forType: .string)
-        } catch {
-            NSSound.beep()
-        }
-    }
-
-    @objc(cut:)
-    public func cut(_ sender: Any?) {
-        dismissHoverUIForUserAction()
-
-        do {
-            let text = try editor.selectedText()
-            guard text.isEmpty == false else { return }
-            pasteboard.clearContents()
-            pasteboard.setString(text, forType: .string)
-            try editor.deleteSelectionsOnly()
-            didMutateDocumentText()
-            requestRedraw()
-            invalidateIMECharacterCoordinates()
-            notifyViewportStateDidChange()
-        } catch {
-            NSSound.beep()
-        }
-    }
-
-    @objc(paste:)
-    public func paste(_ sender: Any?) {
-        dismissHoverUIForUserAction()
-
-        updateViewportIfNeeded()
-        guard let text = pasteboard.string(forType: .string), text.isEmpty == false else { return }
-        do {
-            try editor.pasteText(text)
-            didMutateDocumentText()
-        } catch {
-            NSSound.beep()
-        }
-        requestRedraw()
-        invalidateIMECharacterCoordinates()
-        notifyViewportStateDidChange()
-    }
-
-    // MARK: - NSTextInputClient state queries
-
-    public func selectedRange() -> NSRange {
-        guard let sel = try? editor.selectionOffsets() else { return NSRange(location: 0, length: 0) }
-        if let cached = cachedSelectedRange,
-           cached.epoch == docContentEpoch,
-           cached.start == sel.start,
-           cached.end == sel.end
-        {
-            return cached.value
-        }
-        guard let text = documentTextForInputQueries() else { return NSRange(location: 0, length: 0) }
-        let startUtf16 = Self.utf16Offset(fromScalarOffset: Int(sel.start), in: text)
-        let endUtf16 = Self.utf16Offset(fromScalarOffset: Int(sel.end), in: text)
-        let range = NSRange(location: startUtf16, length: max(0, endUtf16 - startUtf16))
-        cachedSelectedRange = (epoch: docContentEpoch, start: sel.start, end: sel.end, value: range)
-        return range
-    }
-
-    public func markedRange() -> NSRange {
-        guard let marked = try? editor.markedRange(), marked.hasMarked else { return NSRange(location: NSNotFound, length: 0) }
-        if let cached = cachedMarkedRange,
-           cached.epoch == docContentEpoch,
-           cached.start == marked.start,
-           cached.len == marked.len
-        {
-            return cached.value
-        }
-        guard let text = documentTextForInputQueries() else { return NSRange(location: NSNotFound, length: 0) }
-        let startUtf16 = Self.utf16Offset(fromScalarOffset: Int(marked.start), in: text)
-        let endUtf16 = Self.utf16Offset(fromScalarOffset: Int(marked.start + marked.len), in: text)
-        let range = NSRange(location: startUtf16, length: max(0, endUtf16 - startUtf16))
-        cachedMarkedRange = (epoch: docContentEpoch, start: marked.start, len: marked.len, value: range)
-        return range
-    }
-
-    public func hasMarkedText() -> Bool {
-        guard let marked = try? editor.markedRange() else { return false }
-        return marked.hasMarked
-    }
-
-    public func attributedSubstring(forProposedRange range: NSRange, actualRange: NSRangePointer?) -> NSAttributedString? {
-        guard let text = documentTextForInputQueries() else { return nil }
-        let ns = text as NSString
-        let clamped = NSRange(
-            location: min(max(0, range.location), ns.length),
-            length: min(max(0, range.length), max(0, ns.length - range.location))
-        )
-        actualRange?.pointee = clamped
-        return NSAttributedString(string: ns.substring(with: clamped))
-    }
-
-    public func validAttributesForMarkedText() -> [NSAttributedString.Key] {
-        [.underlineStyle, .foregroundColor, .backgroundColor]
-    }
-
-    public func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect {
-        // 这个 rect 用于 IME 候选窗定位。
-        //
-        // 关键点：
-        // - AppKit 在组合输入期间可能会用不同的 range 来查询（markedRange / selectedRange 等），
-        //   如果我们直接使用传入的 `range.location`，候选窗会在“组合串起点”和“光标位置”之间跳动，
-        //   甚至看起来像是“随机”。
-        // - 正确行为：候选窗应跟随“当前 insertion point”（也就是 selection 的 active 端/光标），
-        //   尤其是在 marked text（preedit）存在时。
-        updateViewportIfNeeded()
-        guard let window else {
-            actualRange?.pointee = range
-            return .zero
-        }
-        guard let text = documentTextForInputQueries() else {
-            actualRange?.pointee = range
-            return .zero
-        }
-
-        // Prefer the current caret position during IME composition.
-        let effectiveRange: NSRange
-        if hasMarkedText() {
-            effectiveRange = selectedRange()
-        } else {
-            effectiveRange = range
-        }
-        actualRange?.pointee = effectiveRange
-
-        // Use the end of the range as the insertion point.
-        // Handle NSNotFound defensively.
-        let utf16Index: Int
-        if effectiveRange.location == NSNotFound {
-            let sel = selectedRange()
-            utf16Index = max(0, sel.location + sel.length)
-        } else {
-            utf16Index = max(0, effectiveRange.location + effectiveRange.length)
-        }
-
-        let scalarOffset = Self.scalarOffset(fromUTF16Offset: utf16Index, in: text)
-
-        guard let pt = try? editor.charOffsetToViewPoint(offset: UInt32(scalarOffset)) else { return .zero }
-
-        // 不使用 `convertFromBacking(point)`：
-        // - 我们之前已经遇到过在“缩放显示 / Retina”等组合下，point<->backing 的点转换不稳定（X/Y 比例不一致）。
-        // - 这里改用 `convertToBacking(bounds.size)` 推导像素/点比例，并手动做除法，
-        //   保证和 viewport 计算、事件 hit-test 一致（参见 `EditorCoreCoordinateMapping`）。
-        let boundsSize = bounds.size
-        let backingSize = convertToBacking(boundsSize)
-        let sx = boundsSize.width > 0 ? (backingSize.width / boundsSize.width) : 1
-        let sy = boundsSize.height > 0 ? (backingSize.height / boundsSize.height) : 1
-
-        let xPt = CGFloat(pt.xPx) / max(1e-6, sx)
-        let yPt = CGFloat(pt.yPx) / max(1e-6, sy)
-        let hPt = CGFloat(pt.lineHeightPx) / max(1e-6, sy)
-
-        let rectInView = NSRect(x: xPt, y: yPt, width: 1, height: hPt)
-        let rectInWindow = convert(rectInView, to: nil)
-        let rectInScreen = window.convertToScreen(rectInWindow)
-
-        if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_IME_RECT"] == "1" {
-            NSLog(
-                "EditorCoreSkiaView IME rect debug: hasMarked=%d query=%@ effective=%@ utf16Index=%d scalarOffset=%d viewPt=(%.1f,%.1f) lineH=%.1f screenRect=%@",
-                hasMarkedText() ? 1 : 0,
-                NSStringFromRange(range),
-                NSStringFromRange(effectiveRange),
-                utf16Index,
-                scalarOffset,
-                Double(xPt),
-                Double(yPt),
-                Double(hPt),
-                NSStringFromRect(rectInScreen)
-            )
-        }
-
-        return rectInScreen
-    }
-
-    public func characterIndex(for point: NSPoint) -> Int {
-        // point 是 view 坐标（points），我们做 hit-test 并返回 UTF-16 index
-        guard let text = documentTextForInputQueries() else { return 0 }
-        let (xPx, yPx) = EditorCoreCoordinateMapping.viewPointToViewBackingPx(
-            viewPoint: point,
-            view: self
-        )
-        guard let scalar = try? editor.viewPointToCharOffset(xPx: xPx, yPx: yPx) else { return 0 }
-        return Self.utf16Offset(fromScalarOffset: Int(scalar), in: text)
-    }
-
-    // MARK: - UTF16 <-> UnicodeScalar offset mapping (simple, O(n))
-
-    private static func scalarOffset(fromUTF16Offset targetUtf16Offset: Int, in text: String) -> Int {
-        let target = max(0, min(targetUtf16Offset, text.utf16.count))
-
-        var utf16Cursor = 0
-        var scalars = 0
-        for scalar in text.unicodeScalars {
-            let unitCount = scalar.value <= 0xFFFF ? 1 : 2
-            if utf16Cursor + unitCount > target {
-                break
-            }
-            utf16Cursor += unitCount
-            scalars += 1
-        }
-        return scalars
-    }
-
-    private static func utf16Offset(fromScalarOffset targetScalarOffset: Int, in text: String) -> Int {
-        let target = max(0, min(targetScalarOffset, text.unicodeScalars.count))
-
-        var utf16Cursor = 0
-        var scalars = 0
-        for scalar in text.unicodeScalars {
-            if scalars >= target {
-                break
-            }
-            utf16Cursor += scalar.value <= 0xFFFF ? 1 : 2
-            scalars += 1
-        }
-        return utf16Cursor
-    }
-
-    // MARK: - Draw scheduling
-
-    /// Request a redraw for an on-demand `MTKView` (`isPaused = true`, `enableSetNeedsDisplay = true`).
-    ///
-    /// Why we do this:
-    /// - 在某些 macOS/MTKView 组合下，仅设置 `needsDisplay = true` 有时不会触发 `MTKViewDelegate.draw(in:)`，
-    ///   导致首次显示为空白。
-    /// - `draw()` 可以强制触发一次 Metal draw pass；这里用 main queue coalesce，避免高频事件导致连环 draw。
-    private func requestRedraw() {
-        // 标记脏区：必须调用 super，避免走我们自己的 `setNeedsDisplay` override 形成递归。
-        super.setNeedsDisplay(bounds)
-        scheduleDrawIfPossible()
-    }
-
-    private func scheduleDrawIfPossible() {
-        // 视图未挂到 window 时，强制 draw() 没意义；等 viewDidMoveToWindow / 下一次事件再 draw。
-        guard window != nil else { return }
-
-        guard drawScheduled == false else { return }
-        drawScheduled = true
-        if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_DRAW"] == "1" {
-            let delegateDesc = delegate.map { String(describing: type(of: $0)) } ?? "nil"
-            NSLog(
-                "EditorCoreSkiaView scheduleDraw: delegate=%@ paused=%d setNeeds=%d bounds(points)=%@ drawableSize(px)=%@",
-                delegateDesc,
-                isPaused ? 1 : 0,
-                enableSetNeedsDisplay ? 1 : 0,
-                NSStringFromSize(bounds.size),
-                NSStringFromSize(drawableSize)
-            )
-        }
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.drawScheduled = false
-            if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_DRAW"] == "1" {
-                NSLog("EditorCoreSkiaView scheduleDraw: calling draw()")
-            }
-            // `MTKView.draw()` 在部分系统组合下不会触发 delegate（未知原因）。
-            // 这里用 AppKit `displayIfNeeded()` 强制走 `draw(_:)`，而我们的 `draw(_:)` 会做 Metal render。
-            self.displayIfNeeded()
-        }
-    }
-
-    private func renderToCurrentDrawable(debugSource: String) {
-        guard let drawable = currentDrawable else {
-            if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_DRAW"] == "1" {
-                NSLog("EditorCoreSkiaView render(%@): drawable=nil", debugSource)
-            }
-            return
-        }
-
-        if ProcessInfo.processInfo.environment["EDITOR_CORE_APPKIT_DEBUG_DRAW"] == "1" {
-            let t = drawable.texture
-            NSLog(
-                "EditorCoreSkiaView render(%@): drawable=ok tex=%dx%d pf=%d usage=0x%X storage=%d",
-                debugSource,
-                t.width,
-                t.height,
-                t.pixelFormat.rawValue,
-                t.usage.rawValue,
-                t.storageMode.rawValue
-            )
-        }
-
-        let t0 = perfDebugEnabled ? CFAbsoluteTimeGetCurrent() : 0
-        do {
-            try editor.renderMetal(into: drawable.texture)
-            if perfDebugEnabled {
-                let dtMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000.0
-                perfRenderMetalCount += 1
-                perfRenderMetalTotalMs += dtMs
-                perfReportIfNeeded()
-            }
-        } catch {
-            if perfDebugEnabled {
-                let dtMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000.0
-                perfRenderMetalCount += 1
-                perfRenderMetalTotalMs += dtMs
-                perfReportIfNeeded()
-            }
-            NSLog("EditorCoreSkiaView Metal render failed(%@): %@", debugSource, String(describing: error))
-            return
-        }
-
-        guard let commandBuffer = metalCommandQueue.makeCommandBuffer() else { return }
-
-        // 关键：在某些系统/驱动组合下，如果用“完全空的 command buffer”去 present，
-        // 会出现“present 成功但屏幕仍是空白”的现象（即使 Skia 已经在更早的 command buffer 里写入了 drawable 的 texture）。
-        //
-        // 这里做一个极轻量的 no-op render pass：
-        // - loadAction = .load：不清屏，保留 Skia 画进去的内容
-        // - storeAction = .store：保证结果可用于后续 present
-        //
-        // 这样可以确保 present 所在的 command buffer 明确“使用了”这个 drawable 的 texture。
-        let pass = MTLRenderPassDescriptor()
-        pass.colorAttachments[0].texture = drawable.texture
-        pass.colorAttachments[0].loadAction = .load
-        pass.colorAttachments[0].storeAction = .store
-        if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) {
-            encoder.endEncoding()
-        }
-        commandBuffer.present(drawable)
-        commandBuffer.commit()
-
-        if didPresentFirstFrame == false {
-            didPresentFirstFrame = true
-            enableSetNeedsDisplay = true
-            isPaused = true
+}
+
+extension EditorCoreSkiaGutterDiagnosticMarker.Kind {
+    var gutterColor: NSColor {
+        switch self {
+        case .error:
+            return NSColor.systemRed.withAlphaComponent(0.95)
+        case .warning:
+            return NSColor.systemOrange.withAlphaComponent(0.95)
+        case .information:
+            return NSColor.systemBlue.withAlphaComponent(0.9)
+        case .hint:
+            return NSColor.systemGray.withAlphaComponent(0.9)
         }
     }
 }
@@ -2476,6 +757,11 @@ public final class EditorCoreSkiaView: MTKView {
 extension EditorCoreSkiaView {
     var _lastAppliedCaretWidthPxForTesting: Float? { lastAppliedCaretWidthPx }
     var _lastAppliedCaretVisibleForTesting: Bool? { lastAppliedCaretVisible }
+    public var _gutterDiagnosticMarkersForTesting: [EditorCoreSkiaGutterDiagnosticMarker] { gutterDiagnosticMarkers }
+
+    public func _gutterDiagnosticMarkerRectsForTesting() -> [CGRect] {
+        gutterDiagnosticMarkerLayouts().map(\.rect)
+    }
 
     func _caretBlinkTickForTesting() {
         caretBlinkPhaseVisible.toggle()

@@ -1,0 +1,410 @@
+import EditorCoreUIFFI
+import Foundation
+
+struct AttoRuntimeCompatibility {
+    struct RuntimeFeature: Equatable {
+        let feature: EditorCoreUIFFIFeatures
+        let name: String
+        let reason: String
+    }
+
+    struct Report: Equatable {
+        let runtimeInfo: EditorCoreUIFFIRuntimeInfo?
+        let minimumABIVersion: UInt32
+        let missingFeatures: [RuntimeFeature]
+        let missingOptionalFeatures: [RuntimeFeature]
+        let negotiatedFeatures: [EditorCoreUIFFIRuntimeFeatureNegotiation]
+        let loadError: String?
+
+        var isCompatible: Bool {
+            guard loadError == nil else {
+                return false
+            }
+            guard let runtimeInfo, runtimeInfo.abiVersion >= minimumABIVersion else {
+                return false
+            }
+            return missingFeatures.isEmpty
+        }
+
+        var diagnosticMessage: String {
+            if let loadError {
+                return "Failed to read editor runtime information: \(loadError)"
+            }
+
+            guard let runtimeInfo else {
+                return "Failed to read editor runtime information."
+            }
+
+            var parts: [String] = []
+            if runtimeInfo.abiVersion < minimumABIVersion {
+                parts.append("UI FFI ABI \(runtimeInfo.abiVersion) is older than required ABI \(minimumABIVersion).")
+            }
+
+            if missingFeatures.isEmpty == false {
+                let names = missingFeatures.map(\.name).joined(separator: ", ")
+                parts.append("Missing UI FFI features: \(names).")
+            }
+
+            if missingOptionalFeatures.isEmpty == false {
+                let names = missingOptionalFeatures.map(\.name).joined(separator: ", ")
+                parts.append("Unavailable optional UI FFI features: \(names).")
+            }
+
+            if parts.isEmpty {
+                return "UI FFI ABI \(runtimeInfo.abiVersion) is compatible."
+            }
+            return parts.joined(separator: " ")
+        }
+    }
+
+    static let minimumUIABIVersion: UInt32 = 1
+
+    static let requiredFeatures: [RuntimeFeature] = [
+        RuntimeFeature(
+            feature: .jsonCommandDispatch,
+            name: "JSON command dispatch",
+            reason: "AttoEditor routes low-frequency editor commands through the UI JSON command dispatcher."
+        ),
+        RuntimeFeature(
+            feature: .typedDerivedSnapshots,
+            name: "typed derived snapshots",
+            reason: "Status bar, panels, and tests consume typed diagnostics/decorations/symbol/folding snapshots."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentUI,
+            name: "multi-document UI",
+            reason: "AttoEditor mirrors AppKit tabs and split panes into the core-owned MultiDocumentEditorUi model."
+        ),
+    ]
+
+    static let optionalFeatures: [RuntimeFeature] = [
+        RuntimeFeature(
+            feature: .lspInteractiveRequests,
+            name: "LSP interactive requests",
+            reason: "LSP quick panels and editor commands depend on request/take APIs; commands degrade when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .lspStatusSnapshot,
+            name: "LSP status snapshot",
+            reason: "Status bar and LSP capability gates consume typed status/capability snapshots; LSP commands degrade when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .lspStatusEnvelope,
+            name: "LSP status envelope",
+            reason: "Status bar and LSP capability gates can consume structured status envelopes; Swift falls back to the legacy typed status snapshot when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .workspaceEditApplication,
+            name: "WorkspaceEdit application",
+            reason: "Rename, code actions, completion resolve, and color presentations apply WorkspaceEdit payloads; edit-producing commands degrade when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .lspWorkspaceEditApplicationEnvelope,
+            name: "LSP WorkspaceEdit application envelope",
+            reason: "Single-editor WorkspaceEdit fallback can use structured apply envelopes; Swift falls back to the legacy raw apply summary when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .lspDerivedStateApplicationEnvelope,
+            name: "LSP derived-state application envelope",
+            reason: "LSP diagnostics, symbols, highlights, folding ranges, inlay hints, code lens, and document links can use structured apply envelopes; Swift falls back to legacy status-code apply helpers when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .lspSemanticTokensApplicationEnvelope,
+            name: "LSP semantic tokens application envelope",
+            reason: "Semantic highlighting can use structured raw-buffer apply envelopes; Swift falls back to the legacy status-code apply helper when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .workspaceDiagnosticsStore,
+            name: "workspace diagnostics store",
+            reason: "Project Problems can use the core-owned multi-document workspace diagnostics snapshot; Swift falls back to local parsing when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .workspaceDiagnosticsEvents,
+            name: "workspace diagnostics events",
+            reason: "Project Problems and LSP result consumers can cursor over core-owned workspace diagnostics changes; Swift falls back to App-level lifecycle events when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .lspResultEvents,
+            name: "LSP result events",
+            reason: "LSP result consumers can cursor over core-owned per-editor result slot events; Swift falls back to App-level lifecycle events when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentLSPResultEvents,
+            name: "multi-document LSP result events",
+            reason: "Project-level result consumers can cursor over core-owned LSP result events aggregated across tabs and split views; Swift falls back to App-level lifecycle events when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .lspRequestEvents,
+            name: "LSP request events",
+            reason: "LSP request consumers can cursor over core-owned request start/completion lifecycle events; Swift falls back to App-level lifecycle events when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentLSPRequestEvents,
+            name: "multi-document LSP request events",
+            reason: "Project-level request consumers can cursor over core-owned LSP request lifecycle events aggregated across tabs and split views; Swift falls back to App-level lifecycle events when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .lspRequestCancelTimeoutEvents,
+            name: "LSP request cancel/timeout events",
+            reason: "Request lifecycle consumers can explicitly close pending request events as canceled or timed out; Swift falls back to App-level timeout/cancel bookkeeping when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .lspSemanticTokensRequests,
+            name: "LSP semantic tokens requests",
+            reason: "Semantic highlighting refresh can consume typed semantic tokens full/delta/range payloads; Swift falls back to automatic processing when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .editorUIDerivedSnapshotEnvelope,
+            name: "editor UI derived snapshot envelope",
+            reason: "Active editor diagnostics, decorations, symbols, folding and style snapshots can use structured envelopes; Swift falls back to legacy typed snapshot wrappers when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .editorUIMinimapEnvelope,
+            name: "editor UI minimap envelope",
+            reason: "Minimap snapshots can use structured envelopes; Swift falls back to legacy raw minimap JSON when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .editorUIViewPointPayloadEnvelope,
+            name: "editor UI view-point payload envelope",
+            reason: "Document link, inlay hint, and code lens hit-tests can use structured envelopes; Swift falls back to legacy optional hit-test wrappers when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .editorUIStateEvents,
+            name: "Editor UI state events",
+            reason: "Host UI can drain per-editor state changes through one cursor; Swift falls back to family-specific event streams when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentStateEvents,
+            name: "multi-document state events",
+            reason: "Project-level UI can drain state changes aggregated across tabs and split views; Swift falls back to family-specific multi-document event streams when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentSnapshotEnvelope,
+            name: "multi-document snapshot envelope",
+            reason: "Project-level UI can read tab/project snapshots through structured envelopes; Swift falls back to the legacy typed snapshot wrapper when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentSearchEnvelope,
+            name: "multi-document search envelope",
+            reason: "Find in open tabs can read core search results through structured envelopes; Swift falls back to the legacy typed search wrapper when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentWorkspaceFileSearch,
+            name: "multi-document workspace file search",
+            reason: "Find in Files workspace scope can use core workspace-root file search; Swift falls back to the local workspace file index when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentWorkspaceFileList,
+            name: "multi-document workspace file list",
+            reason: "Quick Open and project file panels can list workspace files from core-owned workspace roots; Swift falls back to the local workspace file index when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentProjectFileIndex,
+            name: "multi-document project file index",
+            reason: "Quick Open and project file panels can refresh and read core-owned project file index snapshots; Swift falls back to core file listing or the local workspace file index when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentProjectFileIndexQuery,
+            name: "multi-document project file index query",
+            reason: "Quick Open and project file panels can query core-owned project file indexes with fuzzy path matching; Swift keeps local palette filtering as a fallback."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentWorkspaceFileOperationEnvelope,
+            name: "multi-document workspace file operation envelope",
+            reason: "Quick Open, project file panels, and Replace in Files can read workspace file/index/replacement results through structured envelopes; Swift falls back to legacy typed wrappers when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentWorkspaceFileScanOptions,
+            name: "multi-document workspace file scan options",
+            reason: "Find in Files and Quick Open can request core-owned pagination, ignore files, binary/large-file filtering, and cancellation budgets; Swift keeps the older bounded envelope path when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentWorkspaceFileReplacement,
+            name: "multi-document workspace file replacement",
+            reason: "Replace in Files can generate core WorkspaceEdit payloads for project search matches; Swift keeps replacement UI disabled when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentRecentFiles,
+            name: "multi-document recent files",
+            reason: "Quick Open and session snapshots can use core-owned recent file state; Swift falls back to local recent files when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentRecentProjects,
+            name: "multi-document recent projects",
+            reason: "Workspace windows can record recent project roots in the core-owned multi-document model."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentWorkspaceRootsChangeEnvelope,
+            name: "multi-document workspace roots change envelope",
+            reason: "Workspace root sync can read core folder diffs through structured envelopes; Swift falls back to the legacy typed change wrapper when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentProjectLSPServersEnvelope,
+            name: "multi-document project LSP servers envelope",
+            reason: "Project LSP launch metadata can be read through structured envelopes; Swift falls back to the legacy typed project LSP servers wrapper when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentProjectLSPStartPlan,
+            name: "multi-document project LSP start plan",
+            reason: "Project LSP auto-start consumes core-owned start plans so document/language/server matching stays in the multi-document model."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentProjectLSPStopPlan,
+            name: "multi-document project LSP stop plan",
+            reason: "Project LSP shutdown consumes core-owned stop plans so document/language/server matching stays in the multi-document model."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentProjectLSPRestartPlan,
+            name: "multi-document project LSP restart plan",
+            reason: "Project LSP restart consumes core-owned restart plans so document/language/server matching stays in the multi-document model."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentProjectLSPLifecycleEvents,
+            name: "multi-document project LSP lifecycle events",
+            reason: "Project LSP start outcomes can be recorded in the core-owned multi-document lifecycle stream."
+        ),
+        RuntimeFeature(
+            feature: .eventStreamEnvelope,
+            name: "event stream envelope",
+            reason: "Host UI can drain editor and project event streams through structured envelopes; Swift falls back to legacy raw event stream JSON when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentSpecialEventStreamEnvelope,
+            name: "multi-document special event stream envelope",
+            reason: "Project-level diagnostics and WorkspaceEdit event streams can use structured envelopes; Swift falls back to their legacy raw JSON APIs when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .workspaceEditTransactionEnvelope,
+            name: "WorkspaceEdit transaction envelope",
+            reason: "WorkspaceEdit transaction preview/apply/undo can use structured envelopes; Swift falls back to legacy typed wrappers when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .workspaceDiagnosticsEnvelope,
+            name: "workspace diagnostics envelope",
+            reason: "Workspace diagnostics apply/snapshot/markers/previous-result-id APIs can use structured envelopes; Swift falls back to legacy typed wrappers when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .workspaceOutlineSnapshot,
+            name: "workspace outline snapshot",
+            reason: "Workspace Outline can consume the core-owned MultiDocumentEditorUI symbol snapshot; Swift falls back to opened-document App projection when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .workspaceOutlineSnapshotEnvelope,
+            name: "workspace outline snapshot envelope",
+            reason: "Workspace Outline snapshot reads can use structured envelopes; Swift falls back to the legacy typed snapshot wrapper when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentTabDocumentURI,
+            name: "multi-document tab document URI",
+            reason: "Project-level features can resolve open core tabs by document URI for WorkspaceEdit and outline ownership; Swift keeps App-level file URL mappings as a fallback."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentTabLanguageID,
+            name: "multi-document tab language id",
+            reason: "Project-level LSP lifecycle planning can match core-owned open tabs to project server configs by language id; Swift keeps App-level tab syntax metadata as a fallback."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentWorkspaceEditTransaction,
+            name: "multi-document WorkspaceEdit transaction",
+            reason: "WorkspaceEdit preview/apply can be owned by the core multi-document model for open tabs; Swift keeps App-level WorkspaceEdit application as a fallback while resource operations continue migrating."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentWorkspaceEditTransactionEvents,
+            name: "multi-document WorkspaceEdit transaction events",
+            reason: "Project-level UI can observe core-owned WorkspaceEdit transaction results through a cursor; Swift keeps direct apply summaries as a fallback."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentWorkspaceRoots,
+            name: "multi-document workspace roots",
+            reason: "Core-owned workspace/project features can use the same workspace root metadata as the App; Swift keeps App-level root filtering as a fallback."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentWorkspaceEditTransactionUndo,
+            name: "multi-document WorkspaceEdit transaction undo",
+            reason: "WorkspaceEdit undo commands can restore the most recent core-owned transaction; Swift disables that command when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentWorkspaceEditTransactionRedo,
+            name: "multi-document WorkspaceEdit transaction redo",
+            reason: "WorkspaceEdit redo commands can reapply the most recently undone core-owned transaction; Swift disables that command when unavailable."
+        ),
+    ]
+
+    static func evaluate(library: EditorCoreUIFFILibrary) -> Report {
+        do {
+            return evaluate(capabilitySnapshot: try library.runtimeCapabilitySnapshot())
+        } catch {
+            let loadError = String(describing: error)
+            return Report(
+                runtimeInfo: nil,
+                minimumABIVersion: minimumUIABIVersion,
+                missingFeatures: requiredFeatures,
+                missingOptionalFeatures: optionalFeatures,
+                negotiatedFeatures: EditorCoreUIFFIRuntimeCompatibility.negotiateUnavailable(
+                    loadError: loadError,
+                    minimumABIVersion: minimumUIABIVersion,
+                    requiredFeatures: requiredFeatures.map(\.runtimeFeature),
+                    optionalFeatures: optionalFeatures.map(\.runtimeFeature)
+                ),
+                loadError: loadError
+            )
+        }
+    }
+
+    static func evaluate(runtimeInfo: EditorCoreUIFFIRuntimeInfo) -> Report {
+        let missing = requiredFeatures.filter { runtimeInfo.supports($0.feature) == false }
+        let missingOptional = optionalFeatures.filter { runtimeInfo.supports($0.feature) == false }
+        let negotiatedFeatures = EditorCoreUIFFIRuntimeCompatibility.negotiate(
+            runtimeInfo: runtimeInfo,
+            minimumABIVersion: minimumUIABIVersion,
+            requiredFeatures: requiredFeatures.map(\.runtimeFeature),
+            optionalFeatures: optionalFeatures.map(\.runtimeFeature)
+        )
+        return report(
+            runtimeInfo: runtimeInfo,
+            missingFeatures: missing,
+            missingOptionalFeatures: missingOptional,
+            negotiatedFeatures: negotiatedFeatures
+        )
+    }
+
+    static func evaluate(capabilitySnapshot: EditorCoreUIFFIRuntimeCapabilitySnapshot) -> Report {
+        let runtimeInfo = capabilitySnapshot.runtimeInfo
+        let missing = requiredFeatures.filter { runtimeInfo.supports($0.feature) == false }
+        let missingOptional = optionalFeatures.filter { runtimeInfo.supports($0.feature) == false }
+        let negotiatedFeatures = EditorCoreUIFFIRuntimeCompatibility.negotiate(
+            capabilitySnapshot: capabilitySnapshot,
+            minimumABIVersion: minimumUIABIVersion,
+            requiredFeatures: requiredFeatures.map(\.runtimeFeature),
+            optionalFeatures: optionalFeatures.map(\.runtimeFeature)
+        )
+        return report(
+            runtimeInfo: runtimeInfo,
+            missingFeatures: missing,
+            missingOptionalFeatures: missingOptional,
+            negotiatedFeatures: negotiatedFeatures
+        )
+    }
+
+    private static func report(
+        runtimeInfo: EditorCoreUIFFIRuntimeInfo,
+        missingFeatures: [RuntimeFeature],
+        missingOptionalFeatures: [RuntimeFeature],
+        negotiatedFeatures: [EditorCoreUIFFIRuntimeFeatureNegotiation]
+    ) -> Report {
+        return Report(
+            runtimeInfo: runtimeInfo,
+            minimumABIVersion: minimumUIABIVersion,
+            missingFeatures: missingFeatures,
+            missingOptionalFeatures: missingOptionalFeatures,
+            negotiatedFeatures: negotiatedFeatures,
+            loadError: nil
+        )
+    }
+}
+
+private extension AttoRuntimeCompatibility.RuntimeFeature {
+    var runtimeFeature: EditorCoreUIFFIRuntimeFeature {
+        EditorCoreUIFFIRuntimeFeature(feature: feature, name: name, reason: reason)
+    }
+}

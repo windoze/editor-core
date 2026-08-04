@@ -1,0 +1,855 @@
+import Foundation
+
+enum AttoConfigurationSettingsScope: String, Codable, Equatable {
+    case user
+    case userScoped = "user_scoped"
+    case workspace
+    case workspaceScoped = "workspace_scoped"
+    case runtime
+    case runtimeScoped = "runtime_scoped"
+
+    var scopedVariant: Self {
+        switch self {
+        case .user, .userScoped:
+            return .userScoped
+        case .workspace, .workspaceScoped:
+            return .workspaceScoped
+        case .runtime, .runtimeScoped:
+            return .runtimeScoped
+        }
+    }
+}
+
+struct AttoConfigurationDocumentContext: Equatable {
+    var fileURL: URL?
+    var languageId: String?
+    var scopeName: String?
+
+    init(fileURL: URL? = nil, languageId: String? = nil, scopeName: String? = nil) {
+        self.fileURL = fileURL
+        self.languageId = languageId
+        self.scopeName = scopeName
+    }
+
+    var normalizedLanguageId: String? {
+        Self.normalizedIdentifier(languageId)
+    }
+
+    var normalizedFileExtension: String? {
+        let ext = Self.normalizedIdentifier(fileURL?.pathExtension)
+        return ext?.isEmpty == false ? ext : nil
+    }
+
+    var normalizedFileName: String? {
+        let name = Self.normalizedPathComponent(fileURL?.lastPathComponent)
+        return name?.isEmpty == false ? name : nil
+    }
+
+    var normalizedPath: String? {
+        guard let fileURL else { return nil }
+        let path = fileURL.standardizedFileURL.path
+            .replacingOccurrences(of: "\\", with: "/")
+            .lowercased()
+        return path.isEmpty ? nil : path
+    }
+
+    var normalizedScopeName: String? {
+        if let explicit = Self.normalizedScopeName(scopeName) {
+            return explicit
+        }
+        guard let normalizedLanguageId else { return nil }
+        return "source.\(normalizedLanguageId)"
+    }
+
+    static func normalizedIdentifier(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let normalized = value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        return normalized.isEmpty ? nil : normalized
+    }
+
+    private static func normalizedPathComponent(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let normalized = value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\\", with: "/")
+            .lowercased()
+        return normalized.isEmpty ? nil : normalized
+    }
+
+    private static func normalizedScopeName(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let normalized = value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\\", with: "/")
+            .lowercased()
+        return normalized.isEmpty ? nil : normalized
+    }
+}
+
+struct AttoConfigurationResolution: Equatable {
+    var snapshot: AttoConfigurationSnapshot
+    var appliedScopes: [AttoConfigurationSettingsScope]
+}
+
+struct AttoConfigurationSettings: Codable, Equatable {
+    static let legacySchemaVersion = 0
+    static let currentSchemaVersion = 1
+
+    var schemaVersion: Int
+    var editor: AttoEditorPreferenceSettings?
+    var rendering: AttoRenderingPreferenceSettings?
+    var language: AttoLanguagePreferenceSettings?
+    var workspace: AttoWorkspacePreferenceSettings?
+    var scopedSettings: [AttoScopedConfigurationSettings]
+
+    init(
+        schemaVersion: Int = Self.currentSchemaVersion,
+        editor: AttoEditorPreferenceSettings? = nil,
+        rendering: AttoRenderingPreferenceSettings? = nil,
+        language: AttoLanguagePreferenceSettings? = nil,
+        workspace: AttoWorkspacePreferenceSettings? = nil,
+        scopedSettings: [AttoScopedConfigurationSettings] = []
+    ) {
+        self.schemaVersion = schemaVersion
+        self.editor = editor
+        self.rendering = rendering
+        self.language = language
+        self.workspace = workspace
+        self.scopedSettings = scopedSettings
+    }
+
+    var isEmpty: Bool {
+        editor == nil
+            && rendering == nil
+            && language == nil
+            && workspace == nil
+            && scopedSettings.allSatisfy(\.isEmpty)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion = "schema_version"
+        case editor
+        case rendering
+        case language
+        case workspace
+        case scopedSettings = "scoped_settings"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion)
+            ?? Self.legacySchemaVersion
+        self.editor = try container.decodeIfPresent(AttoEditorPreferenceSettings.self, forKey: .editor)
+        self.rendering = try container.decodeIfPresent(AttoRenderingPreferenceSettings.self, forKey: .rendering)
+        self.language = try container.decodeIfPresent(AttoLanguagePreferenceSettings.self, forKey: .language)
+        self.workspace = try container.decodeIfPresent(AttoWorkspacePreferenceSettings.self, forKey: .workspace)
+        self.scopedSettings = try container.decodeIfPresent(
+            [AttoScopedConfigurationSettings].self,
+            forKey: .scopedSettings
+        ) ?? []
+    }
+
+    func migratedToCurrentSchema() -> Self {
+        guard schemaVersion < Self.currentSchemaVersion else { return self }
+        var migrated = self
+        migrated.schemaVersion = Self.currentSchemaVersion
+        return migrated
+    }
+}
+
+struct AttoScopedConfigurationSettings: Codable, Equatable {
+    var selectors: [String]
+    var editor: AttoEditorPreferenceSettings?
+    var rendering: AttoRenderingPreferenceSettings?
+    var language: AttoLanguagePreferenceSettings?
+
+    init(
+        selector: String? = nil,
+        selectors: [String] = [],
+        editor: AttoEditorPreferenceSettings? = nil,
+        rendering: AttoRenderingPreferenceSettings? = nil,
+        language: AttoLanguagePreferenceSettings? = nil
+    ) {
+        var normalizedSelectors = selectors
+        if let selector {
+            normalizedSelectors.insert(selector, at: 0)
+        }
+        self.selectors = normalizedSelectors
+        self.editor = editor
+        self.rendering = rendering
+        self.language = language
+    }
+
+    var isEmpty: Bool {
+        editor == nil && rendering == nil && language == nil
+    }
+
+    func matches(_ context: AttoConfigurationDocumentContext) -> Bool {
+        selectors.contains { AttoSettingsSelector.matches($0, context: context) }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case selector
+        case selectors
+        case editor
+        case rendering
+        case language
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let selector = try container.decodeIfPresent(String.self, forKey: .selector)
+        let selectors = try container.decodeIfPresent([String].self, forKey: .selectors) ?? []
+        var normalizedSelectors = selectors
+        if let selector {
+            normalizedSelectors.insert(selector, at: 0)
+        }
+        self.selectors = normalizedSelectors
+        self.editor = try container.decodeIfPresent(AttoEditorPreferenceSettings.self, forKey: .editor)
+        self.rendering = try container.decodeIfPresent(AttoRenderingPreferenceSettings.self, forKey: .rendering)
+        self.language = try container.decodeIfPresent(AttoLanguagePreferenceSettings.self, forKey: .language)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(selectors, forKey: .selectors)
+        try container.encodeIfPresent(editor, forKey: .editor)
+        try container.encodeIfPresent(rendering, forKey: .rendering)
+        try container.encodeIfPresent(language, forKey: .language)
+    }
+
+}
+
+struct AttoEditorPreferenceSettings: Codable, Equatable {
+    var fontFamilies: [String]?
+    var fontSizePoints: Double?
+    var autoPairsEnabled: Bool?
+    var wrapMode: String?
+    var wrapIndent: String?
+    var findCaseSensitive: Bool?
+    var findWholeWord: Bool?
+    var findRegex: Bool?
+    var wordBoundaryAsciiBoundaryChars: String?
+
+    init(
+        fontFamilies: [String]? = nil,
+        fontSizePoints: Double? = nil,
+        autoPairsEnabled: Bool? = nil,
+        wrapMode: String? = nil,
+        wrapIndent: String? = nil,
+        findCaseSensitive: Bool? = nil,
+        findWholeWord: Bool? = nil,
+        findRegex: Bool? = nil,
+        wordBoundaryAsciiBoundaryChars: String? = nil
+    ) {
+        self.fontFamilies = fontFamilies
+        self.fontSizePoints = fontSizePoints
+        self.autoPairsEnabled = autoPairsEnabled
+        self.wrapMode = wrapMode
+        self.wrapIndent = wrapIndent
+        self.findCaseSensitive = findCaseSensitive
+        self.findWholeWord = findWholeWord
+        self.findRegex = findRegex
+        self.wordBoundaryAsciiBoundaryChars = wordBoundaryAsciiBoundaryChars
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case fontFamilies = "font_families"
+        case fontSizePoints = "font_size_points"
+        case autoPairsEnabled = "auto_pairs_enabled"
+        case wrapMode = "wrap_mode"
+        case wrapIndent = "wrap_indent"
+        case findCaseSensitive = "find_case_sensitive"
+        case findWholeWord = "find_whole_word"
+        case findRegex = "find_regex"
+        case wordBoundaryAsciiBoundaryChars = "word_boundary_ascii_boundary_chars"
+    }
+
+    private enum LegacyCodingKeys: String, CodingKey {
+        case fontFace = "font_face"
+        case fontSize = "font_size"
+        case wordWrap = "word_wrap"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let legacy = try decoder.container(keyedBy: LegacyCodingKeys.self)
+        self.init(
+            fontFamilies: try container.decodeIfPresent([String].self, forKey: .fontFamilies)
+                ?? legacy.decodeStringArrayOrSingleIfPresent(forKey: .fontFace),
+            fontSizePoints: try container.decodeIfPresent(Double.self, forKey: .fontSizePoints)
+                ?? legacy.decodeNumberIfPresent(forKey: .fontSize),
+            autoPairsEnabled: try container.decodeIfPresent(Bool.self, forKey: .autoPairsEnabled),
+            wrapMode: try container.decodeIfPresent(String.self, forKey: .wrapMode)
+                ?? legacy.decodeWordWrapModeIfPresent(forKey: .wordWrap),
+            wrapIndent: try container.decodeIfPresent(String.self, forKey: .wrapIndent),
+            findCaseSensitive: try container.decodeIfPresent(Bool.self, forKey: .findCaseSensitive),
+            findWholeWord: try container.decodeIfPresent(Bool.self, forKey: .findWholeWord),
+            findRegex: try container.decodeIfPresent(Bool.self, forKey: .findRegex),
+            wordBoundaryAsciiBoundaryChars: try container.decodeIfPresent(String.self, forKey: .wordBoundaryAsciiBoundaryChars)
+        )
+    }
+}
+
+struct AttoRenderingPreferenceSettings: Codable, Equatable {
+    var themeName: String?
+    var fontLigaturesEnabled: Bool?
+
+    init(
+        themeName: String? = nil,
+        fontLigaturesEnabled: Bool? = nil
+    ) {
+        self.themeName = themeName
+        self.fontLigaturesEnabled = fontLigaturesEnabled
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case themeName = "theme_name"
+        case fontLigaturesEnabled = "font_ligatures_enabled"
+    }
+
+    private enum LegacyCodingKeys: String, CodingKey {
+        case theme
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let legacy = try decoder.container(keyedBy: LegacyCodingKeys.self)
+        self.init(
+            themeName: try container.decodeIfPresent(String.self, forKey: .themeName)
+                ?? legacy.decodeIfPresent(String.self, forKey: .theme),
+            fontLigaturesEnabled: try container.decodeIfPresent(Bool.self, forKey: .fontLigaturesEnabled)
+        )
+    }
+}
+
+struct AttoLanguagePreferenceSettings: Codable, Equatable {
+    var commentConfigurations: [String: AttoCommentConfiguration]?
+    var semanticHighlightingEnabled: Bool?
+    var formatOnSaveEnabled: Bool?
+    var formatOnTypeEnabled: Bool?
+    var lspAutoRestart: AttoLspAutoRestartPolicySettings?
+
+    init(
+        commentConfigurations: [String: AttoCommentConfiguration]? = nil,
+        semanticHighlightingEnabled: Bool? = nil,
+        formatOnSaveEnabled: Bool? = nil,
+        formatOnTypeEnabled: Bool? = nil,
+        lspAutoRestart: AttoLspAutoRestartPolicySettings? = nil
+    ) {
+        self.commentConfigurations = commentConfigurations
+        self.semanticHighlightingEnabled = semanticHighlightingEnabled
+        self.formatOnSaveEnabled = formatOnSaveEnabled
+        self.formatOnTypeEnabled = formatOnTypeEnabled
+        self.lspAutoRestart = lspAutoRestart
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case commentConfigurations = "comment_configurations"
+        case semanticHighlightingEnabled = "semantic_highlighting_enabled"
+        case formatOnSaveEnabled = "format_on_save_enabled"
+        case formatOnTypeEnabled = "format_on_type_enabled"
+        case lspAutoRestart = "lsp_auto_restart"
+    }
+
+    private enum LegacyCodingKeys: String, CodingKey {
+        case lspAutoRestartEnabled = "lsp_auto_restart_enabled"
+        case lspAutoRestartMaxAttempts = "lsp_auto_restart_max_attempts"
+        case lspAutoRestartBaseDelaySeconds = "lsp_auto_restart_base_delay_seconds"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let legacy = try decoder.container(keyedBy: LegacyCodingKeys.self)
+        let legacyLspAutoRestart = AttoLspAutoRestartPolicySettings(
+            enabled: try legacy.decodeIfPresent(Bool.self, forKey: .lspAutoRestartEnabled),
+            maxAttempts: try legacy.decodeIfPresent(Int.self, forKey: .lspAutoRestartMaxAttempts),
+            baseDelaySeconds: try legacy.decodeNumberIfPresent(forKey: .lspAutoRestartBaseDelaySeconds)
+        )
+        self.init(
+            commentConfigurations: try container.decodeIfPresent(
+                [String: AttoCommentConfiguration].self,
+                forKey: .commentConfigurations
+            ),
+            semanticHighlightingEnabled: try container.decodeIfPresent(
+                Bool.self,
+                forKey: .semanticHighlightingEnabled
+            ),
+            formatOnSaveEnabled: try container.decodeIfPresent(
+                Bool.self,
+                forKey: .formatOnSaveEnabled
+            ),
+            formatOnTypeEnabled: try container.decodeIfPresent(
+                Bool.self,
+                forKey: .formatOnTypeEnabled
+            ),
+            lspAutoRestart: try container.decodeIfPresent(AttoLspAutoRestartPolicySettings.self, forKey: .lspAutoRestart)
+                ?? (legacyLspAutoRestart.isEmpty ? nil : legacyLspAutoRestart)
+        )
+    }
+}
+
+struct AttoLspAutoRestartPolicySettings: Codable, Equatable {
+    var enabled: Bool?
+    var maxAttempts: Int?
+    var baseDelaySeconds: Double?
+    var disabledServerKeys: [String]?
+    var serverMaxAttempts: [String: Int]?
+    var serverBaseDelaySeconds: [String: Double]?
+
+    init(
+        enabled: Bool? = nil,
+        maxAttempts: Int? = nil,
+        baseDelaySeconds: Double? = nil,
+        disabledServerKeys: [String]? = nil,
+        serverMaxAttempts: [String: Int]? = nil,
+        serverBaseDelaySeconds: [String: Double]? = nil
+    ) {
+        self.enabled = enabled
+        self.maxAttempts = maxAttempts
+        self.baseDelaySeconds = baseDelaySeconds
+        self.disabledServerKeys = disabledServerKeys
+        self.serverMaxAttempts = serverMaxAttempts
+        self.serverBaseDelaySeconds = serverBaseDelaySeconds
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled
+        case maxAttempts = "max_attempts"
+        case baseDelaySeconds = "base_delay_seconds"
+        case disabledServerKeys = "disabled_server_keys"
+        case serverMaxAttempts = "server_max_attempts"
+        case serverBaseDelaySeconds = "server_base_delay_seconds"
+    }
+
+    var isEmpty: Bool {
+        enabled == nil
+            && maxAttempts == nil
+            && baseDelaySeconds == nil
+            && disabledServerKeys == nil
+            && serverMaxAttempts == nil
+            && serverBaseDelaySeconds == nil
+    }
+}
+
+struct AttoWorkspacePreferenceSettings: Codable, Equatable {
+    var rootURL: String?
+    var rootPath: String?
+    var findInFilesDefaultScope: String?
+    var workspaceSearchIncludeGlobs: [String]?
+    var workspaceSearchExcludeGlobs: [String]?
+
+    init(
+        rootURL: String? = nil,
+        rootPath: String? = nil,
+        findInFilesDefaultScope: String? = nil,
+        workspaceSearchIncludeGlobs: [String]? = nil,
+        workspaceSearchExcludeGlobs: [String]? = nil
+    ) {
+        self.rootURL = rootURL
+        self.rootPath = rootPath
+        self.findInFilesDefaultScope = findInFilesDefaultScope
+        self.workspaceSearchIncludeGlobs = workspaceSearchIncludeGlobs
+        self.workspaceSearchExcludeGlobs = workspaceSearchExcludeGlobs
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case rootURL = "root_url"
+        case rootPath = "root_path"
+        case findInFilesDefaultScope = "find_in_files_default_scope"
+        case workspaceSearchIncludeGlobs = "workspace_search_include_globs"
+        case workspaceSearchExcludeGlobs = "workspace_search_exclude_globs"
+    }
+}
+
+private extension KeyedDecodingContainer {
+    func decodeNumberIfPresent(forKey key: Key) throws -> Double? {
+        if let value = try? decodeIfPresent(Double.self, forKey: key) {
+            return value
+        }
+        if let value = try? decodeIfPresent(Int.self, forKey: key) {
+            return Double(value)
+        }
+        return nil
+    }
+
+    func decodeStringArrayOrSingleIfPresent(forKey key: Key) throws -> [String]? {
+        if let values = try? decodeIfPresent([String].self, forKey: key) {
+            return values
+        }
+        if let value = try? decodeIfPresent(String.self, forKey: key) {
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : [trimmed]
+        }
+        return nil
+    }
+
+    func decodeWordWrapModeIfPresent(forKey key: Key) throws -> String? {
+        if let enabled = try? decodeIfPresent(Bool.self, forKey: key) {
+            return enabled ? "word" : "none"
+        }
+        guard let raw = try? decodeIfPresent(String.self, forKey: key)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        else {
+            return nil
+        }
+        switch raw {
+        case "true", "on", "yes":
+            return "word"
+        case "false", "off", "no":
+            return "none"
+        default:
+            return raw.isEmpty ? nil : raw
+        }
+    }
+}
+
+struct AttoConfigurationSettingsStore {
+    let userSettingsURL: URL
+    let runtimeSettingsURL: URL
+    let fileManager: FileManager
+
+    init(
+        userSettingsURL: URL = AttoConfigurationSettingsStore.defaultUserSettingsURL(),
+        runtimeSettingsURL: URL? = nil,
+        fileManager: FileManager = .default
+    ) {
+        self.userSettingsURL = userSettingsURL
+        self.runtimeSettingsURL = runtimeSettingsURL
+            ?? AttoConfigurationSettingsStore.defaultRuntimeSettingsURL(userSettingsURL: userSettingsURL)
+        self.fileManager = fileManager
+    }
+
+    static func defaultUserSettingsURL(fileManager: FileManager = .default) -> URL {
+        let appSupport: URL = (try? fileManager.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )) ?? fileManager.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support", isDirectory: true)
+
+        return appSupport
+            .appendingPathComponent("codes.unwritten.attoeditor", isDirectory: true)
+            .appendingPathComponent("settings.json", isDirectory: false)
+    }
+
+    static func defaultRuntimeSettingsURL(
+        userSettingsURL: URL = AttoConfigurationSettingsStore.defaultUserSettingsURL()
+    ) -> URL {
+        userSettingsURL
+            .deletingLastPathComponent()
+            .appendingPathComponent("runtime-overrides.json", isDirectory: false)
+    }
+
+    static func workspaceSettingsURL(forWorkspaceRootURL workspaceRootURL: URL) -> URL {
+        workspaceRootURL
+            .standardizedFileURL
+            .appendingPathComponent(".attoeditor", isDirectory: true)
+            .appendingPathComponent("settings.json", isDirectory: false)
+    }
+
+    func loadUserSettings() throws -> AttoConfigurationSettings? {
+        try loadUserSettingsOutcome().settings
+    }
+
+    func loadUserSettingsOutcome() throws -> AttoConfigurationSettingsLoadOutcome {
+        try loadOutcome(from: userSettingsURL)
+    }
+
+    func saveUserSettings(_ settings: AttoConfigurationSettings) throws {
+        try save(settings, to: userSettingsURL)
+    }
+
+    func loadRuntimeSettings() throws -> AttoConfigurationSettings? {
+        try loadRuntimeSettingsOutcome().settings
+    }
+
+    func loadRuntimeSettingsOutcome() throws -> AttoConfigurationSettingsLoadOutcome {
+        try loadOutcome(from: runtimeSettingsURL)
+    }
+
+    func saveRuntimeSettings(_ settings: AttoConfigurationSettings) throws {
+        try save(settings, to: runtimeSettingsURL)
+    }
+
+    func clearRuntimeSettings() throws {
+        guard fileManager.fileExists(atPath: runtimeSettingsURL.path) else { return }
+        try fileManager.removeItem(at: runtimeSettingsURL)
+    }
+
+    func loadWorkspaceSettings(workspaceRootURL: URL) throws -> AttoConfigurationSettings? {
+        try loadWorkspaceSettingsOutcome(workspaceRootURL: workspaceRootURL).settings
+    }
+
+    func loadWorkspaceSettingsOutcome(workspaceRootURL: URL) throws -> AttoConfigurationSettingsLoadOutcome {
+        try loadOutcome(from: Self.workspaceSettingsURL(forWorkspaceRootURL: workspaceRootURL))
+    }
+
+    func saveWorkspaceSettings(
+        _ settings: AttoConfigurationSettings,
+        workspaceRootURL: URL
+    ) throws {
+        try save(settings, to: Self.workspaceSettingsURL(forWorkspaceRootURL: workspaceRootURL))
+    }
+
+    func load(from url: URL) throws -> AttoConfigurationSettings? {
+        try loadOutcome(from: url).settings
+    }
+
+    func loadOutcome(from url: URL) throws -> AttoConfigurationSettingsLoadOutcome {
+        guard fileManager.fileExists(atPath: url.path) else {
+            return AttoConfigurationSettingsLoadOutcome(settings: nil, event: nil)
+        }
+        let data = try Data(contentsOf: url)
+        let settings: AttoConfigurationSettings
+        do {
+            settings = try JSONDecoder().decode(AttoConfigurationSettings.self, from: data)
+        } catch {
+            let backupURL = try backupCorruptSettingsFile(at: url)
+            return AttoConfigurationSettingsLoadOutcome(
+                settings: nil,
+                event: .invalidBackedUp(settingsURL: url, backupURL: backupURL)
+            )
+        }
+
+        guard settings.schemaVersion < AttoConfigurationSettings.currentSchemaVersion else {
+            return AttoConfigurationSettingsLoadOutcome(settings: settings, event: nil)
+        }
+
+        let migrated = settings.migratedToCurrentSchema()
+        let backupURL = try backupMigratedSettingsFile(at: url, schemaVersion: settings.schemaVersion)
+        try save(migrated, to: url)
+        return AttoConfigurationSettingsLoadOutcome(
+            settings: migrated,
+            event: .migrated(
+                settingsURL: url,
+                backupURL: backupURL,
+                fromSchemaVersion: settings.schemaVersion
+            )
+        )
+    }
+
+    func save(_ settings: AttoConfigurationSettings, to url: URL) throws {
+        try fileManager.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(settings)
+        try data.write(to: url, options: [.atomic])
+    }
+
+    @discardableResult
+    func backupCorruptSettingsFile(at url: URL) throws -> URL {
+        let backupURL = nextCorruptSettingsBackupURL(for: url)
+        try fileManager.moveItem(at: url, to: backupURL)
+        return backupURL
+    }
+
+    func nextCorruptSettingsBackupURL(for url: URL) -> URL {
+        let base = url.appendingPathExtension("invalid")
+        return nextAvailableBackupURL(base: base)
+    }
+
+    @discardableResult
+    func backupMigratedSettingsFile(at url: URL, schemaVersion: Int) throws -> URL {
+        let backupURL = nextMigratedSettingsBackupURL(for: url, schemaVersion: schemaVersion)
+        try fileManager.moveItem(at: url, to: backupURL)
+        return backupURL
+    }
+
+    func nextMigratedSettingsBackupURL(for url: URL, schemaVersion: Int) -> URL {
+        let normalizedSchemaVersion = max(AttoConfigurationSettings.legacySchemaVersion, schemaVersion)
+        let base = url
+            .appendingPathExtension("v\(normalizedSchemaVersion)")
+            .appendingPathExtension("backup")
+        return nextAvailableBackupURL(base: base)
+    }
+
+    private func nextAvailableBackupURL(base: URL) -> URL {
+        if fileManager.fileExists(atPath: base.path) == false {
+            return base
+        }
+
+        for index in 1... {
+            let candidate = URL(fileURLWithPath: "\(base.path).\(index)", isDirectory: false)
+            if fileManager.fileExists(atPath: candidate.path) == false {
+                return candidate
+            }
+        }
+
+        return URL(fileURLWithPath: "\(base.path).\(UUID().uuidString)", isDirectory: false)
+    }
+}
+
+extension AttoConfigurationSnapshot {
+    func resolvingSettings(
+        user: AttoConfigurationSettings? = nil,
+        workspace: AttoConfigurationSettings? = nil,
+        runtime: AttoConfigurationSettings? = nil,
+        documentContext: AttoConfigurationDocumentContext? = nil
+    ) -> AttoConfigurationResolution {
+        var snapshot = self
+        var appliedScopes: [AttoConfigurationSettingsScope] = []
+
+        for (scope, settings) in [
+            (AttoConfigurationSettingsScope.user, user),
+            (.workspace, workspace),
+            (.runtime, runtime),
+        ] {
+            guard let settings, settings.isEmpty == false else { continue }
+            if snapshot.apply(settings) {
+                appliedScopes.append(scope)
+            }
+            guard let documentContext else { continue }
+            for scopedSettings in settings.scopedSettings
+                where scopedSettings.isEmpty == false && scopedSettings.matches(documentContext)
+            {
+                if snapshot.apply(scopedSettings) {
+                    appliedScopes.append(scope.scopedVariant)
+                }
+            }
+        }
+
+        return AttoConfigurationResolution(snapshot: snapshot, appliedScopes: appliedScopes)
+    }
+
+    private mutating func apply(_ settings: AttoConfigurationSettings) -> Bool {
+        var didApply = false
+        if let editor = settings.editor {
+            apply(editor)
+            didApply = true
+        }
+        if let rendering = settings.rendering {
+            apply(rendering)
+            didApply = true
+        }
+        if let language = settings.language {
+            apply(language)
+            didApply = true
+        }
+        if let workspace = settings.workspace {
+            apply(workspace)
+            didApply = true
+        }
+        return didApply
+    }
+
+    private mutating func apply(_ settings: AttoScopedConfigurationSettings) -> Bool {
+        var didApply = false
+        if let editor = settings.editor {
+            apply(editor)
+            didApply = true
+        }
+        if let rendering = settings.rendering {
+            apply(rendering)
+            didApply = true
+        }
+        if let language = settings.language {
+            apply(language)
+            didApply = true
+        }
+        return didApply
+    }
+
+    private mutating func apply(_ settings: AttoEditorPreferenceSettings) {
+        if let fontFamilies = settings.fontFamilies {
+            editor.fontFamilies = fontFamilies
+        }
+        if let fontSizePoints = settings.fontSizePoints {
+            editor.fontSizePoints = fontSizePoints
+        }
+        if let autoPairsEnabled = settings.autoPairsEnabled {
+            editor.autoPairsEnabled = autoPairsEnabled
+        }
+        if let wrapMode = settings.wrapMode {
+            editor.wrapMode = wrapMode
+        }
+        if let wrapIndent = settings.wrapIndent {
+            editor.wrapIndent = wrapIndent
+        }
+        if let findCaseSensitive = settings.findCaseSensitive {
+            editor.findCaseSensitive = findCaseSensitive
+        }
+        if let findWholeWord = settings.findWholeWord {
+            editor.findWholeWord = findWholeWord
+        }
+        if let findRegex = settings.findRegex {
+            editor.findRegex = findRegex
+        }
+        if let wordBoundaryAsciiBoundaryChars = settings.wordBoundaryAsciiBoundaryChars {
+            editor.wordBoundaryAsciiBoundaryChars = wordBoundaryAsciiBoundaryChars
+        }
+    }
+
+    private mutating func apply(_ settings: AttoRenderingPreferenceSettings) {
+        if let themeName = settings.themeName {
+            rendering.themeName = themeName
+        }
+        if let fontLigaturesEnabled = settings.fontLigaturesEnabled {
+            rendering.fontLigaturesEnabled = fontLigaturesEnabled
+        }
+    }
+
+    private mutating func apply(_ settings: AttoLanguagePreferenceSettings) {
+        if let commentConfigurations = settings.commentConfigurations {
+            language.commentConfigurations.merge(commentConfigurations) { _, new in new }
+        }
+        if let semanticHighlightingEnabled = settings.semanticHighlightingEnabled {
+            language.semanticHighlightingEnabled = semanticHighlightingEnabled
+        }
+        if let formatOnSaveEnabled = settings.formatOnSaveEnabled {
+            language.formatOnSaveEnabled = formatOnSaveEnabled
+        }
+        if let formatOnTypeEnabled = settings.formatOnTypeEnabled {
+            language.formatOnTypeEnabled = formatOnTypeEnabled
+        }
+        if let lspAutoRestart = settings.lspAutoRestart {
+            apply(lspAutoRestart)
+        }
+    }
+
+    private mutating func apply(_ settings: AttoLspAutoRestartPolicySettings) {
+        if let enabled = settings.enabled {
+            language.lspAutoRestart.enabled = enabled
+        }
+        if let maxAttempts = settings.maxAttempts {
+            language.lspAutoRestart.maxAttempts = maxAttempts
+        }
+        if let baseDelaySeconds = settings.baseDelaySeconds {
+            language.lspAutoRestart.baseDelaySeconds = baseDelaySeconds
+        }
+        if let disabledServerKeys = settings.disabledServerKeys {
+            language.lspAutoRestart.disabledServerKeys = disabledServerKeys
+        }
+        if let serverMaxAttempts = settings.serverMaxAttempts {
+            language.lspAutoRestart.serverMaxAttempts.merge(serverMaxAttempts) { _, new in new }
+        }
+        if let serverBaseDelaySeconds = settings.serverBaseDelaySeconds {
+            language.lspAutoRestart.serverBaseDelaySeconds.merge(serverBaseDelaySeconds) { _, new in new }
+        }
+    }
+
+    private mutating func apply(_ settings: AttoWorkspacePreferenceSettings) {
+        if let rootURL = settings.rootURL {
+            workspace.rootURL = rootURL
+        }
+        if let rootPath = settings.rootPath {
+            workspace.rootPath = rootPath
+        }
+        if let findInFilesDefaultScope = settings.findInFilesDefaultScope {
+            workspace.findInFilesDefaultScope = findInFilesDefaultScope
+        }
+        if let workspaceSearchIncludeGlobs = settings.workspaceSearchIncludeGlobs {
+            workspace.workspaceSearchIncludeGlobs = workspaceSearchIncludeGlobs
+        }
+        if let workspaceSearchExcludeGlobs = settings.workspaceSearchExcludeGlobs {
+            workspace.workspaceSearchExcludeGlobs = workspaceSearchExcludeGlobs
+        }
+    }
+}

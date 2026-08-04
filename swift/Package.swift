@@ -4,7 +4,7 @@ import PackageDescription
 // Rust staticlib 由 SwiftPM build plugin 触发 `cargo build` 自动生成，并落在 plugin output 目录里：
 // `.build/plugins/outputs/swift/<Target>/destination/EditorCoreRustBuildPlugin/cargo-target/release/`
 //
-// 注：这里引用了 SwiftPM 的 plugin 输出路径约定（当前 SwiftPM 为此类 prebuildCommand 生成的稳定路径）。
+// 注：这里引用了 SwiftPM 的 plugin 输出路径约定（当前 SwiftPM 为 buildTool plugin 生成的稳定路径）。
 let pluginOutputsBase = ".build/plugins/outputs/swift"
 let cargoTargetSuffix = "destination/EditorCoreRustBuildPlugin/cargo-target/release"
 let editorCoreFFIStaticLib = "\(pluginOutputsBase)/CEditorCoreFFI/\(cargoTargetSuffix)/libeditor_core_ffi.a"
@@ -132,7 +132,10 @@ let package = Package(
         .testTarget(
             name: "AttoEditorTests",
             dependencies: ["AttoEditor", "AttoEditorSupport"],
-            path: "Tests/AttoEditorTests"
+            path: "Tests/AttoEditorTests",
+            resources: [
+                .process("Resources")
+            ]
         ),
     ]
 )

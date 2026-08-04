@@ -8,8 +8,8 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
     let id: UUID = UUID()
 
     private(set) var workspaceRootURL: URL
-    private(set) var recentFiles: [URL] = []
-    private(set) var fileIndex: AttoWorkspaceFileIndex
+    private let workspaceDataSource: AttoWorkspaceDataSource
+    var fileIndex: AttoWorkspaceFileIndex { workspaceDataSource.fileIndex }
 
     let window: NSWindow
     let splitViewController: NSSplitViewController
@@ -28,6 +28,9 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
         library: EditorCoreUIFFILibrary,
         theme: EditorCoreSkiaTheme,
         workspaceRootURL: URL,
+        configurationSnapshot: AttoConfigurationSnapshot,
+        configurationSnapshotProvider: ((URL, AttoConfigurationDocumentContext?) -> AttoConfigurationSnapshot)? = nil,
+        themeResolver: ((String) -> EditorCoreSkiaTheme)? = nil,
         contentSize: CGSize
     ) {
         self.workspaceRootURL = workspaceRootURL
@@ -35,6 +38,15 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
         let fileExplorer = AttoFileExplorerViewController(rootURL: workspaceRootURL)
         let openedFiles = AttoOpenedFilesViewController(rootURL: workspaceRootURL)
         let findInFiles = AttoFindInFilesViewController(rootURL: workspaceRootURL)
+        findInFiles.setDefaultScope(configurationValue: configurationSnapshot.workspace.findInFilesDefaultScope)
+        findInFiles.setWorkspaceSearchGlobs(
+            include: configurationSnapshot.workspace.workspaceSearchIncludeGlobs,
+            exclude: configurationSnapshot.workspace.workspaceSearchExcludeGlobs
+        )
+        findInFiles.setSearchOptions(Self.findInFilesSearchOptions(from: configurationSnapshot))
+        findInFiles.setWorkspaceReplacementEnabled(
+            library.featureFlags.contains(.multiDocumentWorkspaceFileReplacement)
+        )
         let sidebar = AttoSidebarViewController(
             fileExplorerController: fileExplorer,
             openedFilesController: openedFiles,
@@ -43,7 +55,10 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
         let editorArea = AttoEditorAreaViewController(
             library: library,
             theme: theme,
-            workspaceRootURL: workspaceRootURL
+            workspaceRootURL: workspaceRootURL,
+            configurationSnapshot: configurationSnapshot,
+            configurationSnapshotProvider: configurationSnapshotProvider,
+            themeResolver: themeResolver
         )
 
         let splitVC = NSSplitViewController()
@@ -83,7 +98,10 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
         self.findInFilesController = findInFiles
         self.editorAreaController = editorArea
 
-        self.fileIndex = AttoWorkspaceFileIndex(rootURL: workspaceRootURL)
+        self.workspaceDataSource = AttoWorkspaceDataSource(
+            rootURL: workspaceRootURL,
+            coreDocumentsProvider: { [weak editorArea] in editorArea?.coreDocuments }
+        )
 
         super.init()
         win.delegate = self
@@ -118,6 +136,7 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
             // Refresh sidebar + quick-open caches so it becomes discoverable.
             self.fileExplorerController.setRootURL(self.workspaceRootURL)
             self.fileIndex.rebuild()
+            self.refreshCoreProjectFileIndex()
             self.fileExplorerController.revealFile(url)
             self.rememberRecentFile(url)
         }
@@ -125,8 +144,33 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
         findInFilesController.openedFilesProvider = { [weak self] in
             self?.editorAreaController.openFileURLs() ?? []
         }
+        findInFilesController.openedFilesSearchProvider = { [weak self] query, options in
+            self?.editorAreaController.findInOpenTabs(query: query, options: options) ?? []
+        }
+        findInFilesController.workspaceFilesSearchProvider = { [weak self] query, includeGlobs, excludeGlobs, options in
+            guard let self else { return .unavailable }
+            guard self.supportsCoreWorkspaceFileSearch else { return .unavailable }
+            guard let results = self.editorAreaController.findInWorkspaceFiles(
+                query: query,
+                includeGlobs: includeGlobs,
+                excludeGlobs: excludeGlobs,
+                options: options
+            ) else {
+                return .failed("core workspace search unavailable")
+            }
+            return .results(results)
+        }
+        findInFilesController.workspaceFilesReplaceProvider = { [weak self] query, replacement, includeGlobs, excludeGlobs, options in
+            self?.editorAreaController.replaceInWorkspaceFiles(
+                query: query,
+                replacement: replacement,
+                includeGlobs: includeGlobs,
+                excludeGlobs: excludeGlobs,
+                options: options
+            ) ?? false
+        }
         findInFilesController.workspaceFilesProvider = { [weak self] in
-            self?.fileIndex.entries().map(\.url) ?? []
+            self?.workspaceFileEntries().map(\.url) ?? []
         }
         findInFilesController.onOpenResult = { [weak self] url, loc in
             guard let self else { return }
@@ -136,6 +180,26 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
         }
 
         setWorkspaceRootURL(workspaceRootURL)
+    }
+
+    func updateConfigurationSnapshot(_ snapshot: AttoConfigurationSnapshot) {
+        editorAreaController.updateConfigurationSnapshot(snapshot)
+        findInFilesController.setDefaultScope(configurationValue: snapshot.workspace.findInFilesDefaultScope)
+        findInFilesController.setWorkspaceSearchGlobs(
+            include: snapshot.workspace.workspaceSearchIncludeGlobs,
+            exclude: snapshot.workspace.workspaceSearchExcludeGlobs
+        )
+        findInFilesController.setSearchOptions(Self.findInFilesSearchOptions(from: snapshot))
+    }
+
+    private static func findInFilesSearchOptions(
+        from snapshot: AttoConfigurationSnapshot
+    ) -> AttoFindInFilesViewController.SearchOptions {
+        AttoFindInFilesViewController.SearchOptions(
+            caseSensitive: snapshot.editor.findCaseSensitive,
+            wholeWord: snapshot.editor.findWholeWord,
+            regex: snapshot.editor.findRegex
+        )
     }
 
     func show(center: Bool = true) {
@@ -151,20 +215,35 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
         openedFilesController.setRootURL(url)
         findInFilesController.setRootURL(url)
         editorAreaController.setWorkspaceRootURL(url)
-        fileIndex.setRootURL(url)
-        recentFiles = []
+        workspaceDataSource.rememberRecentProjectRoot(url)
+        workspaceDataSource.setRootURL(url)
         window.title = "AttoEditor — \(url.lastPathComponent)"
         onSessionStateChanged?()
     }
 
     func rememberRecentFile(_ url: URL) {
-        let u = url.standardizedFileURL
-        recentFiles.removeAll { $0.standardizedFileURL == u }
-        recentFiles.insert(u, at: 0)
-        if recentFiles.count > 20 {
-            recentFiles.removeLast(recentFiles.count - 20)
-        }
+        workspaceDataSource.rememberRecentFile(url)
         onSessionStateChanged?()
+    }
+
+    func recentFileURLs() -> [URL] {
+        workspaceDataSource.recentFileURLs()
+    }
+
+    func recentProjectURLs() -> [URL] {
+        workspaceDataSource.recentProjectURLs()
+    }
+
+    func restoreRecentProjectURIs(_ uris: [String], fileManager: FileManager = .default) {
+        workspaceDataSource.restoreRecentProjectURIs(uris, fileManager: fileManager)
+    }
+
+    func workspaceFileEntries() -> [AttoWorkspaceFileIndex.Entry] {
+        workspaceDataSource.workspaceFileEntries()
+    }
+
+    func workspaceFileEntries(matching query: String, maxResults: UInt32 = 200) -> [AttoWorkspaceFileIndex.Entry] {
+        workspaceDataSource.workspaceFileEntries(matching: query, maxResults: maxResults)
     }
 
     func relativePathForDisplay(_ url: URL) -> String {
@@ -204,14 +283,16 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
         )
 
         let editorSnap = editorAreaController.makeSessionSnapshot()
+        let workspaceRoot = workspaceDataSource.sessionWorkspaceRootURL(fallback: workspaceRootURL)
 
         return AttoWindowSnapshot(
-            workspaceRootPath: workspaceRootURL.standardizedFileURL.path,
+            workspaceRootPath: workspaceRoot.path,
+            workspaceRootURI: workspaceRoot.absoluteString,
             frame: frameSnap,
             sidebarCollapsed: sidebarSplitItem.isCollapsed,
             selectedTabIndex: editorSnap.selectedTabIndex,
             tabs: editorSnap.tabs,
-            recentFilePaths: recentFiles.map { $0.standardizedFileURL.path }
+            recentFilePaths: recentFileURLs().map { $0.standardizedFileURL.path }
         )
     }
 
@@ -226,6 +307,7 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        editorAreaController.closeWorkspaceEditHistoryPanel()
         onWindowWillClose?(self)
     }
 
@@ -240,20 +322,15 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
     // MARK: - Session restore helpers
 
     func restoreRecentFiles(filePaths: [String], fileManager: FileManager = .default) {
-        var out: [URL] = []
-        var seen: Set<String> = Set()
-
-        for p in filePaths {
-            let url = URL(fileURLWithPath: p).standardizedFileURL
-            let key = url.path
-            if seen.contains(key) { continue }
-            seen.insert(key)
-            if fileManager.fileExists(atPath: url.path) == false { continue }
-            out.append(url)
-            if out.count >= 20 { break }
-        }
-
-        recentFiles = out
+        workspaceDataSource.restoreRecentFiles(filePaths: filePaths, fileManager: fileManager)
         onSessionStateChanged?()
+    }
+
+    private func refreshCoreProjectFileIndex() {
+        _ = workspaceDataSource.workspaceFileEntries()
+    }
+
+    private var supportsCoreWorkspaceFileSearch: Bool {
+        editorAreaController.coreDocuments?.library.featureFlags.contains(.multiDocumentWorkspaceFileSearch) ?? false
     }
 }

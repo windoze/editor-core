@@ -2,18 +2,105 @@ import AppKit
 import Foundation
 
 struct AttoCommandPaletteCommand {
+    let id: String
     let title: String
+    let group: String
+    let swatchColor: NSColor?
+    let isEnabled: Bool
+    let requiresEditor: Bool
+    let schema: AttoCommandSchema
+    let promptsForArguments: Bool
+    let initialArguments: AttoCommandArguments
     let run: () -> Void
+    let runWithArguments: (AttoCommandArguments) -> Void
 
-    init(title: String, run: @escaping () -> Void) {
+    init(
+        id: String,
+        title: String,
+        group: String = "General",
+        swatchColor: NSColor? = nil,
+        isEnabled: Bool = true,
+        requiresEditor: Bool = false,
+        schema: AttoCommandSchema = AttoCommandSchema(),
+        promptsForArguments: Bool = false,
+        initialArguments: AttoCommandArguments = [:],
+        run: @escaping () -> Void
+    ) {
+        self.id = id
         self.title = title
+        self.group = group
+        self.swatchColor = swatchColor
+        self.isEnabled = isEnabled
+        self.requiresEditor = requiresEditor
+        self.schema = schema
+        self.promptsForArguments = promptsForArguments
+        self.initialArguments = initialArguments
         self.run = run
+        self.runWithArguments = { _ in run() }
+    }
+
+    init(
+        id: String,
+        title: String,
+        group: String = "General",
+        swatchColor: NSColor? = nil,
+        isEnabled: Bool = true,
+        requiresEditor: Bool = false,
+        schema: AttoCommandSchema,
+        promptsForArguments: Bool = false,
+        initialArguments: AttoCommandArguments = [:],
+        runWithArguments: @escaping (AttoCommandArguments) -> Void
+    ) {
+        self.id = id
+        self.title = title
+        self.group = group
+        self.swatchColor = swatchColor
+        self.isEnabled = isEnabled
+        self.requiresEditor = requiresEditor
+        self.schema = schema
+        self.promptsForArguments = promptsForArguments
+        self.initialArguments = initialArguments
+        self.run = { runWithArguments([:]) }
+        self.runWithArguments = runWithArguments
+    }
+
+    init(
+        title: String,
+        group: String = "General",
+        swatchColor: NSColor? = nil,
+        isEnabled: Bool = true,
+        requiresEditor: Bool = false,
+        schema: AttoCommandSchema = AttoCommandSchema(),
+        promptsForArguments: Bool = false,
+        initialArguments: AttoCommandArguments = [:],
+        run: @escaping () -> Void
+    ) {
+        self.id = title
+        self.title = title
+        self.group = group
+        self.swatchColor = swatchColor
+        self.isEnabled = isEnabled
+        self.requiresEditor = requiresEditor
+        self.schema = schema
+        self.promptsForArguments = promptsForArguments
+        self.initialArguments = initialArguments
+        self.run = run
+        self.runWithArguments = { _ in run() }
     }
 }
 
 @MainActor
 final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate, NSWindowDelegate {
+    private static let preferredPanelSize = NSSize(width: 640, height: 360)
+    private static let minimumPanelSize = NSSize(width: 340, height: 240)
+    private static let visibleFrameInset: CGFloat = 20
+
     private let commandsProvider: () -> [AttoCommandPaletteCommand]
+    private let accessibilityPrefix: String
+    private let filtersCommands: Bool
+    private let showsCommandGroups: Bool
+    private let searchTextDidChange: ((String) -> Void)?
+    private let argumentProvider: ((AttoCommandPaletteCommand) -> AttoCommandArguments?)?
 
     private var panel: NSPanel?
     private let searchField = NSSearchField(frame: .zero)
@@ -23,21 +110,32 @@ final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTab
     private var allCommands: [AttoCommandPaletteCommand] = []
     private var filteredCommands: [AttoCommandPaletteCommand] = []
 
-    init(commandsProvider: @escaping () -> [AttoCommandPaletteCommand]) {
+    init(
+        accessibilityPrefix: String = "AttoEditor.CommandPalette",
+        filtersCommands: Bool = true,
+        showsCommandGroups: Bool = false,
+        argumentProvider: ((AttoCommandPaletteCommand) -> AttoCommandArguments?)? = nil,
+        searchTextDidChange: ((String) -> Void)? = nil,
+        commandsProvider: @escaping () -> [AttoCommandPaletteCommand]
+    ) {
+        self.accessibilityPrefix = accessibilityPrefix
+        self.filtersCommands = filtersCommands
+        self.showsCommandGroups = showsCommandGroups
+        self.argumentProvider = argumentProvider
+        self.searchTextDidChange = searchTextDidChange
         self.commandsProvider = commandsProvider
         super.init()
     }
 
-    func show(relativeTo window: NSWindow, placeholder: String = "Type a command…") {
+    func show(relativeTo window: NSWindow, placeholder: String = "Type a command…", initialQuery: String = "") {
         if panel == nil {
             panel = buildPanel()
         }
 
         searchField.placeholderString = placeholder
-        searchField.stringValue = ""
+        searchField.stringValue = initialQuery
 
-        allCommands = commandsProvider()
-        applyFilter()
+        reloadCommands()
 
         guard let panel else { return }
         position(panel: panel, relativeTo: window)
@@ -51,6 +149,11 @@ final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTab
         guard let panel else { return }
         panel.orderOut(nil)
         panel.parent?.removeChildWindow(panel)
+    }
+
+    func reloadCommands() {
+        allCommands = commandsProvider()
+        applyFilter()
     }
 
     // MARK: - Panel
@@ -73,8 +176,14 @@ final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTab
         panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
         panel.standardWindowButton(.zoomButton)?.isHidden = true
         panel.delegate = self
+        panel.identifier = NSUserInterfaceItemIdentifier(
+            AttoAccessibilityID.commandPalettePanel(prefix: accessibilityPrefix)
+        )
 
         let root = NSView(frame: .zero)
+        root.identifier = NSUserInterfaceItemIdentifier(
+            AttoAccessibilityID.commandPaletteRoot(prefix: accessibilityPrefix)
+        )
         root.wantsLayer = true
         root.layer?.cornerRadius = 8
         root.layer?.backgroundColor = NSColor(attoHex: 0x252526, alpha: 0.98).cgColor
@@ -82,6 +191,9 @@ final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTab
         panel.contentView = root
 
         searchField.placeholderString = "Type a command…"
+        searchField.identifier = NSUserInterfaceItemIdentifier(
+            AttoAccessibilityID.commandPaletteSearchField(prefix: accessibilityPrefix)
+        )
         searchField.focusRingType = .none
         searchField.font = NSFont.systemFont(ofSize: 14)
         searchField.textColor = NSColor(attoHex: 0xFFFFFF)
@@ -91,8 +203,10 @@ final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTab
         let col = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("cmd"))
         col.title = "Command"
         col.width = 600
+        col.resizingMask = .autoresizingMask
         tableView.addTableColumn(col)
         tableView.headerView = nil
+        tableView.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
         tableView.dataSource = self
         tableView.delegate = self
         tableView.rowHeight = 26
@@ -101,10 +215,16 @@ final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTab
         tableView.focusRingType = .none
         tableView.doubleAction = #selector(doubleClicked(_:))
         tableView.target = self
+        tableView.identifier = NSUserInterfaceItemIdentifier(
+            AttoAccessibilityID.commandPaletteTable(prefix: accessibilityPrefix)
+        )
 
         scrollView.documentView = tableView
         scrollView.hasVerticalScroller = true
         scrollView.drawsBackground = false
+        scrollView.identifier = NSUserInterfaceItemIdentifier(
+            AttoAccessibilityID.commandPaletteScrollView(prefix: accessibilityPrefix)
+        )
         scrollView.translatesAutoresizingMaskIntoConstraints = false
 
         root.addSubview(searchField)
@@ -127,8 +247,9 @@ final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTab
     private func position(panel: NSPanel, relativeTo window: NSWindow) {
         guard let screen = window.screen ?? NSScreen.main else { return }
 
-        let width: CGFloat = 640
-        let height: CGFloat = 360
+        let size = Self.panelSize(relativeTo: window, visibleFrame: screen.visibleFrame)
+        let width = size.width
+        let height = size.height
 
         let winFrame = window.frame
         var x = winFrame.midX - width / 2
@@ -140,23 +261,38 @@ final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTab
         y = max(visible.minY + 20, min(y, visible.maxY - height - 20))
 
         panel.setFrame(NSRect(x: x, y: y, width: width, height: height), display: true)
+        tableView.tableColumns.first?.width = max(1, width - 24)
+    }
+
+    private static func panelSize(relativeTo window: NSWindow, visibleFrame: NSRect) -> NSSize {
+        let visibleWidth = max(minimumPanelSize.width, visibleFrame.width - visibleFrameInset * 2)
+        let visibleHeight = max(minimumPanelSize.height, visibleFrame.height - visibleFrameInset * 2)
+        let windowWidth = max(minimumPanelSize.width, window.frame.width - 32)
+        let windowHeight = max(minimumPanelSize.height, window.frame.height - 120)
+
+        return NSSize(
+            width: min(preferredPanelSize.width, visibleWidth, windowWidth),
+            height: min(preferredPanelSize.height, visibleHeight, windowHeight)
+        )
     }
 
     // MARK: - Filtering
 
     private func applyFilter() {
         let q = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        if q.isEmpty {
+        if filtersCommands == false {
+            filteredCommands = allCommands
+        } else if q.isEmpty {
             filteredCommands = allCommands
         } else {
             let scored = allCommands.compactMap { cmd -> (AttoCommandPaletteCommand, Int)? in
-                guard let score = AttoFuzzy.score(candidate: cmd.title, query: q) else { return nil }
+                guard let score = AttoFuzzy.score(candidate: searchableText(for: cmd), query: q) else { return nil }
                 return (cmd, score)
             }
             filteredCommands = scored
                 .sorted { a, b in
                     if a.1 == b.1 {
-                        return a.0.title.localizedCaseInsensitiveCompare(b.0.title) == .orderedAscending
+                        return displayTitle(for: a.0).localizedCaseInsensitiveCompare(displayTitle(for: b.0)) == .orderedAscending
                     }
                     return a.1 > b.1
                 }
@@ -179,13 +315,17 @@ final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTab
         guard row >= 0, row < filteredCommands.count else { return nil }
         let cmd = filteredCommands[row]
 
-        let id = NSUserInterfaceItemIdentifier("cell")
+        let id = NSUserInterfaceItemIdentifier(AttoAccessibilityID.commandPaletteRow(prefix: accessibilityPrefix))
         let cell = tableView.makeView(withIdentifier: id, owner: self) as? NSTableCellView ?? NSTableCellView()
         cell.identifier = id
 
         let label = cell.textField ?? NSTextField(labelWithString: "")
-        label.font = NSFont.systemFont(ofSize: 13)
-        label.textColor = NSColor(attoHex: 0xD4D4D4)
+        label.identifier = NSUserInterfaceItemIdentifier(
+            AttoAccessibilityID.commandPaletteRowTitle(prefix: accessibilityPrefix)
+        )
+        let rowFont = NSFont.systemFont(ofSize: 13)
+        label.font = rowFont
+        label.textColor = cmd.isEnabled ? NSColor(attoHex: 0xD4D4D4) : NSColor(attoHex: 0x777777)
         label.lineBreakMode = .byTruncatingTail
         label.translatesAutoresizingMaskIntoConstraints = false
 
@@ -199,8 +339,42 @@ final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTab
             ])
         }
 
-        label.stringValue = cmd.title
+        let title = displayTitle(for: cmd)
+        if let swatchColor = cmd.swatchColor {
+            let attributed = NSMutableAttributedString(
+                string: "■  \(title)",
+                attributes: [
+                    .font: rowFont,
+                    .foregroundColor: label.textColor as Any,
+                ]
+            )
+            attributed.addAttribute(.foregroundColor, value: swatchColor, range: NSRange(location: 0, length: 1))
+            label.attributedStringValue = attributed
+        } else {
+            label.stringValue = title
+        }
         return cell
+    }
+
+    private func displayTitle(for command: AttoCommandPaletteCommand) -> String {
+        guard showsCommandGroups, command.group.isEmpty == false, command.group != "General" else {
+            return command.title
+        }
+
+        let titlePrefix = "\(command.group):"
+        var title = command.title
+        if title.hasPrefix(titlePrefix) {
+            title = String(title.dropFirst(titlePrefix.count)).trimmingCharacters(in: .whitespaces)
+        }
+        return "\(command.group) - \(title)"
+    }
+
+    private func searchableText(for command: AttoCommandPaletteCommand) -> String {
+        [
+            command.title,
+            command.group,
+            command.id,
+        ].joined(separator: " ")
     }
 
     @objc private func doubleClicked(_ sender: Any?) {
@@ -211,13 +385,29 @@ final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTab
         let row = tableView.selectedRow
         guard row >= 0, row < filteredCommands.count else { return }
         let cmd = filteredCommands[row]
+        guard cmd.isEnabled else {
+            NSSound.beep()
+            return
+        }
         hide()
-        cmd.run()
+        guard cmd.promptsForArguments, cmd.schema.isParameterized, let argumentProvider else {
+            cmd.run()
+            return
+        }
+        guard let arguments = argumentProvider(cmd) else { return }
+        do {
+            let normalized = try cmd.schema.normalizedArguments(arguments)
+            cmd.runWithArguments(normalized)
+        } catch {
+            NSSound.beep()
+            NSLog("AttoEditor: invalid command palette arguments for %@: %@", cmd.id, String(describing: error))
+        }
     }
 
     // MARK: - NSTextFieldDelegate
 
     func controlTextDidChange(_ obj: Notification) {
+        searchTextDidChange?(searchField.stringValue)
         applyFilter()
     }
 

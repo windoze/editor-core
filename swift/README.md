@@ -9,6 +9,13 @@
 - 运行时不再依赖 `libeditor_core_ffi.dylib` / `libeditor_core_ui_ffi.dylib` 的查找路径；
 - 需要在构建 SwiftPM 包之前，先用 Cargo 生成对应的 `.a` 产物（或在 CI 里缓存它们）。
 
+## API 选择
+
+新 Swift/App 集成优先使用 runtime negotiation 结果和对应的 typed result envelope。已经有
+envelope 覆盖的 workspace file search/list、project file index、workspace file replacement 旧
+raw JSON wrapper 仍保留以兼容既有调用方，但在 Swift 层标记为 deprecated；只有在运行时缺少相应
+feature bit 且调用方明确接受旧错误形态时，才应作为 legacy fallback 使用。
+
 ## 目录结构
 
 - `Sources/CEditorCoreFFI/`：C header module（转发到 `crates/editor-core-ffi/include/editor_core_ffi.h`）
@@ -86,6 +93,16 @@ open .build/app-dist/AttoEditor.app
 占位图标位于 `Sources/AttoEditor/AppBundle/AppIcon.icns`（可直接替换）。
 `CFBundleIdentifier` 固定为 `codes.unwritten.attoeditor`（见 `Sources/AttoEditor/AppBundle/Info.plist`）。
 
+### 当前 App 能力边界
+
+AttoEditor 的长期事实源优先落在 core / `editor-core-ui`，Swift/AppKit 主要负责投影、焦点、面板和视觉状态：
+
+- tabs、split panes、preview/pinned tab、session restore、dirty/save/reload、recent files/projects 和 workspace root 由 core-backed workflow 驱动；
+- Quick Open、workspace search、replace-in-files 和 project file index 使用 core-owned workspace data source，并通过 runtime feature negotiation 在旧 runtime 上降级；
+- Tree-sitter、Sublime syntax 和 LSP derived state 共同提供 highlighting、folding、outline、diagnostics、semantic tokens、hover、signature help、completion、code actions 和 WorkspaceEdit preview/history；
+- Project LSP Dashboard 使用 core-owned project server schema、workspace folders、capabilities、session policy、recovery policy、attempt id、lifecycle events 和 process health log；
+- Sublime-like chrome 覆盖 tab bar、sidebar、status bar、quick panel、completion popup、find/replace、split panes、minimap、gutter markers、overlay stacking 和 editor focus restore。
+
 ### CLI（`atto`）
 
 AttoEditor 额外提供一个独立 CLI：`atto`，用于终端里打开文件/目录并通过 IPC 发送到主实例（支持 `-n/--new-window`、`-w/--wait`、`file:line:column`）。
@@ -148,3 +165,42 @@ JSON schema 与实现规划见：`swift/theme.md`
 cd swift
 swift test
 ```
+
+### Visual baselines
+
+视觉基线由 `Tests/AttoEditorTests/Resources/VisualBaselines/manifest.json` 声明，并覆盖窄窗口、多 pane、长文件、多 cursor、diagnostics、folding、semantic overlays、floating/persistent panels 和 WorkspaceEdit failure/preview 状态。
+
+更新 checked-in PNG：
+
+```bash
+# from the repository root
+swift/scripts/update-visual-baselines.sh
+```
+
+严格比对 checked-in PNG：
+
+```bash
+# from the repository root
+swift/scripts/check-visual-baselines.sh
+```
+
+PR workflow 在仓库包含 `VisualBaselines/*.png` 时走 strict baseline 路径；没有 PNG 时只跑 smoke artifact capture。
+
+### XCUIApplication smoke tests（可选）
+
+`AttoEditorXCUIApplicationSmokeTests` 是 macOS 黑盒 UI 自动化入口。普通 `swift test`
+默认只编译这些测试并跳过执行，因为 `XCUIApplication` 需要可访问 `testmanagerd` 的
+本机 UI automation 环境。
+
+本地运行：
+
+```bash
+cd swift
+scripts/build-attoeditor-app.sh --debug --out /tmp/attoeditor-xcui
+ATTO_XCUI_SMOKE_TESTS=1 \
+ATTO_XCUI_APP_PATH=/tmp/attoeditor-xcui/AttoEditor.app \
+swift test --filter AttoEditorXCUIApplicationSmokeTests
+```
+
+这些测试会为被测 app 注入独立 IPC socket/spool 路径，避免和当前用户正在运行的
+AttoEditor 实例互相影响。

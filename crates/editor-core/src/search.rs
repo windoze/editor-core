@@ -9,6 +9,8 @@
 
 use regex::{Regex, RegexBuilder};
 
+use crate::WordBoundaryConfig;
+
 /// Options that control how search is performed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SearchOptions {
@@ -138,6 +140,26 @@ fn compile_search_regex(query: &str, options: SearchOptions) -> Result<Regex, Se
 pub struct CompiledSearch {
     regex: Regex,
     whole_word: bool,
+    word_boundary: SearchWordBoundary,
+}
+
+#[derive(Debug, Clone)]
+enum SearchWordBoundary {
+    Default,
+    Configured(WordBoundaryConfig),
+}
+
+impl SearchWordBoundary {
+    fn configured(word_boundary: &WordBoundaryConfig) -> Self {
+        Self::Configured(word_boundary.clone())
+    }
+
+    fn is_word_char(&self, ch: char) -> bool {
+        match self {
+            Self::Default => default_word_char(ch),
+            Self::Configured(word_boundary) => word_boundary.is_word_token_char(ch),
+        }
+    }
 }
 
 impl CompiledSearch {
@@ -149,6 +171,23 @@ impl CompiledSearch {
         Ok(Self {
             regex: compile_search_regex(query, options)?,
             whole_word: options.whole_word,
+            word_boundary: SearchWordBoundary::Default,
+        })
+    }
+
+    /// Compile `query` under `options`, using `word_boundary` for whole-word checks.
+    ///
+    /// This preserves [`SearchOptions`] while allowing editor instances to apply their configured
+    /// word-boundary semantics to search, find/replace, and match highlighting.
+    pub fn new_with_word_boundary(
+        query: &str,
+        options: SearchOptions,
+        word_boundary: &WordBoundaryConfig,
+    ) -> Result<Self, SearchError> {
+        Ok(Self {
+            regex: compile_search_regex(query, options)?,
+            whole_word: options.whole_word,
+            word_boundary: SearchWordBoundary::configured(word_boundary),
         })
     }
 
@@ -166,7 +205,7 @@ impl CompiledSearch {
             if candidate.is_empty() {
                 continue;
             }
-            if self.whole_word && !is_whole_word(text, &index, candidate) {
+            if self.whole_word && !is_whole_word(text, &index, candidate, &self.word_boundary) {
                 continue;
             }
 
@@ -177,11 +216,16 @@ impl CompiledSearch {
     }
 }
 
-fn is_word_char(ch: char) -> bool {
+fn default_word_char(ch: char) -> bool {
     ch == '_' || ch.is_alphanumeric()
 }
 
-fn is_whole_word(text: &str, index: &CharIndex, m: SearchMatch) -> bool {
+fn is_whole_word(
+    text: &str,
+    index: &CharIndex,
+    m: SearchMatch,
+    word_boundary: &SearchWordBoundary,
+) -> bool {
     if m.is_empty() {
         return false;
     }
@@ -193,7 +237,8 @@ fn is_whole_word(text: &str, index: &CharIndex, m: SearchMatch) -> bool {
     };
     let after = index.char_at(text, m.end);
 
-    !before.is_some_and(is_word_char) && !after.is_some_and(is_word_char)
+    !before.is_some_and(|ch| word_boundary.is_word_char(ch))
+        && !after.is_some_and(|ch| word_boundary.is_word_char(ch))
 }
 
 /// Find the next occurrence of `query` in `text`, searching forward from `from_char`.
@@ -205,6 +250,36 @@ pub fn find_next(
     query: &str,
     options: SearchOptions,
     from_char: usize,
+) -> Result<Option<SearchMatch>, SearchError> {
+    find_next_impl(text, query, options, from_char, SearchWordBoundary::Default)
+}
+
+/// Find the next occurrence using `word_boundary` for whole-word checks.
+///
+/// Behavior is identical to [`find_next`] except that `SearchOptions::whole_word` is evaluated
+/// against the supplied editor word-boundary configuration.
+pub fn find_next_with_word_boundary(
+    text: &str,
+    query: &str,
+    options: SearchOptions,
+    from_char: usize,
+    word_boundary: &WordBoundaryConfig,
+) -> Result<Option<SearchMatch>, SearchError> {
+    find_next_impl(
+        text,
+        query,
+        options,
+        from_char,
+        SearchWordBoundary::configured(word_boundary),
+    )
+}
+
+fn find_next_impl(
+    text: &str,
+    query: &str,
+    options: SearchOptions,
+    from_char: usize,
+    word_boundary: SearchWordBoundary,
 ) -> Result<Option<SearchMatch>, SearchError> {
     if query.is_empty() {
         return Ok(None);
@@ -232,7 +307,7 @@ pub fn find_next(
             continue;
         }
 
-        if options.whole_word && !is_whole_word(text, &index, candidate) {
+        if options.whole_word && !is_whole_word(text, &index, candidate, &word_boundary) {
             start_char = candidate.end;
             continue;
         }
@@ -250,6 +325,36 @@ pub fn find_prev(
     query: &str,
     options: SearchOptions,
     from_char: usize,
+) -> Result<Option<SearchMatch>, SearchError> {
+    find_prev_impl(text, query, options, from_char, SearchWordBoundary::Default)
+}
+
+/// Find the previous occurrence using `word_boundary` for whole-word checks.
+///
+/// Behavior is identical to [`find_prev`] except that `SearchOptions::whole_word` is evaluated
+/// against the supplied editor word-boundary configuration.
+pub fn find_prev_with_word_boundary(
+    text: &str,
+    query: &str,
+    options: SearchOptions,
+    from_char: usize,
+    word_boundary: &WordBoundaryConfig,
+) -> Result<Option<SearchMatch>, SearchError> {
+    find_prev_impl(
+        text,
+        query,
+        options,
+        from_char,
+        SearchWordBoundary::configured(word_boundary),
+    )
+}
+
+fn find_prev_impl(
+    text: &str,
+    query: &str,
+    options: SearchOptions,
+    from_char: usize,
+    word_boundary: SearchWordBoundary,
 ) -> Result<Option<SearchMatch>, SearchError> {
     if query.is_empty() {
         return Ok(None);
@@ -284,7 +389,7 @@ pub fn find_prev(
         if candidate.is_empty() {
             continue;
         }
-        if options.whole_word && !is_whole_word(text, &index, candidate) {
+        if options.whole_word && !is_whole_word(text, &index, candidate, &word_boundary) {
             continue;
         }
 
@@ -310,6 +415,23 @@ pub fn find_all(
     Ok(CompiledSearch::new(query, options)?.find_all(text))
 }
 
+/// Find all occurrences using `word_boundary` for whole-word checks.
+///
+/// Behavior is identical to [`find_all`] except that `SearchOptions::whole_word` is evaluated
+/// against the supplied editor word-boundary configuration.
+pub fn find_all_with_word_boundary(
+    text: &str,
+    query: &str,
+    options: SearchOptions,
+    word_boundary: &WordBoundaryConfig,
+) -> Result<Vec<SearchMatch>, SearchError> {
+    if query.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    Ok(CompiledSearch::new_with_word_boundary(query, options, word_boundary)?.find_all(text))
+}
+
 /// Returns `true` if `range` exactly matches an occurrence of `query` in `text`.
 ///
 /// This is useful for checking whether a current selection/caret range corresponds to the
@@ -320,11 +442,41 @@ pub fn is_match_exact(
     options: SearchOptions,
     range: SearchMatch,
 ) -> Result<bool, SearchError> {
+    is_match_exact_impl(text, query, options, range, SearchWordBoundary::Default)
+}
+
+/// Returns `true` if `range` exactly matches an occurrence using `word_boundary`.
+///
+/// Behavior is identical to [`is_match_exact`] except that `SearchOptions::whole_word` is evaluated
+/// against the supplied editor word-boundary configuration.
+pub fn is_match_exact_with_word_boundary(
+    text: &str,
+    query: &str,
+    options: SearchOptions,
+    range: SearchMatch,
+    word_boundary: &WordBoundaryConfig,
+) -> Result<bool, SearchError> {
+    is_match_exact_impl(
+        text,
+        query,
+        options,
+        range,
+        SearchWordBoundary::configured(word_boundary),
+    )
+}
+
+fn is_match_exact_impl(
+    text: &str,
+    query: &str,
+    options: SearchOptions,
+    range: SearchMatch,
+    word_boundary: SearchWordBoundary,
+) -> Result<bool, SearchError> {
     if range.is_empty() {
         return Ok(false);
     }
 
-    let Some(next) = find_next(text, query, options, range.start)? else {
+    let Some(next) = find_next_impl(text, query, options, range.start, word_boundary)? else {
         return Ok(false);
     };
 

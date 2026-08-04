@@ -2511,9 +2511,21 @@ impl CommandExecutor {
         };
 
         let found = if forward {
-            find_next(&text, &query, options, from)
+            find_next_with_word_boundary(
+                &text,
+                &query,
+                options,
+                from,
+                self.editor.word_boundary_config(),
+            )
         } else {
-            find_prev(&text, &query, options, from)
+            find_prev_with_word_boundary(
+                &text,
+                &query,
+                options,
+                from,
+                self.editor.word_boundary_config(),
+            )
         }
         .map_err(|err| CommandError::Other(err.to_string()))?;
 
@@ -2582,8 +2594,14 @@ impl CommandExecutor {
 
         let mut target = None::<SearchMatch>;
         if let Some(range) = selection_range {
-            let is_match = crate::search::is_match_exact(&text, &query, options, range)
-                .map_err(|err| CommandError::Other(err.to_string()))?;
+            let is_match = crate::search::is_match_exact_with_word_boundary(
+                &text,
+                &query,
+                options,
+                range,
+                self.editor.word_boundary_config(),
+            )
+            .map_err(|err| CommandError::Other(err.to_string()))?;
             if is_match {
                 target = Some(range);
             }
@@ -2591,8 +2609,14 @@ impl CommandExecutor {
 
         if target.is_none() {
             let from = self.cursor_char_offset();
-            target = find_next(&text, &query, options, from)
-                .map_err(|err| CommandError::Other(err.to_string()))?;
+            target = find_next_with_word_boundary(
+                &text,
+                &query,
+                options,
+                from,
+                self.editor.word_boundary_config(),
+            )
+            .map_err(|err| CommandError::Other(err.to_string()))?;
         }
 
         let Some(target) = target else {
@@ -2663,7 +2687,8 @@ impl CommandExecutor {
         let replacement = crate::text::normalize_crlf_to_lf_string(replacement);
         let text = self.editor.get_text();
         let matches =
-            find_all(&text, &query, options).map_err(|err| CommandError::Other(err.to_string()))?;
+            find_all_with_word_boundary(&text, &query, options, self.editor.word_boundary_config())
+                .map_err(|err| CommandError::Other(err.to_string()))?;
         if matches.is_empty() {
             return Err(CommandError::Other("No match found".to_string()));
         }

@@ -92,6 +92,21 @@ public final class SublimeProcessor {
         )
     }
 
+    public func processEnvelopeJSON(state: EditorState) throws -> String {
+        try ffi.takeOwnedCString(
+            editor_core_ffi_sublime_processor_process_envelope_json(handle, state.handle),
+            context: "sublime_processor_process_envelope_json"
+        )
+    }
+
+    public func processEnvelope(state: EditorState) throws -> EcfProcessorResultEnvelope {
+        try JSON.decode(
+            EcfProcessorResultEnvelope.self,
+            from: processEnvelopeJSON(state: state),
+            context: "sublime_processor_process_envelope_decode"
+        )
+    }
+
     public func apply(state: EditorState) throws {
         let ok = editor_core_ffi_sublime_processor_apply(handle, state.handle)
         guard ok else {
@@ -104,5 +119,20 @@ public final class SublimeProcessor {
         let ptr = editor_core_ffi_sublime_processor_scope_for_style_id(handle, styleId)
         let json = try ffi.takeOwnedCString(ptr, context: "sublime_processor_scope_for_style_id")
         return try JSON.decode(SublimeScopeResponse.self, from: json, context: "sublime_scope_for_style_id").scope
+    }
+
+    public func scopeForStyleIdEnvelopeJSON(_ styleId: UInt32) throws -> String {
+        try ffi.takeOwnedCString(
+            editor_core_ffi_sublime_processor_scope_for_style_id_envelope_json(handle, styleId),
+            context: "sublime_processor_scope_for_style_id_envelope_json"
+        )
+    }
+
+    public func scopeForStyleIdEnvelope(_ styleId: UInt32) throws -> EcfProcessorResultEnvelope {
+        try JSON.decode(
+            EcfProcessorResultEnvelope.self,
+            from: scopeForStyleIdEnvelopeJSON(styleId),
+            context: "sublime_processor_scope_for_style_id_envelope_decode"
+        )
     }
 }

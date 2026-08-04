@@ -1,0 +1,8 @@
+alpha split marker alpha split marker alpha split marker
+
+The active right split pane combines a wide editor area, multiple selections, diagnostics, and a dense minimap projection.
+The visual baseline should catch status-bar drift, gutter overlap, and minimap marker clipping in wide windows.
+
+render lane one -> value value value value value value value value value value value value value
+render lane two -> status status status status status status status status status status status
+render lane three -> diagnostics diagnostics diagnostics diagnostics diagnostics diagnostics

@@ -1,0 +1,11 @@
+AttoEditor dark theme visual fixture
+
+Primary tab content:
+- dark editor surface
+- status bar contrast
+- tab chrome contrast
+
+fn render_dark_theme() {
+    let palette = ["background", "foreground", "selection", "caret"]
+    print(palette.joined(separator: ", "))
+}

@@ -33,7 +33,8 @@ void editor_core_ffi_string_free(char* ptr);
 
 - On failure:
   - typed ABI returns non-zero `EcfStatus`
-  - JSON APIs return `NULL` / `false` / `0`
+  - legacy JSON APIs return `NULL` / `false` / `0`
+  - JSON command envelope APIs return an allocated `{ "ok": false, ... }` JSON string
 - In all cases, thread-local last error is retrievable via:
 
 ```c
@@ -46,6 +47,45 @@ Version:
 
 ```c
 uint32_t editor_core_ffi_abi_version(void); /* currently 1 */
+uint64_t editor_core_ffi_feature_flags(void);
+char* editor_core_ffi_runtime_info_json(void);
+```
+
+The feature bitmask is append-only for the current pre-v1 ABI line. Important coarse-grained bits
+include:
+
+- `ECF_FEATURE_JSON_COMMAND_DISPATCH`
+- `ECF_FEATURE_TYPED_HOT_PATH`
+- `ECF_FEATURE_WORKSPACE_TYPED_API`
+- `ECF_FEATURE_VIEWPORT_BLOB`
+- `ECF_FEATURE_PROCESSING_EDIT_JSON`
+- `ECF_FEATURE_LSP_HELPERS`
+- `ECF_FEATURE_SUBLIME_PROCESSOR`
+- `ECF_FEATURE_TREESITTER_PROCESSOR`
+- `ECF_FEATURE_JSON_COMMAND_ENVELOPE`
+- `ECF_FEATURE_RENDERING_SNAPSHOT_ENVELOPE`
+- `ECF_FEATURE_EDITOR_STATE_DERIVED_SNAPSHOT_ENVELOPE`
+- `ECF_FEATURE_WORKSPACE_RESULT_ENVELOPE`
+- `ECF_FEATURE_WORKSPACE_QUERY_ENVELOPE`
+- `ECF_FEATURE_WORKSPACE_LIFECYCLE_ENVELOPE`
+- `ECF_FEATURE_EDITOR_STATE_QUERY_ENVELOPE`
+- `ECF_FEATURE_LSP_HELPER_ENVELOPE`
+- `ECF_FEATURE_LSP_EDIT_HELPER_ENVELOPE`
+- `ECF_FEATURE_PROCESSOR_RESULT_ENVELOPE`
+
+`editor_core_ffi_runtime_info_json()` returns a caller-owned one-call capability snapshot for
+C/non-Swift hosts:
+
+```json
+{
+  "kind": "editor-core-ffi",
+  "abi_version": 1,
+  "version": "0.5.0",
+  "feature_flags": 262143,
+  "features": [
+    { "bit": 0, "flag": 1, "name": "json_command_dispatch", "description": "..." }
+  ]
+}
 ```
 
 Core hot-path examples:
@@ -138,6 +178,615 @@ Auto-indent / indentation config:
   "op": "fold",
   "start_line": 10,
   "end_line": 20
+}
+```
+
+Legacy command bridge functions return the raw command result JSON on success and `NULL` on
+failure:
+
+```c
+char* editor_core_ffi_editor_state_execute_json(EcfEditorState* state, const char* command_json);
+char* editor_core_ffi_workspace_execute_json(EcfWorkspace* workspace, uint64_t view_id, const char* command_json);
+```
+
+Envelope command bridge functions keep the legacy entry points intact while returning a stable
+success/error wrapper:
+
+```c
+char* editor_core_ffi_editor_state_execute_envelope_json(EcfEditorState* state, const char* command_json);
+char* editor_core_ffi_workspace_execute_envelope_json(EcfWorkspace* workspace, uint64_t view_id, const char* command_json);
+```
+
+```json
+{ "ok": true, "value": { "kind": "success" }, "error": null, "version": 1 }
+```
+
+```json
+{
+  "ok": false,
+  "value": null,
+  "error": {
+    "code": "command_failed",
+    "status": 6,
+    "message": "command execution failed: ..."
+  },
+  "version": 1
+}
+```
+
+## Editor-State Query Envelopes
+
+Legacy headless editor-state query helpers keep returning raw JSON on success and `NULL` on
+failure. Hosts that need non-null structured success/error results can use the envelope variants
+guarded by `ECF_FEATURE_EDITOR_STATE_QUERY_ENVELOPE`:
+
+```c
+char* editor_core_ffi_editor_state_full_state_envelope_json(
+    const EcfEditorState* state);
+
+char* editor_core_ffi_editor_state_text_envelope_json(
+    const EcfEditorState* state);
+
+char* editor_core_ffi_editor_state_text_for_saving_envelope_json(
+    const EcfEditorState* state);
+
+char* editor_core_ffi_editor_state_get_line_ending_envelope_json(
+    const EcfEditorState* state);
+
+char* editor_core_ffi_editor_state_last_text_delta_envelope_json(
+    const EcfEditorState* state);
+
+char* editor_core_ffi_editor_state_take_last_text_delta_envelope_json(
+    EcfEditorState* state);
+```
+
+Success envelopes preserve the legacy query payload under `value` and identify the operation:
+
+```json
+{
+  "ok": true,
+  "status": "success",
+  "operation": "text_for_saving",
+  "value": { "text": "hello\r\n", "line_ending": "crlf" },
+  "error": null,
+  "version": 1
+}
+```
+
+Failure envelopes return an allocated JSON string with a structured `EcfStatus` instead of the
+legacy `NULL` sentinel:
+
+```json
+{
+  "ok": false,
+  "status": "error",
+  "operation": "text",
+  "value": null,
+  "error": {
+    "code": "invalid_argument",
+    "status": 1,
+    "message": "state is null"
+  },
+  "version": 1
+}
+```
+
+## LSP Helper Envelopes
+
+Legacy headless LSP helper APIs keep returning raw JSON on success and `NULL` on failure. Hosts
+that need non-null structured success/error results can use the envelope variants guarded by
+`ECF_FEATURE_LSP_HELPER_ENVELOPE`:
+
+```c
+char* editor_core_ffi_lsp_path_to_file_uri_envelope_json(
+    const char* path);
+
+char* editor_core_ffi_lsp_file_uri_to_path_envelope_json(
+    const char* uri);
+
+char* editor_core_ffi_lsp_percent_encode_path_envelope_json(
+    const char* path);
+
+char* editor_core_ffi_lsp_percent_decode_path_envelope_json(
+    const char* path);
+
+char* editor_core_ffi_lsp_formatting_options_envelope_json(
+    uint32_t tab_size,
+    bool insert_spaces);
+
+char* editor_core_ffi_lsp_formatting_options_for_indentation_config_envelope_json(
+    const char* indentation_config_json,
+    uint32_t tab_width);
+
+char* editor_core_ffi_lsp_decode_semantic_style_id_envelope_json(
+    uint32_t style_id);
+
+char* editor_core_ffi_lsp_workspace_symbols_envelope_json(
+    const char* result_json);
+
+char* editor_core_ffi_lsp_locations_envelope_json(
+    const char* result_json);
+```
+
+This family covers pure URI/path conversion, percent encode/decode, formatting option construction,
+semantic style id decoding, and result normalization for workspace symbols and locations. Stateful
+or processing-edit-producing helpers are covered by `ECF_FEATURE_LSP_EDIT_HELPER_ENVELOPE`.
+
+Success envelopes preserve the legacy helper payload under `value` and identify the operation:
+
+```json
+{
+  "ok": true,
+  "status": "success",
+  "operation": "locations",
+  "value": {
+    "locations": [
+      {
+        "uri": "file:///demo.txt",
+        "range": {
+          "start": { "line": 0, "character": 0 },
+          "end": { "line": 0, "character": 1 }
+        }
+      }
+    ]
+  },
+  "error": null,
+  "version": 1
+}
+```
+
+Failure envelopes return an allocated JSON string with a structured `EcfStatus` instead of the
+legacy `NULL` sentinel:
+
+```json
+{
+  "ok": false,
+  "status": "error",
+  "operation": "workspace_symbols",
+  "value": null,
+  "error": {
+    "code": "parse",
+    "status": 5,
+    "message": "invalid workspace symbols JSON: ..."
+  },
+  "version": 1
+}
+```
+
+## LSP Edit Helper Envelopes
+
+Legacy headless LSP edit/processing helper APIs keep returning raw JSON on success, `NULL` on
+failure, or `false` for the legacy completion-item apply helper. Hosts that need non-null
+structured success/error results can use the envelope variants guarded by
+`ECF_FEATURE_LSP_EDIT_HELPER_ENVELOPE`:
+
+```c
+char* editor_core_ffi_lsp_on_type_formatting_params_envelope_json(
+    const EcfEditorState* state,
+    const char* uri,
+    const char* ch,
+    const char* options_json);
+
+char* editor_core_ffi_lsp_apply_text_edits_envelope_json(
+    EcfEditorState* state,
+    const char* edits_json);
+
+char* editor_core_ffi_lsp_semantic_tokens_to_intervals_envelope_json(
+    const EcfEditorState* state,
+    const char* data_json);
+
+char* editor_core_ffi_lsp_document_highlights_to_processing_edit_envelope_json(
+    const EcfEditorState* state,
+    const char* result_json);
+
+char* editor_core_ffi_lsp_inlay_hints_to_processing_edit_envelope_json(
+    const EcfEditorState* state,
+    const char* result_json);
+
+char* editor_core_ffi_lsp_document_links_to_processing_edit_envelope_json(
+    const EcfEditorState* state,
+    const char* result_json);
+
+char* editor_core_ffi_lsp_code_lens_to_processing_edit_envelope_json(
+    const EcfEditorState* state,
+    const char* result_json);
+
+char* editor_core_ffi_lsp_document_symbols_to_processing_edit_envelope_json(
+    const EcfEditorState* state,
+    const char* result_json);
+
+char* editor_core_ffi_lsp_diagnostics_to_processing_edits_envelope_json(
+    const EcfEditorState* state,
+    const char* publish_diagnostics_params_json);
+
+char* editor_core_ffi_lsp_completion_item_to_text_edits_envelope_json(
+    const EcfEditorState* state,
+    const char* completion_item_json,
+    const char* mode,
+    uint64_t fallback_start,
+    uint64_t fallback_end,
+    bool has_fallback);
+
+char* editor_core_ffi_lsp_apply_completion_item_envelope_json(
+    EcfEditorState* state,
+    const char* completion_item_json,
+    const char* mode);
+```
+
+Success envelopes preserve the legacy helper payload under `value` and identify the operation:
+
+```json
+{
+  "ok": true,
+  "status": "success",
+  "operation": "apply_text_edits",
+  "value": { "changed_ranges": [{ "start": 1, "end": 2 }] },
+  "error": null,
+  "version": 1
+}
+```
+
+Failure envelopes return an allocated JSON string with a structured `EcfStatus` instead of the
+legacy sentinel:
+
+```json
+{
+  "ok": false,
+  "status": "error",
+  "operation": "completion_item_to_text_edits",
+  "value": null,
+  "error": {
+    "code": "invalid_argument",
+    "status": 1,
+    "message": "invalid completion mode: future (expected insert|replace)"
+  },
+  "version": 1
+}
+```
+
+## Editor-State Derived Snapshot Envelopes
+
+Legacy headless editor-state derived snapshot helpers keep returning raw JSON on success and
+`NULL` on failure. Hosts that need non-null structured success/error results can use the envelope
+variant guarded by `ECF_FEATURE_EDITOR_STATE_DERIVED_SNAPSHOT_ENVELOPE`:
+
+```c
+char* editor_core_ffi_editor_state_derived_snapshot_envelope_json(
+    const EcfEditorState* state,
+    const char* snapshot_utf8);
+```
+
+`snapshot_utf8` accepts:
+
+- `document_symbols`
+- `diagnostics`
+- `decorations`
+
+Success envelopes preserve the legacy payload under `value` and include the selected snapshot name:
+
+```json
+{
+  "ok": true,
+  "status": "success",
+  "snapshot": "diagnostics",
+  "value": { "diagnostics": [] },
+  "error": null,
+  "version": 1
+}
+```
+
+Failure envelopes report a structured `EcfStatus` and keep the requested snapshot when it is known:
+
+```json
+{
+  "ok": false,
+  "status": "error",
+  "snapshot": "unknown",
+  "value": null,
+  "error": {
+    "code": "invalid_argument",
+    "status": 1,
+    "message": "unknown editor state derived snapshot \"unknown\""
+  },
+  "version": 1
+}
+```
+
+## Rendering Snapshot Envelopes
+
+Legacy headless rendering snapshot helpers keep returning raw JSON on success and `NULL` on
+failure. Hosts that need non-null structured success/error results can use the envelope variants
+guarded by `ECF_FEATURE_RENDERING_SNAPSHOT_ENVELOPE`:
+
+```c
+char* editor_core_ffi_editor_state_viewport_styled_envelope_json(
+    const EcfEditorState* state,
+    uint32_t start_visual_row,
+    uint32_t count);
+
+char* editor_core_ffi_editor_state_minimap_envelope_json(
+    const EcfEditorState* state,
+    uint32_t start_visual_row,
+    uint32_t count);
+
+char* editor_core_ffi_editor_state_viewport_composed_envelope_json(
+    const EcfEditorState* state,
+    uint32_t start_visual_row,
+    uint32_t count);
+
+char* editor_core_ffi_workspace_viewport_styled_envelope_json(
+    EcfWorkspace* workspace,
+    uint64_t view_id,
+    uint32_t start_visual_row,
+    uint32_t count);
+
+char* editor_core_ffi_workspace_minimap_envelope_json(
+    EcfWorkspace* workspace,
+    uint64_t view_id,
+    uint32_t start_visual_row,
+    uint32_t count);
+
+char* editor_core_ffi_workspace_viewport_composed_envelope_json(
+    EcfWorkspace* workspace,
+    uint64_t view_id,
+    uint32_t start_visual_row,
+    uint32_t count);
+```
+
+Success envelopes preserve the legacy snapshot payload under `value` and include stable query
+metadata. `surface` identifies the snapshot family:
+
+- `editor_state_viewport_styled`
+- `editor_state_minimap`
+- `editor_state_viewport_composed`
+- `workspace_viewport_styled`
+- `workspace_minimap`
+- `workspace_viewport_composed`
+
+```json
+{
+  "ok": true,
+  "status": "success",
+  "surface": "workspace_minimap",
+  "view_id": 42,
+  "start_visual_row": 0,
+  "count": 20,
+  "value": { "lines": [] },
+  "error": null,
+  "version": 1
+}
+```
+
+Failure envelopes keep the same metadata and report a structured `EcfStatus`:
+
+```json
+{
+  "ok": false,
+  "status": "error",
+  "surface": "workspace_minimap",
+  "view_id": 999999,
+  "start_visual_row": 0,
+  "count": 20,
+  "value": null,
+  "error": {
+    "code": "internal",
+    "status": 7,
+    "message": "get_minimap_content failed: ..."
+  },
+  "version": 1
+}
+```
+
+## Workspace Lifecycle Envelopes
+
+Legacy workspace lifecycle helpers keep returning raw JSON on success and `NULL` on failure. Hosts
+that need non-null structured success/error results can use the envelope variants guarded by
+`ECF_FEATURE_WORKSPACE_LIFECYCLE_ENVELOPE`:
+
+```c
+char* editor_core_ffi_workspace_open_buffer_envelope_json(
+    EcfWorkspace* workspace,
+    const char* uri,
+    const char* text,
+    uint32_t viewport_width);
+
+char* editor_core_ffi_workspace_create_view_envelope_json(
+    EcfWorkspace* workspace,
+    uint64_t buffer_id,
+    uint32_t viewport_width);
+```
+
+Success envelopes preserve the legacy lifecycle payload under `value` and identify the operation:
+
+```json
+{
+  "ok": true,
+  "status": "success",
+  "operation": "open_buffer",
+  "value": { "buffer_id": 1, "view_id": 1 },
+  "error": null,
+  "version": 1
+}
+```
+
+Failure envelopes return an allocated JSON string with a structured `EcfStatus` instead of the
+legacy `NULL` sentinel:
+
+```json
+{
+  "ok": false,
+  "status": "error",
+  "operation": "create_view",
+  "value": null,
+  "error": {
+    "code": "not_found",
+    "status": 3,
+    "message": "create_view failed: ..."
+  },
+  "version": 1
+}
+```
+
+## Workspace Result Envelopes
+
+Legacy workspace result helpers keep returning raw JSON on success and `NULL` on failure. Hosts
+that need non-null structured success/error results can use the envelope variants guarded by
+`ECF_FEATURE_WORKSPACE_RESULT_ENVELOPE`:
+
+```c
+char* editor_core_ffi_workspace_search_all_open_buffers_envelope_json(
+    const EcfWorkspace* workspace,
+    const char* query,
+    const char* options_json);
+
+char* editor_core_ffi_workspace_apply_text_edits_envelope_json(
+    EcfWorkspace* workspace,
+    const char* edits_json);
+```
+
+Success envelopes preserve the legacy result payload under `value` and identify the operation:
+
+```json
+{
+  "ok": true,
+  "status": "success",
+  "operation": "search_all_open_buffers",
+  "value": { "results": [] },
+  "error": null,
+  "version": 1
+}
+```
+
+Failure envelopes return an allocated JSON string with a structured `EcfStatus` instead of the
+legacy `NULL` sentinel:
+
+```json
+{
+  "ok": false,
+  "status": "error",
+  "operation": "apply_text_edits",
+  "value": null,
+  "error": {
+    "code": "parse",
+    "status": 5,
+    "message": "invalid workspace text edits JSON: ..."
+  },
+  "version": 1
+}
+```
+
+## Processor Result Envelopes
+
+Legacy Sublime and Tree-sitter processor helpers keep returning raw JSON on success and `NULL` on
+failure. Hosts that need non-null structured success/error results can use the envelope variants
+guarded by `ECF_FEATURE_PROCESSOR_RESULT_ENVELOPE`:
+
+```c
+char* editor_core_ffi_sublime_processor_process_envelope_json(
+    EcfSublimeProcessor* processor,
+    const EcfEditorState* state);
+
+char* editor_core_ffi_sublime_processor_scope_for_style_id_envelope_json(
+    const EcfSublimeProcessor* processor,
+    uint32_t style_id);
+
+char* editor_core_ffi_treesitter_processor_process_envelope_json(
+    EcfTreeSitterProcessor* processor,
+    const EcfEditorState* state);
+
+char* editor_core_ffi_treesitter_processor_last_update_mode_envelope_json(
+    const EcfTreeSitterProcessor* processor);
+
+char* editor_core_ffi_treesitter_indenter_reindent_line_envelope_json(
+    EcfTreeSitterIndenter* indenter,
+    const EcfEditorState* state,
+    uint32_t line,
+    const char* indentation_config_json);
+```
+
+Success envelopes preserve the legacy processor payload under `value` and identify the operation:
+
+```json
+{
+  "ok": true,
+  "status": "success",
+  "operation": "treesitter_process",
+  "value": { "edits": [] },
+  "error": null,
+  "version": 1
+}
+```
+
+Failure envelopes return an allocated JSON string with a structured `EcfStatus` instead of the
+legacy `NULL` sentinel:
+
+```json
+{
+  "ok": false,
+  "status": "error",
+  "operation": "treesitter_process",
+  "value": null,
+  "error": {
+    "code": "invalid_argument",
+    "status": 1,
+    "message": "processor is null"
+  },
+  "version": 1
+}
+```
+
+## Workspace Query Envelopes
+
+Legacy workspace query helpers keep returning raw JSON on success and `NULL` on failure. Hosts
+that need non-null structured success/error results can use the envelope variants guarded by
+`ECF_FEATURE_WORKSPACE_QUERY_ENVELOPE`:
+
+```c
+char* editor_core_ffi_workspace_info_envelope_json(
+    const EcfWorkspace* workspace);
+
+char* editor_core_ffi_workspace_buffer_text_envelope_json(
+    const EcfWorkspace* workspace,
+    uint64_t buffer_id);
+
+char* editor_core_ffi_workspace_viewport_state_envelope_json(
+    EcfWorkspace* workspace,
+    uint64_t view_id);
+```
+
+Success envelopes preserve the legacy query payload under `value`:
+
+```json
+{
+  "ok": true,
+  "status": "success",
+  "operation": "info",
+  "value": {
+    "buffer_count": 1,
+    "view_count": 1,
+    "is_empty": false,
+    "active_view_id": 1,
+    "active_buffer_id": 1
+  },
+  "error": null,
+  "version": 1
+}
+```
+
+Query failures use structured status codes. Unknown buffer/view ids are reported as `not_found`:
+
+```json
+{
+  "ok": false,
+  "status": "error",
+  "operation": "buffer_text",
+  "value": null,
+  "error": {
+    "code": "not_found",
+    "status": 3,
+    "message": "buffer_text failed: BufferNotFound(BufferId(...))"
+  },
+  "version": 1
 }
 ```
 

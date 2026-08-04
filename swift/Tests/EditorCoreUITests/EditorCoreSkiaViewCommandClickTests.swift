@@ -42,6 +42,37 @@ final class EditorCoreSkiaViewCommandClickTests: XCTestCase {
         return try XCTUnwrap(event)
     }
 
+    private func makeMouseEvent(
+        type: NSEvent.EventType,
+        atViewBackingXPx xPx: Float,
+        yPx: Float,
+        in view: EditorCoreSkiaView,
+        window: NSWindow,
+        clickCount: Int = 1,
+        modifierFlags: NSEvent.ModifierFlags = []
+    ) throws -> NSEvent {
+        let backingSize = view.convertToBacking(view.bounds.size)
+        let sx = max(1, backingSize.width / max(1, view.bounds.size.width))
+        let sy = max(1, backingSize.height / max(1, view.bounds.size.height))
+
+        let viewPoint = NSPoint(x: CGFloat(xPx) / sx, y: CGFloat(yPx) / sy)
+        let windowPoint = view.convert(viewPoint, to: nil)
+
+        let event = NSEvent.mouseEvent(
+            with: type,
+            location: windowPoint,
+            modifierFlags: modifierFlags,
+            timestamp: 0,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 0,
+            clickCount: clickCount,
+            pressure: 0
+        )
+        XCTAssertNotNil(event, "failed to create mouse event")
+        return try XCTUnwrap(event)
+    }
+
     private func makeWindow(with view: NSView) -> NSWindow {
         // Put the view in a real window to match demo behavior.
         let window = NSWindow(
@@ -120,6 +151,56 @@ final class EditorCoreSkiaViewCommandClickTests: XCTestCase {
         XCTAssertEqual(offsets.end, 0)
     }
 
+    func testCmdClickOnCodeLensInvokesCodeLensHookBeforeCommandClick() throws {
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
+        let view = try EditorCoreSkiaView(library: lib, initialText: "line1\nline2\n", viewportWidthCells: 80)
+        let window = makeWindow(with: view)
+        _ = window
+
+        try view.editor.setRenderMetrics(fontSize: 12, lineHeightPx: 20, cellWidthPx: 10, paddingXPx: 0, paddingYPx: 0)
+        try view.editor.setViewportPx(widthPx: 400, heightPx: 80, scale: 1)
+        try view.editor.setSelections([EcuSelectionRange(start: 0, end: 0)], primaryIndex: 0)
+
+        let result = """
+        [
+          {
+            "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } },
+            "command": { "title": "Run tests", "command": "test.run" }
+          }
+        ]
+        """
+        try view.editor.lspApplyCodeLensJSON(result)
+
+        var codeLensJSON: String?
+        var commandClickCount = 0
+        view.onCodeLensClick = { json in
+            codeLensJSON = json
+            return true
+        }
+        view.onCommandClick = { _ in
+            commandClickCount += 1
+            return true
+        }
+
+        let down = try makeMouseEvent(
+            type: .leftMouseDown,
+            atViewBackingXPx: 5,
+            yPx: 10,
+            in: view,
+            window: window,
+            modifierFlags: [.command]
+        )
+        view.mouseDown(with: down)
+
+        XCTAssertEqual(commandClickCount, 0)
+        XCTAssertNotNil(codeLensJSON)
+        XCTAssertTrue(codeLensJSON?.contains(#""command":"test.run""#) == true)
+
+        let offsets = try view.editor.selectionOffsets()
+        XCTAssertEqual(offsets.start, 0)
+        XCTAssertEqual(offsets.end, 0)
+    }
+
     func testCmdClickFallsBackToCaretMoveWhenNotHandled() throws {
         let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let view = try EditorCoreSkiaView(library: lib, initialText: "ab\ncde\nf", viewportWidthCells: 80)
@@ -150,4 +231,3 @@ final class EditorCoreSkiaViewCommandClickTests: XCTestCase {
         XCTAssertEqual(offsets.end, 4)
     }
 }
-

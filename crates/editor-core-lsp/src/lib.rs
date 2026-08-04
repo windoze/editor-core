@@ -26,9 +26,9 @@ pub mod lsp_uri;
 pub mod workspace_sync;
 
 pub use editor::{
-    LspActivity, LspContentChange, LspDocument, LspServerInfo, LspServerStatus, LspSession,
-    LspSessionCapabilities, LspSessionStartOptions, LspSessionStatus, LspWorkState,
-    SemanticTokensLegend, SemanticTokensUpdate, clear_lsp_state,
+    LspActivity, LspContentChange, LspDocument, LspProcessState, LspProcessStatus, LspServerInfo,
+    LspServerStatus, LspSession, LspSessionCapabilities, LspSessionStartOptions, LspSessionStatus,
+    LspWorkState, SemanticTokensLegend, SemanticTokensUpdate, clear_lsp_state,
     folding_ranges_result_to_processing_edit, lsp_clear_edits, lsp_diagnostics_to_processing_edits,
     semantic_tokens_result_to_update,
 };
@@ -51,8 +51,9 @@ pub use lsp_decorations::{
     lsp_inlay_hints_to_decorations, lsp_inlay_hints_to_processing_edit,
 };
 pub use lsp_events::{
-    LspDiagnostic, LspDiagnosticSeverity, LspEvent, LspLogMessageParams, LspMessageType,
-    LspNotification, LspProgressParams, LspPublishDiagnosticsParams, LspResponse, LspResponseError,
+    LspDerivedRequestEvent, LspDerivedRequestPhase, LspDerivedRequestStatus, LspDiagnostic,
+    LspDiagnosticSeverity, LspEvent, LspLogMessageParams, LspMessageType, LspNotification,
+    LspProgressParams, LspPublishDiagnosticsParams, LspResponse, LspResponseError,
     LspServerRequest, LspServerRequestMode, LspServerRequestPolicy, LspShowMessageParams,
 };
 pub use lsp_highlights::{
@@ -84,7 +85,7 @@ pub use lsp_sync::{
 pub use lsp_text_edits::{
     LspTextEdit, WorkspaceEditDocumentSummary, WorkspaceEditSummary, apply_text_edits,
     char_offsets_for_lsp_range, summarize_workspace_edit, text_edits_from_value,
-    workspace_edit_text_edits, workspace_edit_text_edits_for_uri,
+    workspace_edit_expected_versions, workspace_edit_text_edits, workspace_edit_text_edits_for_uri,
 };
 pub use lsp_transport::{read_lsp_message, write_lsp_message};
 pub use lsp_type_hierarchy::{type_hierarchy_item_from_value, type_hierarchy_items_from_value};

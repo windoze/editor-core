@@ -17,7 +17,12 @@ final class AttoAutoPairsAndBracketsTests: XCTestCase {
 
         let lib = EditorCoreUIFFILibrary()
         let theme = EditorCoreSkiaTheme.defaultLight()
-        let vc = AttoEditorAreaViewController(library: lib, theme: theme, workspaceRootURL: tempDir)
+        let vc = AttoEditorAreaViewController(
+            library: lib,
+            theme: theme,
+            workspaceRootURL: tempDir,
+            preferences: makeIsolatedPreferences()
+        )
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 500),
@@ -42,6 +47,43 @@ final class AttoAutoPairsAndBracketsTests: XCTestCase {
         XCTAssertEqual(try editorView.editor.text(), "()")
         XCTAssertEqual(try editorView.editor.selectionOffsets().start, 2)
         XCTAssertEqual(try editorView.editor.selectionOffsets().end, 2)
+    }
+
+    func testAutoPairsCanBeDisabledFromPreferences() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoAutoPairsAndBracketsTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("disabled.txt")
+        try "".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let lib = EditorCoreUIFFILibrary()
+        let theme = EditorCoreSkiaTheme.defaultLight()
+        let vc = AttoEditorAreaViewController(
+            library: lib,
+            theme: theme,
+            workspaceRootURL: tempDir,
+            preferences: makeIsolatedPreferences(autoPairsEnabled: false)
+        )
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 500),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentViewController = vc
+        window.makeKeyAndOrderFront(nil)
+        vc.view.layoutSubtreeIfNeeded()
+
+        vc.openFile(url: fileURL, mode: .pinned)
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+
+        editorView.insertText("(", replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertEqual(try editorView.editor.text(), "(")
+        XCTAssertEqual(try editorView.editor.selectionOffsets().start, 1)
+        XCTAssertEqual(try editorView.editor.selectionOffsets().end, 1)
     }
 
     func testGoToMatchingBracketMovesCaret() throws {
@@ -87,5 +129,21 @@ final class AttoAutoPairsAndBracketsTests: XCTestCase {
         }
         return nil
     }
-}
 
+    private func makeIsolatedPreferences(autoPairsEnabled: Bool? = nil) -> AttoPreferences {
+        let suiteName = "atto_auto_pairs_tests_\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            fatalError("Failed to create UserDefaults(suiteName:)")
+        }
+        defaults.removePersistentDomain(forName: suiteName)
+        addTeardownBlock {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+
+        let prefs = AttoPreferences(defaults: defaults, env: [:])
+        if let autoPairsEnabled {
+            prefs.setAutoPairsEnabled(autoPairsEnabled)
+        }
+        return prefs
+    }
+}

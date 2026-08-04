@@ -1,14 +1,18 @@
 import AppKit
 import EditorCoreUI
+import EditorCoreUIFFI
 import Foundation
 
 private enum AttoPreferencesPage: Int, CaseIterable {
     case editor
+    case settings
 
     var title: String {
         switch self {
         case .editor:
             return "Editor"
+        case .settings:
+            return "Settings"
         }
     }
 
@@ -16,6 +20,8 @@ private enum AttoPreferencesPage: Int, CaseIterable {
         switch self {
         case .editor:
             return "textformat"
+        case .settings:
+            return "slider.horizontal.3"
         }
     }
 }
@@ -25,10 +31,26 @@ final class AttoPreferencesWindowController: NSWindowController {
     private let splitViewController = NSSplitViewController()
     private let sidebarViewController = AttoPreferencesSidebarViewController(pages: AttoPreferencesPage.allCases)
     private let contentHostViewController = AttoPreferencesContentHostViewController()
+    private let settingsStore: AttoConfigurationSettingsStore
+    private let workspaceRootURLProvider: @MainActor () -> URL?
+    private let runtimeSettingsProvider: @MainActor () -> AttoConfigurationSettings?
+    private let baseSnapshotProvider: @MainActor (URL?) -> AttoConfigurationSnapshot
 
     private var cachedPages: [AttoPreferencesPage: NSViewController] = [:]
 
-    init() {
+    init(
+        settingsStore: AttoConfigurationSettingsStore = AttoConfigurationSettingsStore(),
+        workspaceRootURLProvider: @escaping @MainActor () -> URL? = { nil },
+        runtimeSettingsProvider: @escaping @MainActor () -> AttoConfigurationSettings? = { nil },
+        baseSnapshotProvider: @escaping @MainActor (URL?) -> AttoConfigurationSnapshot = {
+            AttoPreferences.shared.effectiveConfigurationSnapshot(workspaceRootURL: $0)
+        }
+    ) {
+        self.settingsStore = settingsStore
+        self.workspaceRootURLProvider = workspaceRootURLProvider
+        self.runtimeSettingsProvider = runtimeSettingsProvider
+        self.baseSnapshotProvider = baseSnapshotProvider
+
         let win = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 720, height: 480),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -75,6 +97,13 @@ final class AttoPreferencesWindowController: NSWindowController {
             switch page {
             case .editor:
                 created = AttoPreferencesEditorPageViewController()
+            case .settings:
+                created = AttoSettingsSchemaPageViewController(
+                    settingsStore: settingsStore,
+                    workspaceRootURLProvider: workspaceRootURLProvider,
+                    runtimeSettingsProvider: runtimeSettingsProvider,
+                    baseSnapshotProvider: baseSnapshotProvider
+                )
             }
             cachedPages[page] = created
             return created
@@ -82,6 +111,24 @@ final class AttoPreferencesWindowController: NSWindowController {
 
         contentHostViewController.setContentViewController(vc)
         sidebarViewController.selectPage(page)
+    }
+
+    func _showSettingsPageForTesting() {
+        showPage(.settings)
+    }
+
+    func reloadSettingsPage() {
+        (cachedPages[.settings] as? AttoSettingsSchemaPageViewController)?.reloadRows()
+    }
+
+    func _settingsSchemaRowsForTesting() -> [AttoSettingsSchemaRow] {
+        showPage(.settings)
+        guard let page = cachedPages[.settings] as? AttoSettingsSchemaPageViewController else {
+            return []
+        }
+        _ = page.view
+        reloadSettingsPage()
+        return page.rowsForTesting()
     }
 }
 
@@ -240,9 +287,10 @@ private final class AttoPreferencesContentHostViewController: NSViewController {
 private final class AttoPreferencesEditorPageViewController: NSViewController, NSTextViewDelegate, NSTextFieldDelegate {
     private let prefs = AttoPreferences.shared
 
-    private let scrollView = NSScrollView()
+    private let pageScrollView = NSScrollView()
     private let stack = NSStackView()
 
+    private let fontFacesScrollView = NSScrollView()
     private let fontFacesTextView = NSTextView(frame: .zero)
     private let fontFacesHelpLabel = NSTextField(labelWithString: "One family per line. Top to bottom is the fallback order.")
     private let fontFacesResetButton = NSButton(title: "Use System Default", target: nil, action: nil)
@@ -258,14 +306,35 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
     private let fontSizeField = NSTextField(string: "")
     private let fontSizeStepper = NSStepper(frame: .zero)
 
+    private let wrapModePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let wrapIndentPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let wrapIndentFixedField = NSTextField(string: "")
+    private let wrapIndentFixedStepper = NSStepper(frame: .zero)
+
     private let ligaturesCheckbox = NSButton(checkboxWithTitle: "Enable ligatures", target: nil, action: nil)
+    private let autoPairsCheckbox = NSButton(checkboxWithTitle: "Enable auto pairs", target: nil, action: nil)
+    private let findCaseSensitiveCheckbox = NSButton(checkboxWithTitle: "Match case by default", target: nil, action: nil)
+    private let findWholeWordCheckbox = NSButton(checkboxWithTitle: "Whole word by default", target: nil, action: nil)
+    private let findRegexCheckbox = NSButton(checkboxWithTitle: "Regex by default", target: nil, action: nil)
+    private let findInFilesScopePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let workspaceSearchIncludeGlobsScrollView = NSScrollView()
+    private let workspaceSearchIncludeGlobsTextView = NSTextView(frame: .zero)
+    private let workspaceSearchIncludeGlobsHelpLabel = NSTextField(labelWithString: "One include glob per line. Empty includes all workspace files.")
+    private let workspaceSearchExcludeGlobsScrollView = NSScrollView()
+    private let workspaceSearchExcludeGlobsTextView = NSTextView(frame: .zero)
+    private let workspaceSearchExcludeGlobsHelpLabel = NSTextField(labelWithString: "One exclude glob per line. Excludes win over includes.")
+    private let lspAutoRestartCheckbox = NSButton(checkboxWithTitle: "Auto-restart failed LSP servers", target: nil, action: nil)
+    private let lspAutoRestartMaxAttemptsField = NSTextField(string: "")
+    private let lspAutoRestartMaxAttemptsStepper = NSStepper(frame: .zero)
+    private let lspAutoRestartBaseDelayField = NSTextField(string: "")
+    private let lspAutoRestartBaseDelayStepper = NSStepper(frame: .zero)
 
     private var isUpdatingFromModel: Bool = false
     private var forceReloadFontFacesTextView: Bool = false
 
-    private func isEditingFontFacesTextView() -> Bool {
+    private func isEditingTextView(_ textView: NSTextView) -> Bool {
         guard let win = view.window else { return false }
-        return win.firstResponder === fontFacesTextView
+        return win.firstResponder === textView
     }
 
     override func loadView() {
@@ -332,31 +401,10 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
         fontFacesHelpLabel.maximumNumberOfLines = 2
         stack.addArrangedSubview(fontFacesHelpLabel)
 
-        fontFacesTextView.isRichText = false
-        fontFacesTextView.isAutomaticQuoteSubstitutionEnabled = false
-        fontFacesTextView.isAutomaticDataDetectionEnabled = false
-        fontFacesTextView.isAutomaticLinkDetectionEnabled = false
-        fontFacesTextView.isAutomaticTextReplacementEnabled = false
-        fontFacesTextView.allowsUndo = true
-        fontFacesTextView.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-        fontFacesTextView.delegate = self
+        configurePlainTextView(fontFacesTextView)
+        configureTextScrollView(fontFacesScrollView, textView: fontFacesTextView)
 
-        scrollView.documentView = fontFacesTextView
-        scrollView.hasVerticalScroller = true
-        scrollView.borderType = .bezelBorder
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.wantsLayer = true
-
-        let fontFacesContainer = NSView(frame: .zero)
-        fontFacesContainer.translatesAutoresizingMaskIntoConstraints = false
-        fontFacesContainer.addSubview(scrollView)
-        NSLayoutConstraint.activate([
-            scrollView.leadingAnchor.constraint(equalTo: fontFacesContainer.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: fontFacesContainer.trailingAnchor),
-            scrollView.topAnchor.constraint(equalTo: fontFacesContainer.topAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: fontFacesContainer.bottomAnchor),
-            scrollView.heightAnchor.constraint(equalToConstant: 120),
-        ])
+        let fontFacesContainer = makeTextViewContainer(scrollView: fontFacesScrollView, height: 120)
         stack.addArrangedSubview(fontFacesContainer)
         fontFacesContainer.widthAnchor.constraint(greaterThanOrEqualToConstant: 420).isActive = true
 
@@ -389,18 +437,213 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
         fontSizeRow.alignment = .centerY
         stack.addArrangedSubview(fontSizeRow)
 
+        // Wrap mode
+        let wrapModeLabel = NSTextField(labelWithString: "Word wrap")
+        wrapModeLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        stack.addArrangedSubview(wrapModeLabel)
+
+        wrapModePopUp.addItem(withTitle: "Off")
+        wrapModePopUp.item(at: 0)?.representedObject = EcuWrapMode.none.rawValue
+        wrapModePopUp.addItem(withTitle: "By Character")
+        wrapModePopUp.item(at: 1)?.representedObject = EcuWrapMode.char.rawValue
+        wrapModePopUp.addItem(withTitle: "By Word")
+        wrapModePopUp.item(at: 2)?.representedObject = EcuWrapMode.word.rawValue
+        wrapModePopUp.target = self
+        wrapModePopUp.action = #selector(wrapModeChanged(_:))
+        wrapModePopUp.widthAnchor.constraint(greaterThanOrEqualToConstant: 180).isActive = true
+        stack.addArrangedSubview(wrapModePopUp)
+
+        // Wrap indent
+        let wrapIndentLabel = NSTextField(labelWithString: "Wrap indent")
+        wrapIndentLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        stack.addArrangedSubview(wrapIndentLabel)
+
+        wrapIndentPopUp.addItem(withTitle: "None")
+        wrapIndentPopUp.item(at: 0)?.representedObject = "none"
+        wrapIndentPopUp.addItem(withTitle: "Same as Line Indent")
+        wrapIndentPopUp.item(at: 1)?.representedObject = "same_as_line_indent"
+        wrapIndentPopUp.addItem(withTitle: "Fixed Cells")
+        wrapIndentPopUp.item(at: 2)?.representedObject = "fixed_cells"
+        wrapIndentPopUp.target = self
+        wrapIndentPopUp.action = #selector(wrapIndentModeChanged(_:))
+        wrapIndentPopUp.widthAnchor.constraint(greaterThanOrEqualToConstant: 180).isActive = true
+
+        wrapIndentFixedField.delegate = self
+        wrapIndentFixedField.alignment = .right
+        wrapIndentFixedField.font = NSFont.systemFont(ofSize: 13)
+        wrapIndentFixedField.translatesAutoresizingMaskIntoConstraints = false
+        wrapIndentFixedField.widthAnchor.constraint(equalToConstant: 64).isActive = true
+
+        wrapIndentFixedStepper.minValue = 0
+        wrapIndentFixedStepper.maxValue = 80
+        wrapIndentFixedStepper.increment = 1
+        wrapIndentFixedStepper.translatesAutoresizingMaskIntoConstraints = false
+        wrapIndentFixedStepper.target = self
+        wrapIndentFixedStepper.action = #selector(wrapIndentFixedStepperChanged(_:))
+
+        let wrapIndentRow = NSStackView(views: [wrapIndentPopUp, wrapIndentFixedField, wrapIndentFixedStepper])
+        wrapIndentRow.orientation = .horizontal
+        wrapIndentRow.spacing = 8
+        wrapIndentRow.alignment = .centerY
+        stack.addArrangedSubview(wrapIndentRow)
+
         // Ligatures
         ligaturesCheckbox.target = self
         ligaturesCheckbox.action = #selector(ligaturesToggled(_:))
         stack.addArrangedSubview(ligaturesCheckbox)
 
+        autoPairsCheckbox.target = self
+        autoPairsCheckbox.action = #selector(autoPairsToggled(_:))
+        stack.addArrangedSubview(autoPairsCheckbox)
+
+        // Search
+        let searchLabel = NSTextField(labelWithString: "Search")
+        searchLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        stack.addArrangedSubview(searchLabel)
+
+        findCaseSensitiveCheckbox.target = self
+        findCaseSensitiveCheckbox.action = #selector(findCaseSensitiveToggled(_:))
+        stack.addArrangedSubview(findCaseSensitiveCheckbox)
+
+        findWholeWordCheckbox.target = self
+        findWholeWordCheckbox.action = #selector(findWholeWordToggled(_:))
+        stack.addArrangedSubview(findWholeWordCheckbox)
+
+        findRegexCheckbox.target = self
+        findRegexCheckbox.action = #selector(findRegexToggled(_:))
+        stack.addArrangedSubview(findRegexCheckbox)
+
+        let findInFilesScopeLabel = NSTextField(labelWithString: "Find in Files default scope")
+        findInFilesScopeLabel.font = NSFont.systemFont(ofSize: 13)
+        findInFilesScopePopUp.addItem(withTitle: "Opened Files")
+        findInFilesScopePopUp.item(at: 0)?.representedObject = "opened_files"
+        findInFilesScopePopUp.addItem(withTitle: "Workspace Folder")
+        findInFilesScopePopUp.item(at: 1)?.representedObject = "workspace"
+        findInFilesScopePopUp.target = self
+        findInFilesScopePopUp.action = #selector(findInFilesScopeChanged(_:))
+        findInFilesScopePopUp.widthAnchor.constraint(greaterThanOrEqualToConstant: 180).isActive = true
+
+        let findInFilesScopeRow = NSStackView(views: [findInFilesScopeLabel, findInFilesScopePopUp])
+        findInFilesScopeRow.orientation = .horizontal
+        findInFilesScopeRow.spacing = 8
+        findInFilesScopeRow.alignment = .centerY
+        stack.addArrangedSubview(findInFilesScopeRow)
+
+        let includeGlobsLabel = NSTextField(labelWithString: "Workspace include globs")
+        includeGlobsLabel.font = NSFont.systemFont(ofSize: 13)
+        stack.addArrangedSubview(includeGlobsLabel)
+
+        workspaceSearchIncludeGlobsHelpLabel.textColor = .secondaryLabelColor
+        workspaceSearchIncludeGlobsHelpLabel.font = NSFont.systemFont(ofSize: 12, weight: .regular)
+        workspaceSearchIncludeGlobsHelpLabel.maximumNumberOfLines = 2
+        stack.addArrangedSubview(workspaceSearchIncludeGlobsHelpLabel)
+
+        configurePlainTextView(workspaceSearchIncludeGlobsTextView)
+        configureTextScrollView(workspaceSearchIncludeGlobsScrollView, textView: workspaceSearchIncludeGlobsTextView)
+        let includeGlobsContainer = makeTextViewContainer(scrollView: workspaceSearchIncludeGlobsScrollView, height: 74)
+        stack.addArrangedSubview(includeGlobsContainer)
+        includeGlobsContainer.widthAnchor.constraint(greaterThanOrEqualToConstant: 420).isActive = true
+
+        let excludeGlobsLabel = NSTextField(labelWithString: "Workspace exclude globs")
+        excludeGlobsLabel.font = NSFont.systemFont(ofSize: 13)
+        stack.addArrangedSubview(excludeGlobsLabel)
+
+        workspaceSearchExcludeGlobsHelpLabel.textColor = .secondaryLabelColor
+        workspaceSearchExcludeGlobsHelpLabel.font = NSFont.systemFont(ofSize: 12, weight: .regular)
+        workspaceSearchExcludeGlobsHelpLabel.maximumNumberOfLines = 2
+        stack.addArrangedSubview(workspaceSearchExcludeGlobsHelpLabel)
+
+        configurePlainTextView(workspaceSearchExcludeGlobsTextView)
+        configureTextScrollView(workspaceSearchExcludeGlobsScrollView, textView: workspaceSearchExcludeGlobsTextView)
+        let excludeGlobsContainer = makeTextViewContainer(scrollView: workspaceSearchExcludeGlobsScrollView, height: 74)
+        stack.addArrangedSubview(excludeGlobsContainer)
+        excludeGlobsContainer.widthAnchor.constraint(greaterThanOrEqualToConstant: 420).isActive = true
+
+        // LSP recovery
+        let lspRecoveryLabel = NSTextField(labelWithString: "LSP recovery")
+        lspRecoveryLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        stack.addArrangedSubview(lspRecoveryLabel)
+
+        lspAutoRestartCheckbox.target = self
+        lspAutoRestartCheckbox.action = #selector(lspAutoRestartToggled(_:))
+        stack.addArrangedSubview(lspAutoRestartCheckbox)
+
+        lspAutoRestartMaxAttemptsField.delegate = self
+        lspAutoRestartMaxAttemptsField.alignment = .right
+        lspAutoRestartMaxAttemptsField.font = NSFont.systemFont(ofSize: 13)
+        lspAutoRestartMaxAttemptsField.translatesAutoresizingMaskIntoConstraints = false
+        lspAutoRestartMaxAttemptsField.widthAnchor.constraint(equalToConstant: 64).isActive = true
+
+        lspAutoRestartMaxAttemptsStepper.minValue = 0
+        lspAutoRestartMaxAttemptsStepper.maxValue = 10
+        lspAutoRestartMaxAttemptsStepper.increment = 1
+        lspAutoRestartMaxAttemptsStepper.translatesAutoresizingMaskIntoConstraints = false
+        lspAutoRestartMaxAttemptsStepper.target = self
+        lspAutoRestartMaxAttemptsStepper.action = #selector(lspAutoRestartMaxAttemptsStepperChanged(_:))
+
+        let lspMaxAttemptsLabel = NSTextField(labelWithString: "Max attempts")
+        lspMaxAttemptsLabel.font = NSFont.systemFont(ofSize: 13)
+        let lspMaxAttemptsRow = NSStackView(views: [
+            lspMaxAttemptsLabel,
+            lspAutoRestartMaxAttemptsField,
+            lspAutoRestartMaxAttemptsStepper,
+        ])
+        lspMaxAttemptsRow.orientation = .horizontal
+        lspMaxAttemptsRow.spacing = 8
+        lspMaxAttemptsRow.alignment = .centerY
+        stack.addArrangedSubview(lspMaxAttemptsRow)
+
+        lspAutoRestartBaseDelayField.delegate = self
+        lspAutoRestartBaseDelayField.alignment = .right
+        lspAutoRestartBaseDelayField.font = NSFont.systemFont(ofSize: 13)
+        lspAutoRestartBaseDelayField.translatesAutoresizingMaskIntoConstraints = false
+        lspAutoRestartBaseDelayField.widthAnchor.constraint(equalToConstant: 64).isActive = true
+
+        lspAutoRestartBaseDelayStepper.minValue = 0
+        lspAutoRestartBaseDelayStepper.maxValue = 3_600
+        lspAutoRestartBaseDelayStepper.increment = 1
+        lspAutoRestartBaseDelayStepper.translatesAutoresizingMaskIntoConstraints = false
+        lspAutoRestartBaseDelayStepper.target = self
+        lspAutoRestartBaseDelayStepper.action = #selector(lspAutoRestartBaseDelayStepperChanged(_:))
+
+        let lspBaseDelayLabel = NSTextField(labelWithString: "Base delay")
+        lspBaseDelayLabel.font = NSFont.systemFont(ofSize: 13)
+        let lspBaseDelaySuffix = NSTextField(labelWithString: "seconds")
+        lspBaseDelaySuffix.font = NSFont.systemFont(ofSize: 13)
+        let lspBaseDelayRow = NSStackView(views: [
+            lspBaseDelayLabel,
+            lspAutoRestartBaseDelayField,
+            lspAutoRestartBaseDelayStepper,
+            lspBaseDelaySuffix,
+        ])
+        lspBaseDelayRow.orientation = .horizontal
+        lspBaseDelayRow.spacing = 8
+        lspBaseDelayRow.alignment = .centerY
+        stack.addArrangedSubview(lspBaseDelayRow)
+
         // Layout
-        view.addSubview(stack)
+        let contentView = NSView(frame: .zero)
+        contentView.translatesAutoresizingMaskIntoConstraints = false
+
+        pageScrollView.documentView = contentView
+        pageScrollView.hasVerticalScroller = true
+        pageScrollView.drawsBackground = false
+        pageScrollView.translatesAutoresizingMaskIntoConstraints = false
+
+        contentView.addSubview(stack)
+        view.addSubview(pageScrollView)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -20),
-            stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 20),
-            stack.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor, constant: -20),
+            pageScrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            pageScrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            pageScrollView.topAnchor.constraint(equalTo: view.topAnchor),
+            pageScrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+
+            contentView.widthAnchor.constraint(equalTo: pageScrollView.contentView.widthAnchor),
+
+            stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 20),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -20),
+            stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 20),
+            stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -20),
         ])
 
         reloadThemeMenu()
@@ -418,6 +661,43 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
         NotificationCenter.default.removeObserver(self)
     }
 
+    private func configurePlainTextView(_ textView: NSTextView) {
+        textView.isRichText = false
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDataDetectionEnabled = false
+        textView.isAutomaticLinkDetectionEnabled = false
+        textView.isAutomaticTextReplacementEnabled = false
+        textView.allowsUndo = true
+        textView.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        textView.textContainerInset = NSSize(width: 4, height: 4)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.textContainer?.widthTracksTextView = true
+        textView.delegate = self
+    }
+
+    private func configureTextScrollView(_ scrollView: NSScrollView, textView: NSTextView) {
+        scrollView.documentView = textView
+        scrollView.hasVerticalScroller = true
+        scrollView.borderType = .bezelBorder
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.wantsLayer = true
+    }
+
+    private func makeTextViewContainer(scrollView: NSScrollView, height: CGFloat) -> NSView {
+        let container = NSView(frame: .zero)
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(scrollView)
+        NSLayoutConstraint.activate([
+            scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: container.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            scrollView.heightAnchor.constraint(equalToConstant: height),
+        ])
+        return container
+    }
+
     private func reloadFromModel() {
         isUpdatingFromModel = true
         defer { isUpdatingFromModel = false }
@@ -427,8 +707,14 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
         // Avoid clobbering the user's selection/caret while they type: reloading `string`
         // resets selection (often to EOF) and makes `Enter` look broken because the model
         // serialization does not preserve trailing blank lines.
-        if isEditingFontFacesTextView() == false || forceReloadFontFacesTextView {
+        if isEditingTextView(fontFacesTextView) == false || forceReloadFontFacesTextView {
             fontFacesTextView.string = prefs.fontFacesMultilineTextForUI()
+        }
+        if isEditingTextView(workspaceSearchIncludeGlobsTextView) == false {
+            workspaceSearchIncludeGlobsTextView.string = prefs.workspaceSearchIncludeGlobsTextForUI()
+        }
+        if isEditingTextView(workspaceSearchExcludeGlobsTextView) == false {
+            workspaceSearchExcludeGlobsTextView.string = prefs.workspaceSearchExcludeGlobsTextForUI()
         }
 
         let size = prefs.effectiveFontSizePoints
@@ -436,6 +722,22 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
         fontSizeStepper.doubleValue = size
 
         ligaturesCheckbox.state = prefs.effectiveLigaturesEnabled ? .on : .off
+        autoPairsCheckbox.state = prefs.effectiveAutoPairsEnabled ? .on : .off
+        findCaseSensitiveCheckbox.state = prefs.effectiveFindCaseSensitive ? .on : .off
+        findWholeWordCheckbox.state = prefs.effectiveFindWholeWord ? .on : .off
+        findRegexCheckbox.state = prefs.effectiveFindRegex ? .on : .off
+        selectFindInFilesScope(prefs.effectiveFindInFilesDefaultScope)
+        let lspAutoRestartEnabled = prefs.effectiveLspAutoRestartEnabled
+        lspAutoRestartCheckbox.state = lspAutoRestartEnabled ? .on : .off
+        let lspMaxAttempts = prefs.effectiveLspAutoRestartMaxAttempts
+        lspAutoRestartMaxAttemptsField.stringValue = String(lspMaxAttempts)
+        lspAutoRestartMaxAttemptsStepper.integerValue = lspMaxAttempts
+        let lspBaseDelay = prefs.effectiveLspAutoRestartBaseDelaySeconds
+        lspAutoRestartBaseDelayField.stringValue = Self.formatLspBaseDelaySeconds(lspBaseDelay)
+        lspAutoRestartBaseDelayStepper.doubleValue = lspBaseDelay
+        setLspAutoRestartControlsEnabled(lspAutoRestartEnabled)
+        selectWrapMode(prefs.effectiveWrapMode)
+        selectWrapIndent(prefs.effectiveWrapIndent)
     }
 
     // MARK: - Actions
@@ -486,23 +788,129 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
         prefs.setLigaturesEnabled(ligaturesCheckbox.state == .on)
     }
 
+    @objc private func wrapModeChanged(_ sender: Any?) {
+        guard isUpdatingFromModel == false else { return }
+        let idx = wrapModePopUp.indexOfSelectedItem
+        guard idx >= 0,
+              let raw = wrapModePopUp.item(at: idx)?.representedObject as? String,
+              let mode = EcuWrapMode(rawValue: raw)
+        else { return }
+        prefs.setWrapMode(mode)
+    }
+
+    @objc private func wrapIndentModeChanged(_ sender: Any?) {
+        guard isUpdatingFromModel == false else { return }
+        let idx = wrapIndentPopUp.indexOfSelectedItem
+        guard idx >= 0,
+              let raw = wrapIndentPopUp.item(at: idx)?.representedObject as? String
+        else { return }
+
+        switch raw {
+        case "none":
+            prefs.setWrapIndent(EcuWrapIndent.none)
+        case "same_as_line_indent":
+            prefs.setWrapIndent(.sameAsLineIndent)
+        case "fixed_cells":
+            prefs.setWrapIndent(.fixedCells(currentWrapIndentFixedCells()))
+        default:
+            return
+        }
+    }
+
+    @objc private func wrapIndentFixedStepperChanged(_ sender: Any?) {
+        guard isUpdatingFromModel == false else { return }
+        let cells = UInt32(max(0, min(80, wrapIndentFixedStepper.integerValue)))
+        prefs.setWrapIndent(.fixedCells(cells))
+    }
+
+    @objc private func autoPairsToggled(_ sender: Any?) {
+        prefs.setAutoPairsEnabled(autoPairsCheckbox.state == .on)
+    }
+
+    @objc private func findCaseSensitiveToggled(_ sender: Any?) {
+        prefs.setFindCaseSensitive(findCaseSensitiveCheckbox.state == .on)
+    }
+
+    @objc private func findWholeWordToggled(_ sender: Any?) {
+        prefs.setFindWholeWord(findWholeWordCheckbox.state == .on)
+    }
+
+    @objc private func findRegexToggled(_ sender: Any?) {
+        prefs.setFindRegex(findRegexCheckbox.state == .on)
+    }
+
+    @objc private func findInFilesScopeChanged(_ sender: Any?) {
+        guard isUpdatingFromModel == false else { return }
+        let idx = findInFilesScopePopUp.indexOfSelectedItem
+        guard idx >= 0,
+              let raw = findInFilesScopePopUp.item(at: idx)?.representedObject as? String
+        else { return }
+        prefs.setFindInFilesDefaultScope(raw)
+    }
+
+    @objc private func lspAutoRestartToggled(_ sender: Any?) {
+        let enabled = lspAutoRestartCheckbox.state == .on
+        prefs.setLspAutoRestartEnabled(enabled)
+        setLspAutoRestartControlsEnabled(enabled)
+    }
+
+    @objc private func lspAutoRestartMaxAttemptsStepperChanged(_ sender: Any?) {
+        guard isUpdatingFromModel == false else { return }
+        prefs.setLspAutoRestartMaxAttempts(lspAutoRestartMaxAttemptsStepper.integerValue)
+    }
+
+    @objc private func lspAutoRestartBaseDelayStepperChanged(_ sender: Any?) {
+        guard isUpdatingFromModel == false else { return }
+        prefs.setLspAutoRestartBaseDelaySeconds(lspAutoRestartBaseDelayStepper.doubleValue)
+    }
+
     // MARK: - NSTextViewDelegate
 
     func textDidChange(_ notification: Notification) {
         guard isUpdatingFromModel == false else { return }
-        guard notification.object as? NSTextView === fontFacesTextView else { return }
-        let faces = AttoPreferences.parseMultilineFontFaces(fontFacesTextView.string)
-        prefs.setFontFaces(faces)
+        guard let textView = notification.object as? NSTextView else { return }
+
+        if textView === fontFacesTextView {
+            let faces = AttoPreferences.parseMultilineFontFaces(fontFacesTextView.string)
+            prefs.setFontFaces(faces)
+            return
+        }
+
+        if textView === workspaceSearchIncludeGlobsTextView {
+            let patterns = AttoPreferences.parseWorkspaceSearchGlobsText(workspaceSearchIncludeGlobsTextView.string)
+            prefs.setWorkspaceSearchIncludeGlobs(patterns)
+            return
+        }
+
+        if textView === workspaceSearchExcludeGlobsTextView {
+            let patterns = AttoPreferences.parseWorkspaceSearchGlobsText(workspaceSearchExcludeGlobsTextView.string)
+            prefs.setWorkspaceSearchExcludeGlobs(patterns)
+        }
     }
 
     // MARK: - NSTextFieldDelegate
 
     func controlTextDidEndEditing(_ obj: Notification) {
         guard let field = obj.object as? NSTextField else { return }
-        guard field === fontSizeField else { return }
+        if field === fontSizeField {
+            let v = Double(field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)) ?? prefs.effectiveFontSizePoints
+            prefs.setFontSizePoints(v)
+            return
+        }
 
-        let v = Double(field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)) ?? prefs.effectiveFontSizePoints
-        prefs.setFontSizePoints(v)
+        if field === wrapIndentFixedField {
+            prefs.setWrapIndent(.fixedCells(currentWrapIndentFixedCells()))
+            return
+        }
+
+        if field === lspAutoRestartMaxAttemptsField {
+            prefs.setLspAutoRestartMaxAttempts(currentLspAutoRestartMaxAttempts())
+            return
+        }
+
+        if field === lspAutoRestartBaseDelayField {
+            prefs.setLspAutoRestartBaseDelaySeconds(currentLspAutoRestartBaseDelaySeconds())
+        }
     }
 
     // MARK: - Theme menu
@@ -554,5 +962,87 @@ private final class AttoPreferencesEditorPageViewController: NSViewController, N
         themePopUp.addItem(withTitle: "\(effectiveName) (Missing)")
         themePopUp.item(at: themePopUp.numberOfItems - 1)?.representedObject = effectiveName
         themePopUp.selectItem(at: themePopUp.numberOfItems - 1)
+    }
+
+    private func selectWrapMode(_ mode: EcuWrapMode) {
+        for idx in 0..<wrapModePopUp.numberOfItems {
+            if wrapModePopUp.item(at: idx)?.representedObject as? String == mode.rawValue {
+                wrapModePopUp.selectItem(at: idx)
+                return
+            }
+        }
+        wrapModePopUp.selectItem(at: 1)
+    }
+
+    private func selectWrapIndent(_ indent: EcuWrapIndent) {
+        let fixedCells: UInt32
+        switch indent {
+        case .none:
+            wrapIndentPopUp.selectItem(at: 0)
+            fixedCells = 2
+            setWrapIndentFixedControlsEnabled(false)
+        case .sameAsLineIndent:
+            wrapIndentPopUp.selectItem(at: 1)
+            fixedCells = 2
+            setWrapIndentFixedControlsEnabled(false)
+        case let .fixedCells(cells):
+            wrapIndentPopUp.selectItem(at: 2)
+            fixedCells = cells
+            setWrapIndentFixedControlsEnabled(true)
+        }
+
+        let clamped = UInt32(min(fixedCells, 80))
+        wrapIndentFixedField.stringValue = String(clamped)
+        wrapIndentFixedStepper.integerValue = Int(clamped)
+    }
+
+    private func currentWrapIndentFixedCells() -> UInt32 {
+        let raw = wrapIndentFixedField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parsed = Int(raw) ?? wrapIndentFixedStepper.integerValue
+        return UInt32(max(0, min(80, parsed)))
+    }
+
+    private func selectFindInFilesScope(_ rawScope: String) {
+        let normalized = AttoPreferences.normalizeFindInFilesDefaultScope(rawScope)
+            ?? AttoWorkspacePreferenceSnapshot.defaultFindInFilesScope
+        for idx in 0..<findInFilesScopePopUp.numberOfItems {
+            if findInFilesScopePopUp.item(at: idx)?.representedObject as? String == normalized {
+                findInFilesScopePopUp.selectItem(at: idx)
+                return
+            }
+        }
+        findInFilesScopePopUp.selectItem(at: 0)
+    }
+
+    private func setWrapIndentFixedControlsEnabled(_ enabled: Bool) {
+        wrapIndentFixedField.isEnabled = enabled
+        wrapIndentFixedStepper.isEnabled = enabled
+    }
+
+    private func currentLspAutoRestartMaxAttempts() -> Int {
+        let raw = lspAutoRestartMaxAttemptsField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parsed = Int(raw) ?? lspAutoRestartMaxAttemptsStepper.integerValue
+        return max(0, min(10, parsed))
+    }
+
+    private func currentLspAutoRestartBaseDelaySeconds() -> Double {
+        let raw = lspAutoRestartBaseDelayField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parsed = Double(raw) ?? lspAutoRestartBaseDelayStepper.doubleValue
+        guard parsed.isFinite else { return 5.0 }
+        return min(max(parsed, 0.0), 3_600.0)
+    }
+
+    private func setLspAutoRestartControlsEnabled(_ enabled: Bool) {
+        lspAutoRestartMaxAttemptsField.isEnabled = enabled
+        lspAutoRestartMaxAttemptsStepper.isEnabled = enabled
+        lspAutoRestartBaseDelayField.isEnabled = enabled
+        lspAutoRestartBaseDelayStepper.isEnabled = enabled
+    }
+
+    private static func formatLspBaseDelaySeconds(_ seconds: Double) -> String {
+        if seconds.rounded() == seconds {
+            return String(Int(seconds))
+        }
+        return String(seconds)
     }
 }

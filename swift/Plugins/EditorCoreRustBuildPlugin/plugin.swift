@@ -12,6 +12,8 @@ struct EditorCoreRustBuildPlugin: BuildToolPlugin {
         // SwiftPM plugin sandbox 默认只允许写入 `context.pluginWorkDirectoryURL`，
         // 因此必须把 target-dir 放在该目录内部，避免触发 “Operation not permitted”。
         let rustTargetDir = context.pluginWorkDirectoryURL.appendingPathComponent("cargo-target", isDirectory: true)
+        let outputFiles = rustStaticLibraryOutputFiles(targetName: target.name, rustTargetDir: rustTargetDir)
+        let inputFiles = rustBuildInputFiles(targetName: target.name, repoRoot: repoRoot)
 
         let script = """
         set -euo pipefail
@@ -37,7 +39,7 @@ struct EditorCoreRustBuildPlugin: BuildToolPlugin {
         ].joined(separator: ":")
 
         return [
-            .prebuildCommand(
+            .buildCommand(
                 displayName: "Build Rust static libraries (editor-core-ffi, editor-core-ui-ffi)",
                 executable: URL(fileURLWithPath: "/bin/bash"),
                 arguments: ["-c", script],
@@ -45,12 +47,140 @@ struct EditorCoreRustBuildPlugin: BuildToolPlugin {
                     "HOME": home,
                     "PATH": path,
                 ],
-                // 这里的输出目录只用于满足 SwiftPM 的 prebuildCommand 约定；
-                // Rust staticlib 实际落在 `context.pluginWorkDirectoryURL/cargo-target/`（便于 sandbox 写入）。
-                outputFilesDirectory: context.pluginWorkDirectoryURL
+                inputFiles: inputFiles,
+                outputFiles: outputFiles
             )
         ]
     }
+}
+
+private func rustStaticLibraryOutputFiles(targetName: String, rustTargetDir: URL) -> [URL] {
+    let releaseDir = rustTargetDir.appendingPathComponent("release", isDirectory: true)
+    switch targetName {
+    case "CEditorCoreFFI":
+        return [releaseDir.appendingPathComponent("libeditor_core_ffi.a")]
+    case "CEditorCoreUIFFI":
+        return [releaseDir.appendingPathComponent("libeditor_core_ui_ffi.a")]
+    default:
+        return [
+            releaseDir.appendingPathComponent("libeditor_core_ffi.a"),
+            releaseDir.appendingPathComponent("libeditor_core_ui_ffi.a"),
+        ]
+    }
+}
+
+private func rustBuildInputFiles(targetName: String, repoRoot: URL) -> [URL] {
+    var urls: [URL] = []
+    let commonPaths = [
+        "Cargo.lock",
+        "Cargo.toml",
+        "crates/editor-core/Cargo.toml",
+        "crates/editor-core/src",
+    ]
+
+    let targetPaths: [String]
+    switch targetName {
+    case "CEditorCoreFFI":
+        targetPaths = [
+            "crates/editor-core-ffi/Cargo.toml",
+            "crates/editor-core-ffi/include",
+            "crates/editor-core-ffi/src",
+            "crates/editor-core-lsp/Cargo.toml",
+            "crates/editor-core-lsp/src",
+            "swift/Sources/CEditorCoreFFI/stamp.c",
+        ]
+    case "CEditorCoreUIFFI":
+        targetPaths = [
+            "crates/editor-core-ui-ffi/Cargo.toml",
+            "crates/editor-core-ui-ffi/include",
+            "crates/editor-core-ui-ffi/src",
+            "crates/editor-core-ui/Cargo.toml",
+            "crates/editor-core-ui/src",
+            "crates/editor-core-render-skia/Cargo.toml",
+            "crates/editor-core-render-skia/src",
+            "crates/editor-core-sublime/Cargo.toml",
+            "crates/editor-core-sublime/src",
+            "crates/editor-core-treesitter/Cargo.toml",
+            "crates/editor-core-treesitter/src",
+            "crates/editor-core-lsp/Cargo.toml",
+            "crates/editor-core-lsp/src",
+            "swift/Sources/CEditorCoreUIFFI/stamp.c",
+            "target/debug/libeditor_core_ui_ffi.a",
+            "target/release/libeditor_core_ui_ffi.a",
+        ]
+    default:
+        targetPaths = [
+            "crates/editor-core-ffi/Cargo.toml",
+            "crates/editor-core-ffi/include",
+            "crates/editor-core-ffi/src",
+            "crates/editor-core-ui-ffi/Cargo.toml",
+            "crates/editor-core-ui-ffi/include",
+            "crates/editor-core-ui-ffi/src",
+            "crates/editor-core-ui/Cargo.toml",
+            "crates/editor-core-ui/src",
+            "crates/editor-core-render-skia/Cargo.toml",
+            "crates/editor-core-render-skia/src",
+            "crates/editor-core-sublime/Cargo.toml",
+            "crates/editor-core-sublime/src",
+            "crates/editor-core-treesitter/Cargo.toml",
+            "crates/editor-core-treesitter/src",
+            "crates/editor-core-lsp/Cargo.toml",
+            "crates/editor-core-lsp/src",
+            "swift/Sources/CEditorCoreFFI/stamp.c",
+            "swift/Sources/CEditorCoreUIFFI/stamp.c",
+            "target/debug/libeditor_core_ui_ffi.a",
+            "target/release/libeditor_core_ui_ffi.a",
+        ]
+    }
+
+    var seen = Set<String>()
+    for path in commonPaths + targetPaths {
+        appendBuildInputs(at: repoRoot.appendingPathComponent(path), to: &urls, seen: &seen)
+    }
+    return urls
+}
+
+private func appendBuildInputs(at url: URL, to urls: inout [URL], seen: inout Set<String>) {
+    let fileManager = FileManager.default
+    var isDirectory: ObjCBool = false
+    guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
+        return
+    }
+
+    if isDirectory.boolValue {
+        guard let enumerator = fileManager.enumerator(
+            at: url,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return
+        }
+        for case let fileURL as URL in enumerator {
+            guard isSupportedInputFile(fileURL) else {
+                continue
+            }
+            appendUnique(fileURL, to: &urls, seen: &seen)
+        }
+        return
+    }
+
+    appendUnique(url, to: &urls, seen: &seen)
+}
+
+private func isSupportedInputFile(_ url: URL) -> Bool {
+    switch url.pathExtension {
+    case "c", "h", "rs", "toml":
+        return true
+    default:
+        return false
+    }
+}
+
+private func appendUnique(_ url: URL, to urls: inout [URL], seen: inout Set<String>) {
+    guard seen.insert(url.path).inserted else {
+        return
+    }
+    urls.append(url)
 }
 
 private func cargoBuildCommand(targetName: String, rustTargetDir: String) -> String {

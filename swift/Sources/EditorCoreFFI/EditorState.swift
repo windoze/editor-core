@@ -36,6 +36,21 @@ public final class EditorState {
         return try JSON.decode(EditorStateTextResponse.self, from: json, context: "editor_state_text").text
     }
 
+    public func textEnvelopeJSON() throws -> String {
+        try ffi.takeOwnedCString(
+            editor_core_ffi_editor_state_text_envelope_json(handle),
+            context: "editor_state_text_envelope_json"
+        )
+    }
+
+    public func textEnvelope() throws -> EcfEditorStateQueryEnvelope {
+        try JSON.decode(
+            EcfEditorStateQueryEnvelope.self,
+            from: textEnvelopeJSON(),
+            context: "editor_state_text_envelope"
+        )
+    }
+
     public func executeJSON(_ commandJSON: String) throws -> String {
         let ptr: UnsafeMutablePointer<CChar>? = commandJSON.withCString { jsonPtr in
             editor_core_ffi_editor_state_execute_json(handle, jsonPtr)
@@ -43,12 +58,79 @@ public final class EditorState {
         return try ffi.takeOwnedCString(ptr, context: "editor_state_execute_json")
     }
 
+    public func executeEnvelopeJSON(_ commandJSON: String) throws -> String {
+        let ptr: UnsafeMutablePointer<CChar>? = commandJSON.withCString { jsonPtr in
+            editor_core_ffi_editor_state_execute_envelope_json(handle, jsonPtr)
+        }
+        return try ffi.takeOwnedCString(ptr, context: "editor_state_execute_envelope_json")
+    }
+
+    public func executeEnvelope(_ commandJSON: String) throws -> EcfJSONCommandEnvelope {
+        try JSON.decode(
+            EcfJSONCommandEnvelope.self,
+            from: executeEnvelopeJSON(commandJSON),
+            context: "editor_state_execute_envelope"
+        )
+    }
+
+    @discardableResult
+    private func executeCommandObject(_ object: [String: Any]) throws -> String {
+        let data = try JSONSerialization.data(withJSONObject: object, options: [])
+        guard let json = String(data: data, encoding: .utf8) else {
+            throw EditorCoreFFIError.ffiStatus(
+                code: .invalidArgument,
+                context: "editor_state_encode_command_json",
+                message: "failed to encode command JSON as UTF-8"
+            )
+        }
+        return try executeJSON(json)
+    }
+
+    @discardableResult
+    private func executeEditorCommand(kind: String, op: String, fields: [String: Any] = [:]) throws -> String {
+        var object: [String: Any] = ["kind": kind, "op": op]
+        for (key, value) in fields {
+            object[key] = value
+        }
+        return try executeCommandObject(object)
+    }
+
     public func fullStateJSON() throws -> String {
         try ffi.takeOwnedCString(editor_core_ffi_editor_state_full_state_json(handle), context: "editor_state_full_state_json")
     }
 
+    public func fullStateEnvelopeJSON() throws -> String {
+        try ffi.takeOwnedCString(
+            editor_core_ffi_editor_state_full_state_envelope_json(handle),
+            context: "editor_state_full_state_envelope_json"
+        )
+    }
+
+    public func fullStateEnvelope() throws -> EcfEditorStateQueryEnvelope {
+        try JSON.decode(
+            EcfEditorStateQueryEnvelope.self,
+            from: fullStateEnvelopeJSON(),
+            context: "editor_state_full_state_envelope"
+        )
+    }
+
     public func textForSavingJSON() throws -> String {
         try ffi.takeOwnedCString(editor_core_ffi_editor_state_text_for_saving(handle), context: "editor_state_text_for_saving")
+    }
+
+    public func textForSavingEnvelopeJSON() throws -> String {
+        try ffi.takeOwnedCString(
+            editor_core_ffi_editor_state_text_for_saving_envelope_json(handle),
+            context: "editor_state_text_for_saving_envelope_json"
+        )
+    }
+
+    public func textForSavingEnvelope() throws -> EcfEditorStateQueryEnvelope {
+        try JSON.decode(
+            EcfEditorStateQueryEnvelope.self,
+            from: textForSavingEnvelopeJSON(),
+            context: "editor_state_text_for_saving_envelope"
+        )
     }
 
     public func documentSymbolsJSON() throws -> String {
@@ -61,6 +143,21 @@ public final class EditorState {
 
     public func decorationsJSON() throws -> String {
         try ffi.takeOwnedCString(editor_core_ffi_editor_state_decorations_json(handle), context: "editor_state_decorations_json")
+    }
+
+    public func derivedSnapshotEnvelopeJSON(_ snapshot: String) throws -> String {
+        let ptr: UnsafeMutablePointer<CChar>? = snapshot.withCString { snapshotPtr in
+            editor_core_ffi_editor_state_derived_snapshot_envelope_json(handle, snapshotPtr)
+        }
+        return try ffi.takeOwnedCString(ptr, context: "editor_state_derived_snapshot_envelope_json")
+    }
+
+    public func derivedSnapshotEnvelope(_ snapshot: String) throws -> EcfDerivedSnapshotEnvelope {
+        try JSON.decode(
+            EcfDerivedSnapshotEnvelope.self,
+            from: derivedSnapshotEnvelopeJSON(snapshot),
+            context: "editor_state_derived_snapshot_envelope"
+        )
     }
 
     public func setLineEnding(_ lineEnding: String) throws {
@@ -77,12 +174,44 @@ public final class EditorState {
         try ffi.takeOwnedCString(editor_core_ffi_editor_state_get_line_ending(handle), context: "editor_state_get_line_ending")
     }
 
+    public func lineEndingEnvelopeJSON() throws -> String {
+        try ffi.takeOwnedCString(
+            editor_core_ffi_editor_state_get_line_ending_envelope_json(handle),
+            context: "editor_state_get_line_ending_envelope_json"
+        )
+    }
+
+    public func lineEndingEnvelope() throws -> EcfEditorStateQueryEnvelope {
+        try JSON.decode(
+            EcfEditorStateQueryEnvelope.self,
+            from: lineEndingEnvelopeJSON(),
+            context: "editor_state_get_line_ending_envelope"
+        )
+    }
+
     public func viewportStyledJSON(startVisualRow: UInt, rowCount: UInt) throws -> String {
         let start = try checkedFFIUInt32(startVisualRow, context: "editor_state_viewport_styled_json.start_visual_row")
         let count = try checkedFFIUInt32(rowCount, context: "editor_state_viewport_styled_json.count")
         return try ffi.takeOwnedCString(
             editor_core_ffi_editor_state_viewport_styled_json(handle, start, count),
             context: "editor_state_viewport_styled_json"
+        )
+    }
+
+    public func viewportStyledEnvelopeJSON(startVisualRow: UInt, rowCount: UInt) throws -> String {
+        let start = try checkedFFIUInt32(startVisualRow, context: "editor_state_viewport_styled_envelope_json.start_visual_row")
+        let count = try checkedFFIUInt32(rowCount, context: "editor_state_viewport_styled_envelope_json.count")
+        return try ffi.takeOwnedCString(
+            editor_core_ffi_editor_state_viewport_styled_envelope_json(handle, start, count),
+            context: "editor_state_viewport_styled_envelope_json"
+        )
+    }
+
+    public func viewportStyledEnvelope(startVisualRow: UInt, rowCount: UInt) throws -> EcfRenderingSnapshotEnvelope {
+        try JSON.decode(
+            EcfRenderingSnapshotEnvelope.self,
+            from: viewportStyledEnvelopeJSON(startVisualRow: startVisualRow, rowCount: rowCount),
+            context: "editor_state_viewport_styled_envelope"
         )
     }
 
@@ -95,12 +224,46 @@ public final class EditorState {
         )
     }
 
+    public func minimapEnvelopeJSON(startVisualRow: UInt, rowCount: UInt) throws -> String {
+        let start = try checkedFFIUInt32(startVisualRow, context: "editor_state_minimap_envelope_json.start_visual_row")
+        let count = try checkedFFIUInt32(rowCount, context: "editor_state_minimap_envelope_json.count")
+        return try ffi.takeOwnedCString(
+            editor_core_ffi_editor_state_minimap_envelope_json(handle, start, count),
+            context: "editor_state_minimap_envelope_json"
+        )
+    }
+
+    public func minimapEnvelope(startVisualRow: UInt, rowCount: UInt) throws -> EcfMinimapEnvelope {
+        try JSON.decode(
+            EcfMinimapEnvelope.self,
+            from: minimapEnvelopeJSON(startVisualRow: startVisualRow, rowCount: rowCount),
+            context: "editor_state_minimap_envelope"
+        )
+    }
+
     public func viewportComposedJSON(startVisualRow: UInt, rowCount: UInt) throws -> String {
         let start = try checkedFFIUInt32(startVisualRow, context: "editor_state_viewport_composed_json.start_visual_row")
         let count = try checkedFFIUInt32(rowCount, context: "editor_state_viewport_composed_json.count")
         return try ffi.takeOwnedCString(
             editor_core_ffi_editor_state_viewport_composed_json(handle, start, count),
             context: "editor_state_viewport_composed_json"
+        )
+    }
+
+    public func viewportComposedEnvelopeJSON(startVisualRow: UInt, rowCount: UInt) throws -> String {
+        let start = try checkedFFIUInt32(startVisualRow, context: "editor_state_viewport_composed_envelope_json.start_visual_row")
+        let count = try checkedFFIUInt32(rowCount, context: "editor_state_viewport_composed_envelope_json.count")
+        return try ffi.takeOwnedCString(
+            editor_core_ffi_editor_state_viewport_composed_envelope_json(handle, start, count),
+            context: "editor_state_viewport_composed_envelope_json"
+        )
+    }
+
+    public func viewportComposedEnvelope(startVisualRow: UInt, rowCount: UInt) throws -> EcfRenderingSnapshotEnvelope {
+        try JSON.decode(
+            EcfRenderingSnapshotEnvelope.self,
+            from: viewportComposedEnvelopeJSON(startVisualRow: startVisualRow, rowCount: rowCount),
+            context: "editor_state_viewport_composed_envelope"
         )
     }
 
@@ -111,10 +274,40 @@ public final class EditorState {
         )
     }
 
+    public func takeLastTextDeltaEnvelopeJSON() throws -> String {
+        try ffi.takeOwnedCString(
+            editor_core_ffi_editor_state_take_last_text_delta_envelope_json(handle),
+            context: "editor_state_take_last_text_delta_envelope_json"
+        )
+    }
+
+    public func takeLastTextDeltaEnvelope() throws -> EcfEditorStateQueryEnvelope {
+        try JSON.decode(
+            EcfEditorStateQueryEnvelope.self,
+            from: takeLastTextDeltaEnvelopeJSON(),
+            context: "editor_state_take_last_text_delta_envelope"
+        )
+    }
+
     public func lastTextDeltaJSON() throws -> String {
         try ffi.takeOwnedCString(
             editor_core_ffi_editor_state_last_text_delta_json(handle),
             context: "editor_state_last_text_delta_json"
+        )
+    }
+
+    public func lastTextDeltaEnvelopeJSON() throws -> String {
+        try ffi.takeOwnedCString(
+            editor_core_ffi_editor_state_last_text_delta_envelope_json(handle),
+            context: "editor_state_last_text_delta_envelope_json"
+        )
+    }
+
+    public func lastTextDeltaEnvelope() throws -> EcfEditorStateQueryEnvelope {
+        try JSON.decode(
+            EcfEditorStateQueryEnvelope.self,
+            from: lastTextDeltaEnvelopeJSON(),
+            context: "editor_state_last_text_delta_envelope"
         )
     }
 
@@ -147,6 +340,103 @@ public final class EditorState {
             editor_core_ffi_editor_insert_text_utf8(handle, buf.baseAddress, UInt32(buf.count))
         }
         try ffi.ensureStatus(status, context: "insert_text_utf8")
+    }
+
+    @discardableResult
+    public func typeChar(_ ch: String) throws -> String {
+        try executeEditorCommand(kind: "edit", op: "type_char", fields: ["ch": ch])
+    }
+
+    @discardableResult
+    public func replaceCoalescingUndo(start: UInt32, length: UInt32, text: String) throws -> String {
+        try executeEditorCommand(
+            kind: "edit",
+            op: "replace_coalescing_undo",
+            fields: ["start": Int(start), "length": Int(length), "text": text]
+        )
+    }
+
+    @discardableResult
+    public func replaceCoalescingUndoWithSelection(
+        start: UInt32,
+        length: UInt32,
+        text: String,
+        selectionStart: UInt32,
+        selectionEnd: UInt32
+    ) throws -> String {
+        try executeEditorCommand(
+            kind: "edit",
+            op: "replace_coalescing_undo_with_selection",
+            fields: [
+                "start": Int(start),
+                "length": Int(length),
+                "text": text,
+                "selection_start": Int(selectionStart),
+                "selection_end": Int(selectionEnd),
+            ]
+        )
+    }
+
+    @discardableResult
+    public func applySnippet(
+        start: UInt32,
+        end: UInt32,
+        snippet: String,
+        additionalEdits: [EcfTextEdit] = []
+    ) throws -> String {
+        try executeEditorCommand(
+            kind: "edit",
+            op: "apply_snippet",
+            fields: [
+                "start": Int(start),
+                "end": Int(end),
+                "snippet": snippet,
+                "additional_edits": additionalEdits.map(\.jsonObject),
+            ]
+        )
+    }
+
+    @discardableResult
+    public func snippetNextPlaceholder() throws -> String {
+        try executeEditorCommand(kind: "cursor", op: "snippet_next_placeholder")
+    }
+
+    @discardableResult
+    public func snippetPrevPlaceholder() throws -> String {
+        try executeEditorCommand(kind: "cursor", op: "snippet_prev_placeholder")
+    }
+
+    @discardableResult
+    public func moveToMatchingBracket() throws -> String {
+        try executeEditorCommand(kind: "cursor", op: "move_to_matching_bracket")
+    }
+
+    @discardableResult
+    public func setAutoPairsConfig(_ config: EcfAutoPairsConfig) throws -> String {
+        try executeEditorCommand(
+            kind: "view",
+            op: "set_auto_pairs_config",
+            fields: ["config": config.jsonObject]
+        )
+    }
+
+    @discardableResult
+    public func setAutoPairsEnabled(_ enabled: Bool) throws -> String {
+        try executeEditorCommand(
+            kind: "view",
+            op: "set_auto_pairs_enabled",
+            fields: ["enabled": enabled]
+        )
+    }
+
+    @discardableResult
+    public func updateBracketMatchHighlights() throws -> String {
+        try executeEditorCommand(kind: "style", op: "update_bracket_match_highlights")
+    }
+
+    @discardableResult
+    public func clearBracketMatchHighlights() throws -> String {
+        try executeEditorCommand(kind: "style", op: "clear_bracket_match_highlights")
     }
 
     public func moveTo(line: UInt32, column: UInt32) throws {

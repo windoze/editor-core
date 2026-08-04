@@ -25,6 +25,7 @@ final class AttoOpenedFilesViewController: NSViewController, NSTableViewDataSour
 
     override func loadView() {
         view = NSView(frame: .zero)
+        view.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.openedFiles)
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor(attoHex: 0x252526).cgColor
     }
@@ -34,6 +35,7 @@ final class AttoOpenedFilesViewController: NSViewController, NSTableViewDataSour
 
         headerLabel.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
         headerLabel.textColor = NSColor(attoHex: 0xBBBBBB)
+        headerLabel.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.openedFilesHeader)
         headerLabel.translatesAutoresizingMaskIntoConstraints = false
 
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("name"))
@@ -45,10 +47,12 @@ final class AttoOpenedFilesViewController: NSViewController, NSTableViewDataSour
         tableView.backgroundColor = NSColor(attoHex: 0x252526)
         tableView.selectionHighlightStyle = .regular
         tableView.focusRingType = .none
+        tableView.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.openedFilesTable)
 
         scrollView.documentView = tableView
         scrollView.drawsBackground = false
         scrollView.hasVerticalScroller = true
+        scrollView.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.openedFilesScrollView)
         scrollView.translatesAutoresizingMaskIntoConstraints = false
 
         view.addSubview(headerLabel)
@@ -124,11 +128,12 @@ final class AttoOpenedFilesViewController: NSViewController, NSTableViewDataSour
         guard row >= 0, row < items.count else { return nil }
         let item = items[row]
 
-        let id = NSUserInterfaceItemIdentifier("cell")
+        let id = NSUserInterfaceItemIdentifier(AttoAccessibilityID.openedFilesRow)
         let cell = tableView.makeView(withIdentifier: id, owner: self) as? NSTableCellView ?? NSTableCellView()
         cell.identifier = id
 
         let textField = cell.textField ?? NSTextField(labelWithString: "")
+        textField.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.openedFilesRowTitle)
         textField.font = NSFont.systemFont(ofSize: 12, weight: .regular)
         textField.textColor = NSColor(attoHex: 0xCCCCCC)
         textField.lineBreakMode = .byTruncatingMiddle
@@ -194,4 +199,3 @@ private extension NSColor {
         self.init(red: r, green: g, blue: b, alpha: alpha)
     }
 }
-

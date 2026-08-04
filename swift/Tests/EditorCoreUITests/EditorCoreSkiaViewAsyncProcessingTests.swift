@@ -5,6 +5,30 @@ import XCTest
 
 @MainActor
 final class EditorCoreSkiaViewAsyncProcessingTests: XCTestCase {
+    func testInsertTextReportsCommittedTextAfterMutation() throws {
+        let lib = try EditorCoreUITestSupport.shared.loadLibrary()
+        let view = try EditorCoreSkiaView(
+            library: lib,
+            initialText: "abc",
+            viewportWidthCells: 80
+        )
+
+        var mutationSeen = false
+        var committed: String?
+        view.onDidMutateDocumentText = {
+            mutationSeen = true
+            XCTAssertNil(committed)
+        }
+        view.onDidCommitText = { text in
+            XCTAssertTrue(mutationSeen)
+            committed = text
+        }
+
+        view.insertText("(", replacementRange: NSRange(location: NSNotFound, length: 0))
+
+        XCTAssertEqual(committed, "(")
+    }
+
     func testAsyncProcessingPollTimerAppliesEdits() throws {
         let lib = try EditorCoreUITestSupport.shared.loadLibrary()
         let view = try EditorCoreSkiaView(

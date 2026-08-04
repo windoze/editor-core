@@ -1,4 +1,5 @@
 import AppKit
+import EditorCoreUIFFI
 @testable import AttoEditor
 import XCTest
 
@@ -56,8 +57,114 @@ final class AttoLspDefinitionParserTests: XCTestCase {
         )
     }
 
+    func testTargetsReturnsAllValidLocations() {
+        let json = """
+        [
+          { "not": "a location" },
+          { "uri": "file:///tmp/a.rs", "range": { "start": { "line": 1, "character": 2 }, "end": { "line": 1, "character": 3 } } },
+          { "targetUri": "file:///tmp/b.rs", "targetSelectionRange": { "start": { "line": 4, "character": 5 }, "end": { "line": 4, "character": 6 } } }
+        ]
+        """
+
+        XCTAssertEqual(
+            AttoLspDefinitionParser.targets(fromLocationResultJSON: json),
+            [
+                .init(uri: "file:///tmp/a.rs", line: 1, utf16Character: 2),
+                .init(uri: "file:///tmp/b.rs", line: 4, utf16Character: 5),
+            ]
+        )
+    }
+
+    func testTypedLocationResultParsesTargets() throws {
+        let result = try JSONDecoder().decode(EcuLspLocationResult.self, from: Data("""
+        [
+          {
+            "uri": "file:///tmp/a.rs",
+            "range": {
+              "start": { "line": 1, "character": 2 },
+              "end": { "line": 1, "character": 3 }
+            }
+          },
+          {
+            "targetUri": "file:///tmp/b.rs",
+            "targetRange": {
+              "start": { "line": 8, "character": 0 },
+              "end": { "line": 9, "character": 0 }
+            },
+            "targetSelectionRange": {
+              "start": { "line": 4, "character": 5 },
+              "end": { "line": 4, "character": 6 }
+            }
+          }
+        ]
+        """.utf8))
+
+        XCTAssertEqual(
+            AttoLspDefinitionParser.targets(fromLocationResult: result),
+            [
+                .init(uri: "file:///tmp/a.rs", line: 1, utf16Character: 2),
+                .init(uri: "file:///tmp/b.rs", line: 4, utf16Character: 5),
+            ]
+        )
+        XCTAssertEqual(
+            AttoLspDefinitionParser.firstTarget(fromDefinitionResult: result),
+            .init(uri: "file:///tmp/a.rs", line: 1, utf16Character: 2)
+        )
+    }
+
+    func testLocationItemsSortByWorkspacePathAndPosition() {
+        let root = URL(fileURLWithPath: "/tmp/atto-project", isDirectory: true)
+        let sourceA = root.appendingPathComponent("Sources/A.swift")
+        let sourceZ = root.appendingPathComponent("Sources/Z.swift")
+        let json = """
+        [
+          { "uri": "\(sourceZ.absoluteString)", "range": { "start": { "line": 10, "character": 0 }, "end": { "line": 10, "character": 1 } } },
+          { "uri": "\(sourceA.absoluteString)", "range": { "start": { "line": 5, "character": 0 }, "end": { "line": 5, "character": 1 } } },
+          { "uri": "\(sourceA.absoluteString)", "range": { "start": { "line": 1, "character": 2 }, "end": { "line": 1, "character": 3 } } }
+        ]
+        """
+
+        let items = AttoLspDefinitionParser.locationItems(
+            fromLocationResultJSON: json,
+            workspaceRootURL: root
+        )
+
+        XCTAssertEqual(items.map(\.displayTitle), [
+            "Sources/A.swift:2:3",
+            "Sources/A.swift:6:1",
+            "Sources/Z.swift:11:1",
+        ])
+        XCTAssertEqual(items.map(\.target), [
+            .init(uri: sourceA.absoluteString, line: 1, utf16Character: 2),
+            .init(uri: sourceA.absoluteString, line: 5, utf16Character: 0),
+            .init(uri: sourceZ.absoluteString, line: 10, utf16Character: 0),
+        ])
+    }
+
+    func testLocationItemsFormatExternalFileAndNonFileURI() {
+        let root = URL(fileURLWithPath: "/tmp/atto-project", isDirectory: true)
+        let external = URL(fileURLWithPath: "/tmp/external/Other.swift")
+        let json = """
+        [
+          { "uri": "untitled:buffer-1", "range": { "start": { "line": 3, "character": 4 }, "end": { "line": 3, "character": 5 } } },
+          { "uri": "\(external.absoluteString)", "range": { "start": { "line": 1, "character": 2 }, "end": { "line": 1, "character": 3 } } }
+        ]
+        """
+
+        let items = AttoLspDefinitionParser.locationItems(
+            fromLocationResultJSON: json,
+            workspaceRootURL: root
+        )
+
+        XCTAssertEqual(items.map(\.displayTitle), [
+            "Other.swift:2:3",
+            "untitled:buffer-1:4:5",
+        ])
+    }
+
     func testNullReturnsNil() {
         XCTAssertNil(AttoLspDefinitionParser.firstTarget(fromDefinitionResultJSON: "null"))
+        XCTAssertEqual(AttoLspDefinitionParser.targets(fromLocationResultJSON: "null"), [])
     }
 
     func testCharOffsetConversionHandlesUTF16Emoji() {
@@ -77,4 +184,3 @@ final class AttoLspDefinitionParserTests: XCTestCase {
         )
     }
 }
-

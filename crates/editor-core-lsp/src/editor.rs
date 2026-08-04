@@ -11,8 +11,8 @@
 
 use crate::lsp_client::{DEFAULT_EXIT_TIMEOUT, DEFAULT_SHUTDOWN_TIMEOUT, LspClient, LspInbound};
 use crate::lsp_events::{
-    LspEvent, LspNotification, LspResponse, LspResponseError, LspServerRequest,
-    LspServerRequestPolicy,
+    LspDerivedRequestEvent, LspDerivedRequestPhase, LspDerivedRequestStatus, LspEvent,
+    LspNotification, LspResponse, LspResponseError, LspServerRequest, LspServerRequestPolicy,
 };
 use crate::lsp_sync::{
     DeltaCalculator, LspCoordinateConverter, LspPosition, LspRange, TextChange,
@@ -29,7 +29,7 @@ use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
 use std::io;
 use std::path::Path;
-use std::process::Command as ProcessCommand;
+use std::process::{Command as ProcessCommand, ExitStatus};
 use std::time::{Duration, Instant};
 
 /// Clear LSP-derived state in the editor:
@@ -138,6 +138,30 @@ pub struct LspActivity {
     pub percentage: Option<u32>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// OS process state for the connected LSP server.
+pub enum LspProcessState {
+    /// The child process has not exited as of the latest non-blocking health check.
+    Running,
+    /// The child process has exited and its status was collected.
+    Exited,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// A compact snapshot of the LSP server process health.
+pub struct LspProcessStatus {
+    /// OS process id assigned to the LSP server.
+    pub pid: u32,
+    /// Whether the process is still running or has exited.
+    pub state: LspProcessState,
+    /// Exit code when the process exited normally.
+    pub exit_code: Option<i32>,
+    /// Unix signal when the process was terminated by a signal.
+    pub signal: Option<i32>,
+    /// Bounded stderr tail captured from the LSP server when stderr is piped.
+    pub stderr_tail: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// A compact snapshot of commonly-used server capabilities.
 pub struct LspSessionCapabilities {
@@ -145,6 +169,8 @@ pub struct LspSessionCapabilities {
     pub semantic_tokens: bool,
     /// Server supports semantic tokens delta requests.
     pub semantic_tokens_delta: bool,
+    /// Server advertises `completionProvider.resolveProvider`.
+    pub completion_item_resolve: bool,
     /// Server advertises `foldingRangeProvider`.
     pub folding_ranges: bool,
     /// Server advertises `documentOnTypeFormattingProvider`.
@@ -156,6 +182,10 @@ pub struct LspSessionCapabilities {
 pub struct LspSessionStatus {
     /// Server identity and spawn command.
     pub server: LspServerStatus,
+    /// OS process health for the connected LSP server.
+    pub process: LspProcessStatus,
+    /// Current client-side workspace folders returned to `workspace/workspaceFolders`.
+    pub workspace_folders: Vec<Value>,
     /// High-level work state (ready/indexing/busy).
     pub state: LspWorkState,
     /// Optional active work details derived from `$/progress`.
@@ -214,8 +244,15 @@ pub struct LspSessionStartOptions {
 
 #[derive(Debug, Clone)]
 enum PendingLspRequest {
-    SemanticTokens { uri: String, version: i32 },
-    FoldingRanges { uri: String, version: i32 },
+    SemanticTokens {
+        uri: String,
+        version: i32,
+        method: String,
+    },
+    FoldingRanges {
+        uri: String,
+        version: i32,
+    },
 }
 
 impl PendingLspRequest {
@@ -223,6 +260,20 @@ impl PendingLspRequest {
         match self {
             PendingLspRequest::SemanticTokens { uri, .. }
             | PendingLspRequest::FoldingRanges { uri, .. } => uri,
+        }
+    }
+
+    fn method(&self) -> &str {
+        match self {
+            PendingLspRequest::SemanticTokens { method, .. } => method,
+            PendingLspRequest::FoldingRanges { .. } => "textDocument/foldingRange",
+        }
+    }
+
+    fn version(&self) -> i32 {
+        match self {
+            PendingLspRequest::SemanticTokens { version, .. }
+            | PendingLspRequest::FoldingRanges { version, .. } => *version,
         }
     }
 }
@@ -235,6 +286,68 @@ impl PendingLspRequest {
 struct PendingClientRequest {
     method: String,
     uri: Option<String>,
+}
+
+fn lsp_response_error_from_message(msg: &Value) -> Option<LspResponseError> {
+    msg.get("error").and_then(|e| {
+        Some(LspResponseError {
+            code: e.get("code")?.as_i64()?,
+            message: e
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            data: e.get("data").cloned(),
+        })
+    })
+}
+
+fn lsp_derived_result_status(result: &Value) -> LspDerivedRequestStatus {
+    if result.is_null() {
+        return LspDerivedRequestStatus::Empty;
+    }
+    if result.as_array().is_some_and(Vec::is_empty) {
+        return LspDerivedRequestStatus::Empty;
+    }
+    if result
+        .get("data")
+        .and_then(Value::as_array)
+        .is_some_and(Vec::is_empty)
+    {
+        return LspDerivedRequestStatus::Empty;
+    }
+    LspDerivedRequestStatus::Success
+}
+
+fn lsp_diagnostics_notification_status(
+    params: &crate::lsp_events::LspPublishDiagnosticsParams,
+    version_matches: bool,
+) -> LspDerivedRequestStatus {
+    if !version_matches {
+        return LspDerivedRequestStatus::Stale;
+    }
+    if params.diagnostics.is_empty() {
+        return LspDerivedRequestStatus::Empty;
+    }
+    LspDerivedRequestStatus::Success
+}
+
+fn lsp_process_exit_status(status: ExitStatus) -> LspProcessExitStatus {
+    LspProcessExitStatus {
+        exit_code: status.code(),
+        signal: lsp_process_exit_signal(status),
+    }
+}
+
+#[cfg(unix)]
+fn lsp_process_exit_signal(status: ExitStatus) -> Option<i32> {
+    use std::os::unix::process::ExitStatusExt;
+    status.signal()
+}
+
+#[cfg(not(unix))]
+fn lsp_process_exit_signal(_status: ExitStatus) -> Option<i32> {
+    None
 }
 
 #[derive(Debug, Clone)]
@@ -251,6 +364,12 @@ struct WorkDoneProgressTracker {
     active: HashMap<String, WorkDoneProgressItem>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct LspProcessExitStatus {
+    exit_code: Option<i32>,
+    signal: Option<i32>,
+}
+
 /// A small, runtime-agnostic LSP integration for `editor-core`.
 ///
 /// This is designed to be generic across LSP servers:
@@ -260,6 +379,7 @@ pub struct LspSession {
     client: LspClient,
     document: LspDocument,
     extra_documents: HashMap<String, LspDocument>,
+    extra_document_calculators: HashMap<String, DeltaCalculator>,
 
     /// Mirror of the active document's text, kept in lockstep with what has been sent to the
     /// server via `didChange`. Used to translate a [`TextDelta`] into LSP ranges without the
@@ -270,6 +390,7 @@ pub struct LspSession {
     server_args: Vec<String>,
     server_info: Option<LspServerInfo>,
     server_capabilities: Value,
+    process_exit: Option<LspProcessExitStatus>,
 
     semantic_legend: Option<SemanticTokensLegend>,
     supports_semantic_tokens: bool,
@@ -388,11 +509,13 @@ impl LspSession {
             client,
             document,
             extra_documents: HashMap::new(),
+            extra_document_calculators: HashMap::new(),
             change_calculator,
             server_command,
             server_args,
             server_info,
             server_capabilities,
+            process_exit: None,
             semantic_legend,
             supports_semantic_tokens,
             supports_semantic_tokens_delta,
@@ -413,6 +536,23 @@ impl LspSession {
 
         session.schedule_refresh(Duration::from_millis(0));
         Ok(session)
+    }
+
+    /// Refresh cached process health without blocking.
+    pub fn refresh_process_status(&mut self) -> Result<(), String> {
+        if self.process_exit.is_some() {
+            return Ok(());
+        }
+
+        if let Some(status) = self
+            .client
+            .try_exit_status()
+            .map_err(|err| format!("LSP process health check failed: {err}"))?
+        {
+            self.process_exit = Some(lsp_process_exit_status(status));
+        }
+
+        Ok(())
     }
 
     /// Return a user-facing snapshot of the current LSP session status.
@@ -485,6 +625,23 @@ impl LspSession {
             LspWorkState::Ready
         };
 
+        let process = match self.process_exit {
+            Some(exit) => LspProcessStatus {
+                pid: self.client.process_id(),
+                state: LspProcessState::Exited,
+                exit_code: exit.exit_code,
+                signal: exit.signal,
+                stderr_tail: self.client.stderr_tail(),
+            },
+            None => LspProcessStatus {
+                pid: self.client.process_id(),
+                state: LspProcessState::Running,
+                exit_code: None,
+                signal: None,
+                stderr_tail: self.client.stderr_tail(),
+            },
+        };
+
         LspSessionStatus {
             server: LspServerStatus {
                 name: server_name,
@@ -492,11 +649,16 @@ impl LspSession {
                 command: self.server_command.clone(),
                 args: self.server_args.clone(),
             },
+            process,
+            workspace_folders: self.client.workspace_folders().to_vec(),
             state,
             activity,
             capabilities: LspSessionCapabilities {
                 semantic_tokens: self.supports_semantic_tokens,
                 semantic_tokens_delta: self.supports_semantic_tokens_delta,
+                completion_item_resolve: parse_supports_completion_item_resolve(
+                    &self.server_capabilities,
+                ),
                 folding_ranges: self.supports_folding_range,
                 on_type_formatting: self.supports_on_type_formatting(),
             },
@@ -903,7 +1065,12 @@ impl LspSession {
 
         if document.uri == self.document.uri {
             self.document = document;
+            self.change_calculator = DeltaCalculator::from_text(&initial_text);
         } else {
+            self.extra_document_calculators.insert(
+                document.uri.clone(),
+                DeltaCalculator::from_text(&initial_text),
+            );
             self.extra_documents.insert(document.uri.clone(), document);
         }
 
@@ -922,9 +1089,16 @@ impl LspSession {
         let Some(next) = self.extra_documents.remove(uri) else {
             return Err(format!("LSP document not found for uri={}", uri));
         };
+        let next_calc = self
+            .extra_document_calculators
+            .remove(uri)
+            .unwrap_or_default();
 
         let prev = std::mem::replace(&mut self.document, next);
+        let prev_calc = std::mem::replace(&mut self.change_calculator, next_calc);
+        let prev_uri = prev.uri.clone();
         self.extra_documents.insert(prev.uri.clone(), prev);
+        self.extra_document_calculators.insert(prev_uri, prev_calc);
         self.clear_semantic_tokens_cache();
         self.drop_pending_for_inactive_document();
         self.schedule_refresh(Duration::from_millis(0));
@@ -951,13 +1125,19 @@ impl LspSession {
             if let Some((next_uri, _)) = self.extra_documents.iter().next() {
                 let next_uri = next_uri.clone();
                 let next = self.extra_documents.remove(&next_uri).expect("checked");
+                let next_calc = self
+                    .extra_document_calculators
+                    .remove(&next_uri)
+                    .unwrap_or_default();
                 self.document = next;
+                self.change_calculator = next_calc;
                 self.clear_semantic_tokens_cache();
                 self.drop_pending_for_inactive_document();
                 self.schedule_refresh(Duration::from_millis(0));
             }
         } else {
             self.extra_documents.remove(uri);
+            self.extra_document_calculators.remove(uri);
         }
 
         // Drop any in-flight requests targeting the closed document regardless of which document
@@ -1015,6 +1195,62 @@ impl LspSession {
                 "contentChanges": content_changes,
             }),
         )?;
+
+        Ok(())
+    }
+
+    /// Send `textDocument/didChange` for a specific document URI as a full-document replacement.
+    ///
+    /// This keeps the per-document text mirror in sync for documents opened through
+    /// [`open_document`](Self::open_document), so hosts that only have the latest full text can
+    /// still notify a shared multi-document LSP session without computing UTF-16 ranges outside
+    /// Rust.
+    pub fn did_change_full_text_for_uri(&mut self, uri: &str, text: String) -> Result<(), String> {
+        if self.document.uri == uri {
+            let change = full_document_change_for_calculator(&self.change_calculator, &text);
+            self.send_active_did_change(std::slice::from_ref(&change))?;
+            self.change_calculator.apply_change(&TextChange {
+                range: change.range,
+                text: change.text,
+            });
+            return Ok(());
+        }
+
+        let (doc_uri, next_version, change) = {
+            let Some(doc) = self.extra_documents.get(uri) else {
+                return Err(format!("LSP document not found for uri={}", uri));
+            };
+            let calc = self
+                .extra_document_calculators
+                .get(uri)
+                .ok_or_else(|| format!("LSP document mirror not found for uri={}", uri))?;
+            (
+                doc.uri.clone(),
+                doc.version.saturating_add(1),
+                full_document_change_for_calculator(calc, &text),
+            )
+        };
+
+        self.notify(
+            "textDocument/didChange",
+            json!({
+                "textDocument": { "uri": doc_uri.as_str(), "version": next_version },
+                "contentChanges": [{
+                    "range": lsp_range_to_json(&change.range),
+                    "text": change.text.as_str(),
+                }],
+            }),
+        )?;
+
+        if let Some(doc) = self.extra_documents.get_mut(uri) {
+            doc.version = next_version;
+        }
+        if let Some(calc) = self.extra_document_calculators.get_mut(uri) {
+            calc.apply_change(&TextChange {
+                range: change.range,
+                text: change.text,
+            });
+        }
 
         Ok(())
     }
@@ -1110,12 +1346,21 @@ impl LspSession {
         added: Vec<Value>,
         removed: Vec<Value>,
     ) -> Result<(), String> {
+        let (added, removed) = self
+            .client
+            .effective_workspace_folder_change(&added, &removed);
+        if added.is_empty() && removed.is_empty() {
+            return Ok(());
+        }
+
         self.notify(
             "workspace/didChangeWorkspaceFolders",
             json!({
-                "event": { "added": added, "removed": removed }
+                "event": { "added": added.clone(), "removed": removed.clone() }
             }),
-        )
+        )?;
+        self.client.apply_workspace_folder_change(&added, &removed);
+        Ok(())
     }
 
     /// Notify `workspace/didChangeConfiguration`.
@@ -2211,17 +2456,7 @@ impl LspSession {
                             self.pending_client_requests.remove(&id)
                         {
                             let result = msg.get("result").cloned();
-                            let error = msg.get("error").and_then(|e| {
-                                Some(LspResponseError {
-                                    code: e.get("code")?.as_i64()?,
-                                    message: e
-                                        .get("message")
-                                        .and_then(Value::as_str)
-                                        .unwrap_or("")
-                                        .to_string(),
-                                    data: e.get("data").cloned(),
-                                })
-                            });
+                            let error = lsp_response_error_from_message(&msg);
 
                             self.push_event(LspEvent::Response(LspResponse {
                                 id,
@@ -2243,12 +2478,27 @@ impl LspSession {
                             self.observe_notification(&notification);
                             on_notification(&notification);
 
-                            if let LspNotification::PublishDiagnostics(diags) = &notification
-                                && diags.uri == self.document.uri
-                                && self.diagnostics_version_matches(diags)
-                            {
-                                edits
-                                    .extend(lsp_diagnostics_to_processing_edits(line_index, diags));
+                            if let LspNotification::PublishDiagnostics(diags) = &notification {
+                                let status = lsp_diagnostics_notification_status(
+                                    diags,
+                                    self.diagnostics_version_matches(diags),
+                                );
+                                self.push_derived_request_event(
+                                    0,
+                                    "textDocument/publishDiagnostics",
+                                    diags.uri.clone(),
+                                    LspDerivedRequestPhase::Completed,
+                                    status,
+                                    None,
+                                );
+
+                                if diags.uri == self.document.uri
+                                    && status != LspDerivedRequestStatus::Stale
+                                {
+                                    edits.extend(lsp_diagnostics_to_processing_edits(
+                                        line_index, diags,
+                                    ));
+                                }
                             }
                             self.push_event(LspEvent::Notification(notification));
                         }
@@ -2370,6 +2620,25 @@ impl LspSession {
         self.events.push_back(event);
     }
 
+    fn push_derived_request_event(
+        &mut self,
+        id: u64,
+        method: impl Into<String>,
+        uri: impl Into<String>,
+        phase: LspDerivedRequestPhase,
+        status: LspDerivedRequestStatus,
+        error: Option<LspResponseError>,
+    ) {
+        self.push_event(LspEvent::DerivedRequest(LspDerivedRequestEvent {
+            id,
+            method: method.into(),
+            uri: uri.into(),
+            phase,
+            status,
+            error,
+        }));
+    }
+
     fn clear_semantic_tokens_cache(&mut self) {
         self.semantic_tokens_result_id = None;
         self.semantic_tokens_data.clear();
@@ -2411,30 +2680,52 @@ impl LspSession {
         msg: &Value,
         edits: &mut Vec<ProcessingEdit>,
     ) -> Result<(), String> {
-        match pending {
-            PendingLspRequest::SemanticTokens { uri, version } => {
-                // Reject responses for a different document (versions are per-document and can
-                // collide across documents) or a stale version of the active document.
-                if uri != self.document.uri || version != self.document.version {
-                    return Ok(());
-                }
+        let method = pending.method().to_string();
+        let uri = pending.uri().to_string();
+        if uri != self.document.uri || pending.version() != self.document.version {
+            self.push_derived_request_event(
+                msg.get("id").and_then(Value::as_u64).unwrap_or_default(),
+                method,
+                uri,
+                LspDerivedRequestPhase::Completed,
+                LspDerivedRequestStatus::Stale,
+                None,
+            );
+            return Ok(());
+        }
 
-                let result = msg.get("result").cloned().unwrap_or(Value::Null);
+        let id = msg.get("id").and_then(Value::as_u64).unwrap_or_default();
+        if let Some(error) = lsp_response_error_from_message(msg) {
+            self.push_derived_request_event(
+                id,
+                method,
+                uri,
+                LspDerivedRequestPhase::Completed,
+                LspDerivedRequestStatus::Error,
+                Some(error),
+            );
+            return Ok(());
+        }
+
+        let result = msg.get("result").cloned().unwrap_or(Value::Null);
+        let status = lsp_derived_result_status(&result);
+        match pending {
+            PendingLspRequest::SemanticTokens { .. } => {
                 self.handle_semantic_tokens_result(&result, line_index, edits);
             }
-            PendingLspRequest::FoldingRanges { uri, version } => {
-                // Folding regions are line-indexed, so stale/cross-document responses must not
-                // enter core state.
-                if uri != self.document.uri || version != self.document.version {
-                    return Ok(());
-                }
-
-                edits.push(folding_ranges_result_to_processing_edit(
-                    msg.get("result").unwrap_or(&Value::Null),
-                ));
+            PendingLspRequest::FoldingRanges { .. } => {
+                edits.push(folding_ranges_result_to_processing_edit(&result));
             }
         }
 
+        self.push_derived_request_event(
+            id,
+            method,
+            uri,
+            LspDerivedRequestPhase::Completed,
+            status,
+            None,
+        );
         Ok(())
     }
 
@@ -2454,7 +2745,7 @@ impl LspSession {
             let has_pending_tokens = self.pending.values().any(|p| {
                     matches!(
                         p,
-                    PendingLspRequest::SemanticTokens { uri, version } if *uri == doc_uri && *version == self.document.version
+                    PendingLspRequest::SemanticTokens { uri, version, .. } if *uri == doc_uri && *version == self.document.version
                     )
                 });
             if self.supports_semantic_tokens && !has_pending_tokens {
@@ -2482,7 +2773,16 @@ impl LspSession {
                             PendingLspRequest::SemanticTokens {
                                 uri: doc_uri.clone(),
                                 version: self.document.version,
+                                method: method.to_string(),
                             },
+                        );
+                        self.push_derived_request_event(
+                            id,
+                            method,
+                            doc_uri.clone(),
+                            LspDerivedRequestPhase::Started,
+                            LspDerivedRequestStatus::Pending,
+                            None,
                         );
                     }
                     Err(err) => return Err(format!("LSP semanticTokens 请求失败: {}", err)),
@@ -2509,6 +2809,14 @@ impl LspSession {
                                 uri: doc_uri.clone(),
                                 version: self.document.version,
                             },
+                        );
+                        self.push_derived_request_event(
+                            id,
+                            "textDocument/foldingRange",
+                            doc_uri.clone(),
+                            LspDerivedRequestPhase::Started,
+                            LspDerivedRequestStatus::Pending,
+                            None,
                         );
                     }
                     Err(err) => return Err(format!("LSP foldingRange 请求失败: {}", err)),
@@ -2614,10 +2922,31 @@ fn parse_supports_folding_range(capabilities: &Value) -> bool {
     }
 }
 
+fn parse_supports_completion_item_resolve(capabilities: &Value) -> bool {
+    capabilities
+        .get("completionProvider")
+        .and_then(|provider| provider.get("resolveProvider"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
 fn lsp_position_for_offset(line_index: &LineIndex, offset: usize) -> LspPosition {
     let (line, col) = line_index.char_offset_to_position(offset);
     let line_text = line_index.get_line_text(line).unwrap_or_default();
     LspCoordinateConverter::position_to_lsp(&line_text, line, col)
+}
+
+fn full_document_change_for_calculator(calc: &DeltaCalculator, text: &str) -> LspContentChange {
+    let end_line = calc.line_count().saturating_sub(1);
+    let end_char = calc
+        .get_line(end_line)
+        .map(|line| line.chars().count())
+        .unwrap_or(0);
+    let change = calc.calculate_replace_change(0, 0, end_line, end_char, text);
+    LspContentChange {
+        range: change.range,
+        text: change.text,
+    }
 }
 
 fn lsp_range_to_json(range: &LspRange) -> Value {
@@ -2976,6 +3305,7 @@ mod pending_request_tests {
             PendingLspRequest::SemanticTokens {
                 uri: URI_A.to_string(),
                 version: 1,
+                method: "textDocument/semanticTokens/full".to_string(),
             },
         );
 

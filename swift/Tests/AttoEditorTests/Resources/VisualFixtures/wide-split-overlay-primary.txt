@@ -1,0 +1,7 @@
+Primary split fixture
+
+This pane keeps short lines so the neighboring split pane can exercise long-line minimap density.
+Markers in the paired pane should not disturb tab bar height, gutter width, or status bar layout.
+
+alpha beta gamma
+delta epsilon zeta

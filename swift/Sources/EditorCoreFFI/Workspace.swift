@@ -38,6 +38,27 @@ public final class Workspace {
         return OpenBufferResult(bufferId: raw.buffer_id, viewId: raw.view_id)
     }
 
+    public func openBufferEnvelopeJSON(uri: String?, text: String, viewportWidth: UInt) throws -> String {
+        let width = try checkedFFIUInt32(max(1, viewportWidth), context: "workspace_open_buffer_envelope_json.viewport_width")
+        let ptr: UnsafeMutablePointer<CChar>? = text.withCString { textPtr in
+            if let uri {
+                return uri.withCString { uriPtr in
+                    editor_core_ffi_workspace_open_buffer_envelope_json(handle, uriPtr, textPtr, width)
+                }
+            }
+            return editor_core_ffi_workspace_open_buffer_envelope_json(handle, nil, textPtr, width)
+        }
+        return try ffi.takeOwnedCString(ptr, context: "workspace_open_buffer_envelope_json")
+    }
+
+    public func openBufferEnvelope(uri: String?, text: String, viewportWidth: UInt) throws -> EcfWorkspaceResultEnvelope {
+        try JSON.decode(
+            EcfWorkspaceResultEnvelope.self,
+            from: openBufferEnvelopeJSON(uri: uri, text: text, viewportWidth: viewportWidth),
+            context: "workspace_open_buffer_envelope"
+        )
+    }
+
     public func createView(bufferId: UInt64, viewportWidth: UInt) throws -> UInt64 {
         var raw = EcfCreateViewResult()
         let width = try checkedFFIUInt32(max(1, viewportWidth), context: "workspace_create_view_typed.viewport_width")
@@ -46,11 +67,69 @@ public final class Workspace {
         return raw.view_id
     }
 
+    public func createViewEnvelopeJSON(bufferId: UInt64, viewportWidth: UInt) throws -> String {
+        let width = try checkedFFIUInt32(max(1, viewportWidth), context: "workspace_create_view_envelope_json.viewport_width")
+        return try ffi.takeOwnedCString(
+            editor_core_ffi_workspace_create_view_envelope_json(handle, bufferId, width),
+            context: "workspace_create_view_envelope_json"
+        )
+    }
+
+    public func createViewEnvelope(bufferId: UInt64, viewportWidth: UInt) throws -> EcfWorkspaceResultEnvelope {
+        try JSON.decode(
+            EcfWorkspaceResultEnvelope.self,
+            from: createViewEnvelopeJSON(bufferId: bufferId, viewportWidth: viewportWidth),
+            context: "workspace_create_view_envelope"
+        )
+    }
+
     public func executeJSON(viewId: UInt64, commandJSON: String) throws -> String {
         let ptr: UnsafeMutablePointer<CChar>? = commandJSON.withCString { jsonPtr in
             editor_core_ffi_workspace_execute_json(handle, viewId, jsonPtr)
         }
         return try ffi.takeOwnedCString(ptr, context: "workspace_execute_json")
+    }
+
+    public func executeEnvelopeJSON(viewId: UInt64, commandJSON: String) throws -> String {
+        let ptr: UnsafeMutablePointer<CChar>? = commandJSON.withCString { jsonPtr in
+            editor_core_ffi_workspace_execute_envelope_json(handle, viewId, jsonPtr)
+        }
+        return try ffi.takeOwnedCString(ptr, context: "workspace_execute_envelope_json")
+    }
+
+    public func executeEnvelope(viewId: UInt64, commandJSON: String) throws -> EcfJSONCommandEnvelope {
+        try JSON.decode(
+            EcfJSONCommandEnvelope.self,
+            from: executeEnvelopeJSON(viewId: viewId, commandJSON: commandJSON),
+            context: "workspace_execute_envelope"
+        )
+    }
+
+    @discardableResult
+    private func executeCommandObject(viewId: UInt64, _ object: [String: Any]) throws -> String {
+        let data = try JSONSerialization.data(withJSONObject: object, options: [])
+        guard let json = String(data: data, encoding: .utf8) else {
+            throw EditorCoreFFIError.ffiStatus(
+                code: .invalidArgument,
+                context: "workspace_encode_command_json",
+                message: "failed to encode command JSON as UTF-8"
+            )
+        }
+        return try executeJSON(viewId: viewId, commandJSON: json)
+    }
+
+    @discardableResult
+    private func executeEditorCommand(
+        viewId: UInt64,
+        kind: String,
+        op: String,
+        fields: [String: Any] = [:]
+    ) throws -> String {
+        var object: [String: Any] = ["kind": kind, "op": op]
+        for (key, value) in fields {
+            object[key] = value
+        }
+        return try executeCommandObject(viewId: viewId, object)
     }
 
     public func closeBuffer(bufferId: UInt64) -> Bool {
@@ -76,6 +155,21 @@ public final class Workspace {
         try ffi.takeOwnedCString(editor_core_ffi_workspace_info_json(handle), context: "workspace_info_json")
     }
 
+    public func infoEnvelopeJSON() throws -> String {
+        try ffi.takeOwnedCString(
+            editor_core_ffi_workspace_info_envelope_json(handle),
+            context: "workspace_info_envelope_json"
+        )
+    }
+
+    public func infoEnvelope() throws -> EcfWorkspaceResultEnvelope {
+        try JSON.decode(
+            EcfWorkspaceResultEnvelope.self,
+            from: infoEnvelopeJSON(),
+            context: "workspace_info_envelope"
+        )
+    }
+
     public func applyProcessingEditsJSON(bufferId: UInt64, editsJSON: String) throws {
         let ok = editsJSON.withCString { editsPtr in
             editor_core_ffi_workspace_apply_processing_edits_json(handle, bufferId, editsPtr)
@@ -90,8 +184,38 @@ public final class Workspace {
         try ffi.takeOwnedCString(editor_core_ffi_workspace_buffer_text_json(handle, bufferId), context: "workspace_buffer_text_json")
     }
 
+    public func bufferTextEnvelopeJSON(bufferId: UInt64) throws -> String {
+        try ffi.takeOwnedCString(
+            editor_core_ffi_workspace_buffer_text_envelope_json(handle, bufferId),
+            context: "workspace_buffer_text_envelope_json"
+        )
+    }
+
+    public func bufferTextEnvelope(bufferId: UInt64) throws -> EcfWorkspaceResultEnvelope {
+        try JSON.decode(
+            EcfWorkspaceResultEnvelope.self,
+            from: bufferTextEnvelopeJSON(bufferId: bufferId),
+            context: "workspace_buffer_text_envelope"
+        )
+    }
+
     public func viewportStateJSON(viewId: UInt64) throws -> String {
         try ffi.takeOwnedCString(editor_core_ffi_workspace_viewport_state_json(handle, viewId), context: "workspace_viewport_state_json")
+    }
+
+    public func viewportStateEnvelopeJSON(viewId: UInt64) throws -> String {
+        try ffi.takeOwnedCString(
+            editor_core_ffi_workspace_viewport_state_envelope_json(handle, viewId),
+            context: "workspace_viewport_state_envelope_json"
+        )
+    }
+
+    public func viewportStateEnvelope(viewId: UInt64) throws -> EcfWorkspaceResultEnvelope {
+        try JSON.decode(
+            EcfWorkspaceResultEnvelope.self,
+            from: viewportStateEnvelopeJSON(viewId: viewId),
+            context: "workspace_viewport_state_envelope"
+        )
     }
 
     public func viewportState(viewId: UInt64) throws -> WorkspaceViewportState {
@@ -134,6 +258,23 @@ public final class Workspace {
         )
     }
 
+    public func viewportStyledEnvelopeJSON(viewId: UInt64, startVisualRow: UInt, rowCount: UInt) throws -> String {
+        let start = try checkedFFIUInt32(startVisualRow, context: "workspace_viewport_styled_envelope_json.start_visual_row")
+        let count = try checkedFFIUInt32(rowCount, context: "workspace_viewport_styled_envelope_json.count")
+        return try ffi.takeOwnedCString(
+            editor_core_ffi_workspace_viewport_styled_envelope_json(handle, viewId, start, count),
+            context: "workspace_viewport_styled_envelope_json"
+        )
+    }
+
+    public func viewportStyledEnvelope(viewId: UInt64, startVisualRow: UInt, rowCount: UInt) throws -> EcfRenderingSnapshotEnvelope {
+        try JSON.decode(
+            EcfRenderingSnapshotEnvelope.self,
+            from: viewportStyledEnvelopeJSON(viewId: viewId, startVisualRow: startVisualRow, rowCount: rowCount),
+            context: "workspace_viewport_styled_envelope"
+        )
+    }
+
     public func minimapJSON(viewId: UInt64, startVisualRow: UInt, rowCount: UInt) throws -> String {
         let start = try checkedFFIUInt32(startVisualRow, context: "workspace_minimap_json.start_visual_row")
         let count = try checkedFFIUInt32(rowCount, context: "workspace_minimap_json.count")
@@ -143,12 +284,46 @@ public final class Workspace {
         )
     }
 
+    public func minimapEnvelopeJSON(viewId: UInt64, startVisualRow: UInt, rowCount: UInt) throws -> String {
+        let start = try checkedFFIUInt32(startVisualRow, context: "workspace_minimap_envelope_json.start_visual_row")
+        let count = try checkedFFIUInt32(rowCount, context: "workspace_minimap_envelope_json.count")
+        return try ffi.takeOwnedCString(
+            editor_core_ffi_workspace_minimap_envelope_json(handle, viewId, start, count),
+            context: "workspace_minimap_envelope_json"
+        )
+    }
+
+    public func minimapEnvelope(viewId: UInt64, startVisualRow: UInt, rowCount: UInt) throws -> EcfMinimapEnvelope {
+        try JSON.decode(
+            EcfMinimapEnvelope.self,
+            from: minimapEnvelopeJSON(viewId: viewId, startVisualRow: startVisualRow, rowCount: rowCount),
+            context: "workspace_minimap_envelope"
+        )
+    }
+
     public func viewportComposedJSON(viewId: UInt64, startVisualRow: UInt, rowCount: UInt) throws -> String {
         let start = try checkedFFIUInt32(startVisualRow, context: "workspace_viewport_composed_json.start_visual_row")
         let count = try checkedFFIUInt32(rowCount, context: "workspace_viewport_composed_json.count")
         return try ffi.takeOwnedCString(
             editor_core_ffi_workspace_viewport_composed_json(handle, viewId, start, count),
             context: "workspace_viewport_composed_json"
+        )
+    }
+
+    public func viewportComposedEnvelopeJSON(viewId: UInt64, startVisualRow: UInt, rowCount: UInt) throws -> String {
+        let start = try checkedFFIUInt32(startVisualRow, context: "workspace_viewport_composed_envelope_json.start_visual_row")
+        let count = try checkedFFIUInt32(rowCount, context: "workspace_viewport_composed_envelope_json.count")
+        return try ffi.takeOwnedCString(
+            editor_core_ffi_workspace_viewport_composed_envelope_json(handle, viewId, start, count),
+            context: "workspace_viewport_composed_envelope_json"
+        )
+    }
+
+    public func viewportComposedEnvelope(viewId: UInt64, startVisualRow: UInt, rowCount: UInt) throws -> EcfRenderingSnapshotEnvelope {
+        try JSON.decode(
+            EcfRenderingSnapshotEnvelope.self,
+            from: viewportComposedEnvelopeJSON(viewId: viewId, startVisualRow: startVisualRow, rowCount: rowCount),
+            context: "workspace_viewport_composed_envelope"
         )
     }
 
@@ -164,11 +339,46 @@ public final class Workspace {
         return try ffi.takeOwnedCString(ptr, context: "workspace_search_all_open_buffers_json")
     }
 
+    public func searchAllOpenBuffersEnvelopeJSON(query: String, optionsJSON: String? = nil) throws -> String {
+        let ptr: UnsafeMutablePointer<CChar>? = query.withCString { queryPtr in
+            if let optionsJSON {
+                return optionsJSON.withCString { optionsPtr in
+                    editor_core_ffi_workspace_search_all_open_buffers_envelope_json(handle, queryPtr, optionsPtr)
+                }
+            }
+            return editor_core_ffi_workspace_search_all_open_buffers_envelope_json(handle, queryPtr, nil)
+        }
+        return try ffi.takeOwnedCString(ptr, context: "workspace_search_all_open_buffers_envelope_json")
+    }
+
+    public func searchAllOpenBuffersEnvelope(query: String, optionsJSON: String? = nil) throws -> EcfWorkspaceResultEnvelope {
+        try JSON.decode(
+            EcfWorkspaceResultEnvelope.self,
+            from: searchAllOpenBuffersEnvelopeJSON(query: query, optionsJSON: optionsJSON),
+            context: "workspace_search_all_open_buffers_envelope"
+        )
+    }
+
     public func applyTextEditsJSON(_ editsJSON: String) throws -> String {
         let ptr: UnsafeMutablePointer<CChar>? = editsJSON.withCString { editsPtr in
             editor_core_ffi_workspace_apply_text_edits_json(handle, editsPtr)
         }
         return try ffi.takeOwnedCString(ptr, context: "workspace_apply_text_edits_json")
+    }
+
+    public func applyTextEditsEnvelopeJSON(_ editsJSON: String) throws -> String {
+        let ptr: UnsafeMutablePointer<CChar>? = editsJSON.withCString { editsPtr in
+            editor_core_ffi_workspace_apply_text_edits_envelope_json(handle, editsPtr)
+        }
+        return try ffi.takeOwnedCString(ptr, context: "workspace_apply_text_edits_envelope_json")
+    }
+
+    public func applyTextEditsEnvelope(_ editsJSON: String) throws -> EcfWorkspaceResultEnvelope {
+        try JSON.decode(
+            EcfWorkspaceResultEnvelope.self,
+            from: applyTextEditsEnvelopeJSON(editsJSON),
+            context: "workspace_apply_text_edits_envelope"
+        )
     }
 
     public func insertText(viewId: UInt64, _ text: String) throws {
@@ -183,6 +393,115 @@ public final class Workspace {
             editor_core_ffi_workspace_insert_text_utf8(handle, viewId, buf.baseAddress, UInt32(buf.count))
         }
         try ffi.ensureStatus(status, context: "workspace_insert_text_utf8")
+    }
+
+    @discardableResult
+    public func typeChar(viewId: UInt64, _ ch: String) throws -> String {
+        try executeEditorCommand(viewId: viewId, kind: "edit", op: "type_char", fields: ["ch": ch])
+    }
+
+    @discardableResult
+    public func replaceCoalescingUndo(
+        viewId: UInt64,
+        start: UInt32,
+        length: UInt32,
+        text: String
+    ) throws -> String {
+        try executeEditorCommand(
+            viewId: viewId,
+            kind: "edit",
+            op: "replace_coalescing_undo",
+            fields: ["start": Int(start), "length": Int(length), "text": text]
+        )
+    }
+
+    @discardableResult
+    public func replaceCoalescingUndoWithSelection(
+        viewId: UInt64,
+        start: UInt32,
+        length: UInt32,
+        text: String,
+        selectionStart: UInt32,
+        selectionEnd: UInt32
+    ) throws -> String {
+        try executeEditorCommand(
+            viewId: viewId,
+            kind: "edit",
+            op: "replace_coalescing_undo_with_selection",
+            fields: [
+                "start": Int(start),
+                "length": Int(length),
+                "text": text,
+                "selection_start": Int(selectionStart),
+                "selection_end": Int(selectionEnd),
+            ]
+        )
+    }
+
+    @discardableResult
+    public func applySnippet(
+        viewId: UInt64,
+        start: UInt32,
+        end: UInt32,
+        snippet: String,
+        additionalEdits: [EcfTextEdit] = []
+    ) throws -> String {
+        try executeEditorCommand(
+            viewId: viewId,
+            kind: "edit",
+            op: "apply_snippet",
+            fields: [
+                "start": Int(start),
+                "end": Int(end),
+                "snippet": snippet,
+                "additional_edits": additionalEdits.map(\.jsonObject),
+            ]
+        )
+    }
+
+    @discardableResult
+    public func snippetNextPlaceholder(viewId: UInt64) throws -> String {
+        try executeEditorCommand(viewId: viewId, kind: "cursor", op: "snippet_next_placeholder")
+    }
+
+    @discardableResult
+    public func snippetPrevPlaceholder(viewId: UInt64) throws -> String {
+        try executeEditorCommand(viewId: viewId, kind: "cursor", op: "snippet_prev_placeholder")
+    }
+
+    @discardableResult
+    public func moveToMatchingBracket(viewId: UInt64) throws -> String {
+        try executeEditorCommand(viewId: viewId, kind: "cursor", op: "move_to_matching_bracket")
+    }
+
+    @discardableResult
+    public func setAutoPairsConfig(viewId: UInt64, _ config: EcfAutoPairsConfig) throws -> String {
+        try executeEditorCommand(
+            viewId: viewId,
+            kind: "view",
+            op: "set_auto_pairs_config",
+            fields: ["config": config.jsonObject]
+        )
+    }
+
+    @discardableResult
+    public func setAutoPairsEnabled(viewId: UInt64, _ enabled: Bool) throws -> String {
+        try executeEditorCommand(
+            viewId: viewId,
+            kind: "view",
+            op: "set_auto_pairs_enabled",
+            fields: ["enabled": enabled]
+        )
+    }
+
+    @discardableResult
+    public func updateBracketMatchHighlights(viewId: UInt64) throws -> String {
+        try executeEditorCommand(viewId: viewId, kind: "style", op: "update_bracket_match_highlights")
+    }
+
+    @discardableResult
+    public func clearBracketMatchHighlights(viewId: UInt64) throws -> String {
+        try executeEditorCommand(viewId: viewId, kind: "style", op: "clear_bracket_match_highlights")
     }
 
     public func moveTo(viewId: UInt64, line: UInt32, column: UInt32) throws {

@@ -1,7 +1,8 @@
 use editor_core::processing::ProcessingEdit;
 use editor_core::{DiagnosticSeverity, LineIndex, StyleLayerId};
 use editor_core_lsp::{
-    LspDiagnostic, LspDiagnosticSeverity, LspDocument, LspEvent, LspNotification, LspPosition,
+    LspDerivedRequestEvent, LspDerivedRequestPhase, LspDerivedRequestStatus, LspDiagnostic,
+    LspDiagnosticSeverity, LspDocument, LspEvent, LspNotification, LspPosition,
     LspPublishDiagnosticsParams, LspRange, LspSession, LspSessionStartOptions,
     lsp_diagnostics_to_processing_edits,
 };
@@ -50,6 +51,23 @@ fn diagnostic_notification(version: Option<i32>) -> String {
     message.to_string()
 }
 
+fn empty_diagnostic_notification(version: Option<i32>) -> String {
+    let mut message = json!({
+        "jsonrpc": "2.0",
+        "method": "textDocument/publishDiagnostics",
+        "params": {
+            "uri": TEST_URI,
+            "diagnostics": []
+        }
+    });
+
+    if let Some(version) = version {
+        message["params"]["version"] = json!(version);
+    }
+
+    message.to_string()
+}
+
 fn start_diagnostics_session(notification: String, document_version: i32) -> LspSession {
     let initialize =
         framed_message_script(r#"{"jsonrpc":"2.0","id":1,"result":{"capabilities":{}}}"#);
@@ -74,8 +92,13 @@ fn start_diagnostics_session(notification: String, document_version: i32) -> Lsp
 fn poll_until_diagnostics_event(
     session: &mut LspSession,
     line_index: &LineIndex,
-) -> (Vec<ProcessingEdit>, LspPublishDiagnosticsParams) {
+) -> (
+    Vec<ProcessingEdit>,
+    LspPublishDiagnosticsParams,
+    LspDerivedRequestEvent,
+) {
     let mut all_edits = Vec::new();
+    let mut derived_event = None;
 
     for _ in 0..50 {
         let edits = session
@@ -84,9 +107,20 @@ fn poll_until_diagnostics_event(
         all_edits.extend(edits);
 
         for event in session.drain_events() {
-            if let LspEvent::Notification(LspNotification::PublishDiagnostics(diagnostics)) = event
-            {
-                return (all_edits, diagnostics);
+            match event {
+                LspEvent::DerivedRequest(event)
+                    if event.method == "textDocument/publishDiagnostics" =>
+                {
+                    derived_event = Some(event);
+                }
+                LspEvent::Notification(LspNotification::PublishDiagnostics(diagnostics)) => {
+                    return (
+                        all_edits,
+                        diagnostics,
+                        derived_event.expect("publishDiagnostics lifecycle event"),
+                    );
+                }
+                _ => {}
             }
         }
 
@@ -197,9 +231,14 @@ fn stale_version_diagnostics_are_observable_but_do_not_apply() {
     let line_index = LineIndex::from_text("abc\n");
     let mut session = start_diagnostics_session(diagnostic_notification(Some(1)), 2);
 
-    let (edits, diagnostics) = poll_until_diagnostics_event(&mut session, &line_index);
+    let (edits, diagnostics, event) = poll_until_diagnostics_event(&mut session, &line_index);
 
     assert_eq!(diagnostics.version, Some(1));
+    assert_eq!(event.id, 0);
+    assert_eq!(event.method, "textDocument/publishDiagnostics");
+    assert_eq!(event.uri, TEST_URI);
+    assert_eq!(event.phase, LspDerivedRequestPhase::Completed);
+    assert_eq!(event.status, LspDerivedRequestStatus::Stale);
     assert!(!has_diagnostics_style_layer(&edits));
     assert!(!has_replace_diagnostics(&edits));
 }
@@ -209,9 +248,28 @@ fn current_version_diagnostics_produce_processing_edits() {
     let line_index = LineIndex::from_text("abc\n");
     let mut session = start_diagnostics_session(diagnostic_notification(Some(2)), 2);
 
-    let (edits, diagnostics) = poll_until_diagnostics_event(&mut session, &line_index);
+    let (edits, diagnostics, event) = poll_until_diagnostics_event(&mut session, &line_index);
 
     assert_eq!(diagnostics.version, Some(2));
+    assert_eq!(event.id, 0);
+    assert_eq!(event.phase, LspDerivedRequestPhase::Completed);
+    assert_eq!(event.status, LspDerivedRequestStatus::Success);
+    assert!(has_diagnostics_style_layer(&edits));
+    assert!(has_replace_diagnostics(&edits));
+}
+
+#[test]
+fn empty_current_version_diagnostics_emit_empty_lifecycle() {
+    let line_index = LineIndex::from_text("abc\n");
+    let mut session = start_diagnostics_session(empty_diagnostic_notification(Some(2)), 2);
+
+    let (edits, diagnostics, event) = poll_until_diagnostics_event(&mut session, &line_index);
+
+    assert_eq!(diagnostics.version, Some(2));
+    assert!(diagnostics.diagnostics.is_empty());
+    assert_eq!(event.id, 0);
+    assert_eq!(event.phase, LspDerivedRequestPhase::Completed);
+    assert_eq!(event.status, LspDerivedRequestStatus::Empty);
     assert!(has_diagnostics_style_layer(&edits));
     assert!(has_replace_diagnostics(&edits));
 }
@@ -221,9 +279,12 @@ fn unversioned_diagnostics_still_apply_for_legacy_servers() {
     let line_index = LineIndex::from_text("abc\n");
     let mut session = start_diagnostics_session(diagnostic_notification(None), 2);
 
-    let (edits, diagnostics) = poll_until_diagnostics_event(&mut session, &line_index);
+    let (edits, diagnostics, event) = poll_until_diagnostics_event(&mut session, &line_index);
 
     assert_eq!(diagnostics.version, None);
+    assert_eq!(event.id, 0);
+    assert_eq!(event.phase, LspDerivedRequestPhase::Completed);
+    assert_eq!(event.status, LspDerivedRequestStatus::Success);
     assert!(has_diagnostics_style_layer(&edits));
     assert!(has_replace_diagnostics(&edits));
 }

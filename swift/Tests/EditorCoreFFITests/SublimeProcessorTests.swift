@@ -35,6 +35,20 @@ final class SublimeProcessorTests: XCTestCase {
         XCTAssertTrue(ops.contains("replace_style_layer"))
         XCTAssertTrue(ops.contains("replace_folding_regions"))
 
+        let processEnvelope = try processor.processEnvelope(state: state)
+        XCTAssertTrue(processEnvelope.ok)
+        XCTAssertEqual(processEnvelope.statusKind, .success)
+        XCTAssertEqual(processEnvelope.operation, "sublime_process")
+        guard case let .object(processValue)? = processEnvelope.value else {
+            XCTFail("expected process envelope value object")
+            return
+        }
+        guard case let .array(envelopeEdits)? = processValue["edits"] else {
+            XCTFail("expected process envelope edits array")
+            return
+        }
+        XCTAssertEqual(envelopeEdits.count, edits.count)
+
         try processor.apply(state: state)
         let blob = try state.viewportBlob(startVisualRow: 0, rowCount: 10)
         XCTAssertGreaterThan(blob.styleIds.count, 0)
@@ -42,6 +56,19 @@ final class SublimeProcessorTests: XCTestCase {
         let someStyleId = blob.styleIds.first ?? 0
         let scope = try processor.scopeForStyleId(someStyleId)
         XCTAssertTrue(scope.contains("demo"))
+
+        let scopeEnvelope = try processor.scopeForStyleIdEnvelope(someStyleId)
+        XCTAssertTrue(scopeEnvelope.ok)
+        XCTAssertEqual(scopeEnvelope.operation, "sublime_scope_for_style_id")
+        guard case let .object(scopeValue)? = scopeEnvelope.value else {
+            XCTFail("expected scope envelope value object")
+            return
+        }
+        guard case let .string(scopeText)? = scopeValue["scope"] else {
+            XCTFail("expected scope envelope scope string")
+            return
+        }
+        XCTAssertEqual(scopeText, scope)
 
         // folding exists
         let full1 = try JSONTestHelpers.object(try state.fullStateJSON())
@@ -129,6 +156,59 @@ final class SublimeProcessorTests: XCTestCase {
 
         // new_from_path constructor smoke
         _ = try SublimeProcessor(library: library, path: syntaxPath.path)
+    }
+
+    func testProcessorResultEnvelopeDecodesFutureFieldsAndUnknownStatus() throws {
+        let successJSON = """
+        {
+          "ok": true,
+          "operation": "future_processor_operation",
+          "status": "future_status",
+          "value": {
+            "edits": [],
+            "future": "kept in raw value"
+          },
+          "error": null,
+          "version": 17,
+          "future_top_level": true
+        }
+        """
+        let success = try JSONTestHelpers.decode(EcfProcessorResultEnvelope.self, from: successJSON)
+        XCTAssertTrue(success.ok)
+        XCTAssertEqual(success.operation, "future_processor_operation")
+        XCTAssertEqual(success.statusKind, .unknown("future_status"))
+        XCTAssertEqual(success.version, 17)
+        guard case .object(let rawValue)? = success.value else {
+            XCTFail("expected processor result value object")
+            return
+        }
+        XCTAssertEqual(rawValue["future"], .string("kept in raw value"))
+        XCTAssertNil(success.error)
+
+        let failureJSON = """
+        {
+          "ok": false,
+          "operation": "sublime_process",
+          "status": "error",
+          "value": null,
+          "error": {
+            "code": "future_error",
+            "status": 123456,
+            "message": "future processor failure",
+            "metadata": { "retryable": false }
+          },
+          "version": 18,
+          "future_top_level": true
+        }
+        """
+        let failure = try JSONTestHelpers.decode(EcfProcessorResultEnvelope.self, from: failureJSON)
+        XCTAssertFalse(failure.ok)
+        XCTAssertEqual(failure.operation, "sublime_process")
+        XCTAssertEqual(failure.statusKind, .error)
+        XCTAssertEqual(failure.value, .null)
+        XCTAssertEqual(failure.error?.code, "future_error")
+        XCTAssertNil(failure.error?.status)
+        XCTAssertEqual(failure.error?.message, "future processor failure")
     }
 
     func testOfficialMarkdownSublimeSyntaxLoadsAndHighlightsCodeFences() throws {

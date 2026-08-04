@@ -3,21 +3,544 @@ import AttoEditorSupport
 import EditorCoreUI
 import EditorCoreUIFFI
 import Foundation
+import UniformTypeIdentifiers
+
+struct AttoRecentCommandRecord: Equatable {
+    let commandID: String
+    let arguments: AttoCommandArguments
+}
+
+struct AttoRecordedCommand: Equatable {
+    let commandID: String
+    let arguments: AttoCommandArguments
+}
+
+struct AttoDeletedMacroSnapshot {
+    let name: String
+    let commands: [AttoRecordedCommand]
+}
+
+struct AttoDeletedMacroUndoRecord {
+    let macros: [AttoDeletedMacroSnapshot]
+}
 
 @MainActor
-final class AttoAppDelegate: NSObject, NSApplicationDelegate {
+struct AttoRecentCommandStore {
+    private static let defaultRecordsKey = "AttoEditor.RecentCommandRecords"
+    private static let legacyCommandIDsKey = "AttoEditor.RecentCommandIDs"
+
+    private let userDefaults: UserDefaults
+    private let recordsKey: String
+    private let legacyCommandIDsKey: String
+
+    static let appDefault = AttoRecentCommandStore(userDefaults: .standard)
+
+    init(
+        userDefaults: UserDefaults,
+        recordsKey: String = AttoRecentCommandStore.defaultRecordsKey,
+        legacyCommandIDsKey: String = AttoRecentCommandStore.legacyCommandIDsKey
+    ) {
+        self.userDefaults = userDefaults
+        self.recordsKey = recordsKey
+        self.legacyCommandIDsKey = legacyCommandIDsKey
+    }
+
+    func load(maxCount: Int) -> [AttoRecentCommandRecord] {
+        if let data = userDefaults.data(forKey: recordsKey),
+           let stored = try? JSONDecoder().decode([StoredRecord].self, from: data)
+        {
+            return sanitize(stored.map(\.record), maxCount: maxCount)
+        }
+
+        return sanitize(
+            (userDefaults.stringArray(forKey: legacyCommandIDsKey) ?? []).map {
+                AttoRecentCommandRecord(commandID: $0, arguments: [:])
+            },
+            maxCount: maxCount
+        )
+    }
+
+    func save(_ records: [AttoRecentCommandRecord], maxCount: Int) {
+        let sanitized = sanitize(records, maxCount: maxCount)
+        let stored = sanitized.map(StoredRecord.init(record:))
+        if let data = try? JSONEncoder().encode(stored) {
+            userDefaults.set(data, forKey: recordsKey)
+        }
+        userDefaults.set(sanitized.map(\.commandID), forKey: legacyCommandIDsKey)
+    }
+
+    private func sanitize(_ records: [AttoRecentCommandRecord], maxCount: Int) -> [AttoRecentCommandRecord] {
+        var out: [AttoRecentCommandRecord] = []
+        var seen: Set<String> = []
+        for record in records {
+            let trimmed = record.commandID.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard trimmed.isEmpty == false, seen.contains(trimmed) == false else { continue }
+            seen.insert(trimmed)
+            out.append(AttoRecentCommandRecord(commandID: trimmed, arguments: record.arguments))
+            if out.count >= maxCount { break }
+        }
+        return out
+    }
+
+    private struct StoredRecord: Codable {
+        let commandID: String
+        let arguments: [String: StoredArgument]
+
+        init(record: AttoRecentCommandRecord) {
+            commandID = record.commandID
+            arguments = record.arguments.mapValues { StoredArgument(value: $0) }
+        }
+
+        var record: AttoRecentCommandRecord {
+            AttoRecentCommandRecord(
+                commandID: commandID,
+                arguments: arguments.compactMapValues { $0.value }
+            )
+        }
+    }
+
+    private struct StoredArgument: Codable {
+        let type: String
+        let stringValue: String?
+        let integerValue: Int?
+        let numberValue: Double?
+        let booleanValue: Bool?
+
+        init(value: AttoCommandArgumentValue) {
+            switch value {
+            case .string(let value):
+                type = "string"
+                stringValue = value
+                integerValue = nil
+                numberValue = nil
+                booleanValue = nil
+            case .integer(let value):
+                type = "integer"
+                stringValue = nil
+                integerValue = value
+                numberValue = nil
+                booleanValue = nil
+            case .number(let value):
+                type = "number"
+                stringValue = nil
+                integerValue = nil
+                numberValue = value
+                booleanValue = nil
+            case .boolean(let value):
+                type = "boolean"
+                stringValue = nil
+                integerValue = nil
+                numberValue = nil
+                booleanValue = value
+            case .json(let value):
+                type = "json"
+                stringValue = value
+                integerValue = nil
+                numberValue = nil
+                booleanValue = nil
+            }
+        }
+
+        var value: AttoCommandArgumentValue? {
+            switch type {
+            case "string":
+                return stringValue.map(AttoCommandArgumentValue.string)
+            case "integer":
+                return integerValue.map(AttoCommandArgumentValue.integer)
+            case "number":
+                return numberValue.map(AttoCommandArgumentValue.number)
+            case "boolean":
+                return booleanValue.map(AttoCommandArgumentValue.boolean)
+            case "json":
+                return stringValue.map(AttoCommandArgumentValue.json)
+            default:
+                return nil
+            }
+        }
+    }
+}
+
+@MainActor
+final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var commandPaletteController: AttoCommandPaletteController?
     private var quickOpenController: AttoCommandPaletteController?
+    private var quickOpenQuery: String = ""
+    private var recentProjectController: AttoCommandPaletteController?
+    private var macroDeleteHistoryController: AttoCommandPaletteController?
+    private var macroDeleteHistoryPanelController: AttoDeletedMacroHistoryPanelController?
+    private var settingsValidationPanelController: AttoSettingsValidationPanelController?
     private var preferencesWindowController: AttoPreferencesWindowController?
+    private var reportedSettingsLoadEvents: Set<String> = []
+    private lazy var sublimeProductCoordinator = AttoSublimeProductCoordinator(
+        activeWindowProvider: { [weak self] in self?.activeWindow() }
+    )
 
     private let library = EditorCoreUIFFILibrary()
-    private let sessionManager = AttoSessionManager()
+    private let sessionManager: AttoSessionManager
+    private var runtimeCompatibilityReport: AttoRuntimeCompatibility.Report?
 
     private var windows: [AttoWindowContext] = []
     private var activeWindowID: UUID?
+    private var keyBindings: [String: AttoKeyBinding]
+    private var keySequences: [String: AttoKeySequence]
+    private var keyBindingArguments: [String: AttoCommandArguments]
+    private let keymapResolver: ((AttoKeymapContext) -> AttoKeymapResolution)?
+    private var pendingKeySequence: [AttoKeyBinding] = []
+    private var keySequenceTimeoutTimer: Timer?
+    private let keySequencePrefixTimeoutSeconds: TimeInterval
+    private var keySequenceStatusHandler: ((String?) -> Void)?
+    private var keyEventMonitor: Any?
+    private var recentCommandRecords: [AttoRecentCommandRecord] = []
+    private let recentCommandStore: AttoRecentCommandStore?
+    private let macroStore: AttoMacroStore?
+    private let settingsStore: AttoConfigurationSettingsStore
+    private var runtimeConfigurationSettings: AttoConfigurationSettings?
+    private var macroImportSelectionProvider: (() -> (url: URL, name: String)?)?
+    private var macroExportSelectionProvider: (([String]) -> (name: String, url: URL)?)?
+    private var macroDeleteConfirmationProvider: (([String]) -> Bool)?
+    private var macroDeleteHistoryClearConfirmationProvider: ((Int, Int) -> Bool)?
+    private var macroDeleteHistoryEntryRemovalConfirmationProvider: ((Int, String) -> Bool)?
+    private var macroDeleteHistoryEntriesRemovalConfirmationProvider: ((
+        [(displayIndex: Int, title: String)]
+    ) -> Bool)?
+    private var isRecordingMacro = false
+    private var isReplayingMacro = false
+    private var currentMacroCommands: [AttoRecordedCommand] = []
+    private var lastMacroCommands: [AttoRecordedCommand] = []
+    private var deletedMacroUndoStack: [AttoDeletedMacroUndoRecord] = []
+
+    private static let maxRecentCommandCount = 12
+    private static let maxRecordedMacroCommandCount = 512
+    private static let maxDeletedMacroUndoRecordCount = 20
+    private static let sublimeMacroFileType = UTType(filenameExtension: "sublime-macro") ?? .json
 
     var ipcServer: AttoIpcServer?
     var createDefaultWindowOnLaunch: Bool = true
+
+    override init() {
+        let keymapResolver: (AttoKeymapContext) -> AttoKeymapResolution = { context in
+            AttoKeymap.resolvedKeymap(context: context)
+        }
+        let keymap = keymapResolver(AttoKeymapContext())
+        self.keyBindings = keymap.bindings
+        self.keySequences = keymap.sequences
+        self.keyBindingArguments = keymap.arguments
+        self.keymapResolver = keymapResolver
+        self.keySequencePrefixTimeoutSeconds = 1.0
+        self.recentCommandStore = .appDefault
+        self.recentCommandRecords = recentCommandStore?.load(maxCount: Self.maxRecentCommandCount) ?? []
+        self.macroStore = .appDefault
+        self.settingsStore = AttoConfigurationSettingsStore()
+        self.sessionManager = AttoSessionManager()
+        self.lastMacroCommands = self.macroStore?.load(maxCount: Self.maxRecordedMacroCommandCount) ?? []
+        self.deletedMacroUndoStack = self.macroStore?.loadDeletedMacroUndoRecords(
+            maxRecords: Self.maxDeletedMacroUndoRecordCount,
+            maxCommands: Self.maxRecordedMacroCommandCount
+        ) ?? []
+        super.init()
+        self.runtimeConfigurationSettings = Self.loadPersistedRuntimeConfigurationSettings(from: settingsStore)
+    }
+
+    init(
+        keyBindings: [String: AttoKeyBinding],
+        keyBindingArguments: [String: AttoCommandArguments] = [:],
+        keySequences: [String: AttoKeySequence] = [:],
+        keySequencePrefixTimeoutSeconds: TimeInterval = 1.0,
+        keySequenceStatusHandler: ((String?) -> Void)? = nil,
+        keymapResolver: ((AttoKeymapContext) -> AttoKeymapResolution)? = nil,
+        recentCommandStore: AttoRecentCommandStore? = nil,
+        macroStore: AttoMacroStore? = nil,
+        configurationSettingsStore: AttoConfigurationSettingsStore = AttoConfigurationSettingsStore(),
+        sessionManager: AttoSessionManager = AttoSessionManager()
+    ) {
+        self.keyBindings = keyBindings
+        self.keySequences = keySequences
+        self.keyBindingArguments = keyBindingArguments
+        self.keymapResolver = keymapResolver
+        self.keySequencePrefixTimeoutSeconds = keySequencePrefixTimeoutSeconds
+        self.keySequenceStatusHandler = keySequenceStatusHandler
+        self.recentCommandStore = recentCommandStore
+        self.recentCommandRecords = recentCommandStore?.load(maxCount: Self.maxRecentCommandCount) ?? []
+        self.macroStore = macroStore
+        self.settingsStore = configurationSettingsStore
+        self.sessionManager = sessionManager
+        self.lastMacroCommands = self.macroStore?.load(maxCount: Self.maxRecordedMacroCommandCount) ?? []
+        self.deletedMacroUndoStack = self.macroStore?.loadDeletedMacroUndoRecords(
+            maxRecords: Self.maxDeletedMacroUndoRecordCount,
+            maxCommands: Self.maxRecordedMacroCommandCount
+        ) ?? []
+        super.init()
+        self.runtimeConfigurationSettings = Self.loadPersistedRuntimeConfigurationSettings(from: settingsStore)
+    }
+
+    private struct StaticEditorJSONCommand {
+        let id: String
+        let title: String
+        let commandJSON: String
+        let schema: AttoCommandSchema
+
+        init(id: String, title: String, commandJSON: String) {
+            self.id = id
+            self.title = title
+            self.commandJSON = commandJSON
+            self.schema = AttoCommandSchema(
+                macroPolicy: .recordable,
+                defaultPayloadJSON: commandJSON,
+                requiredRuntimeFeatures: .jsonCommandDispatch
+            )
+        }
+    }
+
+    private enum CommandAvailabilityRequirement {
+        case none
+        case activeWindow
+        case activeEditor
+        case multiplePanes
+        case multipleTabs
+
+        var requiresEditor: Bool {
+            switch self {
+            case .activeEditor, .multiplePanes, .multipleTabs:
+                return true
+            case .none, .activeWindow:
+                return false
+            }
+        }
+    }
+
+    private struct CommandMetadata {
+        let group: String
+        let requirement: CommandAvailabilityRequirement
+        let schema: AttoCommandSchema
+    }
+
+    private static let staticEditorJSONCommands: [StaticEditorJSONCommand] = [
+        .init(id: "editor.duplicate_lines", title: "Edit: Duplicate Line", commandJSON: #"{"kind":"edit","op":"duplicate_lines"}"#),
+        .init(id: "editor.delete_lines", title: "Edit: Delete Line", commandJSON: #"{"kind":"edit","op":"delete_lines"}"#),
+        .init(id: "editor.move_lines_up", title: "Edit: Move Line Up", commandJSON: #"{"kind":"edit","op":"move_lines_up"}"#),
+        .init(id: "editor.move_lines_down", title: "Edit: Move Line Down", commandJSON: #"{"kind":"edit","op":"move_lines_down"}"#),
+        .init(id: "editor.join_lines", title: "Edit: Join Lines", commandJSON: #"{"kind":"edit","op":"join_lines"}"#),
+        .init(id: "editor.split_line", title: "Edit: Split Line", commandJSON: #"{"kind":"edit","op":"split_line"}"#),
+        .init(id: "editor.indent", title: "Edit: Indent", commandJSON: #"{"kind":"edit","op":"indent"}"#),
+        .init(id: "editor.outdent", title: "Edit: Outdent", commandJSON: #"{"kind":"edit","op":"outdent"}"#),
+        .init(id: "editor.delete_to_prev_tab_stop", title: "Edit: Delete to Previous Tab Stop", commandJSON: #"{"kind":"edit","op":"delete_to_prev_tab_stop"}"#),
+        .init(id: "editor.snippet_next_placeholder", title: "Edit: Snippet Next Placeholder", commandJSON: #"{"kind":"cursor","op":"snippet_next_placeholder"}"#),
+        .init(id: "editor.snippet_prev_placeholder", title: "Edit: Snippet Previous Placeholder", commandJSON: #"{"kind":"cursor","op":"snippet_prev_placeholder"}"#),
+        .init(id: "editor.select_word", title: "Edit: Select Word", commandJSON: #"{"kind":"cursor","op":"select_word"}"#),
+        .init(id: "editor.select_line", title: "Edit: Select Line", commandJSON: #"{"kind":"cursor","op":"select_line"}"#),
+        .init(id: "editor.expand_selection", title: "Edit: Expand Selection", commandJSON: #"{"kind":"cursor","op":"expand_selection"}"#),
+        .init(id: "editor.add_cursor_above", title: "Edit: Add Cursor Above", commandJSON: #"{"kind":"cursor","op":"add_cursor_above"}"#),
+        .init(id: "editor.add_cursor_below", title: "Edit: Add Cursor Below", commandJSON: #"{"kind":"cursor","op":"add_cursor_below"}"#),
+        .init(id: "view.wrap.none", title: "View: Word Wrap Off", commandJSON: #"{"kind":"view","op":"set_wrap_mode","mode":"none"}"#),
+        .init(id: "view.wrap.char", title: "View: Word Wrap by Character", commandJSON: #"{"kind":"view","op":"set_wrap_mode","mode":"char"}"#),
+        .init(id: "view.wrap.word", title: "View: Word Wrap by Word", commandJSON: #"{"kind":"view","op":"set_wrap_mode","mode":"word"}"#),
+    ]
+
+    private static let snippetCommandSchema = AttoCommandSchema(
+        parameters: [
+            AttoCommandParameterSchema(
+                name: "snippet",
+                title: "Snippet",
+                kind: .string,
+                isRequired: true,
+                allowsEmptyString: false,
+                help: "editor-core snippet string using $0 and ${1:name} placeholders."
+            ),
+        ],
+        macroPolicy: .recordableWithArguments
+    )
+
+    private static let goToLineCommandSchema = AttoCommandSchema(
+        parameters: [
+            AttoCommandParameterSchema(
+                name: "line",
+                title: "Line",
+                kind: .integer,
+                isRequired: true,
+                minimumInteger: 1,
+                help: "1-based logical line number."
+            ),
+            AttoCommandParameterSchema(
+                name: "column",
+                title: "Column",
+                kind: .integer,
+                defaultValue: .integer(1),
+                minimumInteger: 1,
+                help: "1-based logical column number."
+            ),
+        ],
+        macroPolicy: .recordableWithArguments
+    )
+
+    private static let workspaceSymbolsCommandSchema = AttoCommandSchema(
+        parameters: [
+            AttoCommandParameterSchema(
+                name: "query",
+                title: "Query",
+                kind: .string,
+                defaultValue: .string(""),
+                help: "Workspace symbol search query sent to the LSP server."
+            ),
+        ],
+        macroPolicy: .recordableWithArguments,
+        requiredRuntimeFeatures: .lspInteractiveCommandRequirements
+    )
+
+    private static let renameCommandSchema = AttoCommandSchema(
+        parameters: [
+            AttoCommandParameterSchema(
+                name: "newName",
+                title: "New Name",
+                kind: .string,
+                isRequired: true,
+                allowsEmptyString: false,
+                help: "Replacement symbol name passed to textDocument/rename."
+            ),
+        ],
+        macroPolicy: .recordableWithArguments,
+        requiredRuntimeFeatures: .lspWorkspaceEditCommandRequirements
+    )
+
+    private static func macroNameCommandSchema(choices: [String] = []) -> AttoCommandSchema {
+        AttoCommandSchema(
+            parameters: [
+                AttoCommandParameterSchema(
+                    name: "name",
+                    title: "Macro Name",
+                    kind: .string,
+                    isRequired: true,
+                    choices: choices.map { AttoCommandArgumentChoice(title: $0, value: .string($0)) },
+                    allowsEmptyString: false,
+                    help: "Name of a .sublime-macro file in AttoEditor's macro directory."
+                ),
+            ],
+            macroPolicy: .notRecordable
+        )
+    }
+
+    private static func macroRenameCommandSchema(choices: [String] = []) -> AttoCommandSchema {
+        AttoCommandSchema(
+            parameters: [
+                AttoCommandParameterSchema(
+                    name: "oldName",
+                    title: "Existing Macro",
+                    kind: .string,
+                    isRequired: true,
+                    choices: choices.map { AttoCommandArgumentChoice(title: $0, value: .string($0)) },
+                    allowsEmptyString: false,
+                    help: "Existing .sublime-macro name in AttoEditor's macro directory."
+                ),
+                AttoCommandParameterSchema(
+                    name: "newName",
+                    title: "New Macro Name",
+                    kind: .string,
+                    isRequired: true,
+                    allowsEmptyString: false,
+                    help: "New .sublime-macro file name."
+                ),
+            ],
+            macroPolicy: .notRecordable
+        )
+    }
+
+    private static func macroDeleteBatchCommandSchema() -> AttoCommandSchema {
+        AttoCommandSchema(
+            parameters: [
+                AttoCommandParameterSchema(
+                    name: "names",
+                    title: "Macro Names",
+                    kind: .json,
+                    isRequired: true,
+                    help: "JSON array of named macros to delete, for example [\"Build\", \"Format\"]."
+                ),
+            ],
+            macroPolicy: .notRecordable
+        )
+    }
+
+    private static func macroDeleteHistoryEntryCommandSchema(
+        choices: [AttoCommandArgumentChoice] = []
+    ) -> AttoCommandSchema {
+        AttoCommandSchema(
+            parameters: [
+                AttoCommandParameterSchema(
+                    name: "index",
+                    title: "History Entry",
+                    kind: .integer,
+                    isRequired: true,
+                    choices: choices,
+                    minimumInteger: 1,
+                    maximumInteger: choices.isEmpty ? nil : choices.count,
+                    help: "1-based deleted macro history entry index, shown newest first."
+                ),
+            ],
+            macroPolicy: .notRecordable
+        )
+    }
+
+    private static func macroDeleteHistoryEntriesCommandSchema() -> AttoCommandSchema {
+        AttoCommandSchema(
+            parameters: [
+                AttoCommandParameterSchema(
+                    name: "indices",
+                    title: "History Entries",
+                    kind: .json,
+                    isRequired: true,
+                    help: "JSON array of 1-based deleted macro history entry indices, newest first, for example [1, 3]."
+                ),
+            ],
+            macroPolicy: .notRecordable
+        )
+    }
+
+    private static func macroImportCommandSchema() -> AttoCommandSchema {
+        AttoCommandSchema(
+            parameters: [
+                AttoCommandParameterSchema(
+                    name: "path",
+                    title: "Macro File Path",
+                    kind: .string,
+                    isRequired: true,
+                    allowsEmptyString: false,
+                    help: "Path to an existing .sublime-macro file."
+                ),
+                AttoCommandParameterSchema(
+                    name: "name",
+                    title: "Imported Macro Name",
+                    kind: .string,
+                    isRequired: true,
+                    allowsEmptyString: false,
+                    help: "Name to store in AttoEditor's macro directory."
+                ),
+            ],
+            macroPolicy: .notRecordable
+        )
+    }
+
+    private static func macroExportCommandSchema(choices: [String] = []) -> AttoCommandSchema {
+        AttoCommandSchema(
+            parameters: [
+                AttoCommandParameterSchema(
+                    name: "name",
+                    title: "Macro Name",
+                    kind: .string,
+                    isRequired: true,
+                    choices: choices.map { AttoCommandArgumentChoice(title: $0, value: .string($0)) },
+                    allowsEmptyString: false,
+                    help: "Existing .sublime-macro name in AttoEditor's macro directory."
+                ),
+                AttoCommandParameterSchema(
+                    name: "path",
+                    title: "Export File Path",
+                    kind: .string,
+                    isRequired: true,
+                    allowsEmptyString: false,
+                    help: "Destination .sublime-macro file path."
+                ),
+            ],
+            macroPolicy: .notRecordable
+        )
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NotificationCenter.default.addObserver(
@@ -26,6 +549,11 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
             name: .attoPreferencesDidChange,
             object: nil
         )
+
+        guard validateRuntimeCompatibilityBeforeLaunch() else {
+            return
+        }
+        installKeyEventMonitorIfNeeded()
 
         let visibleFrame = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame
             ?? CGRect(origin: .zero, size: AttoWindowSizing.preferredContentSize)
@@ -48,14 +576,32 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
         }
 
         commandPaletteController = AttoCommandPaletteController(
+            accessibilityPrefix: "AttoEditor.CommandPalette",
+            showsCommandGroups: true,
+            argumentProvider: { command in
+                AttoCommandArgumentPrompt.promptArguments(for: command)
+            },
             commandsProvider: { [weak self] in
                 self?.defaultCommands() ?? []
             }
         )
 
         quickOpenController = AttoCommandPaletteController(
+            accessibilityPrefix: "AttoEditor.QuickOpen",
+            searchTextDidChange: { [weak self] query in
+                self?.quickOpenQuery = query
+                self?.quickOpenController?.reloadCommands()
+            },
             commandsProvider: { [weak self] in
-                self?.quickOpenCommands() ?? []
+                guard let self else { return [] }
+                return self.quickOpenCommands(query: self.quickOpenQuery)
+            }
+        )
+
+        recentProjectController = AttoCommandPaletteController(
+            accessibilityPrefix: "AttoEditor.RecentProjects",
+            commandsProvider: { [weak self] in
+                self?.recentProjectCommands() ?? []
             }
         )
 
@@ -101,7 +647,46 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
                 self?.makeSessionSnapshot()
             })
         }
+        if let keyEventMonitor {
+            NSEvent.removeMonitor(keyEventMonitor)
+            self.keyEventMonitor = nil
+        }
+        clearPendingKeySequence()
         ipcServer?.stop()
+    }
+
+    private func installKeyEventMonitorIfNeeded() {
+        guard keyEventMonitor == nil else { return }
+        keyEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            let handled = MainActor.assumeIsolated {
+                self.handleKeyDownEvent(event)
+            }
+            return handled ? nil : event
+        }
+    }
+
+    private func validateRuntimeCompatibilityBeforeLaunch(logSuccess: Bool = true) -> Bool {
+        let report = AttoRuntimeCompatibility.evaluate(library: library)
+        runtimeCompatibilityReport = report
+        guard report.isCompatible else {
+            presentRuntimeCompatibilityFailure(report)
+            NSApplication.shared.terminate(nil)
+            return false
+        }
+        if logSuccess {
+            NSLog("AttoEditor: %@", report.diagnosticMessage)
+        }
+        return true
+    }
+
+    private func presentRuntimeCompatibilityFailure(_ report: AttoRuntimeCompatibility.Report) {
+        let alert = NSAlert()
+        alert.alertStyle = .critical
+        alert.messageText = "AttoEditor cannot start"
+        alert.informativeText = report.diagnosticMessage
+        alert.addButton(withTitle: "Quit")
+        alert.runModal()
     }
 
     // MARK: - Menu actions
@@ -190,6 +775,10 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
         activeWindow()?.editorAreaController.saveActiveTab()
     }
 
+    @objc func reloadFileMenuClicked(_ sender: Any?) {
+        activeWindow()?.editorAreaController.reloadActiveTab()
+    }
+
     @objc func toggleSidebarMenuClicked(_ sender: Any?) {
         activeWindow()?.toggleSidebar()
     }
@@ -222,6 +811,191 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
         showPreferencesWindow()
     }
 
+    @objc func commandMenuItemClicked(_ sender: Any?) {
+        let commandID: String?
+        if let item = sender as? NSMenuItem {
+            commandID = item.representedObject as? String
+        } else {
+            commandID = sender as? String
+        }
+
+        guard let commandID else {
+            NSSound.beep()
+            return
+        }
+        executeCommandUsingKeymapArguments(commandID: commandID)
+    }
+
+    @discardableResult
+    private func executeCommandUsingKeymapArguments(commandID: String) -> Bool {
+        executeCommandUsingKeymapArguments(commandID: commandID, keymap: keymapResolutionForCurrentContext())
+    }
+
+    @discardableResult
+    private func executeCommandUsingKeymapArguments(commandID: String, keymap: AttoKeymapResolution) -> Bool {
+        if let arguments = keymap.arguments[commandID] {
+            executeCommand(id: commandID, arguments: arguments)
+        } else {
+            executeCommand(id: commandID)
+        }
+    }
+
+    @discardableResult
+    func handleKeyDownEvent(_ event: NSEvent) -> Bool {
+        guard let binding = AttoKeymap.binding(for: event) else {
+            clearPendingKeySequence()
+            return false
+        }
+        return handleKeyBinding(binding)
+    }
+
+    @discardableResult
+    private func handleKeyBinding(_ binding: AttoKeyBinding) -> Bool {
+        let keymap = keymapResolutionForCurrentContext()
+
+        if pendingKeySequence.isEmpty == false, binding == AttoKeymap.parseBinding("escape") {
+            clearPendingKeySequence()
+            return true
+        }
+
+        let candidate = pendingKeySequence + [binding]
+        if let commandID = commandID(forKeySequence: candidate, keymap: keymap) {
+            clearPendingKeySequence()
+            return executeCommandUsingKeymapArguments(commandID: commandID, keymap: keymap)
+        }
+
+        if hasKeySequencePrefix(candidate, keymap: keymap) {
+            setPendingKeySequence(candidate)
+            return true
+        }
+
+        if pendingKeySequence.isEmpty, let commandID = commandID(forKeyBinding: binding, keymap: keymap) {
+            return executeCommandUsingKeymapArguments(commandID: commandID, keymap: keymap)
+        }
+
+        let hadPending = pendingKeySequence.isEmpty == false
+        clearPendingKeySequence()
+
+        if hadPending, hasKeySequencePrefix([binding], keymap: keymap) {
+            setPendingKeySequence([binding])
+            return true
+        }
+
+        if hadPending, let commandID = commandID(forKeyBinding: binding, keymap: keymap) {
+            return executeCommandUsingKeymapArguments(commandID: commandID, keymap: keymap)
+        }
+
+        return false
+    }
+
+    private func setPendingKeySequence(_ sequence: [AttoKeyBinding]) {
+        pendingKeySequence = sequence
+        publishPendingKeySequenceStatus()
+        restartKeySequenceTimeout()
+    }
+
+    private func clearPendingKeySequence() {
+        let hadPending = pendingKeySequence.isEmpty == false
+        pendingKeySequence = []
+        keySequenceTimeoutTimer?.invalidate()
+        keySequenceTimeoutTimer = nil
+        if hadPending {
+            publishPendingKeySequenceStatus()
+        }
+    }
+
+    private func restartKeySequenceTimeout() {
+        keySequenceTimeoutTimer?.invalidate()
+        keySequenceTimeoutTimer = nil
+
+        guard keySequencePrefixTimeoutSeconds > 0 else { return }
+        keySequenceTimeoutTimer = Timer.scheduledTimer(
+            timeInterval: keySequencePrefixTimeoutSeconds,
+            target: self,
+            selector: #selector(keySequenceTimeoutTimerFired(_:)),
+            userInfo: nil,
+            repeats: false
+        )
+        keySequenceTimeoutTimer?.tolerance = 0.05
+    }
+
+    @objc private func keySequenceTimeoutTimerFired(_ timer: Timer) {
+        _ = timer
+        clearPendingKeySequence()
+    }
+
+    private func publishPendingKeySequenceStatus() {
+        let text: String? = if pendingKeySequence.isEmpty {
+            nil
+        } else {
+            "Keys: \(pendingKeySequence.map(\.displayText).joined(separator: " "))"
+        }
+
+        if let keySequenceStatusHandler {
+            keySequenceStatusHandler(text)
+        } else {
+            activeWindow()?.editorAreaController.setTransientStatusText(text)
+        }
+    }
+
+    private func runSublimeFeature(_ feature: AttoSublimeFeatureBoundary) {
+        switch feature {
+        case .runBuildSystem:
+            _ = sublimeProductCoordinator.runBuildSystem()
+        case .cancelBuildSystem:
+            _ = sublimeProductCoordinator.cancelBuildSystem()
+        case .openPackageResource:
+            _ = sublimeProductCoordinator.openPackageResource()
+        case .showQuickPanel:
+            _ = sublimeProductCoordinator.showQuickPanel()
+        case .showInputPanel:
+            _ = sublimeProductCoordinator.showInputPanel()
+        case .showOutputPanel:
+            _ = sublimeProductCoordinator.showOutputPanel()
+        }
+    }
+
+    private func keymapResolutionForCurrentContext() -> AttoKeymapResolution {
+        guard let keymapResolver else {
+            return AttoKeymapResolution(
+                bindings: keyBindings,
+                sequences: keySequences,
+                arguments: keyBindingArguments,
+                conflicts: [],
+                sequenceConflicts: []
+            )
+        }
+        return keymapResolver(currentKeymapContext())
+    }
+
+    private func currentKeymapContext() -> AttoKeymapContext {
+        activeWindow()?.editorAreaController.keymapContextForActiveState() ?? AttoKeymapContext()
+    }
+
+    private func commandID(forKeySequence bindings: [AttoKeyBinding], keymap: AttoKeymapResolution) -> String? {
+        keymap.sequences.first { _, sequence in
+            sequence.bindings == bindings
+        }?.key
+    }
+
+    private func commandID(forKeyBinding binding: AttoKeyBinding, keymap: AttoKeymapResolution) -> String? {
+        keymap.bindings.first { _, candidate in
+            candidate == binding
+        }?.key
+    }
+
+    private func hasKeySequencePrefix(_ bindings: [AttoKeyBinding], keymap: AttoKeymapResolution) -> Bool {
+        keymap.sequences.values.contains { sequence in
+            guard sequence.bindings.count > bindings.count else { return false }
+            return Array(sequence.bindings.prefix(bindings.count)) == bindings
+        }
+    }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        guard let commandID = menuItem.representedObject as? String else { return true }
+        return commandIsEnabled(commandID: commandID)
+    }
+
     // MARK: - Command palette integration
 
     private func showCommandPalette() {
@@ -231,60 +1005,1858 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
 
     private func showQuickOpen() {
         guard let win = activeWindow()?.window else { return }
+        quickOpenQuery = ""
         quickOpenController?.show(relativeTo: win, placeholder: "Type a file name to open…")
     }
 
-    private func defaultCommands() -> [AttoCommandPaletteCommand] {
-        [
-            .init(title: "File: New File") { [weak self] in
+    private func showRecentProjects() {
+        guard let ctx = ensureActiveWindowForMenuActions() else { return }
+        recentProjectController?.show(relativeTo: ctx.window, placeholder: "Type a project name to open…")
+    }
+
+    private func defaultCommands(orderForCommandPalette: Bool = true) -> [AttoCommandPaletteCommand] {
+        var commands: [AttoCommandPaletteCommand] = [
+            .init(id: "file.new", title: "File: New File") { [weak self] in
                 self?.newFileMenuClicked(nil)
             },
-            .init(title: "File: Open Folder…") { [weak self] in
+            .init(id: "file.open_folder", title: "File: Open Folder…") { [weak self] in
                 self?.openFolderMenuClicked(nil)
             },
-            .init(title: "File: Open File…") { [weak self] in
+            .init(id: "file.open_recent_project", title: "File: Open Recent Project…") { [weak self] in
+                self?.showRecentProjects()
+            },
+            .init(id: "file.open_file", title: "File: Open File…") { [weak self] in
                 self?.openFileMenuClicked(nil)
             },
-            .init(title: "File: Save") { [weak self] in
+            .init(id: "file.save", title: "File: Save") { [weak self] in
                 self?.saveMenuClicked(nil)
             },
-            .init(title: "Edit: Format Document") { [weak self] in
+            .init(id: "file.reload", title: "File: Reload File") { [weak self] in
+                self?.reloadFileMenuClicked(nil)
+            },
+            .init(id: "file.pin_tab", title: "File: Pin Tab") { [weak self] in
+                self?.activeWindow()?.editorAreaController.pinActiveTabIfPreview()
+            },
+            .init(id: "file.close_tab", title: "File: Close Tab") { [weak self] in
+                self?.closeTabMenuClicked(nil)
+            },
+            .init(id: "file.close_all_tabs", title: "File: Close All Tabs") { [weak self] in
+                self?.activeWindow()?.editorAreaController.closeAllTabsForWindow()
+            },
+            .init(id: "file.close_other_tabs", title: "File: Close Other Tabs") { [weak self] in
+                self?.activeWindow()?.editorAreaController.closeOtherTabsForActiveTab()
+            },
+            .init(id: "file.close_tabs_to_right", title: "File: Close Tabs to Right") { [weak self] in
+                self?.activeWindow()?.editorAreaController.closeTabsToRightOfActiveTab()
+            },
+            .init(id: "file.move_tab_left", title: "File: Move Tab Left") { [weak self] in
+                self?.activeWindow()?.editorAreaController.moveActiveTabLeft()
+            },
+            .init(id: "file.move_tab_right", title: "File: Move Tab Right") { [weak self] in
+                self?.activeWindow()?.editorAreaController.moveActiveTabRight()
+            },
+            .init(id: "editor.format_document", title: "Edit: Format Document") { [weak self] in
                 self?.activeWindow()?.editorAreaController.formatDocumentWithLspInActiveTab()
             },
-            .init(title: "Edit: Find") { [weak self] in
+            .init(id: "editor.format_selection", title: "Edit: Format Selection") { [weak self] in
+                self?.activeWindow()?.editorAreaController.formatSelectionWithLspInActiveTab()
+            },
+            .init(id: "editor.find", title: "Edit: Find") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showFindBar()
             },
-            .init(title: "Edit: Replace") { [weak self] in
+            .init(id: "editor.replace", title: "Edit: Replace") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showReplaceBar()
             },
-            .init(title: "View: Toggle Sidebar") { [weak self] in
+            .init(id: "workspace.undo_last_workspace_edit", title: "Workspace: Undo Last Workspace Edit") { [weak self] in
+                self?.activeWindow()?.editorAreaController.undoLastCoreWorkspaceEditTransaction()
+            },
+            .init(id: "workspace.redo_last_workspace_edit", title: "Workspace: Redo Last Workspace Edit") { [weak self] in
+                self?.activeWindow()?.editorAreaController.redoLastCoreWorkspaceEditTransaction()
+            },
+            .init(id: "workspace.show_workspace_edit_history", title: "Workspace: Show Workspace Edit History") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showWorkspaceEditHistoryPanel()
+            },
+            .init(id: "view.toggle_sidebar", title: "View: Toggle Sidebar") { [weak self] in
                 self?.activeWindow()?.toggleSidebar()
             },
-            .init(title: "View: Toggle Minimap") { [weak self] in
+            .init(id: "view.toggle_minimap", title: "View: Toggle Minimap") { [weak self] in
                 self?.activeWindow()?.editorAreaController.toggleMinimapForActiveTab()
             },
-            .init(title: "AttoEditor: Command Palette") { [weak self] in
+            .init(id: "view.split_right", title: "View: Split Right") { [weak self] in
+                self?.activeWindow()?.editorAreaController.splitActiveTabRight()
+            },
+            .init(id: "view.focus_next_pane", title: "View: Focus Next Pane") { [weak self] in
+                self?.activeWindow()?.editorAreaController.focusNextPaneInActiveTab()
+            },
+            .init(id: "view.focus_previous_pane", title: "View: Focus Previous Pane") { [weak self] in
+                self?.activeWindow()?.editorAreaController.focusPreviousPaneInActiveTab()
+            },
+            .init(id: "view.move_pane_left", title: "View: Move Pane Left") { [weak self] in
+                self?.activeWindow()?.editorAreaController.moveActivePaneLeft()
+            },
+            .init(id: "view.move_pane_right", title: "View: Move Pane Right") { [weak self] in
+                self?.activeWindow()?.editorAreaController.moveActivePaneRight()
+            },
+            .init(id: "view.close_pane", title: "View: Close Pane") { [weak self] in
+                self?.activeWindow()?.editorAreaController.closeActivePane()
+            },
+            .init(id: "workbench.command_palette", title: "AttoEditor: Command Palette") { [weak self] in
                 self?.showCommandPalette()
             },
-            .init(title: "Go: Go to File…") { [weak self] in
+            .init(id: "macro.toggle_recording", title: "Macro: Toggle Recording") { [weak self] in
+                self?.toggleMacroRecording()
+            },
+            .init(id: "macro.replay_last", title: "Macro: Replay Last Macro") { [weak self] in
+                self?.replayLastMacro()
+            },
+            .init(
+                id: "macro.save_named",
+                title: "Macro: Save Last Macro As…",
+                schema: Self.macroNameCommandSchema()
+            ) { [weak self] arguments in
+                self?.saveNamedMacro(arguments: arguments)
+            },
+            .init(
+                id: "macro.replay_named",
+                title: "Macro: Replay Named Macro…",
+                schema: Self.macroNameCommandSchema()
+            ) { [weak self] arguments in
+                self?.replayNamedMacro(arguments: arguments)
+            },
+            .init(
+                id: "macro.rename_named",
+                title: "Macro: Rename Named Macro…",
+                schema: Self.macroRenameCommandSchema()
+            ) { [weak self] arguments in
+                self?.renameNamedMacro(arguments: arguments)
+            },
+            .init(
+                id: "macro.delete_named",
+                title: "Macro: Delete Named Macro…",
+                schema: Self.macroNameCommandSchema()
+            ) { [weak self] arguments in
+                self?.deleteNamedMacro(arguments: arguments)
+            },
+            .init(
+                id: "macro.delete_named_batch",
+                title: "Macro: Delete Named Macros…",
+                schema: Self.macroDeleteBatchCommandSchema()
+            ) { [weak self] arguments in
+                self?.deleteNamedMacros(arguments: arguments)
+            },
+            .init(id: "macro.undo_delete", title: "Macro: Undo Macro Delete") { [weak self] in
+                _ = self?.undoDeletedMacros()
+            },
+            .init(id: "macro.show_delete_history", title: "Macro: Show Deleted Macros…") { [weak self] in
+                _ = self?.showDeletedMacroHistory()
+            },
+            .init(id: "macro.manage_delete_history", title: "Macro: Manage Deleted Macro History…") { [weak self] in
+                _ = self?.showDeletedMacroHistoryPanel()
+            },
+            .init(
+                id: "macro.remove_delete_history_entry",
+                title: "Macro: Remove Deleted Macro History Entry…",
+                schema: Self.macroDeleteHistoryEntryCommandSchema(choices: deletedMacroUndoRecordChoices())
+            ) { [weak self] arguments in
+                self?.removeDeletedMacroHistoryEntry(arguments: arguments)
+            },
+            .init(
+                id: "macro.remove_delete_history_entries",
+                title: "Macro: Remove Deleted Macro History Entries…",
+                schema: Self.macroDeleteHistoryEntriesCommandSchema()
+            ) { [weak self] arguments in
+                self?.removeDeletedMacroHistoryEntries(arguments: arguments)
+            },
+            .init(id: "macro.clear_delete_history", title: "Macro: Clear Deleted Macro History…") { [weak self] in
+                _ = self?.clearDeletedMacroHistory()
+            },
+            .init(
+                id: "macro.import_file",
+                title: "Macro: Import Macro File…",
+                schema: Self.macroImportCommandSchema()
+            ) { [weak self] arguments in
+                self?.importNamedMacro(arguments: arguments)
+            },
+            .init(
+                id: "macro.export_named",
+                title: "Macro: Export Named Macro…",
+                schema: Self.macroExportCommandSchema()
+            ) { [weak self] arguments in
+                self?.exportNamedMacro(arguments: arguments)
+            },
+            .init(id: "go.file", title: "Go: Go to File…") { [weak self] in
                 self?.showQuickOpen()
             },
-            .init(title: "Search: Find in Files") { [weak self] in
+            .init(
+                id: "go.line",
+                title: "Go: Go to Line…",
+                schema: Self.goToLineCommandSchema
+            ) { [weak self] arguments in
+                guard let line = arguments.integer("line") else {
+                    self?.activeWindow()?.editorAreaController.promptGoToLineInActiveTab()
+                    return
+                }
+                let column = arguments.integer("column") ?? 1
+                self?.activeWindow()?.editorAreaController.goToLineInActiveTab(line1: line, column1: column)
+            },
+            .init(id: "search.find_in_files", title: "Search: Find in Files") { [weak self] in
                 self?.activeWindow()?.showFindInFilesSidebar()
             },
-            .init(title: "AttoEditor: Preferences…") { [weak self] in
+            .init(id: "workbench.preferences", title: "AttoEditor: Preferences…") { [weak self] in
                 self?.showPreferencesWindow()
             },
-            .init(title: "Go: Back") { [weak self] in
+            .init(id: "settings.open_user_settings", title: "Settings: Open User Settings") { [weak self] in
+                self?.openUserSettingsFile()
+            },
+            .init(id: "settings.open_workspace_settings", title: "Settings: Open Workspace Settings") { [weak self] in
+                self?.openWorkspaceSettingsFile()
+            },
+            .init(id: "settings.open_runtime_overrides", title: "Settings: Open Runtime Overrides") { [weak self] in
+                self?.openRuntimeSettingsFile()
+            },
+            .init(id: "settings.validate_user_settings", title: "Settings: Validate User Settings") { [weak self] in
+                self?.validateUserSettingsFile()
+            },
+            .init(
+                id: "settings.validate_workspace_settings",
+                title: "Settings: Validate Workspace Settings"
+            ) { [weak self] in
+                self?.validateWorkspaceSettingsFile()
+            },
+            .init(
+                id: "settings.validate_runtime_overrides",
+                title: "Settings: Validate Runtime Overrides"
+            ) { [weak self] in
+                self?.validateRuntimeSettingsFile()
+            },
+            .init(id: "settings.clear_runtime_overrides", title: "Settings: Clear Runtime Overrides") { [weak self] in
+                self?.clearRuntimeSettingsOverrides()
+            },
+            .init(id: "go.back", title: "Go: Back") { [weak self] in
                 self?.activeWindow()?.editorAreaController.jumpBackInActiveTab()
             },
-            .init(title: "Go: Forward") { [weak self] in
+            .init(id: "go.forward", title: "Go: Forward") { [weak self] in
                 self?.activeWindow()?.editorAreaController.jumpForwardInActiveTab()
             },
-            .init(title: "Go: Go to Matching Bracket") { [weak self] in
+            .init(id: "go.matching_bracket", title: "Go: Go to Matching Bracket") { [weak self] in
                 self?.activeWindow()?.editorAreaController.moveToMatchingBracketInActiveTab()
             },
+            .init(id: "lsp.go_to_definition", title: "LSP: Go to Definition") { [weak self] in
+                self?.activeWindow()?.editorAreaController.goToDefinitionInActiveTab()
+            },
+            .init(id: "lsp.go_to_declaration", title: "LSP: Go to Declaration") { [weak self] in
+                self?.activeWindow()?.editorAreaController.goToDeclarationInActiveTab()
+            },
+            .init(id: "lsp.go_to_type_definition", title: "LSP: Go to Type Definition") { [weak self] in
+                self?.activeWindow()?.editorAreaController.goToTypeDefinitionInActiveTab()
+            },
+            .init(id: "lsp.go_to_implementation", title: "LSP: Go to Implementation") { [weak self] in
+                self?.activeWindow()?.editorAreaController.goToImplementationInActiveTab()
+            },
+            .init(id: "lsp.find_references", title: "LSP: Find References") { [weak self] in
+                self?.activeWindow()?.editorAreaController.findReferencesInActiveTab()
+            },
+            .init(id: "lsp.show_last_locations", title: "LSP: Show Last Locations") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showLastLspLocationResults()
+            },
+            .init(id: "lsp.show_location_history", title: "LSP: Show Location History") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showLspLocationHistory()
+            },
+            .init(id: "lsp.show_locations_panel", title: "LSP: Show Locations Panel") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showLspLocationPanel()
+            },
+            .init(id: "lsp.show_workbench_panel", title: "LSP: Show Workbench Panel") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showLspWorkbenchPanel()
+            },
+            .init(id: "lsp.show_workbench_dock", title: "LSP: Show Workbench Dock") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showLspWorkbenchDock()
+            },
+            .init(id: "lsp.show_workbench_history", title: "LSP: Show Workbench History") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showLspWorkbenchHistoryPanel()
+            },
+            .init(id: "lsp.show_workbench_pinned_results", title: "LSP: Show Workbench Pinned Results") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showLspWorkbenchPinnedResultsPanel()
+            },
+            .init(id: "lsp.show_workbench_selected_history", title: "LSP: Show Workbench Selected History") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showSelectedLspWorkbenchHistory()
+            },
+            .init(id: "lsp.jump_workbench_first_result", title: "LSP: Jump to Workbench First Result") { [weak self] in
+                self?.activeWindow()?.editorAreaController.jumpToFirstLspWorkbenchResult()
+            },
+            .init(id: "lsp.jump_workbench_selected_result", title: "LSP: Jump to Workbench Selected Result") { [weak self] in
+                self?.activeWindow()?.editorAreaController.jumpToSelectedLspWorkbenchResult()
+            },
+            .init(id: "lsp.refresh_workbench_selected_result", title: "LSP: Refresh Workbench Selected Result") { [weak self] in
+                self?.activeWindow()?.editorAreaController.refreshSelectedLspWorkbenchResult()
+            },
+            .init(id: "lsp.pin_workbench_current_results", title: "LSP: Pin Workbench Current Results") { [weak self] in
+                self?.activeWindow()?.editorAreaController.pinCurrentLspWorkbenchResults()
+            },
+            .init(id: "lsp.pin_workbench_selected_result", title: "LSP: Pin Workbench Selected Result") { [weak self] in
+                self?.activeWindow()?.editorAreaController.pinSelectedLspWorkbenchResult()
+            },
+            .init(id: "lsp.unpin_workbench_current_results", title: "LSP: Unpin Workbench Current Results") { [weak self] in
+                self?.activeWindow()?.editorAreaController.unpinCurrentLspWorkbenchResults()
+            },
+            .init(id: "lsp.unpin_workbench_selected_result", title: "LSP: Unpin Workbench Selected Result") { [weak self] in
+                self?.activeWindow()?.editorAreaController.unpinSelectedLspWorkbenchResult()
+            },
+            .init(id: "lsp.clear_workbench_stale_results", title: "LSP: Clear Workbench Stale Results") { [weak self] in
+                self?.activeWindow()?.editorAreaController.clearLspWorkbenchStaleResults()
+            },
+            .init(id: "lsp.clear_workbench_selected_stale_result", title: "LSP: Clear Workbench Selected Stale Result") { [weak self] in
+                self?.activeWindow()?.editorAreaController.clearSelectedLspWorkbenchStaleResult()
+            },
+            .init(id: "lsp.call_hierarchy_incoming", title: "LSP: Incoming Calls") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showIncomingCallsInActiveTab()
+            },
+            .init(id: "lsp.call_hierarchy_outgoing", title: "LSP: Outgoing Calls") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showOutgoingCallsInActiveTab()
+            },
+            .init(id: "lsp.type_hierarchy_supertypes", title: "LSP: Supertypes") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showTypeSupertypesInActiveTab()
+            },
+            .init(id: "lsp.type_hierarchy_subtypes", title: "LSP: Subtypes") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showTypeSubtypesInActiveTab()
+            },
+            .init(id: "lsp.show_hierarchy_panel", title: "LSP: Show Hierarchy Panel") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showHierarchyPanelInActiveTab()
+            },
+            .init(id: "lsp.refresh_hierarchy_panel", title: "LSP: Refresh Hierarchy Panel") { [weak self] in
+                self?.activeWindow()?.editorAreaController.refreshHierarchyPanelInActiveTab()
+            },
+            .init(id: "lsp.expand_hierarchy_selection", title: "LSP: Expand Hierarchy Selection") { [weak self] in
+                self?.activeWindow()?.editorAreaController.expandSelectedHierarchyPanelResultInActiveTab()
+            },
+            .init(
+                id: "lsp.rename",
+                title: "LSP: Rename Symbol",
+                schema: Self.renameCommandSchema
+            ) { [weak self] arguments in
+                guard let newName = arguments.string("newName") else {
+                    self?.activeWindow()?.editorAreaController.promptRenameSymbolInActiveTab()
+                    return
+                }
+                self?.activeWindow()?.editorAreaController.renameSymbolInActiveTab(to: newName)
+            },
+            .init(id: "lsp.code_actions", title: "LSP: Code Actions") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showCodeActionsInActiveTab()
+            },
+            .init(id: "lsp.code_lens_actions", title: "LSP: Code Lens Actions") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showCodeLensActionsInActiveTab()
+            },
+            .init(id: "lsp.code_lens_at_cursor", title: "LSP: Code Lens at Cursor") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showCodeLensActionsAtCursorInActiveTab()
+            },
+            .init(id: "lsp.show_code_lens_panel", title: "LSP: Show Code Lens Panel") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showCodeLensPanelInActiveTab()
+            },
+            .init(id: "lsp.refresh_code_lens", title: "LSP: Refresh Code Lens") { [weak self] in
+                self?.activeWindow()?.editorAreaController.refreshCodeLensInActiveTab()
+            },
+            .init(id: "lsp.refresh_inlay_hints", title: "LSP: Refresh Inlay Hints") { [weak self] in
+                self?.activeWindow()?.editorAreaController.refreshInlayHintsInActiveTab()
+            },
+            .init(id: "lsp.show_inlay_hints_panel", title: "LSP: Show Inlay Hints Panel") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showInlayHintsPanelInActiveTab()
+            },
+            .init(id: "lsp.refresh_document_links", title: "LSP: Refresh Document Links") { [weak self] in
+                self?.activeWindow()?.editorAreaController.refreshDocumentLinksInActiveTab()
+            },
+            .init(id: "lsp.show_document_links_panel", title: "LSP: Show Document Links Panel") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showDocumentLinksPanelInActiveTab()
+            },
+            .init(id: "lsp.quick_fix", title: "LSP: Quick Fixes") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showQuickFixesInActiveTab()
+            },
+            .init(id: "lsp.refactor", title: "LSP: Refactor Actions") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showRefactorActionsInActiveTab()
+            },
+            .init(id: "lsp.source_actions", title: "LSP: Source Actions") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showSourceActionsInActiveTab()
+            },
+            .init(id: "lsp.organize_imports", title: "LSP: Organize Imports") { [weak self] in
+                self?.activeWindow()?.editorAreaController.organizeImportsInActiveTab()
+            },
+            .init(id: "lsp.fix_all", title: "LSP: Fix All") { [weak self] in
+                self?.activeWindow()?.editorAreaController.fixAllInActiveTab()
+            },
+            .init(id: "lsp.problems", title: "LSP: Problems") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showProblemsInActiveTab()
+            },
+            .init(id: "lsp.show_problems_panel", title: "LSP: Show Problems Panel") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showProblemsPanelInActiveTab()
+            },
+            .init(id: "lsp.workspace_diagnostics", title: "LSP: Workspace Diagnostics") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showWorkspaceDiagnosticsInActiveTab()
+            },
+            .init(id: "lsp.show_workspace_problems_panel", title: "LSP: Show Workspace Problems Panel") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showWorkspaceProblemsPanelInActiveTab()
+            },
+            .init(id: "lsp.show_project_lsp_status", title: "LSP: Show Project Status Events") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showProjectLspStatusEventsPanel()
+            },
+            .init(id: "lsp.show_project_lsp_health", title: "LSP: Show Project Process Health") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showProjectLspProcessHealthPanel()
+            },
+            .init(id: "lsp.show_project_lsp_health_log", title: "LSP: Show Project Process Health Log") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showProjectLspProcessHealthLogPanel()
+            },
+            .init(id: "lsp.show_project_lsp_dashboard", title: "LSP: Show Project Health Dashboard") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showProjectLspDashboardPanel()
+            },
+            .init(id: "lsp.clear_project_lsp_health_log", title: "LSP: Clear Project Process Health Log") { [weak self] in
+                self?.activeWindow()?.editorAreaController.clearProjectLspProcessHealthLog()
+            },
+            .init(id: "lsp.export_project_lsp_health_log", title: "LSP: Export Project Process Health Log") { [weak self] in
+                self?.activeWindow()?.editorAreaController.exportProjectLspProcessHealthLog()
+            },
+            .init(id: "lsp.restart_server", title: "LSP: Restart Server") { [weak self] in
+                self?.activeWindow()?.editorAreaController.restartLspServerInActiveTab()
+            },
+            .init(id: "lsp.shutdown_server", title: "LSP: Shut Down Server") { [weak self] in
+                self?.activeWindow()?.editorAreaController.shutdownLspServerInActiveTab()
+            },
+            .init(id: "lsp.restart_project_servers", title: "LSP: Restart Project Servers") { [weak self] in
+                self?.activeWindow()?.editorAreaController.restartProjectLspServers()
+            },
+            .init(id: "lsp.shutdown_project_servers", title: "LSP: Shut Down Project Servers") { [weak self] in
+                self?.activeWindow()?.editorAreaController.shutdownProjectLspServers()
+            },
+            .init(id: "lsp.document_colors", title: "LSP: Document Colors") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showDocumentColorsInActiveTab()
+            },
+            .init(id: "lsp.pick_document_color", title: "LSP: Pick Document Color") { [weak self] in
+                self?.activeWindow()?.editorAreaController.pickDocumentColorInActiveTab()
+            },
+            .init(id: "lsp.show_document_colors_panel", title: "LSP: Show Document Colors Panel") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showDocumentColorsPanelInActiveTab()
+            },
+            .init(id: "lsp.refresh_document_colors", title: "LSP: Refresh Document Colors") { [weak self] in
+                self?.activeWindow()?.editorAreaController.refreshDocumentColorsInActiveTab()
+            },
+            .init(id: "lsp.refresh_folding_ranges", title: "LSP: Refresh Folding Ranges") { [weak self] in
+                self?.activeWindow()?.editorAreaController.refreshFoldingRangesInActiveTab()
+            },
+            .init(id: "lsp.selection_range", title: "LSP: Expand Selection") { [weak self] in
+                self?.activeWindow()?.editorAreaController.expandSelectionWithLspInActiveTab()
+            },
+            .init(id: "lsp.linked_editing", title: "LSP: Linked Editing") { [weak self] in
+                self?.activeWindow()?.editorAreaController.startLinkedEditingInActiveTab()
+            },
+            .init(id: "lsp.document_symbols", title: "LSP: Document Symbols") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showDocumentSymbolsInActiveTab()
+            },
+            .init(
+                id: "lsp.workspace_symbols",
+                title: "LSP: Workspace Symbols",
+                schema: Self.workspaceSymbolsCommandSchema
+            ) { [weak self] arguments in
+                guard let query = arguments.string("query") else {
+                    self?.activeWindow()?.editorAreaController.promptWorkspaceSymbolsInActiveTab()
+                    return
+                }
+                self?.activeWindow()?.editorAreaController.showWorkspaceSymbolsInActiveTab(query: query)
+            },
+            .init(id: "lsp.show_last_symbols", title: "LSP: Show Last Symbols") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showLastLspSymbolResults()
+            },
+            .init(id: "lsp.show_symbol_history", title: "LSP: Show Symbol History") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showLspSymbolHistory()
+            },
+            .init(id: "lsp.show_symbols_panel", title: "LSP: Show Symbols Panel") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showLspSymbolPanel()
+            },
+            .init(id: "lsp.show_workspace_outline_panel", title: "LSP: Show Workspace Outline Panel") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showWorkspaceOutlinePanel()
+            },
+            .init(id: "lsp.completion", title: "LSP: Completion") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showCompletionsInActiveTab()
+            },
+            .init(id: "lsp.signature_help", title: "LSP: Signature Help") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showSignatureHelpInActiveTab()
+            },
         ]
+
+        commands.append(contentsOf: sublimeFeatureBoundaryCommands())
+        commands.append(contentsOf: cursorMovementCommands())
+        commands.append(contentsOf: editorCommandPaletteCommands())
+        let contextualCommands = commands.map(commandWithCurrentContext(_:))
+        guard orderForCommandPalette else { return contextualCommands }
+        return commandsOrderedForCommandPalette(contextualCommands)
+    }
+
+    private func sublimeFeatureBoundaryCommands() -> [AttoCommandPaletteCommand] {
+        AttoSublimeFeatureBoundary.allCases.map { feature in
+            AttoCommandPaletteCommand(id: feature.commandID, title: feature.commandTitle) { [weak self] in
+                self?.runSublimeFeature(feature)
+            }
+        }
+    }
+
+    func _defaultCommandsForTesting() -> [AttoCommandPaletteCommand] {
+        defaultCommands()
+    }
+
+    func _quickOpenCommandsForTesting(query: String = "") -> [AttoCommandPaletteCommand] {
+        quickOpenCommands(query: query)
+    }
+
+    func _recentProjectCommandsForTesting() -> [AttoCommandPaletteCommand] {
+        recentProjectCommands()
+    }
+
+    func _keyBindingForTesting(commandID: String) -> AttoKeyBinding? {
+        keyBinding(forCommandID: commandID)
+    }
+
+    func _keyBindingArgumentsForTesting(commandID: String) -> AttoCommandArguments? {
+        keymapResolutionForCurrentContext().arguments[commandID]
+    }
+
+    func _keySequenceForTesting(commandID: String) -> AttoKeySequence? {
+        keymapResolutionForCurrentContext().sequences[commandID]
+    }
+
+    func _keymapContextForTesting() -> AttoKeymapContext {
+        currentKeymapContext()
+    }
+
+    func _pendingKeySequenceForTesting() -> [AttoKeyBinding] {
+        pendingKeySequence
+    }
+
+    func _expirePendingKeySequenceForTesting() {
+        clearPendingKeySequence()
+    }
+
+    @discardableResult
+    func _handleKeyBindingForTesting(_ binding: AttoKeyBinding) -> Bool {
+        handleKeyBinding(binding)
+    }
+
+    func _commandIsEnabledForTesting(commandID: String) -> Bool {
+        commandIsEnabled(commandID: commandID)
+    }
+
+    func _commandSchemaForTesting(commandID: String) -> AttoCommandSchema? {
+        defaultCommands(orderForCommandPalette: false).first(where: { $0.id == commandID })?.schema
+    }
+
+    func _commandConflictsForTesting() -> [String] {
+        Self.duplicateCommandIDs(in: defaultCommands(orderForCommandPalette: false))
+    }
+
+    func _recentCommandIDsForTesting() -> [String] {
+        recentCommandRecords.map(\.commandID)
+    }
+
+    func _recentCommandArgumentsForTesting(commandID: String) -> AttoCommandArguments? {
+        recentCommandRecords.first { $0.commandID == commandID }?.arguments
+    }
+
+    func _isRecordingMacroForTesting() -> Bool {
+        isRecordingMacro
+    }
+
+    func _lastMacroCommandsForTesting() -> [AttoRecordedCommand] {
+        lastMacroCommands
+    }
+
+    func _setMacroImportSelectionProviderForTesting(_ provider: (() -> (url: URL, name: String)?)?) {
+        macroImportSelectionProvider = provider
+    }
+
+    func _setMacroExportSelectionProviderForTesting(_ provider: (([String]) -> (name: String, url: URL)?)?) {
+        macroExportSelectionProvider = provider
+    }
+
+    func _setMacroDeleteConfirmationProviderForTesting(_ provider: ((String) -> Bool)?) {
+        macroDeleteConfirmationProvider = provider.map { stringProvider in
+            { names in stringProvider(names.joined(separator: "\n")) }
+        }
+    }
+
+    func _setMacroDeleteBatchConfirmationProviderForTesting(_ provider: (([String]) -> Bool)?) {
+        macroDeleteConfirmationProvider = provider
+    }
+
+    func _restoreDeletedMacroHistoryEntryForTesting(displayIndex: Int) -> Bool {
+        restoreDeletedMacroHistoryEntry(displayIndex: displayIndex)
+    }
+
+    func _setMacroDeleteHistoryClearConfirmationProviderForTesting(_ provider: ((Int, Int) -> Bool)?) {
+        macroDeleteHistoryClearConfirmationProvider = provider
+    }
+
+    func _setMacroDeleteHistoryEntryRemovalConfirmationProviderForTesting(_ provider: ((Int, String) -> Bool)?) {
+        macroDeleteHistoryEntryRemovalConfirmationProvider = provider
+    }
+
+    func _setMacroDeleteHistoryEntriesRemovalConfirmationProviderForTesting(
+        _ provider: (([(displayIndex: Int, title: String)]) -> Bool)?
+    ) {
+        macroDeleteHistoryEntriesRemovalConfirmationProvider = provider
+    }
+
+    func _validateRuntimeCompatibilityForTesting() -> Bool {
+        validateRuntimeCompatibilityBeforeLaunch(logSuccess: false)
+    }
+
+    func _runtimeCompatibilityReportForTesting() -> AttoRuntimeCompatibility.Report? {
+        runtimeCompatibilityReport
+    }
+
+    func _setRuntimeInfoForTesting(_ runtimeInfo: EditorCoreUIFFIRuntimeInfo) {
+        runtimeCompatibilityReport = AttoRuntimeCompatibility.evaluate(runtimeInfo: runtimeInfo)
+    }
+
+    func _sublimeOutputTextForTesting() -> String {
+        sublimeProductCoordinator.outputTextForTesting
+    }
+
+    func _createWindowForTesting(workspaceRootURL: URL) -> AttoWindowContext {
+        createWindow(
+            workspaceRootURL: workspaceRootURL,
+            contentSize: AttoWindowSizing.preferredContentSize,
+            centerOnShow: false
+        )
+    }
+
+    func _workspaceRootURLsForTesting() -> [URL] {
+        windows.map { $0.workspaceRootURL.standardizedFileURL }
+    }
+
+    func _closeWindowsForTesting() {
+        let contexts = windows
+        windows.removeAll()
+        activeWindowID = nil
+        for ctx in contexts {
+            ctx.window.delegate = nil
+            ctx.window.close()
+        }
+    }
+
+    func _makeSessionSnapshotForTesting() -> AttoSessionSnapshot? {
+        makeSessionSnapshot()
+    }
+
+    func _applyEditorPreferencesForTesting() {
+        applyEditorPreferencesToAllWindows()
+    }
+
+    func _setRuntimeConfigurationSettingsForTesting(_ settings: AttoConfigurationSettings?) {
+        setRuntimeConfigurationSettings(settings)
+    }
+
+    @discardableResult
+    func executeCommand(id commandID: String) -> Bool {
+        executeCommand(id: commandID, explicitArguments: nil)
+    }
+
+    @discardableResult
+    func executeCommand(id commandID: String, arguments: AttoCommandArguments) -> Bool {
+        executeCommand(id: commandID, explicitArguments: arguments)
+    }
+
+    @discardableResult
+    private func executeCommand(id commandID: String, explicitArguments arguments: AttoCommandArguments?) -> Bool {
+        guard let command = defaultCommands(orderForCommandPalette: false).first(where: { $0.id == commandID }) else {
+            NSSound.beep()
+            NSLog("AttoEditor: unknown command id %@", commandID)
+            return false
+        }
+        guard command.isEnabled else {
+            NSSound.beep()
+            return false
+        }
+        guard let arguments else {
+            command.run()
+            return true
+        }
+        do {
+            let normalized = try command.schema.normalizedArguments(arguments)
+            command.runWithArguments(normalized)
+        } catch {
+            NSSound.beep()
+            NSLog("AttoEditor: invalid arguments for command %@: %@", commandID, String(describing: error))
+            return false
+        }
+        return true
+    }
+
+    func keyBinding(forCommandID commandID: String) -> AttoKeyBinding? {
+        keymapResolutionForCurrentContext().bindings[commandID]
+    }
+
+    private func editorCommandPaletteCommands() -> [AttoCommandPaletteCommand] {
+        var commands = Self.staticEditorJSONCommands.map { spec in
+            AttoCommandPaletteCommand(id: spec.id, title: spec.title) { [weak self] in
+                self?.activeWindow()?.editorAreaController.executeActiveEditorCommandJSON(spec.commandJSON)
+            }
+        }
+
+        commands.append(contentsOf: [
+            .init(
+                id: "editor.apply_snippet",
+                title: "Edit: Apply Snippet",
+                schema: Self.snippetCommandSchema
+            ) { [weak self] arguments in
+                guard let snippet = arguments.string("snippet") else {
+                    self?.activeWindow()?.editorAreaController.promptApplySnippetInActiveTab()
+                    return
+                }
+                self?.activeWindow()?.editorAreaController.applySnippetInActiveTab(snippet)
+            },
+            .init(id: "editor.add_next_occurrence", title: "Edit: Add Next Occurrence") { [weak self] in
+                self?.activeWindow()?.editorAreaController.addNextOccurrenceInActiveTab()
+            },
+            .init(id: "editor.add_all_occurrences", title: "Edit: Add All Occurrences") { [weak self] in
+                self?.activeWindow()?.editorAreaController.addAllOccurrencesInActiveTab()
+            },
+            .init(id: "editor.toggle_line_comment", title: "Edit: Toggle Line Comment") { [weak self] in
+                self?.activeWindow()?.editorAreaController.toggleLineCommentInActiveTab()
+            },
+            .init(id: "editor.fold_selection", title: "Edit: Fold Selection") { [weak self] in
+                self?.activeWindow()?.editorAreaController.foldSelectionInActiveTab()
+            },
+            .init(id: "editor.unfold", title: "Edit: Unfold at Cursor") { [weak self] in
+                self?.activeWindow()?.editorAreaController.unfoldAtCursorInActiveTab()
+            },
+            .init(id: "editor.unfold_all", title: "Edit: Unfold All") { [weak self] in
+                self?.activeWindow()?.editorAreaController.unfoldAllInActiveTab()
+            },
+        ])
+
+        return commands
+    }
+
+    private func cursorMovementCommands() -> [AttoCommandPaletteCommand] {
+        AttoEditorAreaViewController.CursorMovementCommand.allCases.map { command in
+            AttoCommandPaletteCommand(id: command.id, title: command.title) { [weak self] in
+                self?.activeWindow()?.editorAreaController.performCursorMovementCommand(command)
+            }
+        }
+    }
+
+    private func commandWithCurrentContext(_ command: AttoCommandPaletteCommand) -> AttoCommandPaletteCommand {
+        let metadata = commandMetadata(commandID: command.id, title: command.title)
+        let schema = metadata.schema
+        return AttoCommandPaletteCommand(
+            id: command.id,
+            title: command.title,
+            group: metadata.group,
+            swatchColor: command.swatchColor,
+            isEnabled: commandIsEnabled(commandID: command.id),
+            requiresEditor: metadata.requirement.requiresEditor,
+            schema: schema,
+            promptsForArguments: schema.isParameterized,
+            initialArguments: command.initialArguments,
+            runWithArguments: { [weak self] arguments in
+                command.runWithArguments(arguments)
+                self?.recordMacroCommandIfNeeded(commandID: command.id, schema: schema, arguments: arguments)
+                self?.rememberRecentCommand(command.id, arguments: arguments)
+            }
+        )
+    }
+
+    private func commandsOrderedForCommandPalette(
+        _ commands: [AttoCommandPaletteCommand]
+    ) -> [AttoCommandPaletteCommand] {
+        guard recentCommandRecords.isEmpty == false else { return commands }
+
+        var commandsByID: [String: AttoCommandPaletteCommand] = [:]
+        for command in commands where commandsByID[command.id] == nil {
+            commandsByID[command.id] = command
+        }
+        let recentCommands = recentCommandRecords.compactMap { record -> AttoCommandPaletteCommand? in
+            guard let command = commandsByID[record.commandID] else { return nil }
+            return commandReplayingRecentArguments(command, arguments: record.arguments)
+        }
+        let recentSet = Set(recentCommands.map(\.id))
+        let remainingCommands = commands.filter { recentSet.contains($0.id) == false }
+        return recentCommands + remainingCommands
+    }
+
+    private func commandReplayingRecentArguments(
+        _ command: AttoCommandPaletteCommand,
+        arguments: AttoCommandArguments
+    ) -> AttoCommandPaletteCommand {
+        guard arguments.isEmpty == false,
+              let replayArguments = try? command.schema.normalizedArguments(arguments)
+        else {
+            return command
+        }
+
+        return AttoCommandPaletteCommand(
+            id: command.id,
+            title: command.title,
+            group: command.group,
+            swatchColor: command.swatchColor,
+            isEnabled: command.isEnabled,
+            requiresEditor: command.requiresEditor,
+            schema: command.schema,
+            promptsForArguments: command.promptsForArguments,
+            initialArguments: replayArguments,
+            runWithArguments: { providedArguments in
+                let effectiveArguments = providedArguments.isEmpty ? replayArguments : providedArguments
+                command.runWithArguments(effectiveArguments)
+            }
+        )
+    }
+
+    private func rememberRecentCommand(_ commandID: String, arguments: AttoCommandArguments) {
+        guard commandID != "workbench.command_palette" else { return }
+
+        recentCommandRecords.removeAll { $0.commandID == commandID }
+        recentCommandRecords.insert(AttoRecentCommandRecord(commandID: commandID, arguments: arguments), at: 0)
+        if recentCommandRecords.count > Self.maxRecentCommandCount {
+            recentCommandRecords.removeLast(recentCommandRecords.count - Self.maxRecentCommandCount)
+        }
+        recentCommandStore?.save(recentCommandRecords, maxCount: Self.maxRecentCommandCount)
+    }
+
+    private func toggleMacroRecording() {
+        if isRecordingMacro {
+            stopMacroRecording()
+        } else {
+            startMacroRecording()
+        }
+    }
+
+    private func startMacroRecording() {
+        currentMacroCommands = []
+        isRecordingMacro = true
+    }
+
+    private func stopMacroRecording() {
+        guard isRecordingMacro else { return }
+        lastMacroCommands = currentMacroCommands
+        currentMacroCommands = []
+        isRecordingMacro = false
+        try? macroStore?.save(lastMacroCommands, maxCount: Self.maxRecordedMacroCommandCount)
+    }
+
+    private func replayLastMacro() {
+        guard isRecordingMacro == false, lastMacroCommands.isEmpty == false else {
+            NSSound.beep()
+            return
+        }
+
+        replayMacroCommands(lastMacroCommands)
+    }
+
+    private func saveNamedMacro(arguments: AttoCommandArguments) {
+        guard let name = arguments.string("name") ?? promptMacroName(commandID: "macro.save_named", title: "Macro: Save Last Macro As…") else {
+            return
+        }
+        _ = saveLastMacro(named: name)
+    }
+
+    private func replayNamedMacro(arguments: AttoCommandArguments) {
+        guard let name = arguments.string("name") ?? promptMacroName(commandID: "macro.replay_named", title: "Macro: Replay Named Macro…") else {
+            return
+        }
+        _ = replayNamedMacro(named: name)
+    }
+
+    private func renameNamedMacro(arguments: AttoCommandArguments) {
+        let effectiveArguments = arguments.isEmpty
+            ? (promptMacroArguments(commandID: "macro.rename_named", title: "Macro: Rename Named Macro…") ?? [:])
+            : arguments
+        guard let oldName = effectiveArguments.string("oldName"),
+              let newName = effectiveArguments.string("newName")
+        else {
+            return
+        }
+        _ = renameNamedMacro(from: oldName, to: newName)
+    }
+
+    private func deleteNamedMacro(arguments: AttoCommandArguments) {
+        guard let name = arguments.string("name") ?? promptMacroName(commandID: "macro.delete_named", title: "Macro: Delete Named Macro…") else {
+            return
+        }
+        _ = deleteNamedMacro(named: name)
+    }
+
+    private func deleteNamedMacros(arguments: AttoCommandArguments) {
+        let effectiveArguments = arguments.isEmpty
+            ? (promptMacroArguments(commandID: "macro.delete_named_batch", title: "Macro: Delete Named Macros…") ?? [:])
+            : arguments
+        guard let names = macroNamesArgument(effectiveArguments, parameter: "names") else {
+            return
+        }
+        _ = deleteNamedMacros(named: names)
+    }
+
+    private func removeDeletedMacroHistoryEntry(arguments: AttoCommandArguments) {
+        let effectiveArguments = arguments.isEmpty
+            ? (promptMacroArguments(
+                commandID: "macro.remove_delete_history_entry",
+                title: "Macro: Remove Deleted Macro History Entry…"
+            ) ?? [:])
+            : arguments
+        guard let displayIndex = effectiveArguments.integer("index") else {
+            return
+        }
+        _ = removeDeletedMacroHistoryEntry(displayIndex: displayIndex - 1)
+    }
+
+    private func removeDeletedMacroHistoryEntries(arguments: AttoCommandArguments) {
+        let effectiveArguments = arguments.isEmpty
+            ? (promptMacroArguments(
+                commandID: "macro.remove_delete_history_entries",
+                title: "Macro: Remove Deleted Macro History Entries…"
+            ) ?? [:])
+            : arguments
+        guard let displayIndices = deletedMacroHistoryDisplayIndicesArgument(
+            effectiveArguments,
+            parameter: "indices"
+        ) else {
+            return
+        }
+        _ = removeDeletedMacroHistoryEntries(displayIndices: displayIndices)
+    }
+
+    private func importNamedMacro(arguments: AttoCommandArguments) {
+        if arguments.isEmpty {
+            guard let selection = macroImportSelectionProvider?() ?? promptImportMacroFile() else {
+                return
+            }
+            _ = importNamedMacro(from: selection.url, named: selection.name)
+            return
+        }
+
+        let effectiveArguments = arguments.isEmpty
+            ? (promptMacroArguments(commandID: "macro.import_file", title: "Macro: Import Macro File…") ?? [:])
+            : arguments
+        guard let path = effectiveArguments.string("path"),
+              let name = effectiveArguments.string("name")
+        else {
+            return
+        }
+        _ = importNamedMacro(fromPath: path, named: name)
+    }
+
+    private func exportNamedMacro(arguments: AttoCommandArguments) {
+        if arguments.isEmpty {
+            let names = macroStore?.namedMacroNames() ?? []
+            guard let selection = macroExportSelectionProvider?(names) ?? promptExportNamedMacro(names: names) else {
+                return
+            }
+            _ = exportNamedMacro(named: selection.name, to: selection.url)
+            return
+        }
+
+        let effectiveArguments = arguments.isEmpty
+            ? (promptMacroArguments(commandID: "macro.export_named", title: "Macro: Export Named Macro…") ?? [:])
+            : arguments
+        guard let name = effectiveArguments.string("name"),
+              let path = effectiveArguments.string("path")
+        else {
+            return
+        }
+        _ = exportNamedMacro(named: name, toPath: path)
+    }
+
+    private func saveLastMacro(named name: String) -> Bool {
+        guard isRecordingMacro == false, lastMacroCommands.isEmpty == false, let macroStore else {
+            NSSound.beep()
+            return false
+        }
+
+        do {
+            try macroStore.save(lastMacroCommands, named: name, maxCount: Self.maxRecordedMacroCommandCount)
+            return true
+        } catch {
+            NSSound.beep()
+            NSLog("AttoEditor: failed to save macro %@: %@", name, String(describing: error))
+            return false
+        }
+    }
+
+    private func replayNamedMacro(named name: String) -> Bool {
+        guard isRecordingMacro == false,
+              let commands = macroStore?.loadNamedMacro(name, maxCount: Self.maxRecordedMacroCommandCount),
+              commands.isEmpty == false
+        else {
+            NSSound.beep()
+            return false
+        }
+
+        replayMacroCommands(commands)
+        return true
+    }
+
+    private func renameNamedMacro(from oldName: String, to newName: String) -> Bool {
+        guard isRecordingMacro == false, let macroStore else {
+            NSSound.beep()
+            return false
+        }
+
+        do {
+            try macroStore.renameNamedMacro(oldName, to: newName)
+            return true
+        } catch {
+            NSSound.beep()
+            NSLog("AttoEditor: failed to rename macro %@ to %@: %@", oldName, newName, String(describing: error))
+            return false
+        }
+    }
+
+    private func deleteNamedMacro(named name: String) -> Bool {
+        guard isRecordingMacro == false, let macroStore else {
+            NSSound.beep()
+            return false
+        }
+        guard let snapshots = macroSnapshotsForDeletion(named: [name], macroStore: macroStore) else {
+            return false
+        }
+        let names = snapshots.map(\.name)
+        guard confirmDeleteNamedMacros(names) else {
+            return false
+        }
+
+        do {
+            try macroStore.deleteNamedMacros(names)
+            pushDeletedMacroUndoRecord(AttoDeletedMacroUndoRecord(macros: snapshots))
+            return true
+        } catch {
+            NSSound.beep()
+            NSLog("AttoEditor: failed to delete macro %@: %@", name, String(describing: error))
+            return false
+        }
+    }
+
+    private func deleteNamedMacros(named rawNames: [String]) -> Bool {
+        guard isRecordingMacro == false, let macroStore else {
+            NSSound.beep()
+            return false
+        }
+
+        guard let snapshots = macroSnapshotsForDeletion(named: rawNames, macroStore: macroStore) else {
+            return false
+        }
+        let names = snapshots.map(\.name)
+        guard confirmDeleteNamedMacros(names) else {
+            return false
+        }
+
+        do {
+            try macroStore.deleteNamedMacros(names)
+            pushDeletedMacroUndoRecord(AttoDeletedMacroUndoRecord(macros: snapshots))
+            return true
+        } catch {
+            NSSound.beep()
+            NSLog("AttoEditor: failed to delete macros %@: %@", names.joined(separator: ", "), String(describing: error))
+            return false
+        }
+    }
+
+    private func undoDeletedMacros() -> Bool {
+        guard isRecordingMacro == false,
+              deletedMacroUndoStack.last?.macros.isEmpty == false
+        else {
+            NSSound.beep()
+            return false
+        }
+
+        return restoreDeletedMacroUndoRecord(atStackIndex: deletedMacroUndoStack.count - 1)
+    }
+
+    private func showDeletedMacroHistory() -> Bool {
+        guard isRecordingMacro == false,
+              macroStore != nil,
+              deletedMacroUndoStack.isEmpty == false
+        else {
+            NSSound.beep()
+            return false
+        }
+
+        guard let window = activeWindow()?.window else {
+            NSSound.beep()
+            return false
+        }
+
+        let records = Array(deletedMacroUndoStack.enumerated().reversed())
+        let commands = records.enumerated().map { displayIndex, item in
+            AttoCommandPaletteCommand(
+                id: "macro.delete_history.\(displayIndex)",
+                title: "\(displayIndex + 1). \(deletedMacroUndoRecordTitle(item.element))"
+            ) { [weak self] in
+                _ = self?.restoreDeletedMacroUndoRecord(atStackIndex: item.offset)
+            }
+        }
+
+        let controller = AttoCommandPaletteController(
+            accessibilityPrefix: "AttoEditor.Macro.DeleteHistory",
+            commandsProvider: { commands }
+        )
+        macroDeleteHistoryController = controller
+        controller.show(relativeTo: window, placeholder: "Filter deleted macros...")
+        return true
+    }
+
+    private func deletedMacroHistoryPanelItems() -> [AttoDeletedMacroHistoryPanelController.Item] {
+        let records = Array(deletedMacroUndoStack.enumerated().reversed())
+        return records.enumerated().map { displayIndex, item in
+            AttoDeletedMacroHistoryPanelController.Item(
+                displayIndex: displayIndex + 1,
+                title: deletedMacroUndoRecordTitle(item.element)
+            )
+        }
+    }
+
+    private func showDeletedMacroHistoryPanel() -> Bool {
+        guard isRecordingMacro == false,
+              macroStore != nil,
+              deletedMacroUndoStack.isEmpty == false
+        else {
+            NSSound.beep()
+            return false
+        }
+
+        guard let window = activeWindow()?.window else {
+            NSSound.beep()
+            return false
+        }
+
+        if macroDeleteHistoryPanelController == nil {
+            macroDeleteHistoryPanelController = AttoDeletedMacroHistoryPanelController(
+                onRestore: { [weak self] displayIndex in
+                    _ = self?.restoreDeletedMacroHistoryEntry(displayIndex: displayIndex - 1)
+                },
+                onRemove: { [weak self] displayIndices in
+                    _ = self?.removeDeletedMacroHistoryEntries(displayIndices: displayIndices.map { $0 - 1 })
+                },
+                onClear: { [weak self] in
+                    _ = self?.clearDeletedMacroHistory()
+                }
+            )
+        }
+
+        return macroDeleteHistoryPanelController?.show(
+            relativeTo: window,
+            items: deletedMacroHistoryPanelItems()
+        ) == true
+    }
+
+    private func clearDeletedMacroHistory() -> Bool {
+        guard isRecordingMacro == false,
+              macroStore != nil,
+              deletedMacroUndoStack.isEmpty == false
+        else {
+            NSSound.beep()
+            return false
+        }
+
+        let recordCount = deletedMacroUndoStack.count
+        let macroCount = deletedMacroUndoStack.reduce(0) { $0 + $1.macros.count }
+        guard confirmClearDeletedMacroHistory(recordCount: recordCount, macroCount: macroCount) else {
+            return false
+        }
+
+        deletedMacroUndoStack.removeAll()
+        persistDeletedMacroUndoStack()
+        refreshDeletedMacroHistoryViewsAfterMutation()
+        return true
+    }
+
+    private func refreshDeletedMacroHistoryViewsAfterMutation() {
+        if deletedMacroUndoStack.isEmpty {
+            macroDeleteHistoryController?.hide()
+            macroDeleteHistoryPanelController?.hide()
+        } else {
+            macroDeleteHistoryController?.reloadCommands()
+            macroDeleteHistoryPanelController?.update(items: deletedMacroHistoryPanelItems())
+        }
+    }
+
+    private func restoreDeletedMacroHistoryEntry(displayIndex: Int) -> Bool {
+        let stackIndex = deletedMacroUndoStack.count - 1 - displayIndex
+        return restoreDeletedMacroUndoRecord(atStackIndex: stackIndex)
+    }
+
+    private func removeDeletedMacroHistoryEntry(displayIndex: Int) -> Bool {
+        guard isRecordingMacro == false,
+              macroStore != nil,
+              displayIndex >= 0,
+              displayIndex < deletedMacroUndoStack.count
+        else {
+            NSSound.beep()
+            return false
+        }
+
+        let stackIndex = deletedMacroUndoStack.count - 1 - displayIndex
+        let record = deletedMacroUndoStack[stackIndex]
+        let title = deletedMacroUndoRecordTitle(record)
+        guard confirmRemoveDeletedMacroHistoryEntry(displayIndex: displayIndex + 1, title: title) else {
+            return false
+        }
+
+        deletedMacroUndoStack.remove(at: stackIndex)
+        persistDeletedMacroUndoStack()
+        refreshDeletedMacroHistoryViewsAfterMutation()
+        return true
+    }
+
+    private func removeDeletedMacroHistoryEntries(displayIndices: [Int]) -> Bool {
+        guard isRecordingMacro == false,
+              macroStore != nil,
+              displayIndices.isEmpty == false
+        else {
+            NSSound.beep()
+            return false
+        }
+
+        var items: [(displayIndex: Int, stackIndex: Int, title: String)] = []
+        var seen = Set<Int>()
+        for displayIndex in displayIndices {
+            guard displayIndex >= 0, displayIndex < deletedMacroUndoStack.count else {
+                NSSound.beep()
+                return false
+            }
+            guard seen.insert(displayIndex).inserted else { continue }
+            let stackIndex = deletedMacroUndoStack.count - 1 - displayIndex
+            items.append((
+                displayIndex: displayIndex,
+                stackIndex: stackIndex,
+                title: deletedMacroUndoRecordTitle(deletedMacroUndoStack[stackIndex])
+            ))
+        }
+
+        let confirmationItems = items
+            .sorted { $0.displayIndex < $1.displayIndex }
+            .map { (displayIndex: $0.displayIndex + 1, title: $0.title) }
+        guard confirmationItems.isEmpty == false,
+              confirmRemoveDeletedMacroHistoryEntries(confirmationItems)
+        else {
+            return false
+        }
+
+        for stackIndex in items.map(\.stackIndex).sorted(by: >) {
+            deletedMacroUndoStack.remove(at: stackIndex)
+        }
+        persistDeletedMacroUndoStack()
+        refreshDeletedMacroHistoryViewsAfterMutation()
+        return true
+    }
+
+    private func restoreDeletedMacroUndoRecord(atStackIndex stackIndex: Int) -> Bool {
+        guard isRecordingMacro == false,
+              let macroStore,
+              stackIndex >= 0,
+              stackIndex < deletedMacroUndoStack.count
+        else {
+            NSSound.beep()
+            return false
+        }
+
+        let undoRecord = deletedMacroUndoStack[stackIndex]
+        guard undoRecord.macros.isEmpty == false else {
+            NSSound.beep()
+            return false
+        }
+
+        let macros = undoRecord.macros.map { (name: $0.name, commands: $0.commands) }
+        do {
+            try macroStore.restoreNamedMacros(macros, maxCount: Self.maxRecordedMacroCommandCount)
+            deletedMacroUndoStack.remove(at: stackIndex)
+            persistDeletedMacroUndoStack()
+            refreshDeletedMacroHistoryViewsAfterMutation()
+            return true
+        } catch {
+            NSSound.beep()
+            NSLog("AttoEditor: failed to undo macro delete: %@", String(describing: error))
+            return false
+        }
+    }
+
+    private func deletedMacroUndoRecordTitle(_ record: AttoDeletedMacroUndoRecord) -> String {
+        let names = record.macros.map(\.name)
+        if names.count == 1, let name = names.first {
+            return name
+        }
+        let preview = names.prefix(3).joined(separator: ", ")
+        let overflow = names.count > 3 ? ", +\(names.count - 3)" : ""
+        return "\(preview)\(overflow) (\(names.count) macros)"
+    }
+
+    private func deletedMacroUndoRecordChoices() -> [AttoCommandArgumentChoice] {
+        let records = Array(deletedMacroUndoStack.enumerated().reversed())
+        return records.enumerated().map { displayIndex, item in
+            AttoCommandArgumentChoice(
+                title: "\(displayIndex + 1). \(deletedMacroUndoRecordTitle(item.element))",
+                value: .integer(displayIndex + 1)
+            )
+        }
+    }
+
+    private func pushDeletedMacroUndoRecord(_ record: AttoDeletedMacroUndoRecord) {
+        guard record.macros.isEmpty == false else { return }
+        deletedMacroUndoStack.append(record)
+        if deletedMacroUndoStack.count > Self.maxDeletedMacroUndoRecordCount {
+            deletedMacroUndoStack.removeFirst(deletedMacroUndoStack.count - Self.maxDeletedMacroUndoRecordCount)
+        }
+        persistDeletedMacroUndoStack()
+    }
+
+    private func persistDeletedMacroUndoStack() {
+        guard let macroStore else { return }
+        do {
+            try macroStore.saveDeletedMacroUndoRecords(
+                deletedMacroUndoStack,
+                maxRecords: Self.maxDeletedMacroUndoRecordCount,
+                maxCommands: Self.maxRecordedMacroCommandCount
+            )
+        } catch {
+            NSLog("AttoEditor: failed to persist deleted macro undo history: %@", String(describing: error))
+        }
+    }
+
+    private func macroSnapshotsForDeletion(
+        named rawNames: [String],
+        macroStore: AttoMacroStore
+    ) -> [AttoDeletedMacroSnapshot]? {
+        let names: [String]
+        do {
+            names = try macroStore.normalizedNamedMacroNames(rawNames)
+        } catch {
+            NSSound.beep()
+            NSLog("AttoEditor: invalid macro names for delete: %@", String(describing: error))
+            return nil
+        }
+
+        let existingNames = Set(macroStore.namedMacroNames())
+        var snapshots: [AttoDeletedMacroSnapshot] = []
+        for name in names {
+            guard existingNames.contains(name) else {
+                NSSound.beep()
+                NSLog("AttoEditor: failed to delete macros, missing macro %@", name)
+                return nil
+            }
+            guard let commands = macroStore.loadNamedMacro(name, maxCount: Self.maxRecordedMacroCommandCount) else {
+                NSSound.beep()
+                NSLog("AttoEditor: failed to load macro %@ before delete", name)
+                return nil
+            }
+            snapshots.append(AttoDeletedMacroSnapshot(name: name, commands: commands))
+        }
+        return snapshots
+    }
+
+    private func confirmDeleteNamedMacros(_ names: [String]) -> Bool {
+        if let macroDeleteConfirmationProvider {
+            return macroDeleteConfirmationProvider(names)
+        }
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = names.count == 1 ? "Delete Macro?" : "Delete Macros?"
+        if names.count == 1, let name = names.first {
+            alert.informativeText = "Delete the named macro \"\(name)\" from AttoEditor's macro directory. This cannot be undone."
+        } else {
+            let preview = names.prefix(8).map { "- \($0)" }.joined(separator: "\n")
+            let overflow = names.count > 8 ? "\n...and \(names.count - 8) more." : ""
+            alert.informativeText = "Delete \(names.count) named macros from AttoEditor's macro directory?\n\n\(preview)\(overflow)\n\nThis cannot be undone."
+        }
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    private func confirmClearDeletedMacroHistory(recordCount: Int, macroCount: Int) -> Bool {
+        if let macroDeleteHistoryClearConfirmationProvider {
+            return macroDeleteHistoryClearConfirmationProvider(recordCount, macroCount)
+        }
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Clear Deleted Macro History?"
+        let recordWord = recordCount == 1 ? "record" : "records"
+        let macroWord = macroCount == 1 ? "macro" : "macros"
+        alert.informativeText = "Clear \(recordCount) deleted macro history \(recordWord) containing \(macroCount) \(macroWord). This removes restore history only; existing macro files are unchanged."
+        alert.addButton(withTitle: "Clear History")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    private func confirmRemoveDeletedMacroHistoryEntry(displayIndex: Int, title: String) -> Bool {
+        if let macroDeleteHistoryEntryRemovalConfirmationProvider {
+            return macroDeleteHistoryEntryRemovalConfirmationProvider(displayIndex, title)
+        }
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Remove Deleted Macro History Entry?"
+        alert.informativeText = "Remove deleted macro history entry \(displayIndex): \(title). This removes restore history only; existing macro files are unchanged."
+        alert.addButton(withTitle: "Remove Entry")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    private func confirmRemoveDeletedMacroHistoryEntries(
+        _ items: [(displayIndex: Int, title: String)]
+    ) -> Bool {
+        if let macroDeleteHistoryEntriesRemovalConfirmationProvider {
+            return macroDeleteHistoryEntriesRemovalConfirmationProvider(items)
+        }
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Remove Deleted Macro History Entries?"
+        let preview = items.prefix(8).map { "\($0.displayIndex). \($0.title)" }.joined(separator: "\n")
+        let overflow = items.count > 8 ? "\n...and \(items.count - 8) more." : ""
+        let entryWord = items.count == 1 ? "entry" : "entries"
+        alert.informativeText = "Remove \(items.count) deleted macro history \(entryWord):\n\n\(preview)\(overflow)\n\nThis removes restore history only; existing macro files are unchanged."
+        alert.addButton(withTitle: "Remove Entries")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    private func macroNamesArgument(_ arguments: AttoCommandArguments, parameter: String) -> [String]? {
+        guard case .json(let rawJSON)? = arguments[parameter],
+              let data = rawJSON.data(using: .utf8),
+              let names = try? JSONDecoder().decode([String].self, from: data)
+        else {
+            NSSound.beep()
+            NSLog("AttoEditor: macro batch delete expects '%@' to be a JSON string array", parameter)
+            return nil
+        }
+        guard names.isEmpty == false else {
+            NSSound.beep()
+            return nil
+        }
+        return names
+    }
+
+    private func deletedMacroHistoryDisplayIndicesArgument(
+        _ arguments: AttoCommandArguments,
+        parameter: String
+    ) -> [Int]? {
+        guard case .json(let rawJSON)? = arguments[parameter],
+              let data = rawJSON.data(using: .utf8),
+              let indices = try? JSONDecoder().decode([Int].self, from: data)
+        else {
+            NSSound.beep()
+            NSLog("AttoEditor: macro delete history batch removal expects '%@' to be a JSON integer array", parameter)
+            return nil
+        }
+        guard indices.isEmpty == false else {
+            NSSound.beep()
+            return nil
+        }
+
+        var displayIndices: [Int] = []
+        var seen = Set<Int>()
+        for index in indices {
+            guard index >= 1, index <= deletedMacroUndoStack.count else {
+                NSSound.beep()
+                NSLog("AttoEditor: deleted macro history index %d is out of range", index)
+                return nil
+            }
+            if seen.insert(index).inserted {
+                displayIndices.append(index - 1)
+            }
+        }
+        return displayIndices
+    }
+
+    private func importNamedMacro(fromPath path: String, named name: String) -> Bool {
+        guard isRecordingMacro == false, let sourceURL = macroFileURL(fromPath: path) else {
+            NSSound.beep()
+            return false
+        }
+
+        return importNamedMacro(from: sourceURL, named: name)
+    }
+
+    private func importNamedMacro(from sourceURL: URL, named name: String) -> Bool {
+        guard isRecordingMacro == false, let macroStore else {
+            NSSound.beep()
+            return false
+        }
+
+        do {
+            try macroStore.importNamedMacro(from: sourceURL, named: name, maxCount: Self.maxRecordedMacroCommandCount)
+            return true
+        } catch {
+            NSSound.beep()
+            NSLog("AttoEditor: failed to import macro %@ from %@: %@", name, sourceURL.path, String(describing: error))
+            return false
+        }
+    }
+
+    private func exportNamedMacro(named name: String, toPath path: String) -> Bool {
+        guard isRecordingMacro == false, let destinationURL = macroFileURL(fromPath: path) else {
+            NSSound.beep()
+            return false
+        }
+
+        return exportNamedMacro(named: name, to: destinationURL)
+    }
+
+    private func exportNamedMacro(named name: String, to destinationURL: URL) -> Bool {
+        guard isRecordingMacro == false, let macroStore else {
+            NSSound.beep()
+            return false
+        }
+
+        do {
+            try macroStore.exportNamedMacro(name, to: destinationURL, maxCount: Self.maxRecordedMacroCommandCount)
+            return true
+        } catch {
+            NSSound.beep()
+            NSLog("AttoEditor: failed to export macro %@ to %@: %@", name, destinationURL.path, String(describing: error))
+            return false
+        }
+    }
+
+    private func macroFileURL(fromPath rawPath: String) -> URL? {
+        let path = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard path.isEmpty == false else { return nil }
+        if path.hasPrefix("/") {
+            return URL(fileURLWithPath: path).standardizedFileURL
+        }
+        return URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+            .appendingPathComponent(path, isDirectory: false)
+            .standardizedFileURL
+    }
+
+    private func promptImportMacroFile() -> (url: URL, name: String)? {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Import"
+        panel.message = "Choose a .sublime-macro file to import."
+        panel.allowedContentTypes = [Self.sublimeMacroFileType]
+
+        guard panel.runModal() == .OK, let url = panel.url?.standardizedFileURL else {
+            return nil
+        }
+
+        let derivedName = url.deletingPathExtension().lastPathComponent
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return (url, derivedName.isEmpty ? "Imported Macro" : derivedName)
+    }
+
+    private func promptExportNamedMacro(names: [String]) -> (name: String, url: URL)? {
+        guard names.isEmpty == false else { return nil }
+        let name: String
+        if names.count == 1 {
+            name = names[0]
+        } else {
+            guard let selected = promptMacroName(
+                title: "Macro: Export Named Macro…",
+                choices: names
+            ) else {
+                return nil
+            }
+            name = selected
+        }
+
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.prompt = "Export"
+        panel.message = "Export the selected macro as a .sublime-macro file."
+        panel.nameFieldStringValue = "\(name).sublime-macro"
+        panel.allowedContentTypes = [Self.sublimeMacroFileType]
+
+        guard panel.runModal() == .OK, let url = panel.url?.standardizedFileURL else {
+            return nil
+        }
+        return (name, url)
+    }
+
+    private func promptMacroName(commandID: String, title: String) -> String? {
+        promptMacroArguments(commandID: commandID, title: title)?.string("name")
+    }
+
+    private func promptMacroName(title: String, choices: [String]) -> String? {
+        let promptCommand = AttoCommandPaletteCommand(
+            id: "macro.select_named",
+            title: title,
+            schema: Self.macroNameCommandSchema(choices: choices),
+            promptsForArguments: true
+        ) { _ in }
+        return AttoCommandArgumentPrompt.promptArguments(for: promptCommand)?.string("name")
+    }
+
+    private func promptMacroArguments(commandID: String, title: String) -> AttoCommandArguments? {
+        let schema = commandSchema(commandID: commandID)
+        let promptCommand = AttoCommandPaletteCommand(
+            id: commandID,
+            title: title,
+            schema: schema,
+            promptsForArguments: true
+        ) { _ in }
+        return AttoCommandArgumentPrompt.promptArguments(for: promptCommand)
+    }
+
+    private func replayMacroCommands(_ commands: [AttoRecordedCommand]) {
+        isReplayingMacro = true
+        defer { isReplayingMacro = false }
+
+        for command in lastMacroCommands {
+            if command.arguments.isEmpty {
+                _ = executeCommand(id: command.commandID)
+            } else {
+                _ = executeCommand(id: command.commandID, arguments: command.arguments)
+            }
+        }
+    }
+
+    private func recordMacroCommandIfNeeded(commandID: String, schema: AttoCommandSchema, arguments: AttoCommandArguments) {
+        guard isRecordingMacro, isReplayingMacro == false else { return }
+
+        let recordedArguments: AttoCommandArguments
+        switch schema.macroPolicy {
+        case .recordable:
+            recordedArguments = [:]
+        case .recordableWithArguments:
+            guard arguments.isEmpty == false else { return }
+            recordedArguments = arguments
+        case .promptRequired, .notRecordable:
+            return
+        }
+
+        currentMacroCommands.append(AttoRecordedCommand(commandID: commandID, arguments: recordedArguments))
+        if currentMacroCommands.count > Self.maxRecordedMacroCommandCount {
+            currentMacroCommands.removeFirst(currentMacroCommands.count - Self.maxRecordedMacroCommandCount)
+        }
+    }
+
+    private func commandIsEnabled(commandID: String) -> Bool {
+        switch commandID {
+        case "macro.replay_last":
+            return isRecordingMacro == false && lastMacroCommands.isEmpty == false
+        case "macro.save_named":
+            return isRecordingMacro == false && lastMacroCommands.isEmpty == false && macroStore != nil
+        case "macro.replay_named", "macro.rename_named", "macro.delete_named", "macro.delete_named_batch":
+            return isRecordingMacro == false && (macroStore?.namedMacroNames().isEmpty == false)
+        case "macro.undo_delete", "macro.show_delete_history", "macro.manage_delete_history",
+             "macro.remove_delete_history_entry", "macro.remove_delete_history_entries",
+             "macro.clear_delete_history":
+            return isRecordingMacro == false && macroStore != nil && deletedMacroUndoStack.isEmpty == false
+        case "macro.import_file":
+            return isRecordingMacro == false && macroStore != nil
+        case "macro.export_named":
+            return isRecordingMacro == false && (macroStore?.namedMacroNames().isEmpty == false)
+        default:
+            break
+        }
+
+        let metadata = commandMetadata(commandID: commandID, title: commandID)
+        return commandIsEnabled(requirement: metadata.requirement, schema: metadata.schema)
+    }
+
+    private func commandIsEnabled(requirement: CommandAvailabilityRequirement, schema: AttoCommandSchema) -> Bool {
+        guard runtimeSupports(schema.requiredRuntimeFeatures) else {
+            return false
+        }
+
+        switch requirement {
+        case .none:
+            return true
+        case .activeWindow:
+            return activeWindow() != nil
+        case .activeEditor:
+            return activeWindow()?.editorAreaController.hasActiveEditorForCommands == true
+        case .multiplePanes:
+            return activeWindow()?.editorAreaController.hasMultiplePanesForCommands == true
+        case .multipleTabs:
+            return activeWindow()?.editorAreaController.hasMultipleTabsForCommands == true
+        }
+    }
+
+    private func runtimeSupports(_ features: EditorCoreUIFFIFeatures) -> Bool {
+        guard features.isEmpty == false else { return true }
+        let supported = runtimeCompatibilityReport?.runtimeInfo?.features ?? library.featureFlags
+        return supported.contains(features)
+    }
+
+    private func commandMetadata(commandID: String, title: String) -> CommandMetadata {
+        let group: String = {
+            if let prefix = title.split(separator: ":", maxSplits: 1).first,
+               prefix.isEmpty == false,
+               prefix.count < title.count
+            {
+                return String(prefix)
+            }
+
+            if commandID.hasPrefix("file.") { return "File" }
+            if commandID.hasPrefix("editor.") { return "Edit" }
+            if commandID.hasPrefix("cursor.") { return "Cursor" }
+            if commandID.hasPrefix("view.") { return "View" }
+            if commandID.hasPrefix("go.") { return "Go" }
+            if commandID.hasPrefix("search.") { return "Search" }
+            if commandID.hasPrefix("settings.") { return "Settings" }
+            if commandID.hasPrefix("lsp.") { return "LSP" }
+            if commandID.hasPrefix("workspace.") { return "Workspace" }
+            if commandID.hasPrefix("workbench.") { return "AttoEditor" }
+            if commandID.hasPrefix("build.") { return "Build" }
+            if commandID.hasPrefix("package.") { return "Package" }
+            if commandID.hasPrefix("panel.") { return "Panel" }
+            return "General"
+        }()
+
+        let requirement: CommandAvailabilityRequirement = {
+            if AttoSublimeFeatureBoundary.commandIDs.contains(commandID) {
+                return .activeWindow
+            }
+
+            switch commandID {
+            case "file.open_folder", "file.open_recent_project", "file.open_file", "file.new",
+                 "workbench.command_palette", "workbench.preferences":
+                return .none
+            case "go.file", "search.find_in_files", "view.toggle_sidebar",
+                 "workspace.undo_last_workspace_edit", "workspace.redo_last_workspace_edit",
+                 "workspace.show_workspace_edit_history":
+                return .activeWindow
+            case "view.focus_next_pane", "view.focus_previous_pane", "view.move_pane_left", "view.move_pane_right", "view.close_pane":
+                return .multiplePanes
+            case "file.close_other_tabs", "file.close_tabs_to_right",
+                 "file.move_tab_left", "file.move_tab_right":
+                return .multipleTabs
+            default:
+                if commandID == "file.save" || commandID == "file.reload" || commandID == "file.pin_tab"
+                    || commandID == "file.close_tab" || commandID == "file.close_all_tabs"
+                {
+                    return .activeEditor
+                }
+                if commandID.hasPrefix("editor.")
+                    || commandID.hasPrefix("cursor.")
+                    || commandID.hasPrefix("lsp.")
+                    || commandID.hasPrefix("view.wrap.")
+                    || commandID == "view.toggle_minimap"
+                    || commandID == "view.split_right"
+                    || commandID == "go.line"
+                    || commandID == "go.back"
+                    || commandID == "go.forward"
+                    || commandID == "go.matching_bracket"
+                {
+                    return .activeEditor
+                }
+                return .none
+            }
+        }()
+
+        return CommandMetadata(
+            group: group,
+            requirement: requirement,
+            schema: commandSchema(commandID: commandID)
+        )
+    }
+
+    private func commandSchema(commandID: String) -> AttoCommandSchema {
+        if let staticCommand = Self.staticEditorJSONCommands.first(where: { $0.id == commandID }) {
+            return staticCommand.schema
+        }
+
+        switch commandID {
+        case "editor.apply_snippet":
+            return Self.snippetCommandSchema
+        case "go.line":
+            return Self.goToLineCommandSchema
+        case "lsp.workspace_symbols":
+            return Self.workspaceSymbolsCommandSchema
+        case "lsp.rename":
+            return Self.renameCommandSchema
+        case "editor.format_document", "editor.format_selection":
+            return AttoCommandSchema(
+                macroPolicy: .notRecordable,
+                requiredRuntimeFeatures: .lspInteractiveCommandRequirements
+            )
+        case "lsp.code_actions", "lsp.quick_fix", "lsp.refactor", "lsp.source_actions",
+             "lsp.organize_imports", "lsp.fix_all":
+            return AttoCommandSchema(
+                macroPolicy: .notRecordable,
+                requiredRuntimeFeatures: .lspWorkspaceEditCommandRequirements
+            )
+        case "workspace.undo_last_workspace_edit":
+            return AttoCommandSchema(
+                macroPolicy: .notRecordable,
+                requiredRuntimeFeatures: .workspaceEditTransactionUndoCommandRequirements
+            )
+        case "workspace.redo_last_workspace_edit":
+            return AttoCommandSchema(
+                macroPolicy: .notRecordable,
+                requiredRuntimeFeatures: .workspaceEditTransactionRedoCommandRequirements
+            )
+        case "workspace.show_workspace_edit_history":
+            return AttoCommandSchema(
+                macroPolicy: .notRecordable,
+                requiredRuntimeFeatures: .workspaceEditTransactionHistoryCommandRequirements
+            )
+        case "file.open_folder", "file.open_recent_project", "file.open_file", "workbench.preferences", "go.file",
+             "editor.find", "editor.replace", "workbench.command_palette":
+            return AttoCommandSchema(macroPolicy: .promptRequired)
+        case "settings.open_user_settings", "settings.open_workspace_settings", "settings.open_runtime_overrides",
+             "settings.validate_user_settings", "settings.validate_workspace_settings",
+             "settings.validate_runtime_overrides", "settings.clear_runtime_overrides":
+            return AttoCommandSchema(macroPolicy: .notRecordable)
+        case "macro.save_named":
+            return Self.macroNameCommandSchema()
+        case "macro.replay_named":
+            return Self.macroNameCommandSchema(choices: macroStore?.namedMacroNames() ?? [])
+        case "macro.rename_named":
+            return Self.macroRenameCommandSchema(choices: macroStore?.namedMacroNames() ?? [])
+        case "macro.delete_named":
+            return Self.macroNameCommandSchema(choices: macroStore?.namedMacroNames() ?? [])
+        case "macro.delete_named_batch":
+            return Self.macroDeleteBatchCommandSchema()
+        case "macro.remove_delete_history_entry":
+            return Self.macroDeleteHistoryEntryCommandSchema(choices: deletedMacroUndoRecordChoices())
+        case "macro.remove_delete_history_entries":
+            return Self.macroDeleteHistoryEntriesCommandSchema()
+        case "macro.import_file":
+            return Self.macroImportCommandSchema()
+        case "macro.export_named":
+            return Self.macroExportCommandSchema(choices: macroStore?.namedMacroNames() ?? [])
+        case "macro.toggle_recording", "macro.replay_last", "macro.undo_delete", "macro.show_delete_history",
+             "macro.manage_delete_history", "macro.clear_delete_history":
+            return AttoCommandSchema(macroPolicy: .notRecordable)
+        case "file.new", "file.save", "file.reload", "file.pin_tab", "file.close_tab", "file.close_all_tabs",
+             "file.close_other_tabs", "file.close_tabs_to_right",
+             "file.move_tab_left", "file.move_tab_right",
+             "view.toggle_sidebar", "view.toggle_minimap", "view.split_right",
+             "view.focus_next_pane", "view.focus_previous_pane",
+             "view.move_pane_left", "view.move_pane_right", "view.close_pane",
+             "go.back", "go.forward", "go.matching_bracket":
+            return AttoCommandSchema(macroPolicy: .recordable)
+        default:
+            if commandID.hasPrefix("cursor.") {
+                return AttoCommandSchema(macroPolicy: .recordable)
+            }
+            if commandID.hasPrefix("lsp.") {
+                return AttoCommandSchema(
+                    macroPolicy: .notRecordable,
+                    requiredRuntimeFeatures: .lspInteractiveCommandRequirements
+                )
+            }
+            if commandID == "editor.add_next_occurrence"
+                || commandID == "editor.add_all_occurrences"
+                || commandID == "editor.toggle_line_comment"
+                || commandID == "editor.fold_selection"
+                || commandID == "editor.unfold"
+                || commandID == "editor.unfold_all"
+            {
+                return AttoCommandSchema(macroPolicy: .recordable)
+            }
+            return AttoCommandSchema(macroPolicy: .notRecordable)
+        }
+    }
+
+    private static func duplicateCommandIDs(in commands: [AttoCommandPaletteCommand]) -> [String] {
+        var counts: [String: Int] = [:]
+        for command in commands {
+            counts[command.id, default: 0] += 1
+        }
+        return counts
+            .filter { $0.value > 1 }
+            .map(\.key)
+            .sorted()
     }
 
     // MARK: - Preferences
@@ -295,34 +2867,391 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
 
     private func showPreferencesWindow() {
         if preferencesWindowController == nil {
-            preferencesWindowController = AttoPreferencesWindowController()
+            preferencesWindowController = AttoPreferencesWindowController(
+                settingsStore: settingsStore,
+                workspaceRootURLProvider: { [weak self] in
+                    self?.activeWindow()?.workspaceRootURL
+                },
+                runtimeSettingsProvider: { [weak self] in
+                    self?.runtimeConfigurationSettings
+                }
+            )
         }
         preferencesWindowController?.showWindow(nil)
         preferencesWindowController?.window?.makeKeyAndOrderFront(nil)
         NSApplication.shared.activate(ignoringOtherApps: true)
     }
 
+    private func openUserSettingsFile() {
+        guard let ctx = ensureActiveWindowForMenuActions() else { return }
+        openSettingsFile(
+            settingsStore.userSettingsURL,
+            displayName: "User Settings",
+            in: ctx
+        )
+    }
+
+    private func openWorkspaceSettingsFile() {
+        guard let ctx = ensureActiveWindowForMenuActions() else { return }
+        let url = AttoConfigurationSettingsStore.workspaceSettingsURL(
+            forWorkspaceRootURL: ctx.workspaceRootURL
+        )
+        openSettingsFile(
+            url,
+            displayName: "Workspace Settings",
+            in: ctx
+        )
+    }
+
+    private func openRuntimeSettingsFile() {
+        guard let ctx = ensureActiveWindowForMenuActions() else { return }
+        openSettingsFile(
+            settingsStore.runtimeSettingsURL,
+            displayName: "Runtime Overrides",
+            in: ctx
+        )
+    }
+
+    private func validateUserSettingsFile() {
+        guard let ctx = ensureActiveWindowForMenuActions() else { return }
+        validateSettingsFile(
+            settingsStore.userSettingsURL,
+            displayName: "User Settings",
+            scope: .user,
+            in: ctx
+        )
+    }
+
+    private func validateWorkspaceSettingsFile() {
+        guard let ctx = ensureActiveWindowForMenuActions() else { return }
+        validateSettingsFile(
+            AttoConfigurationSettingsStore.workspaceSettingsURL(forWorkspaceRootURL: ctx.workspaceRootURL),
+            displayName: "Workspace Settings",
+            scope: .workspace,
+            in: ctx
+        )
+    }
+
+    private func validateRuntimeSettingsFile() {
+        guard let ctx = ensureActiveWindowForMenuActions() else { return }
+        validateSettingsFile(
+            settingsStore.runtimeSettingsURL,
+            displayName: "Runtime Overrides",
+            scope: .runtime,
+            in: ctx
+        )
+    }
+
+    private func clearRuntimeSettingsOverrides() {
+        setRuntimeConfigurationSettings(nil)
+        activeWindow()?.editorAreaController.setTransientStatusText("Cleared Runtime Overrides")
+    }
+
+    private func openSettingsFile(
+        _ url: URL,
+        displayName: String,
+        in ctx: AttoWindowContext
+    ) {
+        do {
+            try ensureSettingsScaffoldExists(at: url)
+        } catch {
+            NSSound.beep()
+            NSLog("AttoEditor: failed to create %@ file %@: %@", displayName, url.path, String(describing: error))
+            ctx.editorAreaController.setTransientStatusText("Failed to create \(displayName)")
+            return
+        }
+
+        ctx.rememberRecentFile(url)
+        if ctx.editorAreaController.openFile(url: url, mode: .pinned) {
+            ctx.fileExplorerController.revealFile(url)
+            ctx.editorAreaController.setTransientStatusText("Opened \(displayName)")
+        } else {
+            ctx.editorAreaController.setTransientStatusText("Failed to open \(displayName)")
+        }
+    }
+
+    private func validateSettingsFile(
+        _ url: URL,
+        displayName: String,
+        scope: AttoConfigurationSettingsScope,
+        in ctx: AttoWindowContext
+    ) {
+        do {
+            let report = try AttoConfigurationSettingsSchema.current.validateSettingsFile(
+                at: url,
+                scope: scope
+            )
+            ctx.editorAreaController.setTransientStatusText(
+                Self.settingsValidationStatusText(displayName: displayName, result: report.result)
+            )
+            showSettingsValidationPanelIfNeeded(report: report, displayName: displayName, in: ctx)
+        } catch let error as AttoConfigurationSettingsFileValidationError {
+            switch error {
+            case .missingFile:
+                settingsValidationPanelController?.hide()
+                ctx.editorAreaController.setTransientStatusText("\(displayName) file missing")
+            }
+        } catch {
+            settingsValidationPanelController?.hide()
+            NSLog("AttoEditor: failed to validate %@ file %@: %@", displayName, url.path, String(describing: error))
+            ctx.editorAreaController.setTransientStatusText("Failed to validate \(displayName)")
+        }
+    }
+
+    private func showSettingsValidationPanelIfNeeded(
+        report: AttoConfigurationSettingsFileValidationReport,
+        displayName: String,
+        in ctx: AttoWindowContext
+    ) {
+        let items = AttoSettingsValidationPanelController.items(for: report, displayName: displayName)
+        guard items.isEmpty == false else {
+            settingsValidationPanelController?.hide()
+            return
+        }
+
+        let controller = settingsValidationPanelController ?? AttoSettingsValidationPanelController(
+            onOpen: { [weak self] item in
+                self?.openSettingsValidationIssue(item)
+            }
+        )
+        settingsValidationPanelController = controller
+        _ = controller.show(
+            relativeTo: ctx.window,
+            title: "\(displayName) Validation",
+            items: items
+        )
+    }
+
+    private func openSettingsValidationIssue(_ item: AttoSettingsValidationPanelController.Item) {
+        guard let ctx = ensureActiveWindowForMenuActions() else { return }
+        guard let location = item.sourceLocation else {
+            NSSound.beep()
+            ctx.editorAreaController.setTransientStatusText("Settings issue has no source location")
+            return
+        }
+
+        let fileLocation = AttoCommandLine.FileLocation(
+            line1: location.line,
+            column1: location.column
+        )
+        ctx.rememberRecentFile(item.sourceURL)
+        if ctx.editorAreaController.openFile(url: item.sourceURL, mode: .pinned, location: fileLocation) {
+            ctx.fileExplorerController.revealFile(item.sourceURL)
+            ctx.editorAreaController.setTransientStatusText(
+                "Opened settings issue at \(location.line):\(location.column)"
+            )
+        } else {
+            ctx.editorAreaController.setTransientStatusText("Failed to open settings issue")
+        }
+    }
+
+    private static func settingsValidationStatusText(
+        displayName: String,
+        result: AttoConfigurationSettingsValidationResult
+    ) -> String {
+        let errorCount = result.issues.filter { $0.severity == .error }.count
+        if errorCount > 0 {
+            return "\(displayName) invalid: \(errorCount) \(errorCount == 1 ? "issue" : "issues")"
+        }
+
+        let warningCount = result.issues.filter { $0.severity == .warning }.count
+        if warningCount > 0 {
+            return "\(displayName) valid: \(warningCount) \(warningCount == 1 ? "warning" : "warnings")"
+        }
+
+        return "\(displayName) valid"
+    }
+
+    private func ensureSettingsScaffoldExists(at url: URL) throws {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: url.path) == false else { return }
+
+        try fm.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let data = try JSONSerialization.data(
+            withJSONObject: Self.settingsScaffoldJSONObject(),
+            options: [.prettyPrinted, .sortedKeys]
+        )
+        try data.write(to: url, options: [.atomic])
+    }
+
+    private static func settingsScaffoldJSONObject() -> [String: Any] {
+        [
+            "_examples": [
+                "scoped_settings": [
+                    [
+                        "selectors": ["*.swift", "source.swift"],
+                        "editor": [
+                            "font_size_points": 14,
+                            "wrap_mode": "char",
+                        ],
+                        "rendering": [
+                            "theme_name": AttoThemeManager.defaultThemeName,
+                        ],
+                        "language": [
+                            "format_on_save": true,
+                            "semantic_highlighting_enabled": true,
+                        ],
+                    ],
+                ],
+            ],
+            "schema_version": AttoConfigurationSettings.currentSchemaVersion,
+            "scoped_settings": [],
+        ]
+    }
+
     private func applyEditorPreferencesToAllWindows() {
         let registry = AttoThemeManager.loadRegistry()
-        let effectiveThemeName = AttoPreferences.shared.effectiveThemeName
-        let resolved = AttoThemeManager.resolveSkiaTheme(themeName: effectiveThemeName, registry: registry)
 
         for ctx in windows {
+            let configurationSnapshot = configurationSnapshot(forWorkspaceRootURL: ctx.workspaceRootURL)
+            ctx.updateConfigurationSnapshot(configurationSnapshot)
+            let resolved = AttoThemeManager.resolveSkiaTheme(
+                themeName: configurationSnapshot.rendering.themeName,
+                registry: registry
+            )
             ctx.editorAreaController.applyTheme(resolved.theme)
             ctx.editorAreaController.applyEditorPreferences()
         }
     }
 
-    private func quickOpenCommands() -> [AttoCommandPaletteCommand] {
+    private func setRuntimeConfigurationSettings(_ settings: AttoConfigurationSettings?) {
+        let normalizedSettings = settings.flatMap { $0.isEmpty ? nil : $0 }
+        if let normalizedSettings {
+            runtimeConfigurationSettings = normalizedSettings
+            do {
+                try settingsStore.saveRuntimeSettings(normalizedSettings)
+            } catch {
+                NSLog(
+                    "AttoEditor: failed to persist runtime overrides %@: %@",
+                    settingsStore.runtimeSettingsURL.path,
+                    String(describing: error)
+                )
+            }
+        } else {
+            runtimeConfigurationSettings = nil
+            do {
+                try settingsStore.clearRuntimeSettings()
+            } catch {
+                NSLog(
+                    "AttoEditor: failed to clear runtime overrides %@: %@",
+                    settingsStore.runtimeSettingsURL.path,
+                    String(describing: error)
+                )
+            }
+        }
+        applyEditorPreferencesToAllWindows()
+        preferencesWindowController?.reloadSettingsPage()
+    }
+
+    private static func loadPersistedRuntimeConfigurationSettings(
+        from settingsStore: AttoConfigurationSettingsStore
+    ) -> AttoConfigurationSettings? {
+        do {
+            let outcome = try settingsStore.loadRuntimeSettingsOutcome()
+            if let event = outcome.event {
+                NSLog("AttoEditor: %@", event.logText(displayName: "Runtime Overrides"))
+            }
+            guard let settings = outcome.settings,
+                  settings.isEmpty == false
+            else {
+                return nil
+            }
+            return settings
+        } catch {
+            NSLog(
+                "AttoEditor: failed to load runtime overrides %@: %@",
+                settingsStore.runtimeSettingsURL.path,
+                String(describing: error)
+            )
+            return nil
+        }
+    }
+
+    private func configurationSnapshot(
+        forWorkspaceRootURL workspaceRootURL: URL,
+        documentContext: AttoConfigurationDocumentContext? = nil
+    ) -> AttoConfigurationSnapshot {
+        let base = AttoPreferences.shared.effectiveConfigurationSnapshot(workspaceRootURL: workspaceRootURL)
+
+        let userSettings: AttoConfigurationSettings?
+        do {
+            let outcome = try settingsStore.loadUserSettingsOutcome()
+            userSettings = outcome.settings
+            reportSettingsLoadEvent(
+                outcome.event,
+                displayName: "User Settings",
+                workspaceRootURL: workspaceRootURL
+            )
+        } catch {
+            userSettings = nil
+            NSLog(
+                "AttoEditor: failed to load user settings %@: %@",
+                settingsStore.userSettingsURL.path,
+                String(describing: error)
+            )
+        }
+
+        let workspaceSettingsURL = AttoConfigurationSettingsStore.workspaceSettingsURL(
+            forWorkspaceRootURL: workspaceRootURL
+        )
+        let workspaceSettings: AttoConfigurationSettings?
+        do {
+            let outcome = try settingsStore.loadWorkspaceSettingsOutcome(workspaceRootURL: workspaceRootURL)
+            workspaceSettings = outcome.settings
+            reportSettingsLoadEvent(
+                outcome.event,
+                displayName: "Workspace Settings",
+                workspaceRootURL: workspaceRootURL
+            )
+        } catch {
+            workspaceSettings = nil
+            NSLog(
+                "AttoEditor: failed to load workspace settings %@: %@",
+                workspaceSettingsURL.path,
+                String(describing: error)
+            )
+        }
+
+        return base.resolvingSettings(
+            user: userSettings,
+            workspace: workspaceSettings,
+            runtime: runtimeConfigurationSettings,
+            documentContext: documentContext
+        ).snapshot
+    }
+
+    private func reportSettingsLoadEvent(
+        _ event: AttoConfigurationSettingsLoadEvent?,
+        displayName: String,
+        workspaceRootURL: URL
+    ) {
+        guard let event else { return }
+        let key = "\(displayName)|\(event.eventKey)"
+        guard reportedSettingsLoadEvents.insert(key).inserted else { return }
+
+        NSLog("AttoEditor: %@", event.logText(displayName: displayName))
+        let statusText = event.statusText(displayName: displayName)
+        let standardizedWorkspaceRootURL = workspaceRootURL.standardizedFileURL
+        let target = windows.first { $0.workspaceRootURL.standardizedFileURL == standardizedWorkspaceRootURL }
+            ?? activeWindow()
+        target?.editorAreaController.setTransientStatusText(statusText)
+    }
+
+    private func quickOpenCommands(query: String = "") -> [AttoCommandPaletteCommand] {
         guard let ctx = activeWindow() else { return [] }
         let editorAreaController = ctx.editorAreaController
         let fileExplorerController = ctx.fileExplorerController
-        let all = ctx.fileIndex.entries()
+        let all = query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? ctx.workspaceFileEntries()
+            : ctx.workspaceFileEntries(matching: query)
 
         var out: [AttoCommandPaletteCommand] = []
         var seen: Set<URL> = Set()
 
-        for url in ctx.recentFiles {
+        for url in ctx.recentFileURLs() {
             let u = url.standardizedFileURL
             if seen.contains(u) { continue }
             seen.insert(u)
@@ -346,6 +3275,61 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
         }
 
         return out
+    }
+
+    private func recentProjectCommands() -> [AttoCommandPaletteCommand] {
+        recentProjectURLsForCommands().map { url in
+            let standardized = url.standardizedFileURL
+            return AttoCommandPaletteCommand(
+                id: "file.open_recent_project:\(standardized.absoluteString)",
+                title: recentProjectTitle(for: standardized),
+                group: "File"
+            ) { [weak self] in
+                self?.openRecentProject(url: standardized)
+            }
+        }
+    }
+
+    private func recentProjectURLsForCommands(fileManager: FileManager = .default) -> [URL] {
+        var out: [URL] = []
+        var seen: Set<String> = []
+
+        func remember(_ url: URL) {
+            let standardized = url.standardizedFileURL
+            guard Self.directoryExists(at: standardized, fileManager: fileManager) else { return }
+            let key = standardized.path
+            guard seen.contains(key) == false else { return }
+            seen.insert(key)
+            out.append(standardized)
+        }
+
+        for ctx in windowsOrderedForSessionProjectHistory() {
+            for url in ctx.recentProjectURLs() {
+                remember(url)
+            }
+            remember(ctx.workspaceRootURL)
+        }
+
+        return Array(out.prefix(20))
+    }
+
+    private func recentProjectTitle(for url: URL) -> String {
+        let name = url.lastPathComponent.isEmpty ? url.path : url.lastPathComponent
+        return "\(name) — \(url.path)"
+    }
+
+    private func openRecentProject(url: URL) {
+        let standardized = url.standardizedFileURL
+        guard Self.directoryExists(at: standardized, fileManager: .default) else {
+            NSSound.beep()
+            return
+        }
+
+        let visibleFrame = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame
+            ?? CGRect(origin: .zero, size: AttoWindowSizing.preferredContentSize)
+        let contentSize = AttoWindowSizing.defaultContentSize(forVisibleFrame: visibleFrame)
+        let ctx = createWindow(workspaceRootURL: standardized, contentSize: contentSize)
+        focusWindow(ctx)
     }
 
     // MARK: - macOS window tabbing (disable + hide menu items)
@@ -438,8 +3422,63 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
             schemaVersion: AttoSessionSnapshot.currentSchemaVersion,
             savedAt: Date(),
             activeWindowIndex: activeIndex,
+            recentProjectURIs: sessionRecentProjectURIs(windowSnapshots: windowSnaps),
             windows: windowSnaps
         )
+    }
+
+    private func sessionRecentProjectURIs(windowSnapshots: [AttoWindowSnapshot]) -> [String] {
+        var out: [String] = []
+        var seen: Set<String> = []
+
+        func remember(_ uri: String?) {
+            guard let raw = uri else { return }
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard trimmed.isEmpty == false,
+                  let url = URL(string: trimmed),
+                  url.isFileURL
+            else {
+                return
+            }
+
+            let normalized = url.standardizedFileURL.absoluteString
+            guard seen.contains(normalized) == false else { return }
+            seen.insert(normalized)
+            out.append(normalized)
+        }
+
+        for ctx in windowsOrderedForSessionProjectHistory() {
+            for url in ctx.recentProjectURLs() {
+                remember(url.standardizedFileURL.absoluteString)
+            }
+        }
+
+        for snap in windowSnapshots {
+            remember(snap.workspaceRootURI)
+            if snap.workspaceRootURI == nil {
+                remember(URL(fileURLWithPath: snap.workspaceRootPath).standardizedFileURL.absoluteString)
+            }
+        }
+
+        return Array(out.prefix(20))
+    }
+
+    private func windowsOrderedForSessionProjectHistory() -> [AttoWindowContext] {
+        guard let activeWindowID,
+              let activeIndex = windows.firstIndex(where: { $0.id == activeWindowID })
+        else {
+            return windows
+        }
+
+        var ordered = windows
+        let active = ordered.remove(at: activeIndex)
+        ordered.insert(active, at: 0)
+        return ordered
+    }
+
+    private static func directoryExists(at url: URL, fileManager: FileManager) -> Bool {
+        var isDir: ObjCBool = false
+        return fileManager.fileExists(atPath: url.path, isDirectory: &isDir) && isDir.boolValue
     }
 
     private func scheduleSessionSave(reason: String) {
@@ -463,13 +3502,6 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
 
         let fm = FileManager.default
 
-        func validatedWorkspaceRoot(_ path: String) -> URL? {
-            let url = URL(fileURLWithPath: path).standardizedFileURL
-            var isDir: ObjCBool = false
-            guard fm.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue else { return nil }
-            return url
-        }
-
         func rectIfVisible(_ frame: AttoWindowFrameSnapshot?) -> CGRect? {
             guard let frame else { return nil }
             let rect = CGRect(x: frame.x, y: frame.y, width: frame.width, height: frame.height)
@@ -479,7 +3511,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
         }
 
         for win in snapshot.windows {
-            let root = validatedWorkspaceRoot(win.workspaceRootPath) ?? fm.homeDirectoryForCurrentUser
+            let root = win.validatedWorkspaceRootURL(fileManager: fm) ?? fm.homeDirectoryForCurrentUser
             let frameRect = rectIfVisible(win.frame)
             let ctx = createWindow(
                 workspaceRootURL: root,
@@ -489,6 +3521,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
             )
 
             ctx.sidebarSplitItem.isCollapsed = win.sidebarCollapsed
+            ctx.restoreRecentProjectURIs(snapshot.recentProjectURIs, fileManager: fm)
             ctx.restoreRecentFiles(filePaths: win.recentFilePaths)
             ctx.editorAreaController.restoreSession(
                 tabs: win.tabs,
@@ -523,13 +3556,33 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate {
         let referenceWindow: NSWindow? = activeWindow()?.window ?? windows.last?.window
 
         let registry = AttoThemeManager.loadRegistry()
-        let effectiveThemeName = AttoPreferences.shared.effectiveThemeName
-        let resolved = AttoThemeManager.resolveSkiaTheme(themeName: effectiveThemeName, registry: registry)
+        let configurationSnapshot = configurationSnapshot(forWorkspaceRootURL: workspaceRootURL)
+        let resolved = AttoThemeManager.resolveSkiaTheme(
+            themeName: configurationSnapshot.rendering.themeName,
+            registry: registry
+        )
 
         let ctx = AttoWindowContext(
             library: library,
             theme: resolved.theme,
             workspaceRootURL: workspaceRootURL,
+            configurationSnapshot: configurationSnapshot,
+            configurationSnapshotProvider: { [weak self] workspaceRootURL, documentContext in
+                guard let self else {
+                    return AttoPreferences.shared.effectiveConfigurationSnapshot(workspaceRootURL: workspaceRootURL)
+                }
+                return self.configurationSnapshot(
+                    forWorkspaceRootURL: workspaceRootURL,
+                    documentContext: documentContext
+                )
+            },
+            themeResolver: { themeName in
+                let registry = AttoThemeManager.loadRegistry()
+                return AttoThemeManager.resolveSkiaTheme(
+                    themeName: themeName,
+                    registry: registry
+                ).theme
+            },
             contentSize: contentSize
         )
 

@@ -19,60 +19,1353 @@ final class AttoEditorAreaViewController: NSViewController {
         case pinned
     }
 
-    private let library: EditorCoreUIFFILibrary
-    private var theme: EditorCoreSkiaTheme
-    private var workspaceRootURL: URL
+    let library: EditorCoreUIFFILibrary
+    var theme: EditorCoreSkiaTheme
+    var workspaceRootURL: URL
+    let preferences: AttoPreferences
+    private(set) var configurationSnapshot: AttoConfigurationSnapshot
+    let configurationSnapshotProvider: ((URL, AttoConfigurationDocumentContext?) -> AttoConfigurationSnapshot)?
+    let themeResolver: ((String) -> EditorCoreSkiaTheme)?
+    static let maxLspResultHistoryEntries = 20
+    static let maxLspResultEventHistoryEntries = 80
 
-    private var tabs: [AttoEditorTab] = []
-    private var selectedTabID: UUID?
+    var tabs: [AttoEditorTab] = []
+    var selectedTabID: UUID?
+    let coreDocuments: MultiDocumentEditorUI?
 
-    private let tabBarView = AttoTabBarView()
-    private let findReplaceBarView = AttoFindReplaceBarView()
-    private var findReplaceBarHeightConstraint: NSLayoutConstraint?
-    private let contentHostView = NSView(frame: .zero)
-    private let statusBarView = AttoStatusBarView()
-    private let emptyStateLabel = NSTextField(labelWithString: "Open a file to start editing")
+    let tabBarView = AttoTabBarView()
+    let findReplaceBarView = AttoFindReplaceBarView()
+    var findReplaceBarHeightConstraint: NSLayoutConstraint?
+    let contentHostView = NSView(frame: .zero)
+    var contentHostBottomToStatusConstraint: NSLayoutConstraint?
+    var contentHostBottomToWorkbenchDockConstraint: NSLayoutConstraint?
+    let statusBarView = AttoStatusBarView()
+    var lspWorkbenchDockHeightConstraint: NSLayoutConstraint?
+    var lspWorkbenchDockShouldRemainVisible = false
+    let derivedStateStore = AttoDerivedStateStore()
+    let emptyStateLabel = NSTextField(labelWithString: "Open a file to start editing")
+    var lastPresentedLspFailureDetail: String?
+    var transientStatusText: String?
 
-    private var activeViewportObserver: EditorCoreSkiaView.ViewportStateObserverToken?
+    var activeViewportObserver: EditorCoreSkiaView.ViewportStateObserverToken?
 
-    private var didAttemptLoadTreeSitterRegistry: Bool = false
-    private var treeSitterRegistryJSON: String?
-    private var treeSitterLanguageIDs: [String] = []
-    private var treeSitterExtensionMap: [String: String] = [:]
+    var didAttemptLoadTreeSitterRegistry: Bool = false
+    var treeSitterRegistryJSON: String?
+    var treeSitterLanguageIDs: [String] = []
+    var treeSitterExtensionMap: [String: String] = [:]
+    var documentLoadLargeFileByteLimit = AttoDocumentLoadPolicy.defaultLargeFileByteLimit
 
     var onDidCloseFile: ((URL) -> Void)?
     /// (url, createdOnDisk)
     var onDidSaveFile: ((URL, Bool) -> Void)?
     var onOpenFilesChanged: (([OpenFileItem], UUID?) -> Void)?
     var onSessionStateChanged: (() -> Void)?
+    var dirtyCloseDecisionProviderForTesting: ((URL) -> DirtyCloseDecision)?
 
-    private var isRestoringSession: Bool = false
+    var isRestoringSession: Bool = false
 
-    private struct HoverRequestContext {
+    var hasActiveEditorForCommands: Bool {
+        activeTab != nil
+    }
+
+    var hasMultiplePanesForCommands: Bool {
+        (activeTab?.panes.count ?? 0) > 1
+    }
+
+    var hasMultipleTabsForCommands: Bool {
+        tabs.count > 1
+    }
+
+    func keymapContextForActiveState() -> AttoKeymapContext {
+        var values: [String: AttoKeymapContextValue] = [
+            "has_active_editor": .bool(activeTab != nil),
+            "has_multiple_tabs": .bool(hasMultipleTabsForCommands),
+            "has_multiple_panes": .bool(hasMultiplePanesForCommands),
+        ]
+
+        guard let tab = activeTab else {
+            return AttoKeymapContext(values: values)
+        }
+
+        let documentURL = projectedFileURL(for: tab)
+        let language = AttoLanguageConfiguration.languageKey(
+            fileURL: documentURL,
+            syntaxLanguageId: tab.syntaxLanguageId
+        )
+        if language.isEmpty == false {
+            values["syntax"] = .string(language)
+            values["selector"] = .string(Self.keymapSelector(forLanguage: language))
+        }
+        values["file_name"] = .string(documentURL.lastPathComponent)
+        values["file_extension"] = .string(documentURL.pathExtension.lowercased())
+        values["is_dirty"] = .bool(refreshTabDirtyState(tab))
+
+        do {
+            let selections = try tab.editCore.editor.selections()
+            let selectionEmptyValues = selections.ranges.map { range in
+                AttoKeymapContextValue.bool(range.start == range.end)
+            }
+            if selectionEmptyValues.count == 1, let only = selectionEmptyValues.first {
+                values["selection_empty"] = only
+            } else {
+                values["selection_empty"] = .list(selectionEmptyValues)
+            }
+            values["num_selections"] = .number(Double(selections.ranges.count))
+            values["has_multiple_selections"] = .bool(selections.ranges.count > 1)
+        } catch {
+            values["selection_empty"] = .bool(true)
+            values["num_selections"] = .number(1)
+            values["has_multiple_selections"] = .bool(false)
+        }
+
+        return AttoKeymapContext(values: values)
+    }
+
+    static func keymapSelector(forLanguage language: String) -> String {
+        switch language {
+        case "markdown":
+            return "text.html.markdown"
+        case "text", "txt", "plain", "plaintext":
+            return "text.plain"
+        default:
+            return "source.\(language)"
+        }
+    }
+
+    func _activeDerivedStateForTesting() -> AttoDerivedStateSnapshot {
+        derivedStateStore.active
+    }
+
+    func _activeDerivedStateIsStaleForTesting() -> Bool {
+        derivedStateStore.activeIsStale
+    }
+
+    func _activeLspStatusForTesting() -> EcuLspStatusSnapshot? {
+        derivedStateStore.activeLspStatus
+    }
+
+    func _derivedStateEventKindsForTesting() -> [EcuEditorUIStateEventKind] {
+        derivedStateStore.lastStateEventKinds
+    }
+
+    func _derivedStateEventSequenceForTesting() -> UInt64 {
+        derivedStateStore.lastStateEventSequence
+    }
+
+    func _derivedStateSnapshotRefreshCountForTesting() -> Int {
+        derivedStateStore.snapshotRefreshCount
+    }
+
+    func _transientStatusTextForTesting() -> String? {
+        transientStatusText
+    }
+
+    func _configurationSnapshotForTesting() -> AttoConfigurationSnapshot {
+        configurationSnapshot
+    }
+
+    func _updateStatusBarForTesting() {
+        updateStatusBar()
+    }
+
+    func _lastLspLocationResultForTesting() -> LspLocationResultSnapshot? {
+        lspLocationResultStore.current
+    }
+
+    func _lspLocationResultHistoryForTesting() -> [LspLocationResultSnapshot] {
+        lspLocationResultStore.history
+    }
+
+    func _lspLocationResultLifecycleHistoryForTesting() -> [AttoLspResultLifecycleEntry<LspLocationResultSnapshot>] {
+        lspLocationResultStore.historyEntries
+    }
+
+    func _lspLocationPanelSnapshotForTesting() -> LspLocationResultSnapshot? {
+        lspLocationPanelController?.currentSnapshot
+    }
+
+    func _lspLocationPanelEntryForTesting() -> AttoLspResultLifecycleEntry<LspLocationResultSnapshot>? {
+        lspLocationPanelController?.currentEntry
+    }
+
+    func _lspLocationPanelRowCountForTesting() -> Int {
+        lspLocationPanelController?.rowCount ?? 0
+    }
+
+    func _lspLocationPanelIsVisibleForTesting() -> Bool {
+        lspLocationPanelController?.isVisible == true
+    }
+
+    func _lastLspSymbolResultForTesting() -> LspSymbolResultSnapshot? {
+        lspSymbolResultStore.current
+    }
+
+    func _lspSymbolPanelSnapshotForTesting() -> LspSymbolResultSnapshot? {
+        lspSymbolPanelController?.currentSnapshot
+    }
+
+    func _lspSymbolPanelEntryForTesting() -> AttoLspResultLifecycleEntry<LspSymbolResultSnapshot>? {
+        lspSymbolPanelController?.currentEntry
+    }
+
+    func _lspSymbolPanelRowCountForTesting() -> Int {
+        lspSymbolPanelController?.rowCount ?? 0
+    }
+
+    func _lspSymbolPanelIsVisibleForTesting() -> Bool {
+        lspSymbolPanelController?.isVisible == true
+    }
+
+    func _codeLensPanelItemsForTesting() -> [AttoLspCodeLensParser.Item] {
+        codeLensPanelController?.currentItems ?? []
+    }
+
+    func _codeLensPanelRowCountForTesting() -> Int {
+        codeLensPanelController?.rowCount ?? 0
+    }
+
+    func _codeLensPanelIsVisibleForTesting() -> Bool {
+        codeLensPanelController?.isVisible == true
+    }
+
+    func _inlayHintPanelItemsForTesting() -> [AttoLspInlayHintParser.Item] {
+        inlayHintPanelController?.currentItems ?? []
+    }
+
+    func _inlayHintPanelRowCountForTesting() -> Int {
+        inlayHintPanelController?.rowCount ?? 0
+    }
+
+    func _inlayHintPanelIsVisibleForTesting() -> Bool {
+        inlayHintPanelController?.isVisible == true
+    }
+
+    func _documentLinkPanelItemsForTesting() -> [AttoLspDocumentLinkParser.Item] {
+        documentLinkPanelController?.currentItems ?? []
+    }
+
+    func _documentLinkPanelRowCountForTesting() -> Int {
+        documentLinkPanelController?.rowCount ?? 0
+    }
+
+    func _documentLinkPanelIsVisibleForTesting() -> Bool {
+        documentLinkPanelController?.isVisible == true
+    }
+
+    func _documentColorPanelItemsForTesting() -> [AttoLspDocumentColorParser.Item] {
+        documentColorPanelController?.currentItems ?? []
+    }
+
+    func _documentColorPanelRowCountForTesting() -> Int {
+        documentColorPanelController?.rowCount ?? 0
+    }
+
+    func _documentColorPanelIsVisibleForTesting() -> Bool {
+        documentColorPanelController?.isVisible == true
+    }
+
+    func _hierarchyPanelEntriesForTesting() -> [AttoLspHierarchyParser.Entry] {
+        hierarchyPanelController?.currentEntries ?? []
+    }
+
+    func _hierarchyPanelRowCountForTesting() -> Int {
+        hierarchyPanelController?.rowCount ?? 0
+    }
+
+    func _hierarchyPanelIsVisibleForTesting() -> Bool {
+        hierarchyPanelController?.isVisible == true
+    }
+
+    func _hierarchyPanelSnapshotForTesting() -> AttoHierarchyPanelController.Snapshot? {
+        hierarchyPanelSnapshot
+    }
+
+    func _hierarchyPanelRefreshRequestForTesting() -> HierarchyPanelRefreshRequest? {
+        hierarchyPanelRefreshRequest
+    }
+
+    func _lspWorkbenchPanelItemsForTesting() -> [AttoLspWorkbenchPanelController.Item] {
+        lspWorkbenchPanelController?.currentItems ?? []
+    }
+
+    func _lspWorkbenchPanelSelectedItemForTesting() -> AttoLspWorkbenchPanelController.Item? {
+        lspWorkbenchPanelController?.selectedItem
+    }
+
+    @discardableResult
+    func _selectLspWorkbenchPanelItemForTesting(id: String) -> Bool {
+        lspWorkbenchPanelController?.selectItem(id: id) ?? false
+    }
+
+    func _lspWorkbenchPanelRowCountForTesting() -> Int {
+        lspWorkbenchPanelController?.rowCount ?? 0
+    }
+
+    func _lspWorkbenchPanelIsVisibleForTesting() -> Bool {
+        lspWorkbenchPanelController?.isVisible == true
+    }
+
+    func _lspWorkbenchHistoryPanelItemsForTesting() -> [AttoLspWorkbenchHistoryPanelController.Item] {
+        lspWorkbenchHistoryPanelController?.currentItems ?? []
+    }
+
+    func _lspWorkbenchHistoryPanelRowCountForTesting() -> Int {
+        lspWorkbenchHistoryPanelController?.rowCount ?? 0
+    }
+
+    func _lspWorkbenchHistoryPanelIsVisibleForTesting() -> Bool {
+        lspWorkbenchHistoryPanelController?.isVisible == true
+    }
+
+    func _workspaceOutlineSnapshotForTesting() -> AttoWorkspaceOutlineSnapshot {
+        workspaceOutlineStore.snapshot
+    }
+
+    func _lspSymbolResultHistoryForTesting() -> [LspSymbolResultSnapshot] {
+        lspSymbolResultStore.history
+    }
+
+    func _lspSymbolResultLifecycleHistoryForTesting() -> [AttoLspResultLifecycleEntry<LspSymbolResultSnapshot>] {
+        lspSymbolResultStore.historyEntries
+    }
+
+    func _diagnosticsLifecycleHistoryForTesting() -> [AttoLspResultLifecycleEntry<AttoDiagnosticsLifecycleSnapshot>] {
+        diagnosticsLifecycleStore.historyEntries
+    }
+
+    func _currentDiagnosticsLifecycleEntryForTesting() -> AttoLspResultLifecycleEntry<AttoDiagnosticsLifecycleSnapshot>? {
+        diagnosticsLifecycleStore.currentEntry
+    }
+
+    func _diagnosticsLifecycleEventsForTesting(
+        after sequence: UInt64
+    ) -> [AttoLspResultLifecycleEntry<AttoDiagnosticsLifecycleSnapshot>] {
+        diagnosticsLifecycleEvents(after: sequence)
+    }
+
+    func _latestDiagnosticsLifecycleSequenceForTesting() -> UInt64 {
+        diagnosticsLifecycleStore.latestSequence
+    }
+
+    func _lspResultLifecycleEventsForTesting(after sequence: UInt64) -> [AttoLspResultLifecycleEvent] {
+        lspResultEventStream.entries(after: sequence)
+    }
+
+    func _latestLspResultLifecycleEventSequenceForTesting() -> UInt64 {
+        lspResultEventStream.latestSequence
+    }
+
+    func _projectLspPanelErrorEventsForTesting(after sequence: UInt64) -> [AttoProjectLspPanelErrorEvent] {
+        projectLspPanelErrorEventStore.entries(after: sequence)
+    }
+
+    func _latestProjectLspPanelErrorEventSequenceForTesting() -> UInt64 {
+        projectLspPanelErrorEventStore.latestSequence
+    }
+
+    func _projectLspProcessHealthEventsForTesting(after sequence: UInt64) -> [AttoProjectLspProcessHealthEvent] {
+        projectLspProcessHealthEventStore.entries(after: sequence)
+    }
+
+    func _latestProjectLspProcessHealthEventSequenceForTesting() -> UInt64 {
+        projectLspProcessHealthEventStore.latestSequence
+    }
+
+    func _projectLspLifecycleEventsForTesting(after sequence: UInt64) -> [EcuProjectLspLifecycleEvent] {
+        projectLspLifecycleEventStore.entries(after: sequence)
+    }
+
+    func _latestProjectLspLifecycleEventSequenceForTesting() -> UInt64 {
+        projectLspLifecycleEventStore.latestSequence
+    }
+
+    func _drainProjectLspPanelLifecycleEventsForTesting() {
+        drainProjectLspPanelLifecycleEvents()
+    }
+
+    @discardableResult
+    func _recordProjectLspPanelErrorForTesting(
+        family: String,
+        title: String,
+        slot: String,
+        status: String,
+        message: String
+    ) -> Bool {
+        recordProjectLspPanelError(
+            source: .request,
+            sourceSequence: 0,
+            tabId: activeTab?.coreTabID,
+            viewIndex: activeTab?.activePaneIndex,
+            viewId: nil,
+            family: family,
+            title: title,
+            slot: slot,
+            method: "",
+            requestId: 0,
+            status: status,
+            errorMessage: message
+        ) != nil
+    }
+
+    @discardableResult
+    func _recordProjectLspStatusFailureForTesting(status: EcuLspStatusSnapshot) -> Bool {
+        recordProjectLspStatusFailure(
+            sourceSequence: 0,
+            tabId: activeTab?.coreTabID,
+            viewIndex: activeTab?.activePaneIndex,
+            viewId: nil,
+            status: status
+        ) != nil
+    }
+
+    @discardableResult
+    func _recordProjectLspProcessHealthForTesting(status: EcuLspStatusSnapshot) -> Bool {
+        recordProjectLspProcessHealth(
+            sourceSequence: 0,
+            tabId: activeTab?.coreTabID,
+            viewIndex: activeTab?.activePaneIndex,
+            viewId: nil,
+            status: status
+        ) != nil
+    }
+
+    func _setProjectLspAutoRestartNowProviderForTesting(_ provider: @escaping () -> Date) {
+        projectLspAutoRestartNowProvider = provider
+    }
+
+    func _projectLspAutoRestartAttemptsForTesting(tabId: UInt64) -> Int {
+        projectLspAutoRestartStatesByTabID[tabId]?.attempts ?? 0
+    }
+
+    func _showCodeActionResultJSONForTesting(
+        _ json: String,
+        onlyKinds: [String] = [],
+        showFeedback: Bool = true
+    ) -> Bool {
+        let requestContext = codeActionRequestContextForCurrentSelection(
+            onlyKinds: onlyKinds,
+            showFeedback: showFeedback
+        )
+        let items = AttoLspCodeActionParser.filteredItems(
+            AttoLspCodeActionParser.items(fromCodeActionResultJSON: json),
+            onlyKinds: onlyKinds
+        )
+        return showCodeActionResults(
+            items,
+            onlyKinds: onlyKinds,
+            showFeedback: showFeedback,
+            requestContext: requestContext
+        )
+    }
+
+    func _showCompletionResultJSONForTesting(_ json: String) -> Bool {
+        _showCompletionResultJSONForTesting(json, showFeedback: true)
+    }
+
+    func _showCompletionResultJSONForTesting(_ json: String, showFeedback: Bool) -> Bool {
+        guard let tab = activeTab else { return false }
+        guard let context = try? completionRequestContextForCurrentSelection(tab, showFeedback: showFeedback) else {
+            return false
+        }
+        let items = AttoLspCompletionParser.items(fromCompletionResultJSON: json)
+        return showCompletionList(items: items, context: context, editorView: tab.editCore.editorView)
+    }
+
+    func _applyRenameResultJSONForTesting(_ json: String, newName: String, showFeedback: Bool = true) -> Bool {
+        guard let tab = activeTab else { return false }
+        let offsets = try? tab.editCore.editor.selectionOffsets()
+        let position = try? tab.editCore.editor.charOffsetToLogicalPosition(offset: offsets?.end ?? 0)
+        let context = RenameRequestContext(
+            tabID: tab.id,
+            documentURI: projectedFileURL(for: tab).absoluteString,
+            logicalLine: position?.line ?? 0,
+            logicalColumn: position?.column ?? 0,
+            newName: newName,
+            showFeedback: showFeedback
+        )
+        return applyRenameResultJSON(json, context: context)
+    }
+
+    func _showHierarchyResultJSONForTesting(
+        _ json: String,
+        kind: String = "callIncoming",
+        showFeedback: Bool = true
+    ) -> Bool {
+        let requestKind: LspHierarchyRequestKind
+        switch kind {
+        case "callOutgoing":
+            requestKind = .callOutgoing
+        case "typeSupertypes":
+            requestKind = .typeSupertypes
+        case "typeSubtypes":
+            requestKind = .typeSubtypes
+        default:
+            requestKind = .callIncoming
+        }
+
+        let entries: [AttoLspHierarchyParser.Entry]
+        switch requestKind {
+        case .callIncoming:
+            entries = AttoLspHierarchyParser.incomingCalls(fromResultJSON: json)
+        case .callOutgoing:
+            entries = AttoLspHierarchyParser.outgoingCalls(fromResultJSON: json)
+        case .typeSupertypes, .typeSubtypes:
+            entries = AttoLspHierarchyParser.typeHierarchyEntries(fromResultJSON: json)
+        }
+
+        return showHierarchyResults(
+            entries,
+            placeholder: requestKind.resultPlaceholder,
+            feedbackFeature: requestKind.feedbackFeature,
+            showFeedback: showFeedback
+        )
+    }
+
+    func _problemsPanelDiagnosticsForTesting() -> [EcuDiagnostic] {
+        problemsPanelController?.currentDiagnostics ?? []
+    }
+
+    func _problemsPanelUnifiedProblemsForTesting() -> [AttoUnifiedDiagnosticProblem] {
+        problemsPanelController?.currentProblems ?? []
+    }
+
+    func _problemsPanelRowCountForTesting() -> Int {
+        problemsPanelController?.rowCount ?? 0
+    }
+
+    func _problemsPanelIsVisibleForTesting() -> Bool {
+        problemsPanelController?.isVisible == true
+    }
+
+    func _workspaceProblemsSnapshotForTesting() -> AttoWorkspaceProblemsSnapshot {
+        workspaceProblemsStore.snapshot
+    }
+
+    func _workspaceProblemsPanelDiagnosticsForTesting() -> [AttoLspWorkspaceDiagnosticsParser.Diagnostic] {
+        workspaceProblemsPanelController?.currentWorkspaceDiagnostics ?? []
+    }
+
+    func _workspaceProblemsPanelUnifiedProblemsForTesting() -> [AttoUnifiedDiagnosticProblem] {
+        workspaceProblemsPanelController?.currentProblems ?? []
+    }
+
+    func _workspaceProblemsPanelRowCountForTesting() -> Int {
+        workspaceProblemsPanelController?.rowCount ?? 0
+    }
+
+    func _workspaceProblemsPanelIsVisibleForTesting() -> Bool {
+        workspaceProblemsPanelController?.isVisible == true
+    }
+
+    func _activeMinimapDiagnosticMarkersForTesting() -> [EditorCoreSkiaMinimapMarker] {
+        activeTab?.editCore.minimapDiagnosticMarkers ?? []
+    }
+
+    func _activeGutterDiagnosticMarkersForTesting() -> [EditorCoreSkiaGutterDiagnosticMarker] {
+        activeTab?.editCore.gutterDiagnosticMarkers ?? []
+    }
+
+    func _coreMultiDocumentSnapshotForTesting() throws -> EcuMultiDocumentSnapshot? {
+        try coreDocuments?.snapshot()
+    }
+
+    func _coreProjectLspServerConfigsForTesting() throws -> [EcuProjectLspServerConfig] {
+        try coreDocuments?.projectLspServers() ?? []
+    }
+
+    func _coreProjectLspStartPlanForTesting() throws -> [EcuProjectLspStartPlanEntry] {
+        try coreDocuments?.projectLspStartPlan() ?? []
+    }
+
+    func _coreProjectLspLifecycleEventsForTesting(
+        after sequence: UInt64 = 0
+    ) throws -> EcuProjectLspLifecycleEventsSnapshot? {
+        try coreDocuments?.projectLspLifecycleEvents(after: sequence)
+    }
+
+    func _coreWorkspaceEditTransactionLatestSequenceForTesting() throws -> UInt64? {
+        try coreDocuments?.workspaceEditTransactionEventsLatestSequence()
+    }
+
+    func _undoLastCoreWorkspaceEditTransactionForTesting() -> Bool {
+        undoLastCoreWorkspaceEditTransaction()
+    }
+
+    func _redoLastCoreWorkspaceEditTransactionForTesting() -> Bool {
+        redoLastCoreWorkspaceEditTransaction()
+    }
+
+    func _workspaceEditHistoryPanelItemsForTesting() -> [AttoWorkspaceEditHistoryPanelController.Item] {
+        workspaceEditHistoryPanelController?.currentItems ?? []
+    }
+
+    func _workspaceEditRequestRetryDescriptorsForTesting()
+        -> [UInt64: AttoWorkspaceEditRequestRetryDescriptor]
+    {
+        workspaceEditRequestRetryOwnersByTransactionSequence.mapValues(\.descriptor)
+    }
+
+    func _workspaceEditRequestOwnerRecordsForTesting() -> [AttoWorkspaceEditRequestOwnerRecord] {
+        workspaceEditRequestOwnerStore.loadRecent(workspaceRootURL: workspaceRootURL, limit: 100)
+    }
+
+    func _workspaceEditHistoryPanelRowCountForTesting() -> Int {
+        workspaceEditHistoryPanelController?.rowCount ?? 0
+    }
+
+    func _workspaceEditHistoryPanelIsVisibleForTesting() -> Bool {
+        workspaceEditHistoryPanelController?.isVisible == true
+    }
+
+    func _setWorkspaceEditPreviewDecisionProviderForTesting(
+        _ provider: ((AttoWorkspaceEditPreview) -> AttoWorkspaceEditPreviewDecision)?
+    ) {
+        workspaceEditPreviewDecisionProviderForTesting = provider
+    }
+
+    func _setDirtyCloseDecisionProviderForTesting(_ provider: ((URL) -> DirtyCloseDecision)?) {
+        dirtyCloseDecisionProviderForTesting = provider
+    }
+
+    func _coreMultiDocumentSearchForTesting(query: String) throws -> [EcuTabSearchResult]? {
+        try coreDocuments?.searchAllTabs(query: query)
+    }
+
+    func _linkedEditingSessionIsActiveForTesting() -> Bool {
+        linkedEditingSession != nil
+    }
+
+    func _codeLensResultSummaryForTesting(_ result: EcuLspCodeLensResult) -> (errorMessage: String?, count: Int) {
+        (Self.codeLensResultErrorMessage(result), Self.codeLensResultCount(result))
+    }
+
+    func _inlayHintResultSummaryForTesting(_ result: EcuLspInlayHintResult) -> (errorMessage: String?, count: Int) {
+        (Self.inlayHintResultErrorMessage(result), Self.inlayHintResultCount(result))
+    }
+
+    func _documentLinkResultSummaryForTesting(_ result: EcuLspDocumentLinkResult) -> (errorMessage: String?, count: Int) {
+        (Self.documentLinkResultErrorMessage(result), Self.documentLinkResultCount(result))
+    }
+
+    func _activeSemanticTokensBaselineForTesting() -> (resultId: String?, data: [UInt32])? {
+        guard let tab = activeTab else { return nil }
+        return (tab.semanticTokensResultId, tab.semanticTokensData)
+    }
+
+    func _setDocumentColorPickerForTesting(_ picker: ((NSColor) -> NSColor?)?) {
+        documentColorPickerForTesting = picker
+    }
+
+    func _setLspEnvironmentProviderForTesting(_ provider: @escaping () -> [String: String]) {
+        lspEnvironmentProvider = provider
+    }
+
+    func _setActiveTabDirtyCacheForTesting(_ isDirty: Bool) {
+        activeTab?.isDirty = isDirty
+    }
+
+    func _activeTabDirtyForDataLossDecisionForTesting() -> Bool {
+        guard let tab = activeTab else { return false }
+        return isTabDirtyForDataLossDecision(tab)
+    }
+
+    struct HoverRequestContext {
         let tabID: UUID
         let info: EditorCoreSkiaHoverInfo
     }
 
-    private struct DefinitionRequestContext {
+    enum LspLocationRequestKind: Equatable {
+        case definition
+        case declaration
+        case typeDefinition
+        case implementation
+        case references
+
+        var resultPlaceholder: String {
+            switch self {
+            case .definition:
+                return "Filter definitions..."
+            case .declaration:
+                return "Filter declarations..."
+            case .typeDefinition:
+                return "Filter type definitions..."
+            case .implementation:
+                return "Filter implementations..."
+            case .references:
+                return "Filter references..."
+            }
+        }
+
+        var historyTitle: String {
+            switch self {
+            case .definition:
+                return "Definitions"
+            case .declaration:
+                return "Declarations"
+            case .typeDefinition:
+                return "Type Definitions"
+            case .implementation:
+                return "Implementations"
+            case .references:
+                return "References"
+            }
+        }
+
+        var lifecycleKind: String {
+            switch self {
+            case .definition:
+                return "definition"
+            case .declaration:
+                return "declaration"
+            case .typeDefinition:
+                return "type_definition"
+            case .implementation:
+                return "implementation"
+            case .references:
+                return "references"
+            }
+        }
+
+        var feedbackFeature: AttoLspResultFeedback.Feature {
+            switch self {
+            case .definition:
+                return .definition
+            case .declaration:
+                return .declaration
+            case .typeDefinition:
+                return .typeDefinition
+            case .implementation:
+                return .implementation
+            case .references:
+                return .references
+            }
+        }
+    }
+
+    struct LspLocationResultSnapshot: Equatable {
+        let kind: LspLocationRequestKind
+        let items: [AttoLspDefinitionParser.LocationItem]
+    }
+
+    struct GoToLineTarget: Equatable {
+        let line1: Int
+        let column1: Int
+    }
+
+    enum CursorMovementCommand: String, CaseIterable {
+        case moveLeft = "cursor.move_left"
+        case moveRight = "cursor.move_right"
+        case moveWordLeft = "cursor.move_word_left"
+        case moveWordRight = "cursor.move_word_right"
+        case moveUp = "cursor.move_up"
+        case moveDown = "cursor.move_down"
+        case pageUp = "cursor.page_up"
+        case pageDown = "cursor.page_down"
+        case lineStart = "cursor.line_start"
+        case lineEnd = "cursor.line_end"
+        case documentStart = "cursor.document_start"
+        case documentEnd = "cursor.document_end"
+        case selectLeft = "cursor.select_left"
+        case selectRight = "cursor.select_right"
+        case selectWordLeft = "cursor.select_word_left"
+        case selectWordRight = "cursor.select_word_right"
+        case selectUp = "cursor.select_up"
+        case selectDown = "cursor.select_down"
+        case selectPageUp = "cursor.select_page_up"
+        case selectPageDown = "cursor.select_page_down"
+        case selectLineStart = "cursor.select_line_start"
+        case selectLineEnd = "cursor.select_line_end"
+        case selectDocumentStart = "cursor.select_document_start"
+        case selectDocumentEnd = "cursor.select_document_end"
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .moveLeft: return "Cursor: Move Left"
+            case .moveRight: return "Cursor: Move Right"
+            case .moveWordLeft: return "Cursor: Move Word Left"
+            case .moveWordRight: return "Cursor: Move Word Right"
+            case .moveUp: return "Cursor: Move Up"
+            case .moveDown: return "Cursor: Move Down"
+            case .pageUp: return "Cursor: Page Up"
+            case .pageDown: return "Cursor: Page Down"
+            case .lineStart: return "Cursor: Move to Line Start"
+            case .lineEnd: return "Cursor: Move to Line End"
+            case .documentStart: return "Cursor: Move to Document Start"
+            case .documentEnd: return "Cursor: Move to Document End"
+            case .selectLeft: return "Cursor: Select Left"
+            case .selectRight: return "Cursor: Select Right"
+            case .selectWordLeft: return "Cursor: Select Word Left"
+            case .selectWordRight: return "Cursor: Select Word Right"
+            case .selectUp: return "Cursor: Select Up"
+            case .selectDown: return "Cursor: Select Down"
+            case .selectPageUp: return "Cursor: Select Page Up"
+            case .selectPageDown: return "Cursor: Select Page Down"
+            case .selectLineStart: return "Cursor: Select to Line Start"
+            case .selectLineEnd: return "Cursor: Select to Line End"
+            case .selectDocumentStart: return "Cursor: Select to Document Start"
+            case .selectDocumentEnd: return "Cursor: Select to Document End"
+            }
+        }
+    }
+
+    enum LspSymbolRequestKind {
+        case document
+        case workspace(query: String)
+
+        var feedbackFeature: AttoLspResultFeedback.Feature {
+            switch self {
+            case .document: return .documentSymbols
+            case .workspace: return .workspaceSymbols
+            }
+        }
+
+        var emptyFeedbackDetailText: String {
+            switch self {
+            case .document:
+                return AttoLspResultFeedback.Feature.documentSymbols.emptyText
+            case .workspace(let query):
+                let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.isEmpty {
+                    return AttoLspResultFeedback.Feature.workspaceSymbols.emptyText
+                }
+                return "No workspace symbols match \"\(trimmed)\"."
+            }
+        }
+    }
+
+    enum ProjectLspPanelFamily {
+        case locations
+        case symbols
+    }
+
+    struct LspSymbolResultSnapshot: Equatable {
+        let title: String
+        let symbols: [AttoLspSymbolParser.Symbol]
+        let placeholder: String
+    }
+
+    enum LspHierarchyRequestKind: Equatable {
+        case callIncoming
+        case callOutgoing
+        case typeSupertypes
+        case typeSubtypes
+
+        var isCallHierarchy: Bool {
+            switch self {
+            case .callIncoming, .callOutgoing:
+                return true
+            case .typeSupertypes, .typeSubtypes:
+                return false
+            }
+        }
+
+        var resultPlaceholder: String {
+            switch self {
+            case .callIncoming:
+                return "Filter incoming calls..."
+            case .callOutgoing:
+                return "Filter outgoing calls..."
+            case .typeSupertypes:
+                return "Filter supertypes..."
+            case .typeSubtypes:
+                return "Filter subtypes..."
+            }
+        }
+
+        var feedbackFeature: AttoLspResultFeedback.Feature {
+            switch self {
+            case .callIncoming, .callOutgoing:
+                return .callHierarchy
+            case .typeSupertypes, .typeSubtypes:
+                return .typeHierarchy
+            }
+        }
+    }
+
+    struct DefinitionRequestContext {
         let tabID: UUID
         let logicalLine: UInt32
         let logicalColumn: UInt32
+        let kind: LspLocationRequestKind
+        let showFeedback: Bool
     }
 
-    private var hoverContext: HoverRequestContext?
-    private var hoverDebounceWorkItem: DispatchWorkItem?
-    private var hoverPollTimer: DispatchSourceTimer?
-    private var hoverPopover: NSPopover?
-    private var hoverPopoverLabel: NSTextField?
+    struct SymbolRequestContext {
+        let tabID: UUID
+        let kind: LspSymbolRequestKind
+    }
 
-    private var definitionContext: DefinitionRequestContext?
-    private var definitionPollTimer: DispatchSourceTimer?
+    struct WorkspaceSymbolSearchContext {
+        let tabID: UUID
+        let requestID: Int
+        let query: String
+    }
 
-    init(library: EditorCoreUIFFILibrary, theme: EditorCoreSkiaTheme, workspaceRootURL: URL) {
+    struct HierarchyPrepareContext {
+        let tabID: UUID
+        let kind: LspHierarchyRequestKind
+        let showFeedback: Bool
+    }
+
+    struct HierarchyChildrenContext {
+        let tabID: UUID
+        let kind: LspHierarchyRequestKind
+        let item: AttoLspHierarchyParser.Item
+        let showFeedback: Bool
+        let resultMode: HierarchyChildrenResultMode
+    }
+
+    enum HierarchyChildrenResultMode {
+        case interactive
+        case refresh
+    }
+
+    struct HierarchyPanelRefreshRequest: Equatable {
+        let tabID: UUID
+        let kind: LspHierarchyRequestKind
+        let item: AttoLspHierarchyParser.Item
+    }
+
+    struct SignatureHelpRequestContext {
+        let tabID: UUID
+        let showEmptyResults: Bool
+    }
+
+    struct CompletionRequestContext {
+        let tabID: UUID
+        let logicalLine: UInt32
+        let logicalColumn: UInt32
+        let fallbackStart: UInt32
+        let fallbackEnd: UInt32
+        let beepOnFailure: Bool
+        let showFeedback: Bool
+    }
+
+    struct CompletionResolveContext {
+        let request: CompletionRequestContext
+        let item: AttoLspCompletionParser.Item
+        let commitCharacter: String?
+    }
+
+    enum FormattingRequestKind {
+        case document
+        case selection(startOffset: UInt32, endOffset: UInt32)
+
+        var feedbackFeature: AttoLspResultFeedback.Feature {
+            switch self {
+            case .document:
+                return .formatDocument
+            case .selection:
+                return .formatSelection
+            }
+        }
+
+        var retryLabel: String {
+            switch self {
+            case .document:
+                return "Format Document"
+            case .selection:
+                return "Format Selection"
+            }
+        }
+    }
+
+    struct FormattingRequestContext {
+        let tabID: UUID
+        let kind: FormattingRequestKind
+        let showFeedback: Bool
+    }
+
+    struct RenameRequestContext {
+        let tabID: UUID
+        let documentURI: String
+        let logicalLine: UInt32
+        let logicalColumn: UInt32
+        let newName: String
+        let showFeedback: Bool
+    }
+
+    struct RenamePrepareContext {
+        let tabID: UUID
+        let fallbackSeed: AttoLspRenameSupport.DialogSeed
+        let showFeedback: Bool
+    }
+
+    struct CodeActionRequestContext {
+        let tabID: UUID
+        let startOffset: UInt32
+        let endOffset: UInt32
+        let onlyKinds: [String]
+        let showFeedback: Bool
+    }
+
+    struct CodeActionResolveContext {
+        let tabID: UUID
+        let item: AttoLspCodeActionParser.Item
+        let requestContext: CodeActionRequestContext?
+        let showFeedback: Bool
+    }
+
+    struct CodeLensResolveContext {
+        let tabID: UUID
+        let item: AttoLspCodeLensParser.Item
+    }
+
+    struct CodeLensRefreshContext {
+        let tabID: UUID
+        let showFeedback: Bool
+    }
+
+    enum AuxiliaryRefreshKind: Equatable {
+        case inlayHints
+        case documentLinks
+
+        var feedbackFeature: AttoLspResultFeedback.Feature {
+            switch self {
+            case .inlayHints:
+                return .inlayHints
+            case .documentLinks:
+                return .documentLinks
+            }
+        }
+
+        var singularNoun: String {
+            switch self {
+            case .inlayHints:
+                return "hint"
+            case .documentLinks:
+                return "link"
+            }
+        }
+
+        var pluralNoun: String {
+            switch self {
+            case .inlayHints:
+                return "hints"
+            case .documentLinks:
+                return "links"
+            }
+        }
+
+        var resultEventFamily: String {
+            switch self {
+            case .inlayHints:
+                return "inlay_hints"
+            case .documentLinks:
+                return "document_links"
+            }
+        }
+
+        func resultEventTitle(count: Int) -> String {
+            let noun = count == 1 ? singularNoun : pluralNoun
+            switch self {
+            case .inlayHints:
+                return "Inlay Hints: \(count) \(noun)"
+            case .documentLinks:
+                return "Document Links: \(count) \(noun)"
+            }
+        }
+
+        func resultEventPayload(count: Int) -> AttoLspResultLifecycleEvent.Payload {
+            switch self {
+            case .inlayHints:
+                return .inlayHints(itemCount: count)
+            case .documentLinks:
+                return .documentLinks(itemCount: count)
+            }
+        }
+    }
+
+    struct AuxiliaryRefreshContext {
+        let tabID: UUID
+        let kind: AuxiliaryRefreshKind
+        let showFeedback: Bool
+    }
+
+    struct InlayHintResolveContext {
+        let tabID: UUID
+        let hintJSON: String
+        let showFeedback: Bool
+    }
+
+    struct DocumentLinkResolveContext {
+        let tabID: UUID
+        let showFeedback: Bool
+    }
+
+    struct ExecuteCommandRequestContext {
+        let tabID: UUID
+        let commandTitle: String
+        let commandJSON: String
+    }
+
+    struct FoldingRangesRequestContext {
+        let tabID: UUID
+        let showFeedback: Bool
+    }
+
+    struct SelectionRangeRequestContext {
+        let tabID: UUID
+        let showFeedback: Bool
+    }
+
+    struct LinkedEditingRequestContext {
+        let tabID: UUID
+        let caretOffset: UInt32
+        let showFeedback: Bool
+    }
+
+    struct LinkedEditingSession {
+        let tabID: UUID
+        let selectionCount: Int
+    }
+
+    enum DocumentColorResultMode {
+        case presentations
+        case picker
+        case panel
+        case refresh
+
+        var lifecycleMode: String {
+            switch self {
+            case .presentations:
+                return "presentations"
+            case .picker:
+                return "picker"
+            case .panel:
+                return "panel"
+            case .refresh:
+                return "refresh"
+            }
+        }
+    }
+
+    struct DocumentColorRequestContext {
+        let tabID: UUID
+        let showFeedback: Bool
+        let mode: DocumentColorResultMode
+    }
+
+    struct ColorPresentationRequestContext {
+        let tabID: UUID
+        let item: AttoLspDocumentColorParser.Item
+        let showFeedback: Bool
+    }
+
+    struct DocumentColorPanelContext {
+        let tabID: UUID
+        let item: AttoLspDocumentColorParser.Item
+    }
+
+    struct WorkspaceDiagnosticsRequestContext {
+        let tabID: UUID
+        let showFeedback: Bool
+    }
+
+    struct DiagnosticsTextFingerprint: Equatable {
+        let count: Int
+        let hashValue: Int
+
+        init(_ text: String) {
+            self.count = text.count
+            self.hashValue = text.hashValue
+        }
+    }
+
+    var hoverContext: HoverRequestContext?
+    var hoverDebounceWorkItem: DispatchWorkItem?
+    var hoverPollTimer: DispatchSourceTimer?
+    var hoverPopover: NSPopover?
+    var hoverPopoverLabel: NSTextField?
+    var workspaceEditPopover: NSPopover?
+    var workspaceEditPopoverLabel: NSTextField?
+    var workspaceEditPreviewPanelController: AttoWorkspaceEditPreviewPanelController?
+    var workspaceEditHistoryPanelController: AttoWorkspaceEditHistoryPanelController?
+    var workspaceEditConsumedUndoSequences: Set<UInt64> = []
+    var workspaceEditRequestRetryOwnersByTransactionSequence: [UInt64: AttoWorkspaceEditRequestRetryOwner] = [:]
+    var workspaceEditPreviewDecisionProviderForTesting: ((AttoWorkspaceEditPreview) -> AttoWorkspaceEditPreviewDecision)?
+
+    var definitionContext: DefinitionRequestContext?
+    var definitionPollTimer: DispatchSourceTimer?
+    var lspLocationResultsController: AttoCommandPaletteController?
+    var lspLocationPanelController: AttoLspLocationPanelController?
+    let lspLocationResultStore = AttoLspResultLifecycleStore<LspLocationResultSnapshot>(
+        maxHistoryEntries: maxLspResultHistoryEntries
+    )
+
+    var symbolContext: SymbolRequestContext?
+    var symbolPollTimer: DispatchSourceTimer?
+    var lspSymbolResultsController: AttoCommandPaletteController?
+    var lspSymbolPanelController: AttoLspSymbolPanelController?
+    let lspSymbolResultStore = AttoLspResultLifecycleStore<LspSymbolResultSnapshot>(
+        maxHistoryEntries: maxLspResultHistoryEntries
+    )
+    let workspaceOutlineStore: AttoWorkspaceOutlineStore
+    var workspaceSymbolSearchContext: WorkspaceSymbolSearchContext?
+    var workspaceSymbolSearchDebounceTimer: DispatchSourceTimer?
+    var workspaceSymbolSearchPollTimer: DispatchSourceTimer?
+    var workspaceSymbolSearchRequestID: Int = 0
+    var workspaceSymbolSearchQuery: String = ""
+    var workspaceSymbolSearchResults: [AttoLspSymbolParser.Symbol] = []
+    var hierarchyPrepareContext: HierarchyPrepareContext?
+    var hierarchyPreparePollTimer: DispatchSourceTimer?
+    var hierarchyChildrenContext: HierarchyChildrenContext?
+    var hierarchyChildrenPollTimer: DispatchSourceTimer?
+    var hierarchyResultsController: AttoCommandPaletteController?
+    var hierarchyPanelSnapshot: AttoHierarchyPanelController.Snapshot?
+    var hierarchyPanelOwner: AttoLspResultOwner?
+    var hierarchyPanelEventSequence: UInt64?
+    var hierarchyPanelRefreshRequest: HierarchyPanelRefreshRequest?
+    var hierarchyPanelController: AttoHierarchyPanelController?
+    var lspWorkbenchPanelController: AttoLspWorkbenchPanelController?
+    var lspWorkbenchDockView: AttoLspWorkbenchDockView?
+    var lspWorkbenchHistoryPanelController: AttoLspWorkbenchHistoryPanelController?
+    var lspWorkbenchHistoryPanelFamilyFilter: String?
+    var lspWorkbenchHistoryPanelPinnedOnly = false
+    var problemsResultsController: AttoCommandPaletteController?
+    var problemsPanelController: AttoProblemsPanelController?
+    let diagnosticsLifecycleStore = AttoLspResultLifecycleStore<AttoDiagnosticsLifecycleSnapshot>(
+        maxHistoryEntries: maxLspResultHistoryEntries
+    )
+    let lspResultEventStream = AttoLspResultEventStream(
+        maxHistoryEntries: maxLspResultEventHistoryEntries
+    )
+    let lspWorkbenchAuxiliaryHistoryStore = AttoLspWorkbenchAuxiliaryHistoryStore(
+        maxHistoryEntries: maxLspResultEventHistoryEntries
+    )
+    let projectLspPanelErrorEventStore = AttoProjectLspPanelErrorEventStore(
+        maxHistoryEntries: maxLspResultEventHistoryEntries
+    )
+    let projectLspProcessHealthEventStore = AttoProjectLspProcessHealthEventStore(
+        maxHistoryEntries: maxLspResultEventHistoryEntries
+    )
+    let projectLspLifecycleEventStore = AttoProjectLspLifecycleEventStore(
+        maxHistoryEntries: maxLspResultEventHistoryEntries
+    )
+    let projectLspProcessHealthLogStore: AttoProjectLspProcessHealthLogStore
+    var projectLspStatusEventsController: AttoCommandPaletteController?
+    var projectLspProcessHealthController: AttoCommandPaletteController?
+    var projectLspProcessHealthLogController: AttoCommandPaletteController?
+    var projectLspDashboardController: AttoCommandPaletteController?
+    var projectLspAutoRestartStatesByTabID: [UInt64: ProjectLspAutoRestartState] = [:]
+    var projectLspAutoRestartNowProvider: () -> Date = Date.init
+    var coreLspRequestEventCursor: UInt64 = 0
+    var coreLspResultEventCursor: UInt64 = 0
+    var coreLspStateEventCursor: UInt64 = 0
+    var coreProjectLspLifecycleEventCursor: UInt64 = 0
+    var activeDiagnosticsTextFingerprintsByTabID: [UUID: DiagnosticsTextFingerprint] = [:]
+    var activeDiagnosticsBaselinesByTabID: [UUID: [EcuDiagnostic]] = [:]
+    var activeDiagnosticsStaleReasonsByTabID: [UUID: AttoDiagnosticsStaleReason] = [:]
+    let workspaceProblemsStore: AttoWorkspaceProblemsStore
+    var workspaceProblemsPanelController: AttoProblemsPanelController?
+    var workspaceDiagnosticsContext: WorkspaceDiagnosticsRequestContext?
+    var workspaceDiagnosticsPollTimer: DispatchSourceTimer?
+    var workspaceDiagnosticsResultsController: AttoCommandPaletteController?
+    var workspaceDiagnosticsStaleReason: AttoDiagnosticsStaleReason?
+    var documentColorResultsController: AttoCommandPaletteController?
+    var colorPresentationResultsController: AttoCommandPaletteController?
+
+    var signatureHelpContext: SignatureHelpRequestContext?
+    var signatureHelpPollTimer: DispatchSourceTimer?
+    var signatureHelpPopover: NSPopover?
+    var signatureHelpPopoverLabel: NSTextField?
+
+    var completionContext: CompletionRequestContext?
+    var completionPollTimer: DispatchSourceTimer?
+    var completionResolveContext: CompletionResolveContext?
+    var completionResolvePollTimer: DispatchSourceTimer?
+    var completionListController: AttoCompletionListController?
+    var completionListContext: CompletionRequestContext?
+    var shouldPreserveCompletionUIForCurrentTextMutation = false
+
+    var formattingContext: FormattingRequestContext?
+    var formattingPollTimer: DispatchSourceTimer?
+
+    var renameContext: RenameRequestContext?
+    var renamePollTimer: DispatchSourceTimer?
+    var renamePrepareContext: RenamePrepareContext?
+    var renamePreparePollTimer: DispatchSourceTimer?
+
+    var codeActionContext: CodeActionRequestContext?
+    var codeActionPollTimer: DispatchSourceTimer?
+    var codeActionResolveContext: CodeActionResolveContext?
+    var codeActionResolvePollTimer: DispatchSourceTimer?
+    var codeActionResultsController: AttoCommandPaletteController?
+    var codeLensResolveContext: CodeLensResolveContext?
+    var codeLensResolvePollTimer: DispatchSourceTimer?
+    var codeLensRefreshContext: CodeLensRefreshContext?
+    var codeLensRefreshPollTimer: DispatchSourceTimer?
+    var codeLensResultsController: AttoCommandPaletteController?
+    var codeLensPanelController: AttoCodeLensPanelController?
+    var auxiliaryRefreshContext: AuxiliaryRefreshContext?
+    var auxiliaryRefreshPollTimer: DispatchSourceTimer?
+    var inlayHintResolveContext: InlayHintResolveContext?
+    var inlayHintResolvePollTimer: DispatchSourceTimer?
+    var inlayHintPanelController: AttoInlayHintPanelController?
+    var documentLinkResolveContext: DocumentLinkResolveContext?
+    var documentLinkResolvePollTimer: DispatchSourceTimer?
+    var documentLinkPanelController: AttoDocumentLinkPanelController?
+    var executeCommandContext: ExecuteCommandRequestContext?
+    var executeCommandPollTimer: DispatchSourceTimer?
+
+    var foldingRangesContext: FoldingRangesRequestContext?
+    var foldingRangesPollTimer: DispatchSourceTimer?
+    var selectionRangeContext: SelectionRangeRequestContext?
+    var selectionRangePollTimer: DispatchSourceTimer?
+    var linkedEditingContext: LinkedEditingRequestContext?
+    var linkedEditingPollTimer: DispatchSourceTimer?
+    var linkedEditingSession: LinkedEditingSession?
+    var documentColorContext: DocumentColorRequestContext?
+    var documentColorPollTimer: DispatchSourceTimer?
+    var colorPresentationContext: ColorPresentationRequestContext?
+    var colorPresentationPollTimer: DispatchSourceTimer?
+    var documentColorPanelContext: DocumentColorPanelContext?
+    var lastDocumentColorItems: [AttoLspDocumentColorParser.Item] = []
+    var lastDocumentColorOwner: AttoLspResultOwner?
+    var lastDocumentColorEventSequence: UInt64?
+    var documentColorPanelController: AttoDocumentColorPanelController?
+    var documentColorPickerForTesting: ((NSColor) -> NSColor?)?
+    var lspEnvironmentProvider: () -> [String: String] = {
+        ProcessInfo.processInfo.environment
+    }
+    let workspaceEditRequestOwnerStore: AttoWorkspaceEditRequestOwnerStore
+
+    init(
+        library: EditorCoreUIFFILibrary,
+        theme: EditorCoreSkiaTheme,
+        workspaceRootURL: URL,
+        configurationSnapshot: AttoConfigurationSnapshot? = nil,
+        configurationSnapshotProvider: ((URL, AttoConfigurationDocumentContext?) -> AttoConfigurationSnapshot)? = nil,
+        themeResolver: ((String) -> EditorCoreSkiaTheme)? = nil,
+        preferences: AttoPreferences = .shared,
+        projectLspProcessHealthLogStore: AttoProjectLspProcessHealthLogStore = AttoProjectLspProcessHealthLogStore(),
+        workspaceEditRequestOwnerStore: AttoWorkspaceEditRequestOwnerStore = AttoWorkspaceEditRequestOwnerStore()
+    ) {
         self.library = library
         self.theme = theme
         self.workspaceRootURL = workspaceRootURL
+        self.preferences = preferences
+        self.configurationSnapshotProvider = configurationSnapshotProvider
+        self.themeResolver = themeResolver
+        self.configurationSnapshot = configurationSnapshot
+            ?? preferences.effectiveConfigurationSnapshot(workspaceRootURL: workspaceRootURL)
+        self.projectLspProcessHealthLogStore = projectLspProcessHealthLogStore
+        self.workspaceEditRequestOwnerStore = workspaceEditRequestOwnerStore
+        do {
+            let coreDocuments = try MultiDocumentEditorUI(library: library)
+            self.coreDocuments = coreDocuments
+            self.workspaceProblemsStore = AttoWorkspaceProblemsStore(coreDocuments: coreDocuments)
+            self.workspaceOutlineStore = AttoWorkspaceOutlineStore(coreDocuments: coreDocuments)
+        } catch {
+            self.coreDocuments = nil
+            self.workspaceProblemsStore = AttoWorkspaceProblemsStore()
+            self.workspaceOutlineStore = AttoWorkspaceOutlineStore()
+            NSLog("AttoEditor: failed to initialize core multi-document model: %@", String(describing: error))
+        }
         super.init(nibName: nil, bundle: nil)
+        syncCoreWorkspaceRoots()
     }
 
     required init?(coder: NSCoder) {
@@ -81,6 +1374,7 @@ final class AttoEditorAreaViewController: NSViewController {
 
     override func loadView() {
         view = NSView(frame: .zero)
+        view.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.editorArea)
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor(ecuRgba8: theme.editorBackground).cgColor
     }
@@ -96,6 +1390,12 @@ final class AttoEditorAreaViewController: NSViewController {
         }
         tabBarView.onDoubleClickTab = { [weak self] id in
             self?.pinTabIfPreview(id: id)
+        }
+        tabBarView.onMoveTab = { [weak self] id, targetIndex in
+            self?.moveTab(id: id, toProjectedIndex: targetIndex, beepOnFailure: false)
+        }
+        tabBarView.onDropTabIntoSplit = { [weak self] id in
+            self?.dropTabIntoSplit(id: id, beepOnFailure: false)
         }
         tabBarView.translatesAutoresizingMaskIntoConstraints = false
 
@@ -122,14 +1422,22 @@ final class AttoEditorAreaViewController: NSViewController {
         findReplaceBarView.replaceAllButton.action = #selector(replaceAllClicked(_:))
         findReplaceBarView.closeButton.target = self
         findReplaceBarView.closeButton.action = #selector(closeFindBarClicked(_:))
+        applyFindPreferences()
 
         contentHostView.translatesAutoresizingMaskIntoConstraints = false
+        contentHostView.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.editorContentHost)
         contentHostView.wantsLayer = true
         contentHostView.layer?.backgroundColor = NSColor(ecuRgba8: theme.editorBackground).cgColor
+
+        let lspWorkbenchDockView = makeLspWorkbenchDockView()
+        lspWorkbenchDockView.translatesAutoresizingMaskIntoConstraints = false
+        lspWorkbenchDockView.isHidden = true
+        self.lspWorkbenchDockView = lspWorkbenchDockView
 
         emptyStateLabel.font = NSFont.systemFont(ofSize: 13, weight: .regular)
         emptyStateLabel.textColor = NSColor(attoHex: 0x8A8A8A)
         emptyStateLabel.alignment = .center
+        emptyStateLabel.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.editorEmptyState)
         emptyStateLabel.translatesAutoresizingMaskIntoConstraints = false
 
         statusBarView.translatesAutoresizingMaskIntoConstraints = false
@@ -141,10 +1449,18 @@ final class AttoEditorAreaViewController: NSViewController {
         view.addSubview(tabBarView)
         view.addSubview(findReplaceBarView)
         view.addSubview(contentHostView)
+        view.addSubview(lspWorkbenchDockView)
         view.addSubview(statusBarView)
 
         findReplaceBarHeightConstraint = findReplaceBarView.heightAnchor.constraint(equalToConstant: 0)
         findReplaceBarHeightConstraint?.isActive = true
+        let dockHeightConstraint = lspWorkbenchDockView.heightAnchor.constraint(equalToConstant: 240)
+        lspWorkbenchDockHeightConstraint = dockHeightConstraint
+        contentHostBottomToStatusConstraint = contentHostView.bottomAnchor.constraint(equalTo: statusBarView.topAnchor)
+        contentHostBottomToWorkbenchDockConstraint = contentHostView.bottomAnchor.constraint(
+            equalTo: lspWorkbenchDockView.topAnchor
+        )
+        contentHostBottomToWorkbenchDockConstraint?.isActive = false
 
         NSLayoutConstraint.activate([
             tabBarView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -161,10 +1477,15 @@ final class AttoEditorAreaViewController: NSViewController {
             statusBarView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             statusBarView.heightAnchor.constraint(equalToConstant: 20),
 
+            lspWorkbenchDockView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            lspWorkbenchDockView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            lspWorkbenchDockView.bottomAnchor.constraint(equalTo: statusBarView.topAnchor),
+            dockHeightConstraint,
+
             contentHostView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             contentHostView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             contentHostView.topAnchor.constraint(equalTo: findReplaceBarView.bottomAnchor),
-            contentHostView.bottomAnchor.constraint(equalTo: statusBarView.topAnchor),
+            contentHostBottomToStatusConstraint!,
         ])
 
         showEmptyState()
@@ -172,7 +1493,7 @@ final class AttoEditorAreaViewController: NSViewController {
         updateStatusBar()
     }
 
-    private func loadTreeSitterRegistryCacheIfNeeded() {
+    func loadTreeSitterRegistryCacheIfNeeded() {
         guard didAttemptLoadTreeSitterRegistry == false else { return }
         didAttemptLoadTreeSitterRegistry = true
 
@@ -201,10 +1522,10 @@ final class AttoEditorAreaViewController: NSViewController {
         }
     }
 
-    private func refreshStatusBarLanguageOptions() {
+    func refreshStatusBarLanguageOptions() {
         loadTreeSitterRegistryCacheIfNeeded()
         var opts: [AttoStatusBarView.LanguageOption] = [
-            .init(id: nil, title: "Plain Tex"),
+            .init(id: nil, title: "Plain Text"),
         ]
         for id in treeSitterLanguageIDs {
             opts.append(.init(id: id, title: id))
@@ -212,7 +1533,7 @@ final class AttoEditorAreaViewController: NSViewController {
         statusBarView.setLanguageOptions(opts)
     }
 
-    private func inferredTreeSitterLanguageId(for url: URL) -> String? {
+    func inferredTreeSitterLanguageId(for url: URL) -> String? {
         loadTreeSitterRegistryCacheIfNeeded()
         let ext = url.pathExtension.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard ext.isEmpty == false else { return nil }
@@ -221,1508 +1542,312 @@ final class AttoEditorAreaViewController: NSViewController {
 
     func setWorkspaceRootURL(_ url: URL) {
         workspaceRootURL = url
+        let workspaceRootSnapshot = preferences.effectiveConfigurationSnapshot(workspaceRootURL: url).workspace
+        configurationSnapshot.workspace.rootURL = workspaceRootSnapshot.rootURL
+        configurationSnapshot.workspace.rootPath = workspaceRootSnapshot.rootPath
+        syncCoreWorkspaceRoots()
+        syncProjectLspServerConfigsToCore()
+        startProjectLspServersForOpenTabs()
     }
 
-    // MARK: - Preferences (editor rendering)
-
-    func applyEditorPreferences() {
-        let prefs = AttoPreferences.shared
-        let fontFamiliesCSV = prefs.fontFamiliesCSVForApplying()
-        let ligaturesEnabled = prefs.effectiveLigaturesEnabled
-        let fontSizePoints = prefs.effectiveFontSizePoints
-
-        for tab in tabs {
-            // Font families: empty CSV means "reset to default" (Skia renderer falls back).
-            do {
-                try tab.editCore.editor.setFontFamiliesCSV(fontFamiliesCSV)
-            } catch {
-                NSLog("AttoEditor: setFontFamiliesCSV failed: %@", String(describing: error))
-            }
-
-            do {
-                try tab.editCore.editor.setFontLigaturesEnabled(ligaturesEnabled)
-            } catch {
-                NSLog("AttoEditor: setFontLigaturesEnabled failed: %@", String(describing: error))
-            }
-
-            tab.editCore.editorView.fontSizePoints = CGFloat(fontSizePoints)
-            tab.editCore.editorView.needsDisplay = true
-        }
+    func updateConfigurationSnapshot(_ snapshot: AttoConfigurationSnapshot) {
+        configurationSnapshot = snapshot
     }
 
-    func applyTheme(_ theme: EditorCoreSkiaTheme) {
-        self.theme = theme
-
-        if isViewLoaded {
-            let bg = NSColor(ecuRgba8: theme.editorBackground).cgColor
-            view.layer?.backgroundColor = bg
-            contentHostView.layer?.backgroundColor = bg
-        }
-
-        for tab in tabs {
-            do {
-                try tab.editCore.applyTheme(theme)
-            } catch {
-                NSLog("AttoEditor: applyTheme failed: %@", String(describing: error))
-            }
-        }
-    }
-
-    // MARK: - Tabs
-
-    func makeSessionSnapshot() -> (tabs: [AttoTabSnapshot], selectedTabIndex: Int?) {
-        let selectedIndex: Int? = {
-            guard let selectedTabID else { return nil }
-            return tabs.firstIndex(where: { $0.id == selectedTabID })
-        }()
-
-        let tabSnaps: [AttoTabSnapshot] = tabs.map { tab in
-            AttoTabSnapshot(
-                filePath: tab.fileURL.standardizedFileURL.path,
-                isPreview: tab.isPreview,
-                showsMinimap: tab.editCore.showsMinimap
-            )
-        }
-
-        return (tabs: tabSnaps, selectedTabIndex: selectedIndex)
-    }
-
-    func restoreSession(tabs tabSnapshots: [AttoTabSnapshot], selectedTabIndex: Int?) {
-        isRestoringSession = true
-        defer { isRestoringSession = false }
-
-        cancelHoverUI()
-        cancelDefinitionUI()
-
-        tabs = []
-        selectedTabID = nil
-
-        var didUsePreview = false
-        var newTabs: [AttoEditorTab] = []
-        newTabs.reserveCapacity(tabSnapshots.count)
-
-        for snap in tabSnapshots {
-            let url = URL(fileURLWithPath: snap.filePath).standardizedFileURL
-            guard FileManager.default.fileExists(atPath: url.path) else { continue }
-
-            let wantsPreview = snap.isPreview && (didUsePreview == false)
-            if wantsPreview { didUsePreview = true }
-
-            do {
-                let tab = try makeTab(
-                    for: url,
-                    isPreview: wantsPreview,
-                    showsMinimap: snap.showsMinimap ?? true
-                )
-                newTabs.append(tab)
-            } catch {
-                NSLog("AttoEditor: session restore failed to open file %@: %@", url.path, String(describing: error))
-            }
-        }
-
-        tabs = newTabs
-
-        if newTabs.isEmpty {
-            showEmptyState()
-            refreshTabBar()
-            updateStatusBar()
-            updateWindowTitle()
-            onOpenFilesChanged?(openFileItems(), selectedTabID)
-            return
-        }
-
-        let idx = selectedTabIndex ?? 0
-        let safeIdx = (0..<newTabs.count).contains(idx) ? idx : 0
-        selectTab(id: newTabs[safeIdx].id)
-    }
-
-    private func notifySessionStateChanged() {
-        guard isRestoringSession == false else { return }
-        onSessionStateChanged?()
-    }
-
-    func openFile(url: URL) {
-        openFile(url: url, mode: .pinned)
-    }
-
-    @discardableResult
-    func openFile(url: URL, mode: OpenMode, isUntitled: Bool = false) -> Bool {
-        if let existing = tabs.first(where: { $0.fileURL.standardizedFileURL == url.standardizedFileURL }) {
-            if mode == .pinned, existing.isPreview {
-                existing.isPreview = false
-            }
-            selectTab(id: existing.id)
-            refreshTabBar()
-            updateWindowTitle()
-            notifySessionStateChanged()
-            return true
-        }
-
+    func syncCoreWorkspaceRoots() {
+        guard let coreDocuments else { return }
         do {
-            switch mode {
-            case .preview:
-                if let previewIdx = tabs.firstIndex(where: { $0.isPreview }) {
-                    // Safety: never discard dirty state; pin the preview tab if it got edited.
-                    if tabs[previewIdx].isDirty {
-                        tabs[previewIdx].isPreview = false
-                    } else {
-                        let oldURL = tabs[previewIdx].fileURL
-                        let tab = try makeTab(for: url, isPreview: true, isUntitled: isUntitled)
-                        tabs[previewIdx] = tab
-                        selectTab(id: tab.id)
-                        onDidCloseFile?(oldURL)
-                        notifySessionStateChanged()
-                        return true
-                    }
-                }
-
-                let tab = try makeTab(for: url, isPreview: true, isUntitled: isUntitled)
-                tabs.append(tab)
-                selectTab(id: tab.id)
-                notifySessionStateChanged()
-
-            case .pinned:
-                let tab = try makeTab(for: url, isPreview: false, isUntitled: isUntitled)
-                tabs.append(tab)
-                selectTab(id: tab.id)
-                notifySessionStateChanged()
-            }
-            return true
-        } catch {
-            NSSound.beep()
-            NSLog("AttoEditor: failed to open file %@: %@", url.path, String(describing: error))
-            return false
-        }
-    }
-
-    @discardableResult
-    func openFile(url: URL, mode: OpenMode, location: AttoCommandLine.FileLocation?) -> Bool {
-        let ok = openFile(url: url, mode: mode)
-        guard ok else { return false }
-        guard let location else { return true }
-        guard let tab = activeTab, tab.fileURL.standardizedFileURL == url.standardizedFileURL else { return true }
-        navigate(tab: tab, to: location)
-        return true
-    }
-
-    func containsFile(url: URL) -> Bool {
-        tabs.contains { $0.fileURL.standardizedFileURL == url.standardizedFileURL }
-    }
-
-    func openFileURLs() -> [URL] {
-        tabs.map(\.fileURL)
-    }
-
-    func openFileItems() -> [OpenFileItem] {
-        tabs.map { tab in
-            OpenFileItem(
-                id: tab.id,
-                url: tab.fileURL,
-                title: tab.displayTitle,
-                isDirty: tab.isDirty,
-                isPreview: tab.isPreview
-            )
-        }
-    }
-
-    func selectFile(url: URL) {
-        guard let tab = tabs.first(where: { $0.fileURL.standardizedFileURL == url.standardizedFileURL }) else { return }
-        selectTab(id: tab.id)
-    }
-
-    func closeActiveTab() {
-        guard let selectedTabID else { return }
-        closeTab(id: selectedTabID)
-    }
-
-    func saveActiveTab() {
-        guard let tab = activeTab else {
-            NSSound.beep()
-            return
-        }
-        _ = saveTabWithSavePanelIfNeeded(tab)
-    }
-
-    func confirmClosingDirtyTabsIfNeeded() -> Bool {
-        let dirtyTabs = tabs.filter { $0.isDirty }
-        guard dirtyTabs.isEmpty == false else { return true }
-
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = "You have unsaved changes."
-        alert.informativeText = "Do you want to save your changes before closing?"
-        alert.addButton(withTitle: "Save All")
-        alert.addButton(withTitle: "Cancel")
-        alert.addButton(withTitle: "Don't Save")
-
-        switch alert.runModal() {
-        case .alertFirstButtonReturn:
-            return saveAllDirtyTabs()
-        case .alertSecondButtonReturn:
-            return false
-        default:
-            return true
-        }
-    }
-
-    private enum DirtyCloseDecision {
-        case save
-        case dontSave
-        case cancel
-    }
-
-    private func confirmCloseDirtyTab(_ tab: AttoEditorTab) -> DirtyCloseDecision {
-        let name = tab.fileURL.lastPathComponent
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = "Do you want to save changes to \"\(name)\" before closing?"
-        alert.informativeText = "Your changes will be lost if you don't save them."
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Cancel")
-        alert.addButton(withTitle: "Don't Save")
-
-        switch alert.runModal() {
-        case .alertFirstButtonReturn:
-            return .save
-        case .alertSecondButtonReturn:
-            return .cancel
-        default:
-            return .dontSave
-        }
-    }
-
-    @discardableResult
-    private func saveTab(_ tab: AttoEditorTab) -> Bool {
-        let fm = FileManager.default
-        let existedOnDiskBeforeSave = fm.fileExists(atPath: tab.fileURL.path)
-        do {
-            let text = try tab.editCore.editor.text()
-            try text.write(to: tab.fileURL, atomically: true, encoding: .utf8)
-            try tab.editCore.editor.markSaved()
-            tab.isUntitled = false
-            tab.isDirty = false
-            tab.isPreview = false
-            refreshTabBar()
-            updateWindowTitle()
-            updateStatusBar()
-            notifySessionStateChanged()
-            onDidSaveFile?(tab.fileURL, existedOnDiskBeforeSave == false)
-            return true
-        } catch {
-            NSSound.beep()
-            NSLog("AttoEditor: failed to save file %@: %@", tab.fileURL.path, String(describing: error))
-            return false
-        }
-    }
-
-    private func saveAllDirtyTabs() -> Bool {
-        for tab in tabs {
-            if tab.isDirty {
-                if saveTabWithSavePanelIfNeeded(tab) == false {
-                    return false
-                }
-            }
-        }
-        return true
-    }
-
-    private func closeTab(id: UUID) {
-        guard let idx = tabs.firstIndex(where: { $0.id == id }) else { return }
-        let tab = tabs[idx]
-        if tab.isDirty {
-            switch confirmCloseDirtyTab(tab) {
-            case .cancel:
-                return
-            case .save:
-                guard saveTabWithSavePanelIfNeeded(tab) else { return }
-            case .dontSave:
-                break
-            }
-        }
-
-        let url = tab.fileURL
-        let wasSelected = (selectedTabID == id)
-        tabs.remove(at: idx)
-        onDidCloseFile?(url)
-        notifySessionStateChanged()
-
-        if wasSelected {
-            if let next = tabs.indices.last {
-                selectTab(id: tabs[next].id)
-            } else {
-                selectedTabID = nil
-                showEmptyState()
-                refreshTabBar()
-                updateStatusBar()
-            }
-        } else {
-            refreshTabBar()
-        }
-    }
-
-    private func selectTab(id: UUID) {
-        guard let tab = tabs.first(where: { $0.id == id }) else { return }
-        selectedTabID = id
-
-        updateAlwaysPollProcessingForSelectedTab()
-        cancelHoverUI()
-        cancelDefinitionUI()
-
-        showTabContent(tab)
-        refreshTabBar()
-        attachStatusObserver(to: tab.editCore.editorView)
-        updateStatusBar()
-        updateWindowTitle()
-        tab.editCore.focusEditor()
-
-        applyFindStateToActiveTab()
-        notifySessionStateChanged()
-    }
-
-    private func refreshTabBar() {
-        tabBarView.updateTabs(
-            tabs: tabs.map { .init(id: $0.id, title: $0.displayTitle, toolTip: $0.fileURL.path, isPreview: $0.isPreview) },
-            selectedID: selectedTabID
-        )
-        onOpenFilesChanged?(openFileItems(), selectedTabID)
-    }
-
-    private func pinTabIfPreview(id: UUID) {
-        guard let tab = tabs.first(where: { $0.id == id }) else { return }
-        guard tab.isPreview else { return }
-        tab.isPreview = false
-        refreshTabBar()
-        notifySessionStateChanged()
-    }
-
-    // MARK: - Minimap
-
-    func toggleMinimapForActiveTab() {
-        guard let tab = activeTab else { return }
-        tab.editCore.showsMinimap.toggle()
-        tab.editCore.needsLayout = true
-        tab.editCore.needsDisplay = true
-        notifySessionStateChanged()
-    }
-
-    // MARK: - Editor commands
-
-    func moveToMatchingBracketInActiveTab() {
-        guard let tab = activeTab else { return }
-        tab.editCore.editorView.moveToMatchingBracket()
-    }
-
-    func jumpBackInActiveTab() {
-        guard let tab = activeTab else { return }
-        tab.editCore.editorView.jumpBack()
-    }
-
-    func jumpForwardInActiveTab() {
-        guard let tab = activeTab else { return }
-        tab.editCore.editorView.jumpForward()
-    }
-
-    func formatDocumentWithLspInActiveTab() {
-        guard let tab = activeTab else { return }
-        tab.editCore.editorView.formatDocumentWithLSP()
-    }
-
-    // MARK: - Find / Replace
-
-    func showFindBar() {
-        if findReplaceBarView.isHidden {
-            guard activeTab != nil else {
-                NSSound.beep()
-                return
-            }
-            ensureFindReplaceBar(mode: .find)
-            return
-        }
-
-        if findReplaceBarView.currentMode() == .find {
-            hideFindBar()
-            return
-        }
-
-        ensureFindReplaceBar(mode: .find)
-    }
-
-    func showReplaceBar() {
-        if findReplaceBarView.isHidden {
-            guard activeTab != nil else {
-                NSSound.beep()
-                return
-            }
-            ensureFindReplaceBar(mode: .replace)
-            return
-        }
-
-        if findReplaceBarView.currentMode() == .replace {
-            hideFindBar()
-            return
-        }
-
-        ensureFindReplaceBar(mode: .replace)
-    }
-
-    private func ensureFindReplaceBar(mode: AttoFindReplaceBarView.Mode) {
-        let wasHidden = findReplaceBarView.isHidden
-        let oldMode = findReplaceBarView.currentMode()
-
-        findReplaceBarView.setMode(mode)
-        findReplaceBarView.isHidden = false
-        findReplaceBarHeightConstraint?.constant = (mode == .find) ? 42 : 76
-
-        view.layoutSubtreeIfNeeded()
-        view.window?.makeFirstResponder(findReplaceBarView.searchField)
-        findReplaceBarView.searchField.selectText(nil)
-
-        // Always re-apply highlights on show/switch; `activeTab == nil` is fine (no-op).
-        if wasHidden || oldMode != mode {
-            applyFindStateToActiveTab()
-        } else {
-            refreshSearchHighlights()
-        }
-    }
-
-    func hideFindBar() {
-        guard findReplaceBarView.isHidden == false else { return }
-        clearSearchHighlightsForAllTabs()
-        findReplaceBarView.isHidden = true
-        findReplaceBarHeightConstraint?.constant = 0
-        activeTab?.editCore.focusEditor()
-    }
-
-    private func currentSearchOptions() -> EcuSearchOptions {
-        EcuSearchOptions(
-            caseSensitive: findReplaceBarView.caseSensitiveButton.state == .on,
-            wholeWord: findReplaceBarView.wholeWordButton.state == .on,
-            regex: findReplaceBarView.regexButton.state == .on
-        )
-    }
-
-    private func setMatchCountLabel(_ count: UInt32) {
-        findReplaceBarView.matchCountLabel.stringValue = "\(count) matches"
-    }
-
-    private func applyFindStateToActiveTab() {
-        guard findReplaceBarView.isHidden == false else { return }
-        refreshSearchHighlights()
-    }
-
-    private func clearSearchHighlightsForAllTabs() {
-        for tab in tabs {
-            do {
-                try tab.editCore.editor.clearSearchQuery()
-                tab.editCore.editorView.needsDisplay = true
-            } catch {
-                // Ignore best-effort cleanup errors.
-            }
-        }
-        setMatchCountLabel(0)
-    }
-
-    private func refreshSearchHighlights() {
-        guard let tab = activeTab else {
-            setMatchCountLabel(0)
-            return
-        }
-
-        do {
-            let query = findReplaceBarView.searchField.stringValue
-            if query.isEmpty {
-                try tab.editCore.editor.clearSearchQuery()
-                setMatchCountLabel(0)
-            } else {
-                let count = try tab.editCore.editor.setSearchQuery(query, options: currentSearchOptions())
-                setMatchCountLabel(count)
-            }
-            tab.editCore.editorView.needsDisplay = true
-        } catch {
-            NSSound.beep()
-        }
-    }
-
-    @objc private func findOptionsChanged(_ sender: Any?) {
-        refreshSearchHighlights()
-    }
-
-    @objc private func clearFindClicked(_ sender: Any?) {
-        findReplaceBarView.searchField.stringValue = ""
-        refreshSearchHighlights()
-        view.window?.makeFirstResponder(findReplaceBarView.searchField)
-    }
-
-    @objc private func findNextClicked(_ sender: Any?) {
-        guard let tab = activeTab else {
-            NSSound.beep()
-            return
-        }
-
-        do {
-            let query = findReplaceBarView.searchField.stringValue
-            guard query.isEmpty == false else {
-                NSSound.beep()
-                return
-            }
-            let ok = try tab.editCore.editor.findNext(query, options: currentSearchOptions())
-            if ok == false { NSSound.beep() }
-            tab.editCore.layoutSubtreeIfNeeded()
-            try tab.editCore.editor.revealPrimaryCaret()
-            tab.editCore.editorView.needsDisplay = true
-            updateStatusBar()
-            view.window?.makeFirstResponder(findReplaceBarView.searchField)
-        } catch {
-            NSSound.beep()
-        }
-    }
-
-    @objc private func findPrevClicked(_ sender: Any?) {
-        guard let tab = activeTab else {
-            NSSound.beep()
-            return
-        }
-
-        do {
-            let query = findReplaceBarView.searchField.stringValue
-            guard query.isEmpty == false else {
-                NSSound.beep()
-                return
-            }
-            let ok = try tab.editCore.editor.findPrev(query, options: currentSearchOptions())
-            if ok == false { NSSound.beep() }
-            tab.editCore.layoutSubtreeIfNeeded()
-            try tab.editCore.editor.revealPrimaryCaret()
-            tab.editCore.editorView.needsDisplay = true
-            updateStatusBar()
-            view.window?.makeFirstResponder(findReplaceBarView.searchField)
-        } catch {
-            NSSound.beep()
-        }
-    }
-
-    @objc private func replaceCurrentClicked(_ sender: Any?) {
-        guard let tab = activeTab else {
-            NSSound.beep()
-            return
-        }
-
-        do {
-            let query = findReplaceBarView.searchField.stringValue
-            guard query.isEmpty == false else {
-                NSSound.beep()
-                return
-            }
-            let replacement = findReplaceBarView.replaceField.stringValue
-            _ = try tab.editCore.editor.replaceCurrent(query: query, replacement: replacement, options: currentSearchOptions())
-            tab.editCore.layoutSubtreeIfNeeded()
-            try tab.editCore.editor.revealPrimaryCaret()
-            refreshSearchHighlights()
-            updateStatusBar()
-            view.window?.makeFirstResponder(findReplaceBarView.searchField)
-        } catch {
-            NSSound.beep()
-        }
-    }
-
-    @objc private func replaceAllClicked(_ sender: Any?) {
-        guard let tab = activeTab else {
-            NSSound.beep()
-            return
-        }
-
-        do {
-            let query = findReplaceBarView.searchField.stringValue
-            guard query.isEmpty == false else {
-                NSSound.beep()
-                return
-            }
-            let replacement = findReplaceBarView.replaceField.stringValue
-            _ = try tab.editCore.editor.replaceAll(query: query, replacement: replacement, options: currentSearchOptions())
-            tab.editCore.layoutSubtreeIfNeeded()
-            try tab.editCore.editor.revealPrimaryCaret()
-            refreshSearchHighlights()
-            updateStatusBar()
-            view.window?.makeFirstResponder(findReplaceBarView.searchField)
-        } catch {
-            NSSound.beep()
-        }
-    }
-
-    @objc private func closeFindBarClicked(_ sender: Any?) {
-        hideFindBar()
-    }
-
-    // MARK: - Status bar
-
-    private var activeTab: AttoEditorTab? {
-        guard let selectedTabID else { return nil }
-        return tabs.first(where: { $0.id == selectedTabID })
-    }
-
-    private func updateWindowTitle() {
-        guard let win = view.window else { return }
-        guard let tab = activeTab else {
-            win.title = "AttoEditor"
-            return
-        }
-
-        let name = tab.fileURL.lastPathComponent
-        if tab.isDirty {
-            win.title = "AttoEditor — ● \(name)"
-        } else {
-            win.title = "AttoEditor — \(name)"
-        }
-    }
-
-    private func handleTabDidMutateDocumentText(tabID: UUID) {
-        guard let tab = tabs.first(where: { $0.id == tabID }) else { return }
-
-        let didUnpreview = tab.isPreview
-        if tab.isPreview {
-            tab.isPreview = false
-        }
-
-        tab.isDirty = (try? tab.editCore.editor.isModified()) ?? true
-
-        refreshTabBar()
-        updateWindowTitle()
-        if didUnpreview {
-            notifySessionStateChanged()
-        }
-    }
-
-    private func attachStatusObserver(to editorView: EditorCoreSkiaView) {
-        activeViewportObserver = editorView.addViewportStateObserver { [weak self] in
-            self?.updateStatusBar()
-        }
-    }
-
-    private func updateAlwaysPollProcessingForSelectedTab() {
-        for tab in tabs {
-            tab.editCore.alwaysPollProcessing = false
-        }
-
-        guard let tab = activeTab else { return }
-        if (try? tab.editCore.editor.lspIsEnabled()) == true {
-            tab.editCore.alwaysPollProcessing = true
-        }
-    }
-
-    private func updateStatusBar() {
-        guard let tab = activeTab else {
-            statusBarView.update(
-                leftText: nil,
-                languageId: nil,
-                languageIsEnabled: false,
-                lspText: nil,
-                positionText: "Ln -, Col -",
-                selectionText: nil,
-                fileSizeText: nil
-            )
-            return
-        }
-
-        let editor = tab.editCore.editor
-
-        let (line1, col1): (UInt32, UInt32) = {
-            do {
-                let offsets = try editor.selectionOffsets()
-                let pos = try editor.charOffsetToLogicalPosition(offset: offsets.end)
-                return (pos.line + 1, pos.column + 1)
-            } catch {
-                return (0, 0)
-            }
-        }()
-
-        let selectionText: String? = {
-            do {
-                let sel = try editor.selections()
-                let totalSelected: UInt64 = sel.ranges.reduce(0) { acc, r in
-                    let a = UInt64(r.start)
-                    let b = UInt64(r.end)
-                    let len = a <= b ? (b - a) : (a - b)
-                    return acc + len
-                }
-                let cursors = sel.ranges.count
-                if cursors <= 1, let primary = sel.ranges.first {
-                    let a = primary.start
-                    let b = primary.end
-                    let start = min(a, b)
-                    let end = max(a, b)
-                    let len = UInt64(end - start)
-                    if len == 0 {
-                        return nil
-                    }
-                    let startPos = try editor.charOffsetToLogicalPosition(offset: start)
-                    let endPos = try editor.charOffsetToLogicalPosition(offset: end)
-                    return "Sel \(len) (\(startPos.line + 1):\(startPos.column + 1)-\(endPos.line + 1):\(endPos.column + 1))"
-                }
-                if totalSelected == 0 {
-                    return "\(cursors) cursors"
-                }
-                return "Sel \(totalSelected) (\(cursors) cursors)"
-            } catch {
-                return nil
-            }
-        }()
-
-        let fileSizeText: String? = {
-            do {
-                let values = try tab.fileURL.resourceValues(forKeys: [.fileSizeKey])
-                guard let size = values.fileSize else { return nil }
-                return AttoFormat.byteCount(Int64(size))
-            } catch {
-                return nil
-            }
-        }()
-
-        let lspText: String? = {
-            // Keep the status bar clean unless LSP is likely relevant.
-            //
-            // - Historically, AttoEditor only auto-enabled LSP for Rust.
-            // - With configurable LSPs, show LSP status when it is enabled (any language), or for Rust files.
-            let isRustFile = (tab.fileURL.pathExtension.lowercased() == "rs")
-            let isEnabled = (try? editor.lspIsEnabled()) == true
-            guard isRustFile || isEnabled else { return nil }
-
-            do {
-                let raw = try editor.lspStatusJSON()
-                guard let data = raw.data(using: .utf8),
-                      let obj = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any]
-                else {
-                    return (try? editor.lspIsEnabled()) == true ? "LSP: on" : "LSP: off"
-                }
-
-                let state = (obj["state"] as? String) ?? "disabled"
-                let detail = obj["detail"] as? String
-
-                var name: String? = nil
-                if let server = obj["server"] as? [String: Any] {
-                    name = server["name"] as? String
-                    if name == nil {
-                        name = server["command"] as? String
-                    }
-                }
-
-                var title: String? = nil
-                var pct: String? = nil
-                if let activity = obj["activity"] as? [String: Any] {
-                    title = activity["title"] as? String
-                    if let p = activity["percentage"] as? UInt {
-                        pct = "\(p)%"
-                    } else if let p = activity["percentage"] as? Int {
-                        pct = "\(p)%"
-                    } else if let p = activity["percentage"] as? Double {
-                        pct = "\(Int(p))%"
-                    }
-                }
-
-                let prefix: String = {
-                    if let name, name.isEmpty == false {
-                        return "LSP \(name):"
-                    }
-                    return "LSP:"
-                }()
-
-                switch state {
-                case "ready":
-                    return "\(prefix) Ready"
-                case "indexing":
-                    let t = (title?.isEmpty == false) ? title! : "Indexing"
-                    if let pct { return "\(prefix) \(t) \(pct)" }
-                    return "\(prefix) \(t)"
-                case "busy":
-                    let t = (title?.isEmpty == false) ? title! : "Busy"
-                    if let pct { return "\(prefix) \(t) \(pct)" }
-                    return "\(prefix) \(t)"
-                case "failed":
-                    // Keep it short: show the detailed reason in logs only.
-                    if let detail, detail.isEmpty == false {
-                        NSLog("AttoEditor: LSP status failed: %@", detail)
-                    }
-                    return "\(prefix) Failed"
-                default:
-                    return "\(prefix) Off"
-                }
-            } catch {
-                // Best-effort: never break status bar rendering because of FFI errors.
-                return (try? editor.lspIsEnabled()) == true ? "LSP: on" : "LSP: off"
-            }
-        }()
-
-        statusBarView.update(
-            leftText: nil,
-            languageId: tab.syntaxLanguageId,
-            languageIsEnabled: true,
-            lspText: lspText,
-            positionText: "Ln \(line1), Col \(col1)",
-            selectionText: selectionText,
-            fileSizeText: fileSizeText
-        )
-    }
-
-    private func setSyntaxLanguageForActiveTab(languageId: String?) {
-        guard let tab = activeTab else {
-            NSSound.beep()
-            return
-        }
-
-        // "Plain Tex" => disable all syntax engines.
-        if languageId == nil {
-            tab.editCore.editor.lspDisable()
-            tab.editCore.editor.treeSitterDisable()
-            tab.editCore.editor.sublimeDisable()
-            tab.syntaxLanguageId = nil
-            updateAlwaysPollProcessingForSelectedTab()
-            updateStatusBar()
-            tab.editCore.editorView.needsDisplay = true
-            return
-        }
-
-        let lang = (languageId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        if lang.isEmpty {
-            NSSound.beep()
-            return
-        }
-
-        // Force Tree-sitter with an explicit language id.
-        loadTreeSitterRegistryCacheIfNeeded()
-        if let registryJSON = treeSitterRegistryJSON {
-            // Best-effort (each editor view owns its own registry state).
-            try? tab.editCore.editor.treeSitterSetRegistryJSON(registryJSON)
-        }
-
-        tab.editCore.editor.lspDisable()
-        tab.editCore.editor.sublimeDisable()
-
-        do {
-            try tab.editCore.editor.treeSitterEnableLanguage(lang)
-            tab.syntaxLanguageId = lang
-            tab.editCore.editorView.kickProcessingPoll()
-            updateAlwaysPollProcessingForSelectedTab()
-            updateStatusBar()
-            tab.editCore.editorView.needsDisplay = true
-        } catch {
-            NSSound.beep()
-            NSLog(
-                "AttoEditor: failed to set Tree-sitter language %@ for %@: %@",
-                lang,
-                tab.fileURL.path,
-                String(describing: error)
-            )
-            updateStatusBar()
-        }
-    }
-
-    // MARK: - Navigation
-
-    private func navigate(tab: AttoEditorTab, to location: AttoCommandLine.FileLocation) {
-        let line1 = max(1, location.line1)
-        let column1 = max(1, location.column1 ?? 1)
-
-        do {
-            tab.editCore.layoutSubtreeIfNeeded()
-            let text = try tab.editCore.editor.text()
-            let offset = Self.charOffsetForLineColumn1(text: text, line1: line1, column1: column1)
-            try tab.editCore.editor.setSelections([EcuSelectionRange(start: offset, end: offset)], primaryIndex: 0)
-            try tab.editCore.editor.revealPrimaryCaret()
-            tab.editCore.needsDisplay = true
-            updateStatusBar()
-        } catch {
-            NSSound.beep()
-        }
-    }
-
-    private static func charOffsetForLineColumn1(text: String, line1: Int, column1: Int) -> UInt32 {
-        let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
-        let targetLineIdx = max(0, line1 - 1)
-        if targetLineIdx >= lines.count {
-            return UInt32(text.count)
-        }
-
-        var offset: Int = 0
-        if targetLineIdx > 0 {
-            for i in 0..<targetLineIdx {
-                offset += lines[i].count
-                offset += 1 // '\n'
-            }
-        }
-
-        let lineText = lines[targetLineIdx]
-        let col0 = max(0, min(lineText.count, column1 - 1))
-        offset += col0
-        return UInt32(max(0, offset))
-    }
-
-    // MARK: - Content
-
-    private func showEmptyState() {
-        contentHostView.subviews.forEach { $0.removeFromSuperview() }
-        contentHostView.addSubview(emptyStateLabel)
-        NSLayoutConstraint.activate([
-            emptyStateLabel.centerXAnchor.constraint(equalTo: contentHostView.centerXAnchor),
-            emptyStateLabel.centerYAnchor.constraint(equalTo: contentHostView.centerYAnchor),
-        ])
-    }
-
-    private func showTabContent(_ tab: AttoEditorTab) {
-        contentHostView.subviews.forEach { $0.removeFromSuperview() }
-        let container = tab.editCore
-        container.translatesAutoresizingMaskIntoConstraints = false
-        contentHostView.addSubview(container)
-        NSLayoutConstraint.activate([
-            container.leadingAnchor.constraint(equalTo: contentHostView.leadingAnchor),
-            container.trailingAnchor.constraint(equalTo: contentHostView.trailingAnchor),
-            container.topAnchor.constraint(equalTo: contentHostView.topAnchor),
-            container.bottomAnchor.constraint(equalTo: contentHostView.bottomAnchor),
-        ])
-    }
-
-    // MARK: - Tab creation
-
-    private func makeTab(
-        for url: URL,
-        isPreview: Bool,
-        showsMinimap: Bool = true,
-        isUntitled: Bool = false
-    ) throws -> AttoEditorTab {
-        let initialText = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
-
-        let prefs = AttoPreferences.shared
-        let fontFamiliesCSV = prefs.fontFamiliesCSVForNewViews()
-
-        let editCore = try EditCoreUI(
-            library: library,
-            initialText: initialText,
-            viewportWidthCells: 120,
-            fontFamiliesCSV: fontFamiliesCSV,
-            showsMinimap: showsMinimap,
-            minimapPlacement: .rightOfScrollbar
-        )
-
-        // VSCode-like defaults.
-        // 保持至少 6 个 cell 的 gutter（折叠标记 + 行号），但仍允许在超大文件时自动扩展。
-        editCore.editorView.minimumGutterWidthCells = 6
-        // Visual aids enabled by default in AttoEditor MVP.
-        try editCore.editor.setWhitespaceRenderMode(.selection)
-        try editCore.editor.setIndentGuidesEnabled(true)
-        try editCore.editor.setFontLigaturesEnabled(prefs.effectiveLigaturesEnabled)
-        editCore.editorView.fontSizePoints = CGFloat(prefs.effectiveFontSizePoints)
-        try editCore.applyTheme(theme)
-        // Enable baseline editor UX by default.
-        try editCore.editor.setAutoPairsEnabled(true)
-        try editCore.editor.setBracketMatchHighlightsEnabled(true)
-
-        // Tree-sitter registry (best-effort).
-        loadTreeSitterRegistryCacheIfNeeded()
-        if let registryJSON = treeSitterRegistryJSON {
-            do {
-                try editCore.editor.treeSitterSetRegistryJSON(registryJSON)
-            } catch {
-                NSLog("AttoEditor: Tree-sitter registry init failed: %@", String(describing: error))
-            }
-        }
-
-        // Syntax support (best-effort): LSP -> Tree-sitter -> Sublime `.sublime-syntax`.
-        let syntaxLanguageId = configureSyntaxSupport(for: url, editCore: editCore)
-
-        let tabId = UUID()
-        let tab = AttoEditorTab(
-            id: tabId,
-            fileURL: url,
-            isUntitled: isUntitled,
-            isPreview: isPreview,
-            isDirty: false,
-            syntaxLanguageId: syntaxLanguageId,
-            editCore: editCore
-        )
-        editCore.onDidMutateDocumentText = { [weak self] in
-            self?.handleTabDidMutateDocumentText(tabID: tabId)
-        }
-        editCore.onDidApplyAsyncProcessing = { [weak self] in
-            guard let self else { return }
-            // Async processing updates (LSP diagnostics/semantic tokens, etc.) can change status
-            // bar info even without any user input.
-            guard self.activeTab?.id == tabId else { return }
-            self.updateStatusBar()
-        }
-        editCore.onHover = { [weak self] info in
-            self?.handleHover(info: info, tabID: tabId)
-        }
-        editCore.onHoverExit = { [weak self] in
-            self?.handleHoverExit(tabID: tabId)
-        }
-        editCore.editorView.onCommandClick = { [weak self] ctx in
-            self?.handleCommandClick(ctx: ctx, tabID: tabId) ?? false
-        }
-        editCore.editorView.onCommandHover = { [weak self] _ in
-            guard let self else { return false }
-            guard activeTab?.id == tabId else { return false }
-            guard let tab = activeTab else { return false }
-            // Only show Cmd-hover "clickable" affordance when Cmd-click is expected to resolve via LSP.
-            return (try? tab.editCore.editor.lspIsEnabled()) == true
-        }
-        return tab
-    }
-
-    // MARK: - Saving helpers
-
-    @discardableResult
-    private func saveTabWithSavePanelIfNeeded(_ tab: AttoEditorTab) -> Bool {
-        guard tab.isUntitled else {
-            return saveTab(tab)
-        }
-
-        let panel = NSSavePanel()
-        panel.canCreateDirectories = true
-        panel.prompt = "Save"
-        panel.message = "Choose where to save this file."
-        panel.directoryURL = workspaceRootURL
-
-        let defaultName = tab.fileURL.lastPathComponent.isEmpty ? "untitled.txt" : tab.fileURL.lastPathComponent
-        panel.nameFieldStringValue = defaultName
-
-        guard panel.runModal() == .OK, let url = panel.url?.standardizedFileURL else {
-            return false
-        }
-
-        if tabs.contains(where: { $0.id != tab.id && $0.fileURL.standardizedFileURL == url }) {
-            NSSound.beep()
-            let alert = NSAlert()
-            alert.alertStyle = .warning
-            alert.messageText = "This file is already open."
-            alert.informativeText = "Please choose a different name or close the other tab first."
-            alert.runModal()
-            return false
-        }
-
-        let oldURL = tab.fileURL
-        tab.fileURL = url
-        if saveTab(tab) {
-            return true
-        }
-
-        // Best-effort rollback if the actual write failed.
-        tab.fileURL = oldURL
-        refreshTabBar()
-        updateWindowTitle()
-        updateStatusBar()
-        notifySessionStateChanged()
-        return false
-    }
-
-    private func configureSyntaxSupport(for url: URL, editCore: EditCoreUI) -> String? {
-        // Start from a clean slate (best-effort). This avoids stacking style layers when a host
-        // switches engines (e.g. LSP becomes available later).
-        editCore.editor.lspDisable()
-        editCore.editor.treeSitterDisable()
-        editCore.editor.sublimeDisable()
-
-        // 1) LSP (configurable by extension).
-        let env = ProcessInfo.processInfo.environment
-        let disableLSP = env["ATTO_EDITOR_DISABLE_LSP"] == "1"
-            || env["EDITOR_CORE_APPKIT_DISABLE_LSP"] == "1"
-
-        if disableLSP == false {
-            let ext = url.pathExtension.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            let configured = AttoLspRegistry.loadServerMap()[ext]
-
-            let cmd: String? = {
-                if let configured { return configured.command }
-
-                // Backwards-compat: preserve Rust env override + default behavior when no config exists.
-                if ext == "rs" {
-                    return env["ATTO_EDITOR_LSP_CMD"]
-                        ?? env["EDITOR_CORE_APPKIT_LSP_CMD"]
-                        ?? "rust-analyzer"
-                }
-
-                return nil
-            }()
-
-            let args: String? = {
-                if let configured { return configured.args }
-
-                // Backwards-compat for Rust-only env args.
-                if ext == "rs" {
-                    return env["ATTO_EDITOR_LSP_ARGS"]
-                        ?? env["EDITOR_CORE_APPKIT_LSP_ARGS"]
-                }
-
-                return nil
-            }()
-
-            let languageId: String? = {
-                if let configured, let lang = configured.languageId { return lang }
-                if let inferred = inferredTreeSitterLanguageId(for: url) { return inferred }
-                return AttoLspLanguageId.guess(forExtension: ext)
-            }()
-
-            if let cmd, let languageId, languageId.isEmpty == false {
-                do {
-                    try editCore.editor.lspEnable(
-                        command: cmd,
-                        args: args,
-                        rootURI: workspaceRootURL.absoluteString,
-                        documentURI: url.absoluteString,
-                        languageId: languageId
-                    )
-
-                    let supportsSemanticTokens: Bool = {
-                        guard let statusJSON = try? editCore.editor.lspStatusJSON() else { return false }
-                        guard let data = statusJSON.data(using: .utf8) else { return false }
-                        guard let obj = (try? JSONSerialization.jsonObject(with: data, options: [])) as? [String: Any] else {
-                            return false
-                        }
-                        guard let capabilities = obj["capabilities"] as? [String: Any] else { return false }
-                        if let v = capabilities["semantic_tokens"] as? Bool { return v }
-                        if let v = capabilities["semantic_tokens"] as? NSNumber { return v.boolValue }
-                        return false
-                    }()
-
-                    if supportsSemanticTokens {
-                        // Prefer LSP semantic tokens; keep other engines off.
-                        editCore.editor.treeSitterDisable()
-                        editCore.editor.sublimeDisable()
-                    } else {
-                        // LSP without semantic tokens: keep Tree-sitter for baseline highlighting.
-                        do {
-                            try editCore.editor.treeSitterEnableForPath(url.path)
-                            // Kick a short poll window so the initial Tree-sitter parse applies even without edits.
-                            editCore.editorView.kickProcessingPoll()
-                        } catch {
-                            NSLog(
-                                "AttoEditor: Tree-sitter enable failed for %@ (fallback after LSP without semantic tokens): %@",
-                                url.path,
-                                String(describing: error)
-                            )
-                        }
-                        editCore.editor.sublimeDisable()
-                    }
-                    return languageId
-                } catch {
-                    NSLog("AttoEditor: LSP enable failed for %@: %@", url.path, String(describing: error))
-                }
-            }
-        }
-
-        // 2) Tree-sitter.
-        do {
-            try editCore.editor.treeSitterEnableForPath(url.path)
-            editCore.editor.sublimeDisable()
-            // Kick a short poll window so the initial Tree-sitter parse applies even without edits.
-            editCore.editorView.kickProcessingPoll()
-            return inferredTreeSitterLanguageId(for: url)
-        } catch {
-            NSLog("AttoEditor: Tree-sitter enable failed for %@: %@", url.path, String(describing: error))
-        }
-
-        // 3) Sublime `.sublime-syntax` (optional fallback).
-        guard let syntaxPath = AttoSublimeSyntax.findSyntaxPath(
-            for: url,
-            workspaceRootURL: workspaceRootURL
-        ) else {
-            NSLog("AttoEditor: no Sublime syntax found for %@ (ext=%@)", url.path, url.pathExtension)
-            return nil
-        }
-
-        do {
-            try editCore.editor.sublimeSetSyntaxPath(syntaxPath)
-            editCore.editor.treeSitterDisable()
-            editCore.editorView.needsDisplay = true
-            return nil
-        } catch {
-            NSLog(
-                "AttoEditor: Sublime syntax enable failed (path=%@) for %@: %@",
-                syntaxPath,
-                url.path,
-                String(describing: error)
-            )
-            return nil
-        }
-    }
-
-    // MARK: - LSP go to definition (Cmd-click)
-
-    private func handleCommandClick(ctx: EditorCoreSkiaContextMenuContext, tabID: UUID) -> Bool {
-        guard activeTab?.id == tabID else { return false }
-        guard let tab = activeTab else { return false }
-
-        guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
-            return false
-        }
-
-        cancelHoverUI()
-
-        definitionContext = DefinitionRequestContext(tabID: tabID, logicalLine: ctx.logicalLine, logicalColumn: ctx.logicalColumn)
-        definitionPollTimer?.cancel()
-
-        do {
-            _ = try tab.editCore.editor.lspRequestDefinition(
-                logicalLine: ctx.logicalLine,
-                logicalColumn: ctx.logicalColumn
-            )
-        } catch {
-            cancelDefinitionUI()
-            return false
-        }
-
-        startDefinitionPollTimer(tabID: tabID)
-        return true
-    }
-
-    private func startDefinitionPollTimer(tabID: UUID) {
-        definitionPollTimer?.cancel()
-
-        var remainingTicks = 40 // ~2s at 50ms
-        let timer = DispatchSource.makeTimerSource(queue: .main)
-        timer.schedule(deadline: .now() + 0.05, repeating: 0.05)
-        timer.setEventHandler { [weak self] in
-            guard let self else { return }
-            guard let ctx = self.definitionContext, ctx.tabID == tabID else {
-                self.cancelDefinitionUI()
-                return
-            }
-
-            if remainingTicks <= 0 {
-                self.cancelDefinitionUI()
-                return
-            }
-            remainingTicks -= 1
-
-            guard let tab = self.activeTab, tab.id == tabID else {
-                self.cancelDefinitionUI()
-                return
-            }
-
-            let json: String?
-            do {
-                json = try tab.editCore.editor.lspTakeLastDefinitionResultJSON()
-            } catch {
-                return
-            }
-            guard let json else { return }
-
-            self.cancelDefinitionUI()
-            self.navigateToDefinitionResultJSON(json)
-            timer.cancel()
-        }
-
-        definitionPollTimer = timer
-        timer.resume()
-    }
-
-    private func navigateToDefinitionResultJSON(_ json: String) {
-        guard let target = AttoLspDefinitionParser.firstTarget(fromDefinitionResultJSON: json) else {
-            NSSound.beep()
-            return
-        }
-        guard let url = URL(string: target.uri), url.isFileURL else {
-            NSSound.beep()
-            return
-        }
-
-        openFile(url: url, mode: .preview)
-
-        guard let tab = activeTab, tab.fileURL.standardizedFileURL == url.standardizedFileURL else {
-            return
-        }
-
-        do {
-            // Ensure the new editor view has a real viewport height before calling `revealPrimaryCaret`.
-            // `EditorUI.revealPrimaryCaret()` is a no-op when viewport height is unknown.
-            tab.editCore.layoutSubtreeIfNeeded()
-            let text = try tab.editCore.editor.text()
-            let offset = AttoLspDefinitionParser.charOffsetForLspPosition(
-                inText: text,
-                line: target.line,
-                utf16Character: target.utf16Character
-            )
-            try tab.editCore.editor.setSelections([EcuSelectionRange(start: offset, end: offset)], primaryIndex: 0)
-            try tab.editCore.editor.revealPrimaryCaret()
-            tab.editCore.needsDisplay = true
-            updateStatusBar()
-        } catch {
-            NSSound.beep()
-        }
-    }
-
-    // MARK: - LSP hover tooltip (AttoEditor UX)
-
-    private func handleHover(info: EditorCoreSkiaHoverInfo, tabID: UUID) {
-        guard activeTab?.id == tabID else { return }
-        guard let tab = activeTab else { return }
-
-        guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
-            cancelHoverUI()
-            return
-        }
-
-        hoverContext = HoverRequestContext(tabID: tabID, info: info)
-        hoverDebounceWorkItem?.cancel()
-        hoverPollTimer?.cancel()
-
-        let work = DispatchWorkItem { [weak self] in
-            self?.requestHoverForCurrentContext()
-        }
-        hoverDebounceWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
-    }
-
-    private func handleHoverExit(tabID: UUID) {
-        guard hoverContext?.tabID == tabID else { return }
-        cancelHoverUI()
-    }
-
-    private func requestHoverForCurrentContext() {
-        guard let ctx = hoverContext else { return }
-        guard activeTab?.id == ctx.tabID else { return }
-        guard let tab = activeTab else { return }
-
-        do {
-            _ = try tab.editCore.editor.lspRequestHover(
-                logicalLine: ctx.info.logicalLine,
-                logicalColumn: ctx.info.logicalColumn
-            )
-        } catch {
-            return
-        }
-
-        startHoverPollTimer(tabID: ctx.tabID, editorView: tab.editCore.editorView)
-    }
-
-    private func startHoverPollTimer(tabID: UUID, editorView: EditorCoreSkiaView) {
-        hoverPollTimer?.cancel()
-
-        var remainingTicks = 30 // ~1.5s at 50ms
-        let timer = DispatchSource.makeTimerSource(queue: .main)
-        timer.schedule(deadline: .now() + 0.05, repeating: 0.05)
-        timer.setEventHandler { [weak self, weak editorView] in
-            guard let self, let editorView else { return }
-            guard let ctx = self.hoverContext, ctx.tabID == tabID else {
-                self.cancelHoverUI()
-                return
-            }
-
-            if remainingTicks <= 0 {
-                self.cancelHoverUI()
-                return
-            }
-            remainingTicks -= 1
-
-            guard let tab = self.activeTab, tab.id == tabID else {
-                self.cancelHoverUI()
-                return
-            }
-
-            let json: String?
-            do {
-                json = try tab.editCore.editor.lspTakeLastHoverResultJSON()
-            } catch {
-                return
-            }
-            guard let json else { return }
-
-            let text = AttoLspHoverFormatter.displayText(fromHoverResultJSON: json)
-            self.showHoverPopover(text: text, at: ctx.info, in: editorView)
-            timer.cancel()
-        }
-
-        hoverPollTimer = timer
-        timer.resume()
-    }
-
-    private func showHoverPopover(text: String?, at info: EditorCoreSkiaHoverInfo, in editorView: EditorCoreSkiaView) {
-        guard let text else {
-            cancelHoverUI()
-            return
-        }
-
-        guard editorView.window != nil else { return }
-
-        let popover: NSPopover
-        if let existing = hoverPopover {
-            popover = existing
-        } else {
-            let p = NSPopover()
-            p.behavior = .transient
-            p.animates = true
-
-            let vc = NSViewController()
-            let effect = NSVisualEffectView(frame: .zero)
-            effect.material = .hudWindow
-            effect.blendingMode = .withinWindow
-            effect.state = .active
-            effect.translatesAutoresizingMaskIntoConstraints = false
-
-            let label = NSTextField(wrappingLabelWithString: "")
-            label.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-            label.textColor = NSColor.labelColor
-            label.translatesAutoresizingMaskIntoConstraints = false
-
-            effect.addSubview(label)
-            NSLayoutConstraint.activate([
-                label.leadingAnchor.constraint(equalTo: effect.leadingAnchor, constant: 10),
-                label.trailingAnchor.constraint(equalTo: effect.trailingAnchor, constant: -10),
-                label.topAnchor.constraint(equalTo: effect.topAnchor, constant: 8),
-                label.bottomAnchor.constraint(equalTo: effect.bottomAnchor, constant: -8),
+            let change = try coreDocuments.setWorkspaceRootsReturningChange([
+                workspaceRootURL.standardizedFileURL.absoluteString
             ])
-
-            vc.view = effect
-            p.contentViewController = vc
-            hoverPopover = p
-            hoverPopoverLabel = label
-            popover = p
+            notifyOpenTabLspWorkspaceFoldersChanged(change)
+        } catch {
+            NSLog("AttoEditor: failed to sync core workspace roots: %@", String(describing: error))
         }
-
-        hoverPopoverLabel?.stringValue = text
-        popover.contentSize = preferredHoverPopoverSize(text: text, font: hoverPopoverLabel?.font)
-
-        let rect = NSRect(x: info.viewPoint.x, y: info.viewPoint.y, width: 1, height: 1)
-        if popover.isShown {
-            popover.performClose(nil)
-        }
-        popover.show(relativeTo: rect, of: editorView, preferredEdge: .maxY)
     }
 
-    private func preferredHoverPopoverSize(text: String, font: NSFont?) -> NSSize {
-        let maxWidth: CGFloat = 420
-        let maxHeight: CGFloat = 260
-        let padW: CGFloat = 20
-        let padH: CGFloat = 16
+    func notifyOpenTabLspWorkspaceFoldersChanged(_ change: EcuWorkspaceRootsChange) {
+        guard change.isEmpty == false else { return }
 
-        let f = font ?? NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-        let attrs: [NSAttributedString.Key: Any] = [.font: f]
-        let bounds = (text as NSString).boundingRect(
-            with: NSSize(width: max(1, maxWidth - padW), height: 10_000),
-            options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: attrs
+        for tab in tabs {
+            guard (try? tab.editCore.editor.lspIsEnabled()) == true else { continue }
+            do {
+                try tab.editCore.editor.lspDidChangeWorkspaceFolders(
+                    added: change.added,
+                    removed: change.removed
+                )
+            } catch {
+                NSLog("AttoEditor: failed to notify LSP workspace folder change: %@", String(describing: error))
+            }
+        }
+    }
+
+}
+enum AttoLspRenameSupport {
+    struct DialogSeed: Equatable {
+        let initialName: String
+        let placeholder: String?
+    }
+
+    static func candidateName(documentText: String, selectedText: String, caretOffset: UInt32) -> String {
+        let selected = selectedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if selected.isEmpty == false, selected.rangeOfCharacter(from: .newlines) == nil {
+            return selected
+        }
+
+        let chars = Array(documentText)
+        guard chars.isEmpty == false else { return "" }
+
+        let rawIndex = max(0, min(Int(caretOffset), chars.count))
+        var probe = rawIndex
+        if probe >= chars.count || isIdentifierCharacter(chars[probe]) == false {
+            probe = max(0, probe - 1)
+        }
+        guard probe < chars.count, isIdentifierCharacter(chars[probe]) else {
+            return ""
+        }
+
+        var start = probe
+        while start > 0, isIdentifierCharacter(chars[start - 1]) {
+            start -= 1
+        }
+
+        var end = probe + 1
+        while end < chars.count, isIdentifierCharacter(chars[end]) {
+            end += 1
+        }
+
+        return String(chars[start..<end])
+    }
+
+    static func dialogSeed(
+        documentText: String,
+        selectedText: String,
+        caretOffset: UInt32,
+        prepareRenameResultJSON: String?,
+        fallback: DialogSeed? = nil
+    ) -> DialogSeed {
+        let fallback = fallback ?? DialogSeed(
+            initialName: candidateName(
+                documentText: documentText,
+                selectedText: selectedText,
+                caretOffset: caretOffset
+            ),
+            placeholder: nil
         )
-        let h = min(maxHeight, ceil(bounds.height) + padH)
-        return NSSize(width: maxWidth, height: max(44, h))
+
+        if let prepareRenameResultJSON,
+           let data = prepareRenameResultJSON.data(using: .utf8),
+           let result = try? JSONDecoder().decode(EcuLspPrepareRenameResult.self, from: data)
+        {
+            return dialogSeed(
+                documentText: documentText,
+                selectedText: selectedText,
+                caretOffset: caretOffset,
+                prepareRenameResult: result,
+                fallback: fallback
+            )
+        }
+
+        guard let prepareRenameResultJSON,
+              let data = prepareRenameResultJSON.data(using: .utf8),
+              let value = try? JSONSerialization.jsonObject(with: data, options: [])
+        else {
+            return fallback
+        }
+
+        if value is NSNull {
+            return fallback
+        }
+
+        guard let obj = value as? [String: Any] else {
+            return fallback
+        }
+
+        if boolValue(obj["defaultBehavior"]) == true {
+            return fallback
+        }
+
+        if let range = obj["range"] as? [String: Any] {
+            let placeholder = stringValue(obj["placeholder"])?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let rangeName = text(inLspRange: range, documentText: documentText)
+            let initial = nonEmpty(placeholder) ?? nonEmpty(rangeName) ?? fallback.initialName
+            return DialogSeed(initialName: initial, placeholder: nonEmpty(placeholder))
+        }
+
+        if isLspRangeObject(obj) {
+            let initial = nonEmpty(text(inLspRange: obj, documentText: documentText)) ?? fallback.initialName
+            return DialogSeed(initialName: initial, placeholder: fallback.placeholder)
+        }
+
+        return fallback
     }
 
-    private func cancelHoverUI() {
-        hoverDebounceWorkItem?.cancel()
-        hoverDebounceWorkItem = nil
+    static func dialogSeed(
+        documentText: String,
+        selectedText: String,
+        caretOffset: UInt32,
+        prepareRenameResult: EcuLspPrepareRenameResult?,
+        fallback: DialogSeed? = nil
+    ) -> DialogSeed {
+        let fallback = fallback ?? DialogSeed(
+            initialName: candidateName(
+                documentText: documentText,
+                selectedText: selectedText,
+                caretOffset: caretOffset
+            ),
+            placeholder: nil
+        )
 
-        hoverPollTimer?.cancel()
-        hoverPollTimer = nil
+        guard let prepareRenameResult else {
+            return fallback
+        }
 
-        hoverContext = nil
+        if prepareRenameResult.shape == .none {
+            return fallback
+        }
 
-        hoverPopover?.performClose(nil)
+        if prepareRenameResult.defaultBehavior == true {
+            return fallback
+        }
+
+        guard let range = prepareRenameResult.range else {
+            return fallback
+        }
+
+        let placeholder = prepareRenameResult.placeholder?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rangeName = text(inLspRange: range, documentText: documentText)
+        let initial = nonEmpty(placeholder) ?? nonEmpty(rangeName) ?? fallback.initialName
+        let outputPlaceholder = prepareRenameResult.shape == .range ? fallback.placeholder : nonEmpty(placeholder)
+        return DialogSeed(initialName: initial, placeholder: outputPlaceholder)
     }
 
-    private func cancelDefinitionUI() {
-        definitionPollTimer?.cancel()
-        definitionPollTimer = nil
-        definitionContext = nil
+    static func isIdentifierCharacter(_ ch: Character) -> Bool {
+        if ch == "_" { return true }
+        return ch.unicodeScalars.allSatisfy { CharacterSet.alphanumerics.contains($0) }
+    }
+
+    static func boolValue(_ value: Any?) -> Bool? {
+        if let value = value as? Bool { return value }
+        if let value = value as? NSNumber { return value.boolValue }
+        return nil
+    }
+
+    static func stringValue(_ value: Any?) -> String? {
+        value as? String
+    }
+
+    static func nonEmpty(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    static func isLspRangeObject(_ obj: [String: Any]) -> Bool {
+        obj["start"] is [String: Any] && obj["end"] is [String: Any]
+    }
+
+    static func text(inLspRange range: [String: Any], documentText: String) -> String? {
+        guard let start = range["start"] as? [String: Any],
+              let end = range["end"] as? [String: Any]
+        else {
+            return nil
+        }
+
+        let lines = documentText.split(separator: "\n", omittingEmptySubsequences: false)
+        guard let startOffset = scalarOffset(forLspPosition: start, lines: lines),
+              let endOffset = scalarOffset(forLspPosition: end, lines: lines),
+              startOffset <= endOffset,
+              endOffset <= documentText.unicodeScalars.count
+        else {
+            return nil
+        }
+
+        let scalars = documentText.unicodeScalars
+        let startIndex = scalars.index(scalars.startIndex, offsetBy: startOffset)
+        let endIndex = scalars.index(scalars.startIndex, offsetBy: endOffset)
+        return String(scalars[startIndex..<endIndex])
+    }
+
+    static func text(inLspRange range: EcuLspRange, documentText: String) -> String? {
+        let lines = documentText.split(separator: "\n", omittingEmptySubsequences: false)
+        guard let startOffset = scalarOffset(forLspPosition: range.start, lines: lines),
+              let endOffset = scalarOffset(forLspPosition: range.end, lines: lines),
+              startOffset <= endOffset,
+              endOffset <= documentText.unicodeScalars.count
+        else {
+            return nil
+        }
+
+        let scalars = documentText.unicodeScalars
+        let startIndex = scalars.index(scalars.startIndex, offsetBy: startOffset)
+        let endIndex = scalars.index(scalars.startIndex, offsetBy: endOffset)
+        return String(scalars[startIndex..<endIndex])
+    }
+
+    static func scalarOffset(
+        forLspPosition position: [String: Any],
+        lines: [String.SubSequence]
+    ) -> Int? {
+        guard let lineNumber = intValue(position["line"]),
+              let utf16Column = intValue(position["character"]),
+              lineNumber >= 0,
+              utf16Column >= 0,
+              lineNumber < lines.count
+        else {
+            return nil
+        }
+
+        let preceding = lines.prefix(lineNumber).reduce(0) { total, line in
+            total + line.unicodeScalars.count + 1
+        }
+        return preceding + scalarOffset(fromUTF16Offset: utf16Column, in: lines[lineNumber])
+    }
+
+    static func scalarOffset(
+        forLspPosition position: EcuLspPosition,
+        lines: [String.SubSequence]
+    ) -> Int? {
+        let lineNumber = Int(position.line)
+        let utf16Column = Int(position.utf16Character)
+        guard lineNumber >= 0,
+              utf16Column >= 0,
+              lineNumber < lines.count
+        else {
+            return nil
+        }
+
+        let preceding = lines.prefix(lineNumber).reduce(0) { total, line in
+            total + line.unicodeScalars.count + 1
+        }
+        return preceding + scalarOffset(fromUTF16Offset: utf16Column, in: lines[lineNumber])
+    }
+
+    static func intValue(_ value: Any?) -> Int? {
+        if let value = value as? Int { return value }
+        if let value = value as? NSNumber { return value.intValue }
+        return nil
+    }
+
+    static func scalarOffset(fromUTF16Offset targetUtf16Offset: Int, in line: String.SubSequence) -> Int {
+        let target = max(0, min(targetUtf16Offset, line.utf16.count))
+        var scalarCursor = 0
+        var utf16Cursor = 0
+
+        for scalar in line.unicodeScalars {
+            let unitCount = scalar.value <= 0xFFFF ? 1 : 2
+            if utf16Cursor + unitCount > target {
+                return scalarCursor
+            }
+            utf16Cursor += unitCount
+            scalarCursor += 1
+        }
+
+        return scalarCursor
     }
 }
 
-private enum AttoLspLanguageId {
+enum AttoLspLanguageId {
     static func guess(forExtension ext: String) -> String? {
         let k = ext.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard k.isEmpty == false else { return nil }
@@ -1751,15 +1876,163 @@ private enum AttoLspLanguageId {
     }
 }
 
+enum AttoLanguageConfiguration {
+    static func indentationConfig(fileURL: URL, syntaxLanguageId: String?) -> EcuIndentationConfig {
+        let language = languageKey(fileURL: fileURL, syntaxLanguageId: syntaxLanguageId)
+        return EcuIndentationConfig(
+            style: indentStyle(for: language),
+            indentTriggers: indentTriggers(for: language),
+            outdentTriggers: outdentTriggers(for: language)
+        )
+    }
+
+    @MainActor
+    static func commentConfig(
+        fileURL: URL,
+        syntaxLanguageId: String?,
+        preferences: AttoPreferences
+    ) -> AttoCommentConfiguration {
+        let language = languageKey(fileURL: fileURL, syntaxLanguageId: syntaxLanguageId)
+        if let override = preferences.commentConfigurationOverride(forLanguageKey: language) {
+            return override
+        }
+
+        switch language {
+        case "python", "ruby", "shell", "bash", "sh", "zsh", "toml", "yaml", "makefile", "make":
+            return .line("#")
+        case "lua", "sql", "haskell":
+            return .line("--")
+        case "lisp", "clojure", "scheme":
+            return .line(";")
+        case "html", "xml", "markdown":
+            return .block("<!--", "-->")
+        case "css":
+            return .block("/*", "*/")
+        case "scss", "sass":
+            return .lineAndBlock("//", "/*", "*/")
+        default:
+            return .lineAndBlock("//", "/*", "*/")
+        }
+    }
+
+    static func languageKey(fileURL: URL, syntaxLanguageId: String?) -> String {
+        if let syntaxLanguageId {
+            let language = syntaxLanguageId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if language.isEmpty == false {
+                return normalizeLanguageAlias(language)
+            }
+        }
+
+        let ext = fileURL.pathExtension.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if let guessed = AttoLspLanguageId.guess(forExtension: ext) {
+            return normalizeLanguageAlias(guessed.lowercased())
+        }
+        return normalizeLanguageAlias(ext)
+    }
+
+    static func normalizeLanguageAlias(_ raw: String) -> String {
+        switch raw {
+        case "py":
+            return "python"
+        case "rb":
+            return "ruby"
+        case "js":
+            return "javascript"
+        case "jsx":
+            return "javascriptreact"
+        case "ts":
+            return "typescript"
+        case "tsx":
+            return "typescriptreact"
+        case "yml":
+            return "yaml"
+        case "sh":
+            return "shell"
+        case "zsh":
+            return "shell"
+        case "bash":
+            return "shell"
+        case "clj":
+            return "clojure"
+        case "scm":
+            return "scheme"
+        case "mk", "make":
+            return "makefile"
+        default:
+            return raw
+        }
+    }
+
+    static func indentStyle(for language: String) -> EcuIndentStyle {
+        switch language {
+        case "go", "makefile":
+            return .tabs
+        case "javascript", "javascriptreact", "typescript", "typescriptreact",
+             "json", "jsonc", "yaml", "html", "css", "scss", "sass", "vue":
+            return .spaces(width: 2)
+        default:
+            return .spaces(width: 4)
+        }
+    }
+
+    static func indentTriggers(for language: String) -> [String] {
+        switch language {
+        case "python", "ruby", "yaml":
+            return [":"]
+        case "toml", "markdown", "makefile":
+            return []
+        default:
+            return ["{", "[", "(", ":"]
+        }
+    }
+
+    static func outdentTriggers(for language: String) -> [String] {
+        switch language {
+        case "python", "ruby", "yaml", "toml", "markdown", "makefile":
+            return []
+        default:
+            return ["}", "]", ")"]
+        }
+    }
+}
+
 @MainActor
-private final class AttoEditorTab {
+struct AttoLspServerLaunchConfig: Equatable {
+    let command: String
+    let args: String?
+    let languageId: String
+}
+
+@MainActor
+struct ProjectLspAutoRestartState: Equatable {
+    var attempts: Int
+    var nextAllowedAt: Date
+}
+
+@MainActor
+final class AttoEditorTab {
     let id: UUID
+    /// Projection handle into Rust `MultiDocumentEditorUi`; Swift keeps this only to route
+    /// command/query sync while the AppKit tab views are being migrated.
+    let coreTabID: UInt64?
     var fileURL: URL
     var isUntitled: Bool
     var isPreview: Bool
     var isDirty: Bool
     var syntaxLanguageId: String?
-    let editCore: EditCoreUI
+    var languageSupportSource: AttoLanguageSupportSource
+    var languageFallbackReasons: [String]
+    var languageProcessingDisabledReason: String?
+    var panes: [EditCoreUI]
+    var activePaneIndex: Int
+    var lspServerConfig: AttoLspServerLaunchConfig?
+    var suppressesAutomaticLspStart: Bool
+    var semanticTokensResultId: String?
+    var semanticTokensData: [UInt32]
+
+    var editCore: EditCoreUI {
+        panes[max(0, min(activePaneIndex, panes.count - 1))]
+    }
 
     var displayTitle: String {
         let name = fileURL.lastPathComponent
@@ -1771,20 +2044,33 @@ private final class AttoEditorTab {
 
     init(
         id: UUID,
+        coreTabID: UInt64?,
         fileURL: URL,
         isUntitled: Bool,
         isPreview: Bool,
         isDirty: Bool,
         syntaxLanguageId: String?,
+        languageSupportSource: AttoLanguageSupportSource = .plainText,
+        languageFallbackReasons: [String] = [],
+        languageProcessingDisabledReason: String? = nil,
         editCore: EditCoreUI
     ) {
         self.id = id
+        self.coreTabID = coreTabID
         self.fileURL = fileURL
         self.isUntitled = isUntitled
         self.isPreview = isPreview
         self.isDirty = isDirty
         self.syntaxLanguageId = syntaxLanguageId
-        self.editCore = editCore
+        self.languageSupportSource = languageSupportSource
+        self.languageFallbackReasons = languageFallbackReasons
+        self.languageProcessingDisabledReason = languageProcessingDisabledReason
+        self.panes = [editCore]
+        self.activePaneIndex = 0
+        self.lspServerConfig = nil
+        self.suppressesAutomaticLspStart = false
+        self.semanticTokensResultId = nil
+        self.semanticTokensData = []
     }
 }
 
@@ -1795,7 +2081,9 @@ private extension NSColor {
         let b = CGFloat(attoHex & 0xFF) / 255.0
         self.init(red: r, green: g, blue: b, alpha: alpha)
     }
+}
 
+extension NSColor {
     convenience init(ecuRgba8 c: EcuRgba8) {
         let r = CGFloat(c.r) / 255.0
         let g = CGFloat(c.g) / 255.0

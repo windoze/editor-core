@@ -7,6 +7,11 @@ final class WorkspaceAdditionalTests: XCTestCase {
         try JSONTestHelpers.decode(CommandResultJSON.self, from: json)
     }
 
+    private func bufferText(_ ws: Workspace, bufferId: UInt64) throws -> String {
+        let obj = try JSONTestHelpers.object(try ws.bufferTextJSON(bufferId: bufferId))
+        return try XCTUnwrap(obj["text"] as? String)
+    }
+
     func testWorkspaceExecuteJSONSupportsCursorViewAndStyleOps() throws {
         let library = try EditorCoreFFITestSupport.shared.loadLibrary()
         let ws = try Workspace(library: library)
@@ -45,6 +50,67 @@ final class WorkspaceAdditionalTests: XCTestCase {
         XCTAssertTrue((bufText["text"] as? String)?.contains("Z") ?? false)
     }
 
+    func testWorkspaceTypedConvenienceCoversUiParityCommands() throws {
+        let library = try EditorCoreFFITestSupport.shared.loadLibrary()
+
+        do {
+            let ws = try Workspace(library: library)
+            let opened = try ws.openBuffer(uri: "file:///ws-typing.txt", text: "(x)", viewportWidth: 20)
+
+            try ws.setAutoPairsConfig(
+                viewId: opened.viewId,
+                EcfAutoPairsConfig(
+                    enabled: true,
+                    pairs: [EcfAutoPair(open: "<", close: ">")]
+                )
+            )
+            try ws.moveTo(viewId: opened.viewId, line: 0, column: 3)
+            try ws.typeChar(viewId: opened.viewId, "<")
+            XCTAssertEqual(try bufferText(ws, bufferId: opened.bufferId), "(x)<>")
+
+            try ws.moveTo(viewId: opened.viewId, line: 0, column: 0)
+            try ws.moveToMatchingBracket(viewId: opened.viewId)
+            try ws.insertText(viewId: opened.viewId, "!")
+            XCTAssertEqual(try bufferText(ws, bufferId: opened.bufferId), "(x!)<>")
+
+            try ws.updateBracketMatchHighlights(viewId: opened.viewId)
+            try ws.clearBracketMatchHighlights(viewId: opened.viewId)
+        }
+
+        do {
+            let ws = try Workspace(library: library)
+            let opened = try ws.openBuffer(uri: "file:///ws-snippet.txt", text: "", viewportWidth: 20)
+
+            try ws.applySnippet(
+                viewId: opened.viewId,
+                start: 0,
+                end: 0,
+                snippet: "println!(${1:msg})$0"
+            )
+            XCTAssertEqual(try bufferText(ws, bufferId: opened.bufferId), "println!(msg)")
+            try ws.snippetNextPlaceholder(viewId: opened.viewId)
+            try ws.snippetPrevPlaceholder(viewId: opened.viewId)
+        }
+
+        do {
+            let ws = try Workspace(library: library)
+            let opened = try ws.openBuffer(uri: "file:///ws-coalescing.txt", text: "abc", viewportWidth: 20)
+
+            try ws.replaceCoalescingUndo(viewId: opened.viewId, start: 0, length: 1, text: "A")
+            XCTAssertEqual(try bufferText(ws, bufferId: opened.bufferId), "Abc")
+
+            try ws.replaceCoalescingUndoWithSelection(
+                viewId: opened.viewId,
+                start: 1,
+                length: 1,
+                text: "B",
+                selectionStart: 1,
+                selectionEnd: 2
+            )
+            XCTAssertEqual(try bufferText(ws, bufferId: opened.bufferId), "ABc")
+        }
+    }
+
     func testWorkspaceErrorsAndNotFoundReturnValues() throws {
         let library = try EditorCoreFFITestSupport.shared.loadLibrary()
         let ws = try Workspace(library: library)
@@ -64,5 +130,160 @@ final class WorkspaceAdditionalTests: XCTestCase {
             XCTAssertFalse(library.lastErrorMessage().isEmpty)
         }
     }
-}
 
+    func testWorkspaceExecuteEnvelopeReportsSuccessParseAndCommandErrors() throws {
+        let library = try EditorCoreFFITestSupport.shared.loadLibrary()
+        let ws = try Workspace(library: library)
+        let opened = try ws.openBuffer(uri: "file:///ws-envelope.txt", text: "abc\n", viewportWidth: 80)
+
+        let success = try ws.executeEnvelope(
+            viewId: opened.viewId,
+            commandJSON: #"{"kind":"edit","op":"insert_text","text":"!"}"#
+        )
+        XCTAssertTrue(success.ok)
+        XCTAssertEqual(success.version, library.abiVersion)
+        XCTAssertNil(success.error)
+        guard case .object(let successValue)? = success.value else {
+            XCTFail("expected command result object")
+            return
+        }
+        XCTAssertEqual(successValue["kind"], .string("success"))
+
+        let parse = try ws.executeEnvelope(viewId: opened.viewId, commandJSON: "{this is not json")
+        XCTAssertFalse(parse.ok)
+        XCTAssertNil(parse.value)
+        XCTAssertEqual(parse.version, library.abiVersion)
+        XCTAssertEqual(parse.error?.code, "parse")
+        XCTAssertEqual(parse.error?.status, .parse)
+        XCTAssertFalse(parse.error?.message.isEmpty ?? false)
+
+        let failure = try ws.executeEnvelope(
+            viewId: 999_999,
+            commandJSON: #"{"kind":"cursor","op":"move_to","line":0,"column":0}"#
+        )
+        XCTAssertFalse(failure.ok)
+        XCTAssertNil(failure.value)
+        XCTAssertEqual(failure.version, library.abiVersion)
+        XCTAssertEqual(failure.error?.code, "command_failed")
+        XCTAssertEqual(failure.error?.status, .commandFailed)
+        XCTAssertTrue(failure.error?.message.contains("workspace execute failed") ?? false)
+    }
+
+    func testWorkspaceResultEnvelopesReportSuccessAndErrors() throws {
+        let library = try EditorCoreFFITestSupport.shared.loadLibrary()
+        let ws = try Workspace(library: library)
+        let opened = try ws.openBuffer(
+            uri: "file:///workspace-result-envelope.txt",
+            text: "alpha beta\nsecond alpha\n",
+            viewportWidth: 80
+        )
+
+        let search = try ws.searchAllOpenBuffersEnvelope(query: "alpha")
+        XCTAssertTrue(search.ok)
+        XCTAssertEqual(search.statusKind, .success)
+        XCTAssertEqual(search.operation, "search_all_open_buffers")
+        XCTAssertEqual(search.version, library.abiVersion)
+        XCTAssertNil(search.error)
+        guard case .object(let searchValue)? = search.value,
+              case .array(let results)? = searchValue["results"],
+              case .object(let firstResult)? = results.first,
+              case .array(let matches)? = firstResult["matches"] else {
+            XCTFail("expected workspace search result object")
+            return
+        }
+        XCTAssertEqual(firstResult["buffer_id"], .number(Double(opened.bufferId)))
+        XCTAssertEqual(firstResult["uri"], .string("file:///workspace-result-envelope.txt"))
+        XCTAssertEqual(matches.count, 2)
+
+        let searchError = try ws.searchAllOpenBuffersEnvelope(query: "alpha", optionsJSON: "{this is not json")
+        XCTAssertFalse(searchError.ok)
+        XCTAssertEqual(searchError.statusKind, .error)
+        XCTAssertEqual(searchError.operation, "search_all_open_buffers")
+        XCTAssertEqual(searchError.value, .null)
+        XCTAssertEqual(searchError.error?.code, "parse")
+        XCTAssertEqual(searchError.error?.status, .parse)
+        XCTAssertTrue(searchError.error?.message.contains("invalid search options JSON") ?? false)
+
+        let editsJSON = """
+        [{"buffer_id":\(opened.bufferId),"edits":[{"start":0,"end":5,"text":"omega"}]}]
+        """
+        let apply = try ws.applyTextEditsEnvelope(editsJSON)
+        XCTAssertTrue(apply.ok)
+        XCTAssertEqual(apply.statusKind, .success)
+        XCTAssertEqual(apply.operation, "apply_text_edits")
+        XCTAssertEqual(apply.version, library.abiVersion)
+        XCTAssertNil(apply.error)
+        guard case .object(let applyValue)? = apply.value,
+              case .array(let applied)? = applyValue["applied"],
+              case .object(let firstApplied)? = applied.first else {
+            XCTFail("expected workspace apply text edits result object")
+            return
+        }
+        XCTAssertEqual(firstApplied["buffer_id"], .number(Double(opened.bufferId)))
+        XCTAssertEqual(firstApplied["edit_count"], .number(1))
+
+        let applyError = try ws.applyTextEditsEnvelope("{this is not json")
+        XCTAssertFalse(applyError.ok)
+        XCTAssertEqual(applyError.statusKind, .error)
+        XCTAssertEqual(applyError.operation, "apply_text_edits")
+        XCTAssertEqual(applyError.value, .null)
+        XCTAssertEqual(applyError.error?.code, "parse")
+        XCTAssertEqual(applyError.error?.status, .parse)
+        XCTAssertTrue(applyError.error?.message.contains("invalid workspace text edits JSON") ?? false)
+    }
+
+    func testWorkspaceResultEnvelopeDecodesFutureFieldsAndUnknownStatus() throws {
+        let success = try JSONTestHelpers.decode(EcfWorkspaceResultEnvelope.self, from: """
+        {
+          "ok": true,
+          "status": "future_success",
+          "operation": "future_operation",
+          "value": {
+            "kind": "future",
+            "items": [1, true, "x"]
+          },
+          "error": null,
+          "version": 77,
+          "future_top_level_field": {"ignored": true}
+        }
+        """)
+
+        XCTAssertTrue(success.ok)
+        XCTAssertEqual(success.statusKind, .unknown("future_success"))
+        XCTAssertEqual(success.operation, "future_operation")
+        XCTAssertEqual(success.version, 77)
+        guard case .object(let value)? = success.value,
+              case .array(let items)? = value["items"] else {
+            XCTFail("expected future result payload")
+            return
+        }
+        XCTAssertEqual(value["kind"], .string("future"))
+        XCTAssertEqual(items, [.number(1), .bool(true), .string("x")])
+
+        let failure = try JSONTestHelpers.decode(EcfWorkspaceResultEnvelope.self, from: """
+        {
+          "ok": false,
+          "status": "error",
+          "operation": "apply_text_edits",
+          "value": null,
+          "error": {
+            "code": "future_error",
+            "status": 999,
+            "message": "future failure",
+            "detail": {"ignored": true}
+          },
+          "version": 88,
+          "future_top_level_field": ["ignored"]
+        }
+        """)
+
+        XCTAssertFalse(failure.ok)
+        XCTAssertEqual(failure.statusKind, .error)
+        XCTAssertEqual(failure.operation, "apply_text_edits")
+        XCTAssertEqual(failure.value, .null)
+        XCTAssertEqual(failure.error?.code, "future_error")
+        XCTAssertNil(failure.error?.status)
+        XCTAssertEqual(failure.error?.message, "future failure")
+        XCTAssertEqual(failure.version, 88)
+    }
+}

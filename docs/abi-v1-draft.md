@@ -1,7 +1,7 @@
 # editor-core ABI v1 Draft
 
 Status: Draft aligned with the current pre-v1 fixed-width implementation
-Scope date: 2026-06-06
+Scope date: 2026-08-04
 
 ## Goals
 
@@ -56,6 +56,7 @@ Opaque pointer handles:
 - `EcfWorkspace*`
 - `EcfSublimeProcessor*`
 - `EcfTreeSitterProcessor*`
+- `EcfTreeSitterIndenter*`
 
 Lifecycle:
 
@@ -82,7 +83,10 @@ Primary return form:
 Companion APIs:
 
 - `const char* ecf_last_error_message(void)` style or allocated string variant.
-- Optional structured error payload in future (`domain`, `code`, `message`, `details_json`).
+- JSON control-plane calls may expose a structured envelope:
+  `{ "ok": bool, "value": <json-or-null>, "error": { "code": string, "status": int32, "message": string } | null, "version": abi_version }`.
+  The headless and UI FFI command/result surfaces have this as an additive API while the legacy
+  null-pointer + `last_error_message` symbols remain available for compatibility.
 
 Proposed error codes:
 
@@ -99,7 +103,25 @@ typedef enum EcfStatus {
   ECF_ERR_UNSUPPORTED = 8,
   ECF_ERR_VERSION_MISMATCH = 9,
 } EcfStatus;
+
+typedef enum EcuStatus {
+  ECU_OK = 0,
+  ECU_ERR_INVALID_ARGUMENT = 1,
+  ECU_ERR_INVALID_UTF8 = 2,
+  ECU_ERR_NOT_FOUND = 3,
+  ECU_ERR_BUFFER_TOO_SMALL = 4,
+  ECU_ERR_PARSE = 5,
+  ECU_ERR_COMMAND_FAILED = 6,
+  ECU_ERR_INTERNAL = 7,
+  ECU_ERR_UNSUPPORTED = 8,
+  ECU_ERR_VERSION_MISMATCH = 9,
+} EcuStatus;
 ```
+
+`EcfStatus` and `EcuStatus` intentionally share numeric values and envelope `error.code`
+labels (`invalid_argument`, `invalid_utf8`, `not_found`, `buffer_too_small`, `parse`,
+`command_failed`, `internal`, `unsupported`, `version_mismatch`) so Rust, C ABI callers,
+Swift wrappers, and app diagnostics can compare failures without layer-specific translation.
 
 ## Memory Ownership
 
@@ -206,6 +228,149 @@ Keep JSON for complex payloads that are not hot-path:
 - Complex config and ad-hoc tooling.
 - Debug and inspection endpoints.
 
+Current `editor-core-ui-ffi` LSP lifecycle control-plane APIs follow this model. For example,
+`editor_core_ui_ffi_editor_ui_lsp_did_change_workspace_folders_json(EditorUi* ui,
+const char* added_json_utf8, const char* removed_json_utf8)` accepts two UTF-8 JSON arrays of
+LSP `WorkspaceFolder` objects (`{ "uri": string, "name": string }`) and sends
+`workspace/didChangeWorkspaceFolders` for the active UI-owned LSP session. Implementations must
+also keep the client-side `workspace/workspaceFolders` response list coherent with the accepted
+change.
+
+Document lifecycle control-plane APIs use typed string parameters for common notification shapes.
+`editor_core_ui_ffi_editor_ui_lsp_did_open_document(EditorUi* ui, const char* document_uri_utf8,
+const char* language_id_utf8, int32_t version, const char* text_utf8)` sends
+`textDocument/didOpen` for the active UI-owned LSP session and tracks that document in the session.
+`editor_core_ui_ffi_editor_ui_lsp_did_change_document(EditorUi* ui,
+const char* document_uri_utf8, const char* text_utf8)` sends a full-document
+`textDocument/didChange` for a tracked document; the Rust session owns the per-document mirror used
+to compute the LSP range and version.
+`editor_core_ui_ffi_editor_ui_lsp_did_save_document(EditorUi* ui, const char* document_uri_utf8,
+const char* text_utf8)` sends `textDocument/didSave`; `text_utf8` may be null when the host does
+not want to include the optional saved document text. The companion
+`editor_core_ui_ffi_editor_ui_lsp_did_close_document(EditorUi* ui, const char* document_uri_utf8)`
+sends `textDocument/didClose` for the same session.
+
+Multi-document workspace root control-plane APIs use the same JSON shape. For example,
+`editor_core_ui_ffi_multi_document_set_workspace_roots_with_change_json(MultiDocumentEditorUi*
+multi, const char* roots_json_utf8)` accepts a UTF-8 JSON string array of workspace root URIs,
+replaces the core-owned root list, and returns `{ "added": WorkspaceFolder[], "removed":
+WorkspaceFolder[] }` so host UIs can drive `workspace/didChangeWorkspaceFolders` from the
+core-owned project/workspace model instead of maintaining a parallel Swift-side root diff.
+The same multi-document model can own project-local recent file URIs through
+`editor_core_ui_ffi_multi_document_remember_recent_file_uri(...)`,
+`editor_core_ui_ffi_multi_document_restore_recent_files_json(...)`,
+`editor_core_ui_ffi_multi_document_clear_recent_files(...)`, and
+`editor_core_ui_ffi_multi_document_recent_files_json(...)`. The recent list is trimmed,
+de-duplicated, bounded, ordered most-recent-first, included in `snapshot_json` as `recent_files`,
+and cleared when workspace roots change.
+The same model can own recent project/workspace root URIs through
+`editor_core_ui_ffi_multi_document_remember_recent_project_uri(...)`,
+`editor_core_ui_ffi_multi_document_restore_recent_projects_json(...)`,
+`editor_core_ui_ffi_multi_document_clear_recent_projects(...)`, and
+`editor_core_ui_ffi_multi_document_recent_projects_json(...)`. Recent project entries use the same
+normalization and fixed-size MRU behavior, are included in `snapshot_json` as `recent_projects`,
+and are not cleared when the active workspace roots change.
+For Quick Open/project file panels, hosts can query the same roots with
+`editor_core_ui_ffi_multi_document_list_workspace_files_json(...)`, which returns a bounded
+`{ "files": [...], "scan": { ... } }` payload containing local file `uri`, absolute `path`, and
+`relative_path` entries after applying include/exclude globs. Newer runtimes also expose
+`editor_core_ui_ffi_multi_document_list_workspace_files_with_options_envelope_json(...)`,
+`editor_core_ui_ffi_multi_document_search_workspace_files_with_options_envelope_json(...)`, and
+`editor_core_ui_ffi_multi_document_workspace_file_replacement_workspace_edit_with_options_envelope_json(...)`.
+These accept a `scan_options_json_utf8` object with `include_globs`, `exclude_globs`,
+`max_results`, `offset`, `max_file_size_bytes`, `skip_binary`, `respect_ignore_files`,
+`cancelled`, and `cancel_after_files`, allowing hosts to keep pagination, ignore-file behavior,
+large/binary-file filtering, cancellation budgets, and result-refresh metadata in the core-owned
+workspace model.
+Hosts can also refresh and read a core-owned project file index snapshot through
+`editor_core_ui_ffi_multi_document_refresh_project_file_index_json(...)`,
+`editor_core_ui_ffi_multi_document_project_file_index_snapshot_json(...)`, and
+`editor_core_ui_ffi_multi_document_clear_project_file_index(...)`. Hosts can query the last
+refreshed snapshot with
+`editor_core_ui_ffi_multi_document_query_project_file_index_json(...)`, which returns
+`{ "results": [...] }` entries containing `uri`, `path`, `relative_path`, and fuzzy `score`,
+ordered by descending score with stable path tie-breaks. The index snapshot uses the same root trust
+boundary, skip rules, stable sorting, and bounded result semantics as workspace file listing,
+reports `workspace_roots`, `files`, `is_built`, and `max_results`, and is cleared when workspace
+roots change.
+The list, project file index refresh/snapshot/query, and workspace file replacement helpers also
+provide `_envelope_json` variants gated by
+`ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_OPERATION_ENVELOPE`; these wrap successful payloads in
+`value` and invalid arguments or runtime failures in the shared `{ ok, status, error, version }`
+result envelope.
+Explicit workspace scan options are gated by
+`ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_SCAN_OPTIONS`. Search/list/replacement envelope values
+that use the scan model include a `scan` object with `offset`, `max_results`, `next_offset`,
+`truncated`, `cancelled`, `visited_files`, `matched_results`, `returned_results`,
+`skipped_large_files`, `skipped_binary_files`, `skipped_unreadable_files`, and
+`ignore_files_enabled`.
+
+Open-tab metadata is part of the same core-owned multi-document model. Hosts can set or clear
+document URI metadata with `editor_core_ui_ffi_multi_document_set_tab_document_uri(...)` and
+language metadata with `editor_core_ui_ffi_multi_document_set_tab_language_id(...)`. The snapshot
+JSON includes these fields as `document_uri` and `language_id` on each tab. Language ids are
+trimmed and empty values are represented as null, giving project-level LSP lifecycle planning a
+stable way to match open documents to project server configs without treating Swift/AppKit tab
+state as the long-term owner.
+
+Project-level LSP launch metadata is also a JSON control-plane surface on `MultiDocumentEditorUi`.
+`editor_core_ui_ffi_multi_document_set_project_lsp_servers_json(MultiDocumentEditorUi* multi,
+const char* configs_json_utf8)` accepts a UTF-8 JSON array of server configs with `key`,
+`command`, optional `args`, `language_id`, optional `language_name`, optional
+`server_capabilities`, optional `shared_session`, optional `session_policy`, optional
+`workspace_roots`, optional `workspace_folders`, optional `auto_start`, and optional
+`recovery_policy`. `language_name` is normalized as display metadata and falls back to the
+normalized `language_id` when omitted. `server_capabilities` is a JSON object for host-provided
+server capability metadata; it defaults to `{}` and non-object values are rejected.
+`shared_session` defaults to `true` and remains the compatibility flag for whether the host expects
+a server configuration to be shared across matching documents. `session_policy` is the normalized
+ownership strategy object with `scope`, `merge_strategy`, `deduplicate`, and `shutdown_policy`.
+Core currently supports two coherent v1 policies:
+
+- workspace-scoped shared sessions:
+  `{ "scope": "workspace", "merge_strategy": "server_workspace_roots", "deduplicate": true,
+  "shutdown_policy": "last_document" }`
+- document-scoped isolated sessions:
+  `{ "scope": "document", "merge_strategy": "document", "deduplicate": false,
+  "shutdown_policy": "document_close" }`
+
+When `session_policy` is omitted, `shared_session: true` selects the workspace policy and
+`shared_session: false` selects the document policy. The normalized `shared_session` returned by
+core mirrors the selected policy scope so older hosts can continue to rely on the boolean field.
+`workspace_folders` is a typed descriptor list with `uri`, `name`, and optional `root_alias`; when
+omitted, core derives folder descriptors from `workspace_roots`, and when roots are omitted, core
+derives roots from folder URIs. The legacy `workspace_roots` string list remains the compatibility
+surface for hosts that only need root URIs. `recovery_policy` is a typed object with `enabled`,
+`max_attempts`, and `base_delay_millis`; omitted policies default to `{ "enabled": true,
+"max_attempts": 3, "base_delay_millis": 5000 }`, and core normalizes host-provided values to at
+most 10 attempts and a 3,600,000 ms base delay so the policy is directly interpretable by lifecycle
+executors.
+The companion `editor_core_ui_ffi_multi_document_project_lsp_servers_json(MultiDocumentEditorUi*
+multi)` returns the normalized list ordered by key, and
+`editor_core_ui_ffi_multi_document_snapshot_json` includes the same list as
+`project_lsp_servers`. This is a project/workspace ownership schema for launch metadata; server
+process start/stop remains an explicit host action. Hosts can query core-derived lifecycle work
+through `editor_core_ui_ffi_multi_document_project_lsp_lifecycle_envelope_json(...)` using
+`operation_utf8` values of `start_plan`, `stop_plan`, `restart_plan`, or `lifecycle_events`.
+Each plan entry carries an explicit `operation` string (`start`, `stop`, or `restart`) alongside
+the tab id, active view index, document URI, language id/name, server capabilities, shared-session
+flag, `session_key`, `session_policy`, recovery policy, server key, command, args, workspace
+roots/folders, and optional proposed `attempt_id` so hosts can execute and record lifecycle
+outcomes from a single typed action descriptor instead of inferring ownership from the endpoint used
+to fetch the plan. Workspace-scoped plan entries derive `session_key` from server key plus normalized
+workspace root URIs, so independent documents in the same project/server group report the same key
+and can be merged or deduplicated by a lifecycle executor. Document-scoped plan entries derive
+`session_key` from server key plus document URI, so shutdown is isolated to the owning document.
+Lifecycle outcomes and events carry the same `session_key`, `session_policy`, and
+`recovery_policy` objects, which lets hosts audit the exact ownership and recovery strategy used for
+requested, started, stopped, failed, or skipped outcomes. Core derives the proposed `attempt_id`
+from the next lifecycle event sequence and expects hosts to echo it in requested, started, stopped,
+failed, or skipped outcomes for the same execution attempt; older outcome records without an
+explicit attempt id continue to use the recorded lifecycle sequence for requested events.
+The envelope value is the same payload as the corresponding legacy plan/event JSON surface, while
+invalid operations and null handles return `{ "ok": false, "operation": ..., "status": "error",
+"error": ..., "version": 1 }` instead of a null pointer.
+
 This avoids blocking integrations while typed/binary surfaces mature.
 
 ## 4) Generic ioctl-Style Dispatcher (Optional v1)
@@ -232,12 +397,113 @@ Guidelines:
 ## Versioning Strategy
 
 - ABI major version baked into library and exported via `ecf_abi_version()`.
+- The headless FFI exports `editor_core_ffi_abi_version()` and
+  `editor_core_ffi_feature_flags()` so Swift/third-party hosts can probe the loaded core ABI and
+  gate optional feature paths before calling newer symbols.
+- The UI FFI exports `editor_core_ui_ffi_abi_version()` and
+  `editor_core_ui_ffi_feature_flags()` so Swift/App hosts can probe the loaded UI ABI and gate
+  optional feature paths before calling newer symbols.
+- Both FFI layers also expose `*_runtime_info_json()` as a one-call capability snapshot for
+  third-party C/non-Swift hosts. The JSON contains `kind`, `abi_version`, `version`,
+  `feature_flags`, and append-only feature descriptors.
+- Headless and UI FFI feature flags are append-only within the pre-v1 line. As of the current
+  draft, `ECF_FEATURE_JSON_COMMAND_ENVELOPE`,
+  `ECF_FEATURE_RENDERING_SNAPSHOT_ENVELOPE`,
+  `ECF_FEATURE_EDITOR_STATE_DERIVED_SNAPSHOT_ENVELOPE`,
+  `ECF_FEATURE_WORKSPACE_RESULT_ENVELOPE`,
+  `ECF_FEATURE_WORKSPACE_QUERY_ENVELOPE`,
+  `ECF_FEATURE_WORKSPACE_LIFECYCLE_ENVELOPE`,
+  `ECF_FEATURE_EDITOR_STATE_QUERY_ENVELOPE`,
+  `ECF_FEATURE_LSP_HELPER_ENVELOPE`,
+  `ECF_FEATURE_LSP_EDIT_HELPER_ENVELOPE`,
+  `ECF_FEATURE_PROCESSOR_RESULT_ENVELOPE`,
+  `ECU_FEATURE_JSON_COMMAND_ENVELOPE`, and
+  `ECU_FEATURE_LSP_RESULT_ENVELOPE` / `ECU_FEATURE_EVENT_STREAM_ENVELOPE` /
+  `ECU_FEATURE_MULTI_DOCUMENT_SPECIAL_EVENT_STREAM_ENVELOPE` /
+  `ECU_FEATURE_WORKSPACE_EDIT_TRANSACTION_ENVELOPE` /
+  `ECU_FEATURE_WORKSPACE_DIAGNOSTICS_ENVELOPE` /
+  `ECU_FEATURE_WORKSPACE_OUTLINE_SNAPSHOT_ENVELOPE` /
+  `ECU_FEATURE_MULTI_DOCUMENT_SNAPSHOT_ENVELOPE` /
+  `ECU_FEATURE_MULTI_DOCUMENT_SEARCH_ENVELOPE` /
+  `ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_ROOTS_CHANGE_ENVELOPE` /
+  `ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_SERVERS_ENVELOPE` /
+  `ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_LIFECYCLE_ENVELOPE` /
+  `ECU_FEATURE_EDITOR_UI_DERIVED_SNAPSHOT_ENVELOPE` /
+  `ECU_FEATURE_EDITOR_UI_MINIMAP_ENVELOPE` /
+  `ECU_FEATURE_EDITOR_UI_VIEW_POINT_PAYLOAD_ENVELOPE` /
+  `ECU_FEATURE_LSP_STATUS_ENVELOPE` /
+  `ECU_FEATURE_LSP_WORKSPACE_EDIT_APPLICATION_ENVELOPE` /
+  `ECU_FEATURE_LSP_DERIVED_STATE_APPLICATION_ENVELOPE` /
+  `ECU_FEATURE_LSP_SEMANTIC_TOKENS_APPLICATION_ENVELOPE` /
+  `ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_SEARCH` /
+  `ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_REPLACEMENT` /
+  `ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_OPERATION_ENVELOPE` /
+  `ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_SCAN_OPTIONS` mark availability of the corresponding
+  JSON envelope symbols, workspace file search/replacement symbols, scan-options symbols, and
+  stream/result coverage.
 - The current cycle is still pre-v1; breaking fixed-width cleanup is allowed before tagging v1, and `editor_core_ffi.h` is the authoritative declaration of the current C surface.
 - Compatible additions:
   - new functions
   - new enum values
   - new struct tail fields with `struct_size` guards
 - Breaking changes require ABI v2 symbol namespace or library major bump.
+
+## Runtime Capability Negotiation
+
+Hosts should treat capability negotiation as a startup or dynamic-library-load step, not as an
+ad-hoc check at each call site:
+
+1. Resolve the base symbols for the layer in use: `*_abi_version()`, `*_feature_flags()`,
+   `*_runtime_info_json()`, the string free function, and `*_last_error_message()`.
+2. Verify the returned ABI major version before enabling the binding. A newer compatible build may
+   expose more feature bits, but a mismatched major version must disable the binding or select a
+   different adapter.
+3. Build a required feature mask for each workflow. Do not call a symbol guarded by a missing
+   feature bit; either use the documented legacy fallback or disable that specific panel/command.
+4. Prefer envelope APIs for new integrations. Legacy raw JSON APIs remain compatibility fallbacks
+   and keep their older null-pointer plus `last_error_message` failure shape.
+5. Use `*_runtime_info_json()` for diagnostics, logs, and non-Swift hosts that need descriptor
+   names. The numeric feature mask remains the machine gate; unknown descriptor names and unknown
+   status strings are forward-compatible and must not make the host reject the runtime by default.
+6. Free every returned runtime-info, envelope, legacy JSON, and allocated error string exactly once
+   with the matching layer's string free function.
+
+For each host-requested feature, availability is the combination of ABI version and the feature
+bit. A feature is `available` only when the runtime ABI is at least the host's minimum ABI and the
+runtime feature mask contains the requested bit. If the ABI is too old, report `version_mismatch`
+with the runtime version and ABI. If the ABI is compatible but the bit is missing, report
+`unsupported` with the missing flag and the host reason for needing that feature. If
+`*_runtime_info_json()` cannot be read, report `runtime_unavailable` and keep the load error as the
+unsupported reason. Swift wrappers expose this per-feature negotiation as
+`EditorCoreFFIRuntimeFeatureNegotiation` and `EditorCoreUIFFIRuntimeFeatureNegotiation`; each entry
+carries the requested feature flag, runtime feature mask, runtime version, minimum ABI, descriptor
+when present, availability state, and unsupported reason.
+
+When a host links statically, the headers and library archive must be produced by the same build
+that supplied the feature bit. Dynamic/plugin-style hosts may resolve optional symbols after
+feature probing, but still must not call a symbol that is absent from the loaded library.
+
+Swift wrappers mirror the same transition policy: raw JSON and decoded convenience methods that
+now have structured workspace-file operation envelopes are retained for source compatibility but
+marked deprecated. App and host integrations should consume the envelope methods plus their typed
+value helpers, using the raw JSON symbols only as explicit legacy fallbacks.
+
+### Swift/AppKit Integration Audit Boundary
+
+The current Swift host treats runtime feature negotiation as part of app startup and gates product
+features through typed compatibility descriptors. The expected v1 integration shape is:
+
+- Swift/AppKit keeps UI-only state such as active first responder, panel visibility, visual caches,
+  status text, and transient overlay placement.
+- Core / `editor-core-ui` owns durable workspace facts: tabs/views, split topology, document URIs,
+  language ids, workspace roots, recent files/projects, project file index snapshots, workspace
+  search/replacement scan metadata, WorkspaceEdit transactions, and project LSP lifecycle schema.
+- New workspace, LSP result, WorkspaceEdit, project lifecycle, and workspace-file operations use
+  envelope APIs when the advertised feature bit is present. Legacy raw JSON calls are compatibility
+  fallbacks only and should not become new product entry points.
+- Swift visual and UI smoke tests are expected to cover the host-specific contract that is outside
+  the C ABI: AppKit focus restoration, child-window/popup stacking, minimap/gutter placement,
+  narrow-window chrome constraints, and black-box app startup/session behavior.
 
 ## Cross-Language Binding Notes
 
@@ -279,31 +545,187 @@ The C headers are authoritative. The examples below are representative surfaces 
 
 ```c
 EcfEditorState* editor_core_ffi_editor_state_new(const char* initial_text, uint32_t viewport_width);
+uint32_t editor_core_ffi_abi_version(void);
+uint64_t editor_core_ffi_feature_flags(void);
+char* editor_core_ffi_runtime_info_json(void);
 char* editor_core_ffi_editor_state_viewport_styled_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
+char* editor_core_ffi_editor_state_viewport_styled_envelope_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
 char* editor_core_ffi_editor_state_minimap_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
+char* editor_core_ffi_editor_state_minimap_envelope_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
 char* editor_core_ffi_editor_state_viewport_composed_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
+char* editor_core_ffi_editor_state_viewport_composed_envelope_json(const EcfEditorState* state, uint32_t start_visual_row, uint32_t count);
+char* editor_core_ffi_editor_state_derived_snapshot_envelope_json(const EcfEditorState* state, const char* snapshot_utf8);
+char* editor_core_ffi_editor_state_execute_envelope_json(EcfEditorState* state, const char* command_json);
+char* editor_core_ffi_editor_state_full_state_envelope_json(const EcfEditorState* state);
+char* editor_core_ffi_editor_state_text_envelope_json(const EcfEditorState* state);
+char* editor_core_ffi_editor_state_text_for_saving_envelope_json(const EcfEditorState* state);
+char* editor_core_ffi_editor_state_get_line_ending_envelope_json(const EcfEditorState* state);
+char* editor_core_ffi_editor_state_last_text_delta_envelope_json(const EcfEditorState* state);
+char* editor_core_ffi_editor_state_take_last_text_delta_envelope_json(EcfEditorState* state);
 
 int32_t editor_core_ffi_workspace_open_buffer_typed(EcfWorkspace* workspace, const char* uri, const char* text, uint32_t viewport_width, EcfOpenBufferResult* out_result);
 int32_t editor_core_ffi_workspace_create_view_typed(EcfWorkspace* workspace, uint64_t buffer_id, uint32_t viewport_width, EcfCreateViewResult* out_result);
+char* editor_core_ffi_workspace_open_buffer_envelope_json(EcfWorkspace* workspace, const char* uri, const char* text, uint32_t viewport_width);
+char* editor_core_ffi_workspace_create_view_envelope_json(EcfWorkspace* workspace, uint64_t buffer_id, uint32_t viewport_width);
 bool editor_core_ffi_workspace_set_viewport_height(EcfWorkspace* workspace, uint64_t view_id, uint32_t height);
 bool editor_core_ffi_workspace_set_smooth_scroll_state(EcfWorkspace* workspace, uint64_t view_id, uint32_t top_visual_row, uint16_t sub_row_offset, uint32_t overscan_rows);
+char* editor_core_ffi_workspace_execute_envelope_json(EcfWorkspace* workspace, uint64_t view_id, const char* command_json);
+char* editor_core_ffi_workspace_viewport_styled_envelope_json(EcfWorkspace* workspace, uint64_t view_id, uint32_t start_visual_row, uint32_t count);
+char* editor_core_ffi_workspace_minimap_envelope_json(EcfWorkspace* workspace, uint64_t view_id, uint32_t start_visual_row, uint32_t count);
+char* editor_core_ffi_workspace_viewport_composed_envelope_json(EcfWorkspace* workspace, uint64_t view_id, uint32_t start_visual_row, uint32_t count);
+char* editor_core_ffi_workspace_info_envelope_json(const EcfWorkspace* workspace);
+char* editor_core_ffi_workspace_buffer_text_envelope_json(const EcfWorkspace* workspace, uint64_t buffer_id);
+char* editor_core_ffi_workspace_viewport_state_envelope_json(EcfWorkspace* workspace, uint64_t view_id);
+char* editor_core_ffi_workspace_search_all_open_buffers_envelope_json(const EcfWorkspace* workspace, const char* query, const char* options_json);
+char* editor_core_ffi_workspace_apply_text_edits_envelope_json(EcfWorkspace* workspace, const char* edits_json);
 
 uint64_t editor_core_ffi_lsp_char_offset_to_utf16(const char* line_text, uint64_t char_offset);
 uint64_t editor_core_ffi_lsp_utf16_to_char_offset(const char* line_text, uint64_t utf16_offset);
 char* editor_core_ffi_lsp_formatting_options_json(uint32_t tab_size, bool insert_spaces);
+char* editor_core_ffi_lsp_path_to_file_uri_envelope_json(const char* path);
+char* editor_core_ffi_lsp_file_uri_to_path_envelope_json(const char* uri);
+char* editor_core_ffi_lsp_percent_encode_path_envelope_json(const char* path);
+char* editor_core_ffi_lsp_percent_decode_path_envelope_json(const char* path);
+char* editor_core_ffi_lsp_formatting_options_envelope_json(uint32_t tab_size, bool insert_spaces);
+char* editor_core_ffi_lsp_formatting_options_for_indentation_config_envelope_json(const char* indentation_config_json, uint32_t tab_width);
+char* editor_core_ffi_lsp_on_type_formatting_params_envelope_json(const EcfEditorState* state, const char* uri, const char* ch, const char* options_json);
+char* editor_core_ffi_lsp_apply_text_edits_envelope_json(EcfEditorState* state, const char* edits_json);
+char* editor_core_ffi_lsp_semantic_tokens_to_intervals_envelope_json(const EcfEditorState* state, const char* data_json);
+char* editor_core_ffi_lsp_decode_semantic_style_id_envelope_json(uint32_t style_id);
+char* editor_core_ffi_lsp_document_highlights_to_processing_edit_envelope_json(const EcfEditorState* state, const char* result_json);
+char* editor_core_ffi_lsp_inlay_hints_to_processing_edit_envelope_json(const EcfEditorState* state, const char* result_json);
+char* editor_core_ffi_lsp_document_links_to_processing_edit_envelope_json(const EcfEditorState* state, const char* result_json);
+char* editor_core_ffi_lsp_code_lens_to_processing_edit_envelope_json(const EcfEditorState* state, const char* result_json);
+char* editor_core_ffi_lsp_document_symbols_to_processing_edit_envelope_json(const EcfEditorState* state, const char* result_json);
+char* editor_core_ffi_lsp_diagnostics_to_processing_edits_envelope_json(const EcfEditorState* state, const char* publish_diagnostics_params_json);
+char* editor_core_ffi_lsp_workspace_symbols_envelope_json(const char* result_json);
+char* editor_core_ffi_lsp_locations_envelope_json(const char* result_json);
+char* editor_core_ffi_lsp_completion_item_to_text_edits_envelope_json(const EcfEditorState* state, const char* completion_item_json, const char* mode, uint64_t fallback_start, uint64_t fallback_end, bool has_fallback);
+char* editor_core_ffi_lsp_apply_completion_item_envelope_json(EcfEditorState* state, const char* completion_item_json, const char* mode);
+char* editor_core_ffi_sublime_processor_process_envelope_json(EcfSublimeProcessor* processor, const EcfEditorState* state);
+char* editor_core_ffi_sublime_processor_scope_for_style_id_envelope_json(const EcfSublimeProcessor* processor, uint32_t style_id);
+char* editor_core_ffi_treesitter_processor_process_envelope_json(EcfTreeSitterProcessor* processor, const EcfEditorState* state);
+char* editor_core_ffi_treesitter_processor_last_update_mode_envelope_json(const EcfTreeSitterProcessor* processor);
+char* editor_core_ffi_treesitter_indenter_reindent_line_envelope_json(EcfTreeSitterIndenter* indenter, const EcfEditorState* state, uint32_t line, const char* indentation_config_json);
 ```
 
 The UI FFI (`editor-core-ui-ffi`) follows the same fixed-width boundary discipline for its C surface. Examples include:
 
 ```c
+uint32_t editor_core_ui_ffi_abi_version(void);
+uint64_t editor_core_ui_ffi_feature_flags(void);
+char* editor_core_ui_ffi_runtime_info_json(void);
 EditorUi* editor_core_ui_ffi_editor_ui_new(const char* initial_text_utf8, uint32_t viewport_width_cells);
 EditorUi* editor_core_ui_ffi_editor_ui_clone_view(EditorUi* ui, uint32_t viewport_width_cells);
+char* editor_core_ui_ffi_editor_ui_execute_command_envelope_json(EditorUi* ui, const char* command_json_utf8);
+char* editor_core_ui_ffi_editor_ui_lsp_take_last_result_envelope_json(EditorUi* ui, const char* slot_utf8);
+char* editor_core_ui_ffi_editor_ui_lsp_apply_workspace_edit_envelope_json(EditorUi* ui, const char* workspace_edit_json_utf8, const char* document_uri_utf8);
+char* editor_core_ui_ffi_editor_ui_lsp_apply_diagnostics_envelope_json(EditorUi* ui, const char* publish_diagnostics_json_utf8);
+char* editor_core_ui_ffi_editor_ui_lsp_apply_inlay_hints_envelope_json(EditorUi* ui, const char* inlay_hints_result_json_utf8);
+char* editor_core_ui_ffi_editor_ui_lsp_apply_code_lens_envelope_json(EditorUi* ui, const char* code_lens_result_json_utf8);
+char* editor_core_ui_ffi_editor_ui_lsp_apply_document_links_envelope_json(EditorUi* ui, const char* document_links_result_json_utf8);
+char* editor_core_ui_ffi_editor_ui_lsp_apply_document_highlights_envelope_json(EditorUi* ui, const char* document_highlights_result_json_utf8);
+char* editor_core_ui_ffi_editor_ui_lsp_apply_document_symbols_envelope_json(EditorUi* ui, const char* document_symbols_result_json_utf8);
+char* editor_core_ui_ffi_editor_ui_lsp_apply_folding_ranges_envelope_json(EditorUi* ui, const char* folding_ranges_result_json_utf8);
+char* editor_core_ui_ffi_editor_ui_minimap_envelope_json(EditorUi* ui, uint32_t start_visual_row, uint32_t count);
+char* editor_core_ui_ffi_editor_ui_view_point_payload_envelope_json(EditorUi* ui, const char* kind_utf8, float x_px, float y_px);
+char* editor_core_ui_ffi_editor_ui_event_stream_envelope_json(EditorUi* ui, const char* stream_utf8, uint64_t after_sequence);
+char* editor_core_ui_ffi_multi_document_snapshot_envelope_json(MultiDocumentEditorUi* multi);
+char* editor_core_ui_ffi_multi_document_search_all_tabs_envelope_json(MultiDocumentEditorUi* multi, const char* query_utf8, uint8_t case_sensitive, uint8_t whole_word, uint8_t regex);
+char* editor_core_ui_ffi_multi_document_list_workspace_files_json(MultiDocumentEditorUi* multi, const char* include_globs_json_utf8, const char* exclude_globs_json_utf8, uint32_t max_results);
+char* editor_core_ui_ffi_multi_document_list_workspace_files_envelope_json(MultiDocumentEditorUi* multi, const char* include_globs_json_utf8, const char* exclude_globs_json_utf8, uint32_t max_results);
+char* editor_core_ui_ffi_multi_document_list_workspace_files_with_options_envelope_json(MultiDocumentEditorUi* multi, const char* scan_options_json_utf8);
+char* editor_core_ui_ffi_multi_document_search_workspace_files_json(MultiDocumentEditorUi* multi, const char* query_utf8, const char* include_globs_json_utf8, const char* exclude_globs_json_utf8, uint8_t case_sensitive, uint8_t whole_word, uint8_t regex, uint32_t max_results);
+char* editor_core_ui_ffi_multi_document_search_workspace_files_envelope_json(MultiDocumentEditorUi* multi, const char* query_utf8, const char* include_globs_json_utf8, const char* exclude_globs_json_utf8, uint8_t case_sensitive, uint8_t whole_word, uint8_t regex, uint32_t max_results);
+char* editor_core_ui_ffi_multi_document_search_workspace_files_with_options_envelope_json(MultiDocumentEditorUi* multi, const char* query_utf8, const char* scan_options_json_utf8, uint8_t case_sensitive, uint8_t whole_word, uint8_t regex);
+char* editor_core_ui_ffi_multi_document_workspace_file_replacement_workspace_edit_json(MultiDocumentEditorUi* multi, const char* query_utf8, const char* replacement_utf8, const char* include_globs_json_utf8, const char* exclude_globs_json_utf8, const char* apply_mode_utf8, uint8_t case_sensitive, uint8_t whole_word, uint8_t regex, uint32_t max_results);
+char* editor_core_ui_ffi_multi_document_workspace_file_replacement_workspace_edit_envelope_json(MultiDocumentEditorUi* multi, const char* query_utf8, const char* replacement_utf8, const char* include_globs_json_utf8, const char* exclude_globs_json_utf8, const char* apply_mode_utf8, uint8_t case_sensitive, uint8_t whole_word, uint8_t regex, uint32_t max_results);
+char* editor_core_ui_ffi_multi_document_workspace_file_replacement_workspace_edit_with_options_envelope_json(MultiDocumentEditorUi* multi, const char* query_utf8, const char* replacement_utf8, const char* scan_options_json_utf8, const char* apply_mode_utf8, uint8_t case_sensitive, uint8_t whole_word, uint8_t regex);
+int32_t editor_core_ui_ffi_multi_document_remember_recent_file_uri(MultiDocumentEditorUi* multi, const char* uri_utf8);
+int32_t editor_core_ui_ffi_multi_document_restore_recent_files_json(MultiDocumentEditorUi* multi, const char* uris_json_utf8);
+int32_t editor_core_ui_ffi_multi_document_clear_recent_files(MultiDocumentEditorUi* multi);
+char* editor_core_ui_ffi_multi_document_recent_files_json(MultiDocumentEditorUi* multi);
+int32_t editor_core_ui_ffi_multi_document_remember_recent_project_uri(MultiDocumentEditorUi* multi, const char* uri_utf8);
+int32_t editor_core_ui_ffi_multi_document_restore_recent_projects_json(MultiDocumentEditorUi* multi, const char* uris_json_utf8);
+int32_t editor_core_ui_ffi_multi_document_clear_recent_projects(MultiDocumentEditorUi* multi);
+char* editor_core_ui_ffi_multi_document_recent_projects_json(MultiDocumentEditorUi* multi);
+char* editor_core_ui_ffi_multi_document_refresh_project_file_index_json(MultiDocumentEditorUi* multi, uint32_t max_results);
+char* editor_core_ui_ffi_multi_document_refresh_project_file_index_envelope_json(MultiDocumentEditorUi* multi, uint32_t max_results);
+char* editor_core_ui_ffi_multi_document_project_file_index_snapshot_json(MultiDocumentEditorUi* multi);
+char* editor_core_ui_ffi_multi_document_project_file_index_snapshot_envelope_json(MultiDocumentEditorUi* multi);
+int32_t editor_core_ui_ffi_multi_document_clear_project_file_index(MultiDocumentEditorUi* multi);
+char* editor_core_ui_ffi_multi_document_query_project_file_index_json(MultiDocumentEditorUi* multi, const char* query_utf8, uint32_t max_results);
+char* editor_core_ui_ffi_multi_document_query_project_file_index_envelope_json(MultiDocumentEditorUi* multi, const char* query_utf8, uint32_t max_results);
+char* editor_core_ui_ffi_multi_document_set_workspace_roots_with_change_envelope_json(MultiDocumentEditorUi* multi, const char* roots_json_utf8);
+char* editor_core_ui_ffi_multi_document_project_lsp_servers_envelope_json(MultiDocumentEditorUi* multi);
+char* editor_core_ui_ffi_multi_document_event_stream_envelope_json(MultiDocumentEditorUi* multi, const char* stream_utf8, uint64_t after_sequence);
+char* editor_core_ui_ffi_multi_document_workspace_edit_transaction_envelope_json(MultiDocumentEditorUi* multi, const char* operation_utf8, const char* workspace_edit_json_utf8);
+char* editor_core_ui_ffi_multi_document_workspace_diagnostics_envelope_json(MultiDocumentEditorUi* multi, const char* operation_utf8, const char* result_json_utf8);
+char* editor_core_ui_ffi_multi_document_workspace_outline_snapshot_envelope_json(MultiDocumentEditorUi* multi);
 int32_t editor_core_ui_ffi_editor_ui_lsp_request_hover(EditorUi* ui, uint32_t line, uint32_t column, uint64_t* out_request_id);
 int32_t editor_core_ui_ffi_editor_ui_set_tab_width(EditorUi* ui, uint32_t width_cells);
+int32_t editor_core_ui_ffi_editor_ui_set_lsp_on_type_formatting_enabled(EditorUi* ui, uint8_t enabled);
+char* editor_core_ui_ffi_editor_ui_lsp_apply_workspace_edit_json(EditorUi* ui, const char* workspace_edit_json_utf8, const char* document_uri_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_completion_item_resolve(EditorUi* ui, const char* item_json_utf8, uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_completion_item_resolve_json(EditorUi* ui, uint8_t* out_has_result, char** out_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_execute_command(EditorUi* ui, const char* command_json_utf8, uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_execute_command_json(EditorUi* ui, uint8_t* out_has_result, char** out_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_inlay_hints(EditorUi* ui, uint32_t start_offset, uint32_t end_offset, uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_inlay_hints_json(EditorUi* ui, uint8_t* out_has_result, char** out_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_inlay_hint_resolve(EditorUi* ui, const char* hint_json_utf8, uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_inlay_hint_resolve_json(EditorUi* ui, uint8_t* out_has_result, char** out_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_document_links(EditorUi* ui, uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_document_links_json(EditorUi* ui, uint8_t* out_has_result, char** out_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_document_link_resolve(EditorUi* ui, const char* link_json_utf8, uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_document_link_resolve_json(EditorUi* ui, uint8_t* out_has_result, char** out_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_folding_ranges(EditorUi* ui, uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_folding_ranges_json(EditorUi* ui, uint8_t* out_has_result, char** out_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_apply_folding_ranges_json(EditorUi* ui, const char* folding_ranges_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_selection_range(EditorUi* ui, const char* positions_json_utf8, uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_document_diagnostic(EditorUi* ui, const char* previous_result_id_utf8, uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_document_color(EditorUi* ui, uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_prepare_call_hierarchy(EditorUi* ui, uint32_t line, uint32_t column, uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_prepare_type_hierarchy(EditorUi* ui, uint32_t line, uint32_t column, uint64_t* out_request_id);
+int32_t editor_core_ui_ffi_editor_ui_lsp_format_document(EditorUi* ui, const char* formatting_options_json_utf8, uint32_t timeout_ms, uint8_t* out_applied);
+int32_t editor_core_ui_ffi_editor_ui_lsp_format_range(EditorUi* ui, uint32_t start_offset, uint32_t end_offset, const char* formatting_options_json_utf8, uint32_t timeout_ms, uint8_t* out_applied);
+int32_t editor_core_ui_ffi_editor_ui_lsp_format_on_type(EditorUi* ui, uint32_t logical_line, uint32_t logical_column, const char* trigger_utf8, const char* formatting_options_json_utf8, uint32_t timeout_ms, uint8_t* out_applied);
+char* editor_core_ui_ffi_multi_document_undo_last_workspace_edit_transaction_json(MultiDocumentEditorUi* multi);
+char* editor_core_ui_ffi_multi_document_redo_last_workspace_edit_transaction_json(MultiDocumentEditorUi* multi);
 char* editor_core_ui_ffi_editor_ui_minimap_json(EditorUi* ui, uint32_t start_visual_row, uint32_t count);
 int32_t editor_core_ui_ffi_editor_ui_render_rgba(EditorUi* ui, uint8_t* out_buf, uint32_t out_cap, uint32_t* out_len);
 int32_t editor_core_ui_ffi_editor_ui_get_selections(EditorUi* ui, EcuSelectionRange* out_ranges, uint32_t out_cap, uint32_t* out_len, uint32_t* out_primary_index);
 ```
+
+`editor_core_ui_ffi_editor_ui_lsp_apply_workspace_edit_json` is a pre-v1 JSON/control-plane
+surface for rename/code-action style payloads. It applies `TextEdit`s that target the supplied
+document URI, or the UI's current LSP document URI when the argument is null/empty, and returns an
+allocated JSON summary with `applied`, `applied_uri`, `applied_edit_count`, `skipped_uris`, and
+per-document edit counts/conflict hints. The caller owns the returned string and must release it
+with the UI FFI string free function.
+
+`editor_core_ui_ffi_multi_document_undo_last_workspace_edit_transaction_json` is a pre-v1
+JSON/control-plane surface for restoring the most recent successful core-owned WorkspaceEdit
+transaction in a `MultiDocumentEditorUi`. Hosts must probe
+`ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_UNDO` before treating the command as
+available. The returned JSON includes `undone`, `restored_uris`,
+`restored_open_tab_count`, `restored_filesystem_entry_count`, and `message`; the caller owns the
+returned string and must release it with the UI FFI string free function.
+
+`editor_core_ui_ffi_multi_document_redo_last_workspace_edit_transaction_json` is a pre-v1
+JSON/control-plane surface for reapplying the most recently undone core-owned WorkspaceEdit
+transaction in a `MultiDocumentEditorUi`. Hosts must probe
+`ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_REDO` before treating the command as
+available. The returned JSON uses the same result shape as WorkspaceEdit transaction apply, with
+`mode` set to `redo`; unavailable redo returns `applied: false`. Redo goes through the normal core
+WorkspaceEdit transaction path, so existing version/dirty/root-gated conflict checks still apply.
+
+WorkspaceEdit transaction `conflicts[]` entries are compatibility-extensible JSON objects. Current
+entries include `uri`, `kind`, `severity`, `apply_impact`, `resolution`, `reason`, `operation`, and
+`message`. `severity` is currently `warning` for partial skipped changes and `error` for atomic
+blocking conflicts or runtime apply failures. `apply_impact` distinguishes `skips_change` from
+`blocks_atomic_apply`; `resolution` is a machine-readable hint such as `save_or_discard`,
+`refresh_request`, `restore_resource`, `adjust_target`, `unsupported`, or `inspect`. Hosts must
+ignore unknown conflict fields and tolerate unknown enum strings.
 
 All public array counts (`style_count`, `font_count`, `decoration_count`, `range_count`, `data_len`, `out_cap`) are `uint32_t`; Rust checks conversion to internal `usize` and validates Rust slice length limits before constructing slices.
 

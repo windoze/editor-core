@@ -1,3 +1,4 @@
+import EditorCoreUIFFI
 import Foundation
 
 enum AttoLspDefinitionParser {
@@ -7,10 +8,78 @@ enum AttoLspDefinitionParser {
         let utf16Character: Int
     }
 
+    struct LocationItem: Equatable {
+        let target: Target
+        let fileDisplayName: String
+
+        var displayTitle: String {
+            "\(fileDisplayName):\(target.line + 1):\(target.utf16Character + 1)"
+        }
+    }
+
     static func firstTarget(fromDefinitionResultJSON json: String) -> Target? {
-        guard let data = json.data(using: .utf8) else { return nil }
-        guard let root = try? JSONSerialization.jsonObject(with: data) else { return nil }
-        return firstTarget(from: root)
+        targets(fromLocationResultJSON: json).first
+    }
+
+    static func firstTarget(fromDefinitionResult result: EcuLspLocationResult) -> Target? {
+        targets(fromLocationResult: result).first
+    }
+
+    static func targets(fromLocationResultJSON json: String) -> [Target] {
+        if let data = json.data(using: .utf8),
+           let result = try? JSONDecoder().decode(EcuLspLocationResult.self, from: data)
+        {
+            return targets(fromLocationResult: result)
+        }
+
+        guard let data = json.data(using: .utf8) else { return [] }
+        guard let root = try? JSONSerialization.jsonObject(with: data) else { return [] }
+        var out: [Target] = []
+        appendTargets(from: root, into: &out)
+        return out
+    }
+
+    static func targets(fromLocationResult result: EcuLspLocationResult) -> [Target] {
+        result.targets.map { target in
+            Target(
+                uri: target.uri,
+                line: Int(target.selectionRange.start.line),
+                utf16Character: Int(target.selectionRange.start.utf16Character)
+            )
+        }
+    }
+
+    static func locationItems(fromLocationResultJSON json: String, workspaceRootURL: URL) -> [LocationItem] {
+        locationItems(for: targets(fromLocationResultJSON: json), workspaceRootURL: workspaceRootURL)
+    }
+
+    static func locationItems(fromLocationResult result: EcuLspLocationResult, workspaceRootURL: URL) -> [LocationItem] {
+        locationItems(for: targets(fromLocationResult: result), workspaceRootURL: workspaceRootURL)
+    }
+
+    static func locationItems(for targets: [Target], workspaceRootURL: URL) -> [LocationItem] {
+        let root = workspaceRootURL.standardizedFileURL.path
+        return targets.enumerated()
+            .map { index, target -> (index: Int, item: LocationItem, sortGroup: Int, sortPath: String) in
+                let display = fileDisplayNameAndSortKey(for: target.uri, workspaceRootPath: root)
+                return (
+                    index: index,
+                    item: LocationItem(target: target, fileDisplayName: display.name),
+                    sortGroup: display.group,
+                    sortPath: display.key
+                )
+            }
+            .sorted { lhs, rhs in
+                if lhs.sortGroup != rhs.sortGroup { return lhs.sortGroup < rhs.sortGroup }
+                let pathCompare = lhs.sortPath.localizedStandardCompare(rhs.sortPath)
+                if pathCompare != .orderedSame { return pathCompare == .orderedAscending }
+                if lhs.item.target.line != rhs.item.target.line { return lhs.item.target.line < rhs.item.target.line }
+                if lhs.item.target.utf16Character != rhs.item.target.utf16Character {
+                    return lhs.item.target.utf16Character < rhs.item.target.utf16Character
+                }
+                return lhs.index < rhs.index
+            }
+            .map { $0.item }
     }
 
     /// Convert an LSP position (line + UTF-16 character) into an editor char offset (Unicode scalars).
@@ -35,23 +104,22 @@ enum AttoLspDefinitionParser {
         return UInt32(clamping: lineStart + column)
     }
 
-    private static func firstTarget(from any: Any) -> Target? {
-        if any is NSNull { return nil }
+    private static func appendTargets(from any: Any, into out: inout [Target]) {
+        if any is NSNull { return }
 
         if let arr = any as? [Any] {
             for el in arr {
-                if let t = firstTarget(from: el) {
-                    return t
-                }
+                appendTargets(from: el, into: &out)
             }
-            return nil
+            return
         }
 
         if let dict = any as? [String: Any] {
-            return parseLocation(dict) ?? parseLocationLink(dict)
+            if let target = parseLocation(dict) ?? parseLocationLink(dict) {
+                out.append(target)
+            }
+            return
         }
-
-        return nil
     }
 
     private static func parseLocation(_ dict: [String: Any]) -> Target? {
@@ -80,6 +148,30 @@ enum AttoLspDefinitionParser {
         return nil
     }
 
+    private static func fileDisplayNameAndSortKey(
+        for uri: String,
+        workspaceRootPath root: String
+    ) -> (name: String, group: Int, key: String) {
+        guard let url = URL(string: uri), url.isFileURL else {
+            return (uri, 2, uri)
+        }
+
+        let standardized = url.standardizedFileURL
+        let path = standardized.path
+        if path == root {
+            return (standardized.lastPathComponent, 0, standardized.lastPathComponent)
+        }
+        if root == "/" {
+            let relative = String(path.dropFirst())
+            return (relative, 0, relative)
+        }
+        if path.hasPrefix(root + "/") {
+            let relative = String(path.dropFirst(root.count + 1))
+            return (relative, 0, relative)
+        }
+        return (standardized.lastPathComponent, 1, path)
+    }
+
     private static func scalarOffsetFromUTF16(_ utf16: Int, in line: Substring) -> Int {
         if utf16 <= 0 { return 0 }
 
@@ -100,4 +192,3 @@ enum AttoLspDefinitionParser {
         return scalars
     }
 }
-

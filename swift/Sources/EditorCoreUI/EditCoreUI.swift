@@ -35,6 +35,16 @@ public final class EditCoreUI: NSView {
         set { container.minimapOpacity = newValue }
     }
 
+    public var minimapDiagnosticMarkers: [EditorCoreSkiaMinimapMarker] {
+        get { container.minimapView.diagnosticMarkers }
+        set { container.minimapView.diagnosticMarkers = newValue }
+    }
+
+    public var gutterDiagnosticMarkers: [EditorCoreSkiaGutterDiagnosticMarker] {
+        get { editorView.gutterDiagnosticMarkers }
+        set { editorView.gutterDiagnosticMarkers = newValue }
+    }
+
     // MARK: - EditorCoreSkiaView forwarding (common host hooks)
 
     public var pasteboard: NSPasteboard {
@@ -55,6 +65,16 @@ public final class EditCoreUI: NSView {
     public var onDidMutateDocumentText: (() -> Void)? {
         get { editorView.onDidMutateDocumentText }
         set { editorView.onDidMutateDocumentText = newValue }
+    }
+
+    public var onDidCommitText: ((String) -> Void)? {
+        get { editorView.onDidCommitText }
+        set { editorView.onDidCommitText = newValue }
+    }
+
+    public var onDidChangeSelection: ((_ causedByTextMutation: Bool) -> Void)? {
+        get { editorView.onDidChangeSelection }
+        set { editorView.onDidChangeSelection = newValue }
     }
 
     public var onHover: ((EditorCoreSkiaHoverInfo) -> Void)? {

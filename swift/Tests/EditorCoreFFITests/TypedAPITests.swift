@@ -39,6 +39,62 @@ final class TypedAPITests: XCTestCase {
         }
     }
 
+    func testHeadlessTypedConvenienceCoversTypingSnippetsAndBracketCommands() throws {
+        let library = try EditorCoreFFITestSupport.shared.loadLibrary()
+
+        do {
+            let state = try EditorState(library: library, initialText: "", viewportWidth: 80)
+            try state.setAutoPairsEnabled(true)
+            try state.typeChar("(")
+            XCTAssertEqual(try state.text(), "()")
+
+            try state.moveTo(line: 0, column: 0)
+            try state.moveToMatchingBracket()
+            let full = try JSONTestHelpers.decode(FullStateJSON.self, from: try state.fullStateJSON())
+            XCTAssertEqual(full.cursor.position, PositionJSON(line: 0, column: 1))
+
+            try state.updateBracketMatchHighlights()
+            try state.clearBracketMatchHighlights()
+        }
+
+        do {
+            let state = try EditorState(library: library, initialText: "", viewportWidth: 80)
+            try state.applySnippet(start: 0, end: 0, snippet: "println!(${1:msg})$0")
+            XCTAssertEqual(try state.text(), "println!(msg)")
+            try state.snippetNextPlaceholder()
+            try state.snippetPrevPlaceholder()
+        }
+
+        do {
+            let state = try EditorState(library: library, initialText: "", viewportWidth: 80)
+            try state.setAutoPairsConfig(
+                EcfAutoPairsConfig(
+                    enabled: true,
+                    pairs: [EcfAutoPair(open: "<", close: ">")]
+                )
+            )
+            try state.typeChar("<")
+            XCTAssertEqual(try state.text(), "<>")
+        }
+    }
+
+    func testHeadlessTypedCoalescingCommands() throws {
+        let library = try EditorCoreFFITestSupport.shared.loadLibrary()
+        let state = try EditorState(library: library, initialText: "abc", viewportWidth: 80)
+
+        try state.replaceCoalescingUndo(start: 0, length: 1, text: "A")
+        XCTAssertEqual(try state.text(), "Abc")
+
+        try state.replaceCoalescingUndoWithSelection(
+            start: 1,
+            length: 1,
+            text: "B",
+            selectionStart: 1,
+            selectionEnd: 2
+        )
+        XCTAssertEqual(try state.text(), "ABc")
+    }
+
     func testWorkspaceTypedBackspace() throws {
         let library = try EditorCoreFFITestSupport.shared.loadLibrary()
         let ws = try Workspace(library: library)
@@ -60,4 +116,3 @@ final class TypedAPITests: XCTestCase {
         XCTAssertThrowsError(try ViewportBlob(data: Data(count: headerSize)))
     }
 }
-

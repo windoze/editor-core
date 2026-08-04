@@ -1,0 +1,199 @@
+use crate::prelude::*;
+use crate::{
+    EditorLspRequestEvent, EditorLspResultEvent, EditorUiDerivedStateEvent, EditorUiStateEvent,
+    LspClientRequest, LspResultSlot, SharedLspSession, TreeSitterAsyncWorker,
+    TreeSitterCaptureMapper, TreeSitterProcessingConfig, UiError,
+};
+use std::collections::VecDeque;
+
+pub(crate) struct EditorUiDoc {
+    pub(crate) ws: Workspace,
+    pub(crate) buffer_id: BufferId,
+    pub(crate) sublime: Option<SublimeProcessor>,
+    pub(crate) treesitter: Option<TreeSitterAsyncWorker>,
+    pub(crate) treesitter_indenter: Option<TreeSitterIndenter>,
+    pub(crate) treesitter_capture_mapper: TreeSitterCaptureMapper,
+    pub(crate) treesitter_processing_config: TreeSitterProcessingConfig,
+    pub(crate) treesitter_registry: TreeSitterRegistry,
+    pub(crate) treesitter_doc_version: u64,
+    pub(crate) lsp: Option<Arc<SharedLspSession>>,
+    pub(crate) lsp_document_uri: Option<String>,
+    pub(crate) lsp_last_cmd: Option<String>,
+    pub(crate) lsp_last_error: Option<String>,
+    pub(crate) lsp_last_status_event_signature: Option<String>,
+    pub(crate) lsp_delta_calc: Option<DeltaCalculator>,
+    pub(crate) lsp_aux_refresh_due: Option<Instant>,
+    pub(crate) lsp_inlay_in_flight: bool,
+    pub(crate) lsp_code_lens_in_flight: bool,
+    pub(crate) lsp_document_links_in_flight: bool,
+    pub(crate) lsp_client_requests: HashMap<u64, LspClientRequest>,
+    pub(crate) lsp_latest_result_request_id: HashMap<(ViewId, LspResultSlot), u64>,
+    pub(crate) lsp_latest_on_type_formatting_request_id: HashMap<ViewId, u64>,
+    pub(crate) lsp_last_result_json: HashMap<(ViewId, LspResultSlot), String>,
+    pub(crate) lsp_result_events: VecDeque<EditorLspResultEvent>,
+    pub(crate) next_lsp_result_event_sequence: u64,
+    pub(crate) lsp_request_events: VecDeque<EditorLspRequestEvent>,
+    pub(crate) next_lsp_request_event_sequence: u64,
+    pub(crate) state_events: VecDeque<EditorUiStateEvent>,
+    pub(crate) next_state_event_sequence: u64,
+    pub(crate) text_version: u64,
+    pub(crate) derived_state_last_changed_text_version: Option<u64>,
+    pub(crate) derived_state_last_stale_text_version: Option<u64>,
+}
+
+impl EditorUiDoc {
+    pub(crate) fn exec_core(
+        &mut self,
+        view_id: ViewId,
+        command: Command,
+    ) -> Result<CommandResult, UiError> {
+        self.ws.execute(view_id, command).map_err(|e| match e {
+            editor_core::WorkspaceError::CommandFailed { message, .. } => {
+                UiError::Processor(message)
+            }
+            editor_core::WorkspaceError::ApplyEditsFailed { message, .. } => {
+                UiError::Processor(message)
+            }
+            other => UiError::Processor(format!("{other:?}")),
+        })
+    }
+
+    pub(crate) fn apply_processing_edits<I>(
+        &mut self,
+        view_id: ViewId,
+        edits: I,
+    ) -> Result<(), UiError>
+    where
+        I: IntoIterator<Item = ProcessingEdit>,
+    {
+        self.apply_processing_edits_impl(Some(view_id), edits)
+    }
+
+    pub(crate) fn apply_processing_edits_without_state_event<I>(
+        &mut self,
+        edits: I,
+    ) -> Result<(), UiError>
+    where
+        I: IntoIterator<Item = ProcessingEdit>,
+    {
+        self.apply_processing_edits_impl(None, edits)
+    }
+
+    fn apply_processing_edits_impl<I>(
+        &mut self,
+        view_id: Option<ViewId>,
+        edits: I,
+    ) -> Result<(), UiError>
+    where
+        I: IntoIterator<Item = ProcessingEdit>,
+    {
+        let edits = edits.into_iter().collect::<Vec<_>>();
+        let derived_state_event =
+            EditorUiDerivedStateEvent::changed_from_processing_edits(self.text_version, &edits);
+        self.ws
+            .apply_processing_edits(self.buffer_id, edits)
+            .map_err(|e| UiError::Processor(format!("{e:?}")))?;
+
+        if let (Some(view_id), Some(derived_state)) = (view_id, derived_state_event) {
+            self.derived_state_last_changed_text_version = Some(self.text_version);
+            self.record_state_event_from_derived_state_changed(view_id, derived_state);
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn apply_lsp_processing_edits<I>(
+        &mut self,
+        view_id: ViewId,
+        edits: I,
+    ) -> Result<bool, UiError>
+    where
+        I: IntoIterator<Item = ProcessingEdit>,
+    {
+        let edits = edits.into_iter().collect::<Vec<_>>();
+        if edits.is_empty() {
+            return Ok(false);
+        }
+
+        if let Err(err) = self.apply_processing_edits(view_id, edits) {
+            let reason = format!("failed to apply LSP processing edits: {err}");
+            self.fail_lsp_and_record_status(view_id, reason.clone());
+            return Err(UiError::Processor(reason));
+        }
+
+        Ok(true)
+    }
+
+    pub(crate) fn lsp_is_enabled(&self) -> bool {
+        let Some(shared) = self.lsp.as_ref() else {
+            return false;
+        };
+        let Ok(guard) = shared.session.lock() else {
+            return false;
+        };
+        guard.is_some()
+    }
+
+    pub(crate) fn lsp_disable(&mut self) {
+        self.lsp_last_error = None;
+        self.lsp_reset();
+    }
+
+    pub(crate) fn lsp_fail(&mut self, reason: impl Into<String>) {
+        self.lsp_last_error = Some(reason.into());
+        self.lsp_reset();
+    }
+
+    pub(crate) fn lsp_shutdown(&mut self) -> Result<bool, UiError> {
+        self.lsp_last_error = None;
+
+        let shared = self.lsp.as_ref().cloned();
+        if let (Some(shared), Some(uri)) = (shared.as_ref(), self.lsp_document_uri.as_deref()) {
+            let uri = uri.to_string();
+            let _ = shared.with_session_mut(|session| session.close_document(uri.as_str()));
+        }
+
+        let shutdown = match shared {
+            Some(shared) => shared.shutdown().map_err(UiError::Processor),
+            None => Ok(false),
+        };
+
+        self.lsp_clear_local_state();
+        shutdown
+    }
+
+    pub(crate) fn lsp_clear_result_state(&mut self) {
+        self.lsp_latest_result_request_id.clear();
+        self.lsp_last_result_json.clear();
+    }
+
+    pub(crate) fn lsp_clear_result_state_for_view(&mut self, view: ViewId) {
+        self.lsp_latest_result_request_id
+            .retain(|key, _| key.0 != view);
+        self.lsp_last_result_json.retain(|key, _| key.0 != view);
+    }
+
+    pub(crate) fn lsp_reset(&mut self) {
+        if let (Some(shared), Some(uri)) = (self.lsp.as_ref(), self.lsp_document_uri.as_deref()) {
+            let uri = uri.to_string();
+            let _ = shared.with_session_mut(|session| session.close_document(uri.as_str()));
+        }
+
+        self.lsp_clear_local_state();
+    }
+
+    fn lsp_clear_local_state(&mut self) {
+        self.lsp = None;
+        self.lsp_document_uri = None;
+        self.lsp_delta_calc = None;
+        self.lsp_aux_refresh_due = None;
+        self.lsp_inlay_in_flight = false;
+        self.lsp_code_lens_in_flight = false;
+        self.lsp_document_links_in_flight = false;
+        self.lsp_client_requests.clear();
+        self.lsp_clear_result_state();
+        self.lsp_latest_on_type_formatting_request_id.clear();
+
+        let _ = self.apply_processing_edits_without_state_event(editor_core_lsp::lsp_clear_edits());
+    }
+}

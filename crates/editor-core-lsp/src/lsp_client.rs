@@ -8,9 +8,10 @@ use crate::lsp_transport::{read_lsp_message, write_lsp_message};
 use serde_json::Value;
 use std::cell::RefCell;
 use std::collections::VecDeque;
-use std::io::{self, BufReader, BufWriter};
-use std::process::{Child, Command as ProcessCommand, Stdio};
-use std::sync::mpsc;
+use std::io::{self, BufReader, BufWriter, Read};
+use std::process::ChildStderr;
+use std::process::{Child, Command as ProcessCommand, ExitStatus, Stdio};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -44,12 +45,43 @@ pub struct LspClient {
     deferred_inbound: RefCell<VecDeque<LspInbound>>,
     next_id: u64,
     workspace_folders: Vec<Value>,
+    stderr_tail: Option<Arc<Mutex<StderrTail>>>,
 }
 
 enum WaitInbound {
     Matched(Value),
     Deferred(LspInbound),
     HandledServerRequest,
+}
+
+#[derive(Debug)]
+struct StderrTail {
+    bytes: Vec<u8>,
+    max_bytes: usize,
+}
+
+impl StderrTail {
+    fn new(max_bytes: usize) -> Self {
+        Self {
+            bytes: Vec::new(),
+            max_bytes,
+        }
+    }
+
+    fn push(&mut self, chunk: &[u8]) {
+        self.bytes.extend_from_slice(chunk);
+        if self.bytes.len() > self.max_bytes {
+            let overflow = self.bytes.len() - self.max_bytes;
+            self.bytes.drain(0..overflow);
+        }
+    }
+
+    fn snapshot(&self) -> Option<String> {
+        if self.bytes.is_empty() {
+            return None;
+        }
+        Some(String::from_utf8_lossy(&self.bytes).into_owned())
+    }
 }
 
 impl LspClient {
@@ -74,9 +106,16 @@ impl LspClient {
             .stdout
             .take()
             .ok_or_else(|| io::Error::other("Failed to open LSP server stdout"))?;
+        let stderr = child.stderr.take();
 
         let (tx_out, rx_out) = mpsc::channel::<LspOutbound>();
         let (tx_in, rx_in) = mpsc::channel::<LspInbound>();
+        let stderr_tail = stderr.map(|stderr| {
+            let tail = Arc::new(Mutex::new(StderrTail::new(8 * 1024)));
+            let thread_tail = tail.clone();
+            thread::spawn(move || lsp_stderr_loop(stderr, thread_tail));
+            tail
+        });
 
         {
             let tx_in = tx_in.clone();
@@ -91,12 +130,32 @@ impl LspClient {
             deferred_inbound: RefCell::new(VecDeque::new()),
             next_id: 1,
             workspace_folders,
+            stderr_tail,
         })
     }
 
     /// Return the OS process id of the connected LSP server.
     pub fn process_id(&self) -> u32 {
         self.child.id()
+    }
+
+    /// Return the LSP server process exit status if it has already exited.
+    pub fn try_exit_status(&mut self) -> io::Result<Option<ExitStatus>> {
+        self.child.try_wait()
+    }
+
+    /// Return a bounded tail of stderr captured from the LSP server, if stderr was piped.
+    pub fn stderr_tail(&self) -> Option<String> {
+        self.stderr_tail
+            .as_ref()
+            .and_then(|tail| tail.lock().ok())
+            .and_then(|tail| tail.snapshot())
+    }
+
+    /// Return the current client-side workspace folder list used for
+    /// `workspace/workspaceFolders` responses.
+    pub fn workspace_folders(&self) -> &[Value] {
+        &self.workspace_folders
     }
 
     /// Send a JSON-RPC notification to the server.
@@ -116,6 +175,59 @@ impl LspClient {
     /// Send a successful JSON-RPC response for a server-initiated request.
     pub fn respond(&self, id: u64, result: Value) -> io::Result<()> {
         self.send_message(json_rpc_response(id, result))
+    }
+
+    /// Apply a workspace folder change to the client-side folder list used when a server asks
+    /// `workspace/workspaceFolders`.
+    pub fn apply_workspace_folder_change(&mut self, added: &[Value], removed: &[Value]) {
+        for removed_uri in removed.iter().filter_map(workspace_folder_uri) {
+            self.workspace_folders
+                .retain(|folder| workspace_folder_uri(folder) != Some(removed_uri));
+        }
+
+        for folder in added {
+            let Some(uri) = workspace_folder_uri(folder) else {
+                continue;
+            };
+            self.workspace_folders
+                .retain(|existing| workspace_folder_uri(existing) != Some(uri));
+            self.workspace_folders.push(folder.clone());
+        }
+    }
+
+    /// Return only the workspace folder changes that would mutate the current client-side folder
+    /// list.
+    pub fn effective_workspace_folder_change(
+        &self,
+        added: &[Value],
+        removed: &[Value],
+    ) -> (Vec<Value>, Vec<Value>) {
+        let effective_removed = removed
+            .iter()
+            .filter_map(|folder| {
+                let uri = workspace_folder_uri(folder)?;
+                self.workspace_folders
+                    .iter()
+                    .any(|existing| workspace_folder_uri(existing) == Some(uri))
+                    .then(|| folder.clone())
+            })
+            .collect::<Vec<_>>();
+
+        let effective_added = added
+            .iter()
+            .filter_map(|folder| {
+                let uri = workspace_folder_uri(folder)?;
+                let already_present = self.workspace_folders.iter().any(|existing| {
+                    workspace_folder_uri(existing) == Some(uri)
+                        && !effective_removed
+                            .iter()
+                            .any(|removed| workspace_folder_uri(removed) == Some(uri))
+                });
+                (!already_present).then(|| folder.clone())
+            })
+            .collect::<Vec<_>>();
+
+        (effective_added, effective_removed)
     }
 
     /// Send an error JSON-RPC response for a server-initiated request.
@@ -379,6 +491,10 @@ impl LspClient {
     }
 }
 
+fn workspace_folder_uri(folder: &Value) -> Option<&str> {
+    folder.get("uri").and_then(Value::as_str)
+}
+
 impl Drop for LspClient {
     fn drop(&mut self) {
         let _ = self.terminate();
@@ -457,6 +573,24 @@ fn lsp_read_loop(stdout: std::process::ChildStdout, tx: mpsc::Sender<LspInbound>
                 let _ = tx.send(LspInbound::IoError(err.to_string()));
                 break;
             }
+        }
+    }
+}
+
+fn lsp_stderr_loop(stderr: ChildStderr, tail: Arc<Mutex<StderrTail>>) {
+    let mut reader = BufReader::new(stderr);
+    let mut buf = [0_u8; 4096];
+    loop {
+        match reader.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => {
+                if let Ok(mut tail) = tail.lock() {
+                    tail.push(&buf[..n]);
+                } else {
+                    break;
+                }
+            }
+            Err(_) => break,
         }
     }
 }

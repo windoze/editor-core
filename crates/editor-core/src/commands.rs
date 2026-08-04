@@ -41,7 +41,10 @@ use crate::layout::{
     cell_width_at, char_width, visual_x_for_column, wrap_indent_cells_for_line_text,
 };
 use crate::line_ending::LineEnding;
-use crate::search::{CharIndex, SearchMatch, SearchOptions, find_all, find_next, find_prev};
+use crate::search::{
+    CharIndex, SearchMatch, SearchOptions, find_all_with_word_boundary,
+    find_next_with_word_boundary, find_prev_with_word_boundary,
+};
 use crate::snapshot::{
     Cell, ComposedCell, ComposedCellSource, ComposedGrid, ComposedLine, ComposedLineKind,
     HeadlessGrid, HeadlessLine, MinimapGrid, MinimapLine,
@@ -219,6 +222,11 @@ impl EditorCore {
     /// Reset word-boundary configuration to the default (ASCII identifier-like words).
     pub fn reset_word_boundary_defaults(&mut self) {
         self.word_boundary = WordBoundaryConfig::default();
+    }
+
+    /// Return the current editor-friendly word-boundary configuration.
+    pub fn word_boundary_config(&self) -> &WordBoundaryConfig {
+        &self.word_boundary
     }
 
     /// Get cursor position
@@ -1060,7 +1068,10 @@ impl CommandExecutor {
             || matches!(
                 &command,
                 Command::Edit(
-                    EditCommand::Undo | EditCommand::Redo | EditCommand::ApplyTextEdits { .. }
+                    EditCommand::Undo
+                        | EditCommand::Redo
+                        | EditCommand::Replace { .. }
+                        | EditCommand::ApplyTextEdits { .. }
                 )
             )
         {

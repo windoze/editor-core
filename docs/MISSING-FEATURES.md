@@ -230,7 +230,7 @@ this workspace (per your request).
     - rename (`textDocument/rename`) UX helpers (preview, conflict detection)
     - references (`textDocument/references`)
     - code actions (`textDocument/codeAction`) + apply helpers (incl. commands)
-    - formatting (`textDocument/formatting`, range formatting) + apply helpers
+    - formatting error UI / typed result model
   - Implemented via:
     - Requests exist in `editor_core_lsp::LspSession` (`request_signature_help`, `request_references`,
       `request_rename`, `request_code_action`, `request_formatting`, ...)
@@ -241,7 +241,10 @@ this workspace (per your request).
       - `crates/editor-core-lsp/src/lsp_text_edits.rs` (`summarize_workspace_edit` for preview/conflicts)
     - UI/FFI turnkey formatting:
       - `editor-core-ui::EditorUi::lsp_format_document(...)` (blocking request + apply)
-      - Swift `EditorUI.lspFormatDocument(...)` and AttoEditor command “Edit: Format Document”
+      - `editor-core-ui::EditorUi::lsp_format_range(...)` / `lsp_format_on_type(...)`
+      - Rust UI automatic `textDocument/onTypeFormatting` trigger for server-declared trigger characters on single-character typing
+      - Swift `EditorUI.lspFormatDocument(...)`, `lspFormatRange(...)`, `lspFormatOnType(...)`
+      - AttoEditor commands “Edit: Format Document” and “Edit: Format Selection”
 
 - [x] **[integration] Responding to `workspace/applyEdit` automatically**
   - `LspClient::handle_server_request` currently replies to `workspace/applyEdit` with

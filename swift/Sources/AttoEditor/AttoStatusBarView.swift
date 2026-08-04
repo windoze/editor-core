@@ -12,6 +12,7 @@ final class AttoStatusBarView: NSView {
     var onSelectLanguage: ((String?) -> Void)?
 
     private let leftLabel = NSTextField(labelWithString: "")
+    private let languageSourceLabel = NSTextField(labelWithString: "")
     private let languagePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let lspLabel = NSTextField(labelWithString: "")
     private let positionLabel = NSTextField(labelWithString: "")
@@ -27,6 +28,7 @@ final class AttoStatusBarView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
 
+        identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.statusBar)
         wantsLayer = true
         // Sublime-ish: neutral dark status bar (avoid VSCode blue).
         layer?.backgroundColor = NSColor(attoHex: 0x2B2B2B).cgColor
@@ -37,30 +39,51 @@ final class AttoStatusBarView: NSView {
         leftLabel.textColor = NSColor(attoHex: 0xB5B5B5)
         leftLabel.lineBreakMode = .byTruncatingMiddle
         leftLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        leftLabel.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.statusBarLeftLabel)
         leftLabel.translatesAutoresizingMaskIntoConstraints = false
 
+        languageSourceLabel.font = NSFont.systemFont(ofSize: 11, weight: .regular)
+        languageSourceLabel.textColor = NSColor(attoHex: 0xB5B5B5)
+        languageSourceLabel.lineBreakMode = .byTruncatingTail
+        languageSourceLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        languageSourceLabel.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.statusBarLanguageSourceLabel)
+        languageSourceLabel.translatesAutoresizingMaskIntoConstraints = false
+
         languagePopUp.font = NSFont.systemFont(ofSize: 11, weight: .regular)
+        languagePopUp.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.statusBarLanguagePopUp)
         languagePopUp.controlSize = .small
         languagePopUp.isBordered = false
         languagePopUp.contentTintColor = NSColor(attoHex: 0xB5B5B5)
         languagePopUp.target = self
         languagePopUp.action = #selector(languageChanged(_:))
         languagePopUp.translatesAutoresizingMaskIntoConstraints = false
+        languagePopUp.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+        NSLayoutConstraint.activate([
+            languagePopUp.widthAnchor.constraint(lessThanOrEqualToConstant: 140),
+        ])
 
         for l in [positionLabel, selectionLabel, fileSizeLabel] {
             l.font = NSFont.systemFont(ofSize: 11, weight: .regular)
             l.textColor = NSColor(attoHex: 0xB5B5B5)
+            l.lineBreakMode = .byTruncatingTail
+            l.setContentCompressionResistancePriority(.required, for: .horizontal)
             l.translatesAutoresizingMaskIntoConstraints = false
         }
+        positionLabel.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.statusBarPositionLabel)
+        selectionLabel.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.statusBarSelectionLabel)
+        fileSizeLabel.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.statusBarFileSizeLabel)
 
         lspLabel.font = NSFont.systemFont(ofSize: 11, weight: .regular)
         lspLabel.textColor = NSColor(attoHex: 0xB5B5B5)
-        lspLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        lspLabel.lineBreakMode = .byTruncatingMiddle
+        lspLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        lspLabel.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.statusBarLspLabel)
         lspLabel.translatesAutoresizingMaskIntoConstraints = false
 
         leftStack.orientation = .horizontal
         leftStack.alignment = .centerY
         leftStack.spacing = 12
+        leftStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         leftStack.translatesAutoresizingMaskIntoConstraints = false
         leftStack.addArrangedSubview(leftLabel)
         leftStack.addArrangedSubview(lspLabel)
@@ -68,7 +91,9 @@ final class AttoStatusBarView: NSView {
         rightStack.orientation = .horizontal
         rightStack.alignment = .centerY
         rightStack.spacing = 12
+        rightStack.setContentCompressionResistancePriority(.required, for: .horizontal)
         rightStack.translatesAutoresizingMaskIntoConstraints = false
+        rightStack.addArrangedSubview(languageSourceLabel)
         rightStack.addArrangedSubview(languagePopUp)
         rightStack.addArrangedSubview(positionLabel)
         rightStack.addArrangedSubview(selectionLabel)
@@ -86,10 +111,12 @@ final class AttoStatusBarView: NSView {
             rightStack.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
 
-        // Default language list: always include "Plain Tex" (MVP); richer options are supplied by the host.
-        setLanguageOptions([.init(id: nil, title: "Plain Tex")])
+        // Default language list: always include "Plain Text" (MVP); richer options are supplied by the host.
+        setLanguageOptions([.init(id: nil, title: "Plain Text")])
         update(
             leftText: nil,
+            languageSourceText: nil,
+            languageSourceTooltip: nil,
             languageId: nil,
             languageIsEnabled: false,
             lspText: nil,
@@ -122,6 +149,8 @@ final class AttoStatusBarView: NSView {
 
     func update(
         leftText: String?,
+        languageSourceText: String?,
+        languageSourceTooltip: String?,
         languageId: String?,
         languageIsEnabled: Bool,
         lspText: String?,
@@ -130,6 +159,9 @@ final class AttoStatusBarView: NSView {
         fileSizeText: String?
     ) {
         leftLabel.stringValue = leftText ?? ""
+        languageSourceLabel.stringValue = languageSourceText ?? ""
+        languageSourceLabel.toolTip = languageSourceTooltip ?? languageSourceText
+        languageSourceLabel.isHidden = (languageSourceText?.isEmpty != false)
 
         // Language selector
         languagePopUp.isEnabled = languageIsEnabled
@@ -144,6 +176,7 @@ final class AttoStatusBarView: NSView {
         }
 
         lspLabel.stringValue = lspText ?? ""
+        lspLabel.toolTip = lspText
         lspLabel.isHidden = (lspText?.isEmpty != false)
         positionLabel.stringValue = positionText
         selectionLabel.stringValue = selectionText ?? ""

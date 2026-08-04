@@ -1,24 +1,84 @@
 use editor_core_ffi::{
-    ECF_ABI_VERSION, EcfCreateViewResult, EcfDocumentStats, EcfEditorState, EcfOpenBufferResult,
-    EcfStatus, EcfWorkspace, EcfWorkspaceInfo, EcfWorkspaceViewportState, ecf_abi_version,
-    ecf_editor_backspace, ecf_editor_get_viewport_blob, ecf_editor_insert_text_utf8,
-    ecf_editor_move_to, editor_core_ffi_editor_get_document_stats,
-    editor_core_ffi_editor_get_viewport_blob, editor_core_ffi_editor_insert_text_utf8,
-    editor_core_ffi_editor_state_free, editor_core_ffi_editor_state_minimap_json,
-    editor_core_ffi_editor_state_new, editor_core_ffi_editor_state_viewport_composed_json,
-    editor_core_ffi_editor_state_viewport_styled_json, editor_core_ffi_last_error_message,
-    editor_core_ffi_lsp_char_offset_to_utf16,
+    ECF_ABI_VERSION, ECF_FEATURE_EDITOR_STATE_DERIVED_SNAPSHOT_ENVELOPE,
+    ECF_FEATURE_EDITOR_STATE_QUERY_ENVELOPE, ECF_FEATURE_JSON_COMMAND_DISPATCH,
+    ECF_FEATURE_JSON_COMMAND_ENVELOPE, ECF_FEATURE_LSP_EDIT_HELPER_ENVELOPE,
+    ECF_FEATURE_LSP_HELPER_ENVELOPE, ECF_FEATURE_LSP_HELPERS, ECF_FEATURE_PROCESSING_EDIT_JSON,
+    ECF_FEATURE_PROCESSOR_RESULT_ENVELOPE, ECF_FEATURE_RENDERING_SNAPSHOT_ENVELOPE,
+    ECF_FEATURE_SUBLIME_PROCESSOR, ECF_FEATURE_TREESITTER_PROCESSOR, ECF_FEATURE_TYPED_HOT_PATH,
+    ECF_FEATURE_VIEWPORT_BLOB, ECF_FEATURE_WORKSPACE_LIFECYCLE_ENVELOPE,
+    ECF_FEATURE_WORKSPACE_QUERY_ENVELOPE, ECF_FEATURE_WORKSPACE_RESULT_ENVELOPE,
+    ECF_FEATURE_WORKSPACE_TYPED_API, EcfCreateViewResult, EcfDocumentStats, EcfEditorState,
+    EcfOpenBufferResult, EcfStatus, EcfSublimeProcessor, EcfTreeSitterIndenter,
+    EcfTreeSitterProcessor, EcfWorkspace, EcfWorkspaceInfo, EcfWorkspaceViewportState,
+    ecf_abi_version, ecf_editor_backspace, ecf_editor_get_viewport_blob,
+    ecf_editor_insert_text_utf8, ecf_editor_move_to, ecf_feature_flags,
+    editor_core_ffi_editor_get_document_stats, editor_core_ffi_editor_get_viewport_blob,
+    editor_core_ffi_editor_insert_text_utf8,
+    editor_core_ffi_editor_state_derived_snapshot_envelope_json,
+    editor_core_ffi_editor_state_execute_envelope_json, editor_core_ffi_editor_state_free,
+    editor_core_ffi_editor_state_full_state_envelope_json,
+    editor_core_ffi_editor_state_get_line_ending_envelope_json,
+    editor_core_ffi_editor_state_last_text_delta_envelope_json,
+    editor_core_ffi_editor_state_minimap_envelope_json, editor_core_ffi_editor_state_minimap_json,
+    editor_core_ffi_editor_state_new, editor_core_ffi_editor_state_set_line_ending,
+    editor_core_ffi_editor_state_take_last_text_delta_envelope_json,
+    editor_core_ffi_editor_state_text_envelope_json,
+    editor_core_ffi_editor_state_text_for_saving_envelope_json,
+    editor_core_ffi_editor_state_viewport_composed_envelope_json,
+    editor_core_ffi_editor_state_viewport_composed_json,
+    editor_core_ffi_editor_state_viewport_styled_envelope_json,
+    editor_core_ffi_editor_state_viewport_styled_json, editor_core_ffi_feature_flags,
+    editor_core_ffi_last_error_message, editor_core_ffi_lsp_apply_completion_item_envelope_json,
+    editor_core_ffi_lsp_apply_text_edits_envelope_json, editor_core_ffi_lsp_char_offset_to_utf16,
+    editor_core_ffi_lsp_code_lens_to_processing_edit_envelope_json,
+    editor_core_ffi_lsp_completion_item_to_text_edits_envelope_json,
     editor_core_ffi_lsp_completion_item_to_text_edits_json,
-    editor_core_ffi_lsp_formatting_options_json, editor_core_ffi_lsp_utf16_to_char_offset,
-    editor_core_ffi_string_free, editor_core_ffi_workspace_backspace,
-    editor_core_ffi_workspace_create_view_typed, editor_core_ffi_workspace_free,
-    editor_core_ffi_workspace_get_info, editor_core_ffi_workspace_get_viewport_blob,
-    editor_core_ffi_workspace_get_viewport_state, editor_core_ffi_workspace_insert_text_utf8,
-    editor_core_ffi_workspace_minimap_json, editor_core_ffi_workspace_move_to,
-    editor_core_ffi_workspace_new, editor_core_ffi_workspace_open_buffer_typed,
+    editor_core_ffi_lsp_decode_semantic_style_id_envelope_json,
+    editor_core_ffi_lsp_diagnostics_to_processing_edits_envelope_json,
+    editor_core_ffi_lsp_document_highlights_to_processing_edit_envelope_json,
+    editor_core_ffi_lsp_document_links_to_processing_edit_envelope_json,
+    editor_core_ffi_lsp_document_symbols_to_processing_edit_envelope_json,
+    editor_core_ffi_lsp_file_uri_to_path_envelope_json,
+    editor_core_ffi_lsp_formatting_options_envelope_json,
+    editor_core_ffi_lsp_formatting_options_for_indentation_config_envelope_json,
+    editor_core_ffi_lsp_formatting_options_json,
+    editor_core_ffi_lsp_inlay_hints_to_processing_edit_envelope_json,
+    editor_core_ffi_lsp_locations_envelope_json,
+    editor_core_ffi_lsp_on_type_formatting_params_envelope_json,
+    editor_core_ffi_lsp_path_to_file_uri_envelope_json,
+    editor_core_ffi_lsp_percent_decode_path_envelope_json,
+    editor_core_ffi_lsp_percent_encode_path_envelope_json,
+    editor_core_ffi_lsp_semantic_tokens_to_intervals_envelope_json,
+    editor_core_ffi_lsp_utf16_to_char_offset, editor_core_ffi_lsp_workspace_symbols_envelope_json,
+    editor_core_ffi_runtime_info_json, editor_core_ffi_string_free,
+    editor_core_ffi_sublime_processor_free, editor_core_ffi_sublime_processor_new_from_yaml,
+    editor_core_ffi_sublime_processor_process_envelope_json,
+    editor_core_ffi_sublime_processor_scope_for_style_id_envelope_json,
+    editor_core_ffi_treesitter_indenter_free,
+    editor_core_ffi_treesitter_indenter_new_wasm_from_path,
+    editor_core_ffi_treesitter_indenter_reindent_line_envelope_json,
+    editor_core_ffi_treesitter_processor_free,
+    editor_core_ffi_treesitter_processor_last_update_mode_envelope_json,
+    editor_core_ffi_treesitter_processor_new_wasm_from_path,
+    editor_core_ffi_treesitter_processor_process_envelope_json,
+    editor_core_ffi_workspace_apply_text_edits_envelope_json, editor_core_ffi_workspace_backspace,
+    editor_core_ffi_workspace_buffer_text_envelope_json,
+    editor_core_ffi_workspace_create_view_envelope_json,
+    editor_core_ffi_workspace_create_view_typed, editor_core_ffi_workspace_execute_envelope_json,
+    editor_core_ffi_workspace_free, editor_core_ffi_workspace_get_info,
+    editor_core_ffi_workspace_get_viewport_blob, editor_core_ffi_workspace_get_viewport_state,
+    editor_core_ffi_workspace_info_envelope_json, editor_core_ffi_workspace_insert_text_utf8,
+    editor_core_ffi_workspace_minimap_envelope_json, editor_core_ffi_workspace_minimap_json,
+    editor_core_ffi_workspace_move_to, editor_core_ffi_workspace_new,
+    editor_core_ffi_workspace_open_buffer_envelope_json,
+    editor_core_ffi_workspace_open_buffer_typed,
+    editor_core_ffi_workspace_search_all_open_buffers_envelope_json,
     editor_core_ffi_workspace_set_smooth_scroll_state,
     editor_core_ffi_workspace_set_viewport_height,
+    editor_core_ffi_workspace_viewport_composed_envelope_json,
     editor_core_ffi_workspace_viewport_composed_json,
+    editor_core_ffi_workspace_viewport_state_envelope_json,
+    editor_core_ffi_workspace_viewport_styled_envelope_json,
     editor_core_ffi_workspace_viewport_styled_json,
 };
 use std::ffi::{CStr, CString};
@@ -41,21 +101,146 @@ fn read_u32_le(bytes: &[u8], off: usize) -> u32 {
     u32::from_le_bytes(bytes[off..off + 4].try_into().expect("u32"))
 }
 
+fn rust_treesitter_fixture_dir() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../editor-core-treesitter/tests/fixtures/treesitter/rust")
+}
+
 #[test]
 fn abi_version_and_alias_work() {
     assert_eq!(ecf_abi_version(), ECF_ABI_VERSION);
 }
 
 #[test]
+fn feature_flags_and_alias_work() {
+    let flags = editor_core_ffi_feature_flags();
+    assert_eq!(ecf_feature_flags(), flags);
+    assert_ne!(flags & ECF_FEATURE_JSON_COMMAND_DISPATCH, 0);
+    assert_ne!(flags & ECF_FEATURE_TYPED_HOT_PATH, 0);
+    assert_ne!(flags & ECF_FEATURE_WORKSPACE_TYPED_API, 0);
+    assert_ne!(flags & ECF_FEATURE_VIEWPORT_BLOB, 0);
+    assert_ne!(flags & ECF_FEATURE_PROCESSING_EDIT_JSON, 0);
+    assert_ne!(flags & ECF_FEATURE_LSP_HELPERS, 0);
+    assert_ne!(flags & ECF_FEATURE_SUBLIME_PROCESSOR, 0);
+    assert_ne!(flags & ECF_FEATURE_TREESITTER_PROCESSOR, 0);
+    assert_ne!(flags & ECF_FEATURE_JSON_COMMAND_ENVELOPE, 0);
+    assert_ne!(flags & ECF_FEATURE_RENDERING_SNAPSHOT_ENVELOPE, 0);
+    assert_ne!(
+        flags & ECF_FEATURE_EDITOR_STATE_DERIVED_SNAPSHOT_ENVELOPE,
+        0
+    );
+    assert_ne!(flags & ECF_FEATURE_WORKSPACE_RESULT_ENVELOPE, 0);
+    assert_ne!(flags & ECF_FEATURE_WORKSPACE_QUERY_ENVELOPE, 0);
+    assert_ne!(flags & ECF_FEATURE_WORKSPACE_LIFECYCLE_ENVELOPE, 0);
+    assert_ne!(flags & ECF_FEATURE_EDITOR_STATE_QUERY_ENVELOPE, 0);
+    assert_ne!(flags & ECF_FEATURE_LSP_HELPER_ENVELOPE, 0);
+    assert_ne!(flags & ECF_FEATURE_LSP_EDIT_HELPER_ENVELOPE, 0);
+    assert_ne!(flags & ECF_FEATURE_PROCESSOR_RESULT_ENVELOPE, 0);
+}
+
+#[test]
+fn runtime_info_json_reports_version_and_feature_descriptors() {
+    let runtime_json = take_string(editor_core_ffi_runtime_info_json());
+    let runtime: serde_json::Value = serde_json::from_str(&runtime_json).unwrap();
+
+    assert_eq!(runtime["kind"], "editor-core-ffi");
+    assert_eq!(runtime["abi_version"], ECF_ABI_VERSION);
+    assert_eq!(runtime["version"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(runtime["feature_flags"], editor_core_ffi_feature_flags());
+
+    let features = runtime["features"].as_array().expect("features array");
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "json_command_envelope"
+            && feature["bit"] == 8
+            && feature["flag"] == ECF_FEATURE_JSON_COMMAND_ENVELOPE
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "rendering_snapshot_envelope"
+            && feature["bit"] == 9
+            && feature["flag"] == ECF_FEATURE_RENDERING_SNAPSHOT_ENVELOPE
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "editor_state_derived_snapshot_envelope"
+            && feature["bit"] == 10
+            && feature["flag"] == ECF_FEATURE_EDITOR_STATE_DERIVED_SNAPSHOT_ENVELOPE
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "workspace_result_envelope"
+            && feature["bit"] == 11
+            && feature["flag"] == ECF_FEATURE_WORKSPACE_RESULT_ENVELOPE
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "workspace_query_envelope"
+            && feature["bit"] == 12
+            && feature["flag"] == ECF_FEATURE_WORKSPACE_QUERY_ENVELOPE
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "workspace_lifecycle_envelope"
+            && feature["bit"] == 13
+            && feature["flag"] == ECF_FEATURE_WORKSPACE_LIFECYCLE_ENVELOPE
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "editor_state_query_envelope"
+            && feature["bit"] == 14
+            && feature["flag"] == ECF_FEATURE_EDITOR_STATE_QUERY_ENVELOPE
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "lsp_helper_envelope"
+            && feature["bit"] == 15
+            && feature["flag"] == ECF_FEATURE_LSP_HELPER_ENVELOPE
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "lsp_edit_helper_envelope"
+            && feature["bit"] == 16
+            && feature["flag"] == ECF_FEATURE_LSP_EDIT_HELPER_ENVELOPE
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "processor_result_envelope"
+            && feature["bit"] == 17
+            && feature["flag"] == ECF_FEATURE_PROCESSOR_RESULT_ENVELOPE
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "lsp_helpers"
+            && feature["flag"].as_u64().unwrap() & ECF_FEATURE_LSP_HELPERS != 0
+    }));
+}
+
+#[test]
 fn public_abi_scalar_signatures_are_fixed_width() {
+    let _: extern "C" fn() -> u64 = editor_core_ffi_feature_flags;
+    let _: extern "C" fn() -> u64 = ecf_feature_flags;
+    let _: extern "C" fn() -> *mut std::ffi::c_char = editor_core_ffi_runtime_info_json;
+
     let _: extern "C" fn(*const std::ffi::c_char, u32) -> *mut EcfEditorState =
         editor_core_ffi_editor_state_new;
     let _: extern "C" fn(*const EcfEditorState, u32, u32) -> *mut std::ffi::c_char =
         editor_core_ffi_editor_state_viewport_styled_json;
     let _: extern "C" fn(*const EcfEditorState, u32, u32) -> *mut std::ffi::c_char =
+        editor_core_ffi_editor_state_viewport_styled_envelope_json;
+    let _: extern "C" fn(*const EcfEditorState, u32, u32) -> *mut std::ffi::c_char =
         editor_core_ffi_editor_state_minimap_json;
     let _: extern "C" fn(*const EcfEditorState, u32, u32) -> *mut std::ffi::c_char =
+        editor_core_ffi_editor_state_minimap_envelope_json;
+    let _: extern "C" fn(*const EcfEditorState, u32, u32) -> *mut std::ffi::c_char =
         editor_core_ffi_editor_state_viewport_composed_json;
+    let _: extern "C" fn(*const EcfEditorState, u32, u32) -> *mut std::ffi::c_char =
+        editor_core_ffi_editor_state_viewport_composed_envelope_json;
+    let _: extern "C" fn(*mut EcfEditorState, *const std::ffi::c_char) -> *mut std::ffi::c_char =
+        editor_core_ffi_editor_state_execute_envelope_json;
+    let _: extern "C" fn(*const EcfEditorState, *const std::ffi::c_char) -> *mut std::ffi::c_char =
+        editor_core_ffi_editor_state_derived_snapshot_envelope_json;
+    let _: extern "C" fn(*const EcfEditorState) -> *mut std::ffi::c_char =
+        editor_core_ffi_editor_state_full_state_envelope_json;
+    let _: extern "C" fn(*const EcfEditorState) -> *mut std::ffi::c_char =
+        editor_core_ffi_editor_state_text_envelope_json;
+    let _: extern "C" fn(*const EcfEditorState) -> *mut std::ffi::c_char =
+        editor_core_ffi_editor_state_text_for_saving_envelope_json;
+    let _: extern "C" fn(*const EcfEditorState) -> *mut std::ffi::c_char =
+        editor_core_ffi_editor_state_get_line_ending_envelope_json;
+    let _: extern "C" fn(*mut EcfEditorState) -> *mut std::ffi::c_char =
+        editor_core_ffi_editor_state_take_last_text_delta_envelope_json;
+    let _: extern "C" fn(*const EcfEditorState) -> *mut std::ffi::c_char =
+        editor_core_ffi_editor_state_last_text_delta_envelope_json;
 
     let _: unsafe extern "C" fn(
         *mut EcfWorkspace,
@@ -66,6 +251,14 @@ fn public_abi_scalar_signatures_are_fixed_width() {
     ) -> i32 = editor_core_ffi_workspace_open_buffer_typed;
     let _: unsafe extern "C" fn(*mut EcfWorkspace, u64, u32, *mut EcfCreateViewResult) -> i32 =
         editor_core_ffi_workspace_create_view_typed;
+    let _: extern "C" fn(
+        *mut EcfWorkspace,
+        *const std::ffi::c_char,
+        *const std::ffi::c_char,
+        u32,
+    ) -> *mut std::ffi::c_char = editor_core_ffi_workspace_open_buffer_envelope_json;
+    let _: extern "C" fn(*mut EcfWorkspace, u64, u32) -> *mut std::ffi::c_char =
+        editor_core_ffi_workspace_create_view_envelope_json;
     let _: extern "C" fn(*mut EcfWorkspace, u64, u32) -> bool =
         editor_core_ffi_workspace_set_viewport_height;
     let _: extern "C" fn(*mut EcfWorkspace, u64, u32, u16, u32) -> bool =
@@ -73,9 +266,30 @@ fn public_abi_scalar_signatures_are_fixed_width() {
     let _: extern "C" fn(*mut EcfWorkspace, u64, u32, u32) -> *mut std::ffi::c_char =
         editor_core_ffi_workspace_viewport_styled_json;
     let _: extern "C" fn(*mut EcfWorkspace, u64, u32, u32) -> *mut std::ffi::c_char =
+        editor_core_ffi_workspace_viewport_styled_envelope_json;
+    let _: extern "C" fn(*mut EcfWorkspace, u64, u32, u32) -> *mut std::ffi::c_char =
         editor_core_ffi_workspace_minimap_json;
     let _: extern "C" fn(*mut EcfWorkspace, u64, u32, u32) -> *mut std::ffi::c_char =
+        editor_core_ffi_workspace_minimap_envelope_json;
+    let _: extern "C" fn(*mut EcfWorkspace, u64, u32, u32) -> *mut std::ffi::c_char =
         editor_core_ffi_workspace_viewport_composed_json;
+    let _: extern "C" fn(*mut EcfWorkspace, u64, u32, u32) -> *mut std::ffi::c_char =
+        editor_core_ffi_workspace_viewport_composed_envelope_json;
+    let _: extern "C" fn(*mut EcfWorkspace, u64, *const std::ffi::c_char) -> *mut std::ffi::c_char =
+        editor_core_ffi_workspace_execute_envelope_json;
+    let _: extern "C" fn(*const EcfWorkspace) -> *mut std::ffi::c_char =
+        editor_core_ffi_workspace_info_envelope_json;
+    let _: extern "C" fn(*const EcfWorkspace, u64) -> *mut std::ffi::c_char =
+        editor_core_ffi_workspace_buffer_text_envelope_json;
+    let _: extern "C" fn(*mut EcfWorkspace, u64) -> *mut std::ffi::c_char =
+        editor_core_ffi_workspace_viewport_state_envelope_json;
+    let _: extern "C" fn(
+        *const EcfWorkspace,
+        *const std::ffi::c_char,
+        *const std::ffi::c_char,
+    ) -> *mut std::ffi::c_char = editor_core_ffi_workspace_search_all_open_buffers_envelope_json;
+    let _: extern "C" fn(*mut EcfWorkspace, *const std::ffi::c_char) -> *mut std::ffi::c_char =
+        editor_core_ffi_workspace_apply_text_edits_envelope_json;
 
     let _: extern "C" fn(*const std::ffi::c_char, u64) -> u64 =
         editor_core_ffi_lsp_char_offset_to_utf16;
@@ -83,6 +297,24 @@ fn public_abi_scalar_signatures_are_fixed_width() {
         editor_core_ffi_lsp_utf16_to_char_offset;
     let _: extern "C" fn(u32, bool) -> *mut std::ffi::c_char =
         editor_core_ffi_lsp_formatting_options_json;
+    let _: extern "C" fn(*const std::ffi::c_char) -> *mut std::ffi::c_char =
+        editor_core_ffi_lsp_path_to_file_uri_envelope_json;
+    let _: extern "C" fn(*const std::ffi::c_char) -> *mut std::ffi::c_char =
+        editor_core_ffi_lsp_file_uri_to_path_envelope_json;
+    let _: extern "C" fn(*const std::ffi::c_char) -> *mut std::ffi::c_char =
+        editor_core_ffi_lsp_percent_encode_path_envelope_json;
+    let _: extern "C" fn(*const std::ffi::c_char) -> *mut std::ffi::c_char =
+        editor_core_ffi_lsp_percent_decode_path_envelope_json;
+    let _: extern "C" fn(u32, bool) -> *mut std::ffi::c_char =
+        editor_core_ffi_lsp_formatting_options_envelope_json;
+    let _: extern "C" fn(*const std::ffi::c_char, u32) -> *mut std::ffi::c_char =
+        editor_core_ffi_lsp_formatting_options_for_indentation_config_envelope_json;
+    let _: extern "C" fn(u32) -> *mut std::ffi::c_char =
+        editor_core_ffi_lsp_decode_semantic_style_id_envelope_json;
+    let _: extern "C" fn(*const std::ffi::c_char) -> *mut std::ffi::c_char =
+        editor_core_ffi_lsp_workspace_symbols_envelope_json;
+    let _: extern "C" fn(*const std::ffi::c_char) -> *mut std::ffi::c_char =
+        editor_core_ffi_lsp_locations_envelope_json;
     let _: extern "C" fn(
         *const EcfEditorState,
         *const std::ffi::c_char,
@@ -91,6 +323,570 @@ fn public_abi_scalar_signatures_are_fixed_width() {
         u64,
         bool,
     ) -> *mut std::ffi::c_char = editor_core_ffi_lsp_completion_item_to_text_edits_json;
+    let _: extern "C" fn(
+        *const EcfEditorState,
+        *const std::ffi::c_char,
+        *const std::ffi::c_char,
+        *const std::ffi::c_char,
+    ) -> *mut std::ffi::c_char = editor_core_ffi_lsp_on_type_formatting_params_envelope_json;
+    let _: extern "C" fn(*mut EcfEditorState, *const std::ffi::c_char) -> *mut std::ffi::c_char =
+        editor_core_ffi_lsp_apply_text_edits_envelope_json;
+    let _: extern "C" fn(*const EcfEditorState, *const std::ffi::c_char) -> *mut std::ffi::c_char =
+        editor_core_ffi_lsp_semantic_tokens_to_intervals_envelope_json;
+    let _: extern "C" fn(*const EcfEditorState, *const std::ffi::c_char) -> *mut std::ffi::c_char =
+        editor_core_ffi_lsp_document_highlights_to_processing_edit_envelope_json;
+    let _: extern "C" fn(*const EcfEditorState, *const std::ffi::c_char) -> *mut std::ffi::c_char =
+        editor_core_ffi_lsp_inlay_hints_to_processing_edit_envelope_json;
+    let _: extern "C" fn(*const EcfEditorState, *const std::ffi::c_char) -> *mut std::ffi::c_char =
+        editor_core_ffi_lsp_document_links_to_processing_edit_envelope_json;
+    let _: extern "C" fn(*const EcfEditorState, *const std::ffi::c_char) -> *mut std::ffi::c_char =
+        editor_core_ffi_lsp_code_lens_to_processing_edit_envelope_json;
+    let _: extern "C" fn(*const EcfEditorState, *const std::ffi::c_char) -> *mut std::ffi::c_char =
+        editor_core_ffi_lsp_document_symbols_to_processing_edit_envelope_json;
+    let _: extern "C" fn(*const EcfEditorState, *const std::ffi::c_char) -> *mut std::ffi::c_char =
+        editor_core_ffi_lsp_diagnostics_to_processing_edits_envelope_json;
+    let _: extern "C" fn(
+        *const EcfEditorState,
+        *const std::ffi::c_char,
+        *const std::ffi::c_char,
+        u64,
+        u64,
+        bool,
+    ) -> *mut std::ffi::c_char = editor_core_ffi_lsp_completion_item_to_text_edits_envelope_json;
+    let _: extern "C" fn(
+        *mut EcfEditorState,
+        *const std::ffi::c_char,
+        *const std::ffi::c_char,
+    ) -> *mut std::ffi::c_char = editor_core_ffi_lsp_apply_completion_item_envelope_json;
+
+    let _: extern "C" fn(*mut EcfSublimeProcessor, *const EcfEditorState) -> *mut std::ffi::c_char =
+        editor_core_ffi_sublime_processor_process_envelope_json;
+    let _: extern "C" fn(*const EcfSublimeProcessor, u32) -> *mut std::ffi::c_char =
+        editor_core_ffi_sublime_processor_scope_for_style_id_envelope_json;
+    let _: extern "C" fn(
+        *mut EcfTreeSitterProcessor,
+        *const EcfEditorState,
+    ) -> *mut std::ffi::c_char = editor_core_ffi_treesitter_processor_process_envelope_json;
+    let _: extern "C" fn(*const EcfTreeSitterProcessor) -> *mut std::ffi::c_char =
+        editor_core_ffi_treesitter_processor_last_update_mode_envelope_json;
+    let _: extern "C" fn(
+        *mut EcfTreeSitterIndenter,
+        *const EcfEditorState,
+        u32,
+        *const std::ffi::c_char,
+    ) -> *mut std::ffi::c_char = editor_core_ffi_treesitter_indenter_reindent_line_envelope_json;
+}
+
+#[test]
+fn lsp_helper_envelope_json_reports_success_and_errors() {
+    let path = CString::new("/tmp/editor-core ffi.swift").unwrap();
+    let uri_json = take_string(editor_core_ffi_lsp_path_to_file_uri_envelope_json(
+        path.as_ptr(),
+    ));
+    let uri: serde_json::Value = serde_json::from_str(&uri_json).unwrap();
+    assert_eq!(uri["ok"], true);
+    assert_eq!(uri["status"], "success");
+    assert_eq!(uri["operation"], "path_to_file_uri");
+    let uri_value = uri["value"]["uri"].as_str().expect("uri string");
+    assert!(uri_value.starts_with("file://"));
+
+    let uri_c = CString::new(uri_value).unwrap();
+    let path_json = take_string(editor_core_ffi_lsp_file_uri_to_path_envelope_json(
+        uri_c.as_ptr(),
+    ));
+    let path_round_trip: serde_json::Value = serde_json::from_str(&path_json).unwrap();
+    assert_eq!(path_round_trip["ok"], true);
+    assert_eq!(path_round_trip["operation"], "file_uri_to_path");
+    assert_eq!(
+        path_round_trip["value"]["path"].as_str().unwrap(),
+        "/tmp/editor-core ffi.swift"
+    );
+
+    let segment = CString::new("editor-core ffi.swift").unwrap();
+    let encoded_json = take_string(editor_core_ffi_lsp_percent_encode_path_envelope_json(
+        segment.as_ptr(),
+    ));
+    let encoded: serde_json::Value = serde_json::from_str(&encoded_json).unwrap();
+    assert_eq!(encoded["ok"], true);
+    assert_eq!(encoded["operation"], "percent_encode_path");
+    let encoded_value = encoded["value"]["encoded"].as_str().unwrap();
+    assert!(encoded_value.contains("%20"));
+
+    let encoded_c = CString::new(encoded_value).unwrap();
+    let decoded_json = take_string(editor_core_ffi_lsp_percent_decode_path_envelope_json(
+        encoded_c.as_ptr(),
+    ));
+    let decoded: serde_json::Value = serde_json::from_str(&decoded_json).unwrap();
+    assert_eq!(decoded["ok"], true);
+    assert_eq!(decoded["operation"], "percent_decode_path");
+    assert_eq!(decoded["value"]["decoded"], "editor-core ffi.swift");
+
+    let formatting_json = take_string(editor_core_ffi_lsp_formatting_options_envelope_json(
+        4, true,
+    ));
+    let formatting: serde_json::Value = serde_json::from_str(&formatting_json).unwrap();
+    assert_eq!(formatting["ok"], true);
+    assert_eq!(formatting["operation"], "formatting_options");
+    assert_eq!(formatting["value"]["options"]["tabSize"], 4);
+    assert_eq!(formatting["value"]["options"]["insertSpaces"], true);
+
+    let indentation_config = CString::new(r#"{"style":{"kind":"spaces","width":2}}"#).unwrap();
+    let indentation_json = take_string(
+        editor_core_ffi_lsp_formatting_options_for_indentation_config_envelope_json(
+            indentation_config.as_ptr(),
+            4,
+        ),
+    );
+    let indentation: serde_json::Value = serde_json::from_str(&indentation_json).unwrap();
+    assert_eq!(indentation["ok"], true);
+    assert_eq!(
+        indentation["operation"],
+        "formatting_options_for_indentation_config"
+    );
+    assert_eq!(indentation["value"]["options"]["tabSize"], 2);
+    assert_eq!(indentation["value"]["options"]["insertSpaces"], true);
+
+    let style_json = take_string(editor_core_ffi_lsp_decode_semantic_style_id_envelope_json(
+        0,
+    ));
+    let style: serde_json::Value = serde_json::from_str(&style_json).unwrap();
+    assert_eq!(style["ok"], true);
+    assert_eq!(style["operation"], "decode_semantic_style_id");
+    assert_eq!(style["value"]["token_type"], 0);
+    assert_eq!(style["value"]["token_modifiers"], 0);
+
+    let workspace_symbols = CString::new(
+        r#"[
+          {
+            "name": "Foo",
+            "kind": 5,
+            "location": {
+              "uri": "file:///demo.txt",
+              "range": {
+                "start": { "line": 0, "character": 0 },
+                "end": { "line": 0, "character": 1 }
+              }
+            }
+          }
+        ]"#,
+    )
+    .unwrap();
+    let workspace_symbols_json = take_string(editor_core_ffi_lsp_workspace_symbols_envelope_json(
+        workspace_symbols.as_ptr(),
+    ));
+    let workspace_symbols: serde_json::Value =
+        serde_json::from_str(&workspace_symbols_json).unwrap();
+    assert_eq!(workspace_symbols["ok"], true);
+    assert_eq!(workspace_symbols["operation"], "workspace_symbols");
+    assert_eq!(
+        workspace_symbols["value"]["symbols"]
+            .as_array()
+            .expect("symbols")
+            .len(),
+        1
+    );
+
+    let location = CString::new(
+        r#"{
+          "uri": "file:///demo.txt",
+          "range": {
+            "start": { "line": 0, "character": 0 },
+            "end": { "line": 0, "character": 1 }
+          }
+        }"#,
+    )
+    .unwrap();
+    let locations_json = take_string(editor_core_ffi_lsp_locations_envelope_json(
+        location.as_ptr(),
+    ));
+    let locations: serde_json::Value = serde_json::from_str(&locations_json).unwrap();
+    assert_eq!(locations["ok"], true);
+    assert_eq!(locations["operation"], "locations");
+    assert_eq!(
+        locations["value"]["locations"]
+            .as_array()
+            .expect("locations")
+            .len(),
+        1
+    );
+
+    let invalid_uri = CString::new("not-a-file-uri").unwrap();
+    let invalid_uri_json = take_string(editor_core_ffi_lsp_file_uri_to_path_envelope_json(
+        invalid_uri.as_ptr(),
+    ));
+    let invalid_uri: serde_json::Value = serde_json::from_str(&invalid_uri_json).unwrap();
+    assert_eq!(invalid_uri["ok"], false);
+    assert_eq!(invalid_uri["operation"], "file_uri_to_path");
+    assert_eq!(invalid_uri["value"], serde_json::Value::Null);
+    assert_eq!(invalid_uri["error"]["code"], "invalid_argument");
+    assert_eq!(
+        invalid_uri["error"]["status"],
+        status(EcfStatus::InvalidArgument)
+    );
+
+    let invalid_json = CString::new("{not json").unwrap();
+    let parse_json = take_string(editor_core_ffi_lsp_workspace_symbols_envelope_json(
+        invalid_json.as_ptr(),
+    ));
+    let parse: serde_json::Value = serde_json::from_str(&parse_json).unwrap();
+    assert_eq!(parse["ok"], false);
+    assert_eq!(parse["operation"], "workspace_symbols");
+    assert_eq!(parse["value"], serde_json::Value::Null);
+    assert_eq!(parse["error"]["code"], "parse");
+    assert_eq!(parse["error"]["status"], status(EcfStatus::Parse));
+}
+
+#[test]
+fn lsp_edit_helper_envelope_json_reports_success_and_errors() {
+    let initial = CString::new("abc\n").expect("cstring");
+    let state = editor_core_ffi_editor_state_new(initial.as_ptr(), 80);
+    assert!(!state.is_null());
+
+    let uri = CString::new("file:///demo.rs").unwrap();
+    let ch = CString::new("}").unwrap();
+    let options = CString::new(r#"{"tabSize":4,"insertSpaces":true}"#).unwrap();
+    let on_type_json = take_string(editor_core_ffi_lsp_on_type_formatting_params_envelope_json(
+        state,
+        uri.as_ptr(),
+        ch.as_ptr(),
+        options.as_ptr(),
+    ));
+    let on_type: serde_json::Value = serde_json::from_str(&on_type_json).unwrap();
+    assert_eq!(on_type["ok"], true);
+    assert_eq!(on_type["operation"], "on_type_formatting_params");
+    assert_eq!(
+        on_type["value"]["params"]["textDocument"]["uri"],
+        "file:///demo.rs"
+    );
+    assert_eq!(on_type["value"]["params"]["ch"], "}");
+
+    let edits = CString::new(
+        r#"[
+          {
+            "range": {
+              "start": { "line": 0, "character": 1 },
+              "end": { "line": 0, "character": 2 }
+            },
+            "newText": "Z"
+          }
+        ]"#,
+    )
+    .unwrap();
+    let apply_json = take_string(editor_core_ffi_lsp_apply_text_edits_envelope_json(
+        state,
+        edits.as_ptr(),
+    ));
+    let apply: serde_json::Value = serde_json::from_str(&apply_json).unwrap();
+    assert_eq!(apply["ok"], true);
+    assert_eq!(apply["operation"], "apply_text_edits");
+    assert_eq!(
+        apply["value"]["changed_ranges"].as_array().unwrap().len(),
+        1
+    );
+
+    let semantic_data = CString::new("[0,0,3,1,2]").unwrap();
+    let semantic_json = take_string(
+        editor_core_ffi_lsp_semantic_tokens_to_intervals_envelope_json(
+            state,
+            semantic_data.as_ptr(),
+        ),
+    );
+    let semantic: serde_json::Value = serde_json::from_str(&semantic_json).unwrap();
+    assert_eq!(semantic["ok"], true);
+    assert_eq!(semantic["operation"], "semantic_tokens_to_intervals");
+    assert_eq!(semantic["value"]["intervals"].as_array().unwrap().len(), 1);
+
+    let highlights = CString::new(
+        r#"[
+          {
+            "range": {
+              "start": { "line": 0, "character": 0 },
+              "end": { "line": 0, "character": 1 }
+            },
+            "kind": 3
+          }
+        ]"#,
+    )
+    .unwrap();
+    let highlights_json = take_string(
+        editor_core_ffi_lsp_document_highlights_to_processing_edit_envelope_json(
+            state,
+            highlights.as_ptr(),
+        ),
+    );
+    let highlights_envelope: serde_json::Value = serde_json::from_str(&highlights_json).unwrap();
+    assert_eq!(highlights_envelope["ok"], true);
+    assert_eq!(
+        highlights_envelope["operation"],
+        "document_highlights_to_processing_edit"
+    );
+    assert!(highlights_envelope["value"].is_object());
+
+    let diagnostics = CString::new(
+        r#"{
+          "uri": "file:///demo.rs",
+          "diagnostics": [
+            {
+              "range": {
+                "start": { "line": 0, "character": 0 },
+                "end": { "line": 0, "character": 1 }
+              },
+              "severity": 2,
+              "message": "oops"
+            }
+          ]
+        }"#,
+    )
+    .unwrap();
+    let diagnostics_json = take_string(
+        editor_core_ffi_lsp_diagnostics_to_processing_edits_envelope_json(
+            state,
+            diagnostics.as_ptr(),
+        ),
+    );
+    let diagnostics_envelope: serde_json::Value = serde_json::from_str(&diagnostics_json).unwrap();
+    assert_eq!(diagnostics_envelope["ok"], true);
+    assert_eq!(
+        diagnostics_envelope["operation"],
+        "diagnostics_to_processing_edits"
+    );
+    assert!(
+        !diagnostics_envelope["value"]["edits"]
+            .as_array()
+            .expect("edits")
+            .is_empty()
+    );
+
+    let completion_item = CString::new(
+        r#"{
+          "label": "bar",
+          "textEdit": {
+            "range": {
+              "start": { "line": 0, "character": 0 },
+              "end": { "line": 0, "character": 3 }
+            },
+            "newText": "bar"
+          }
+        }"#,
+    )
+    .unwrap();
+    let replace = CString::new("replace").unwrap();
+    let completion_json = take_string(
+        editor_core_ffi_lsp_completion_item_to_text_edits_envelope_json(
+            state,
+            completion_item.as_ptr(),
+            replace.as_ptr(),
+            0,
+            0,
+            false,
+        ),
+    );
+    let completion: serde_json::Value = serde_json::from_str(&completion_json).unwrap();
+    assert_eq!(completion["ok"], true);
+    assert_eq!(completion["operation"], "completion_item_to_text_edits");
+    assert_eq!(completion["value"]["edits"].as_array().unwrap().len(), 1);
+
+    let insert = CString::new("insert").unwrap();
+    let apply_completion = CString::new(r#"{"label":"XYZ"}"#).unwrap();
+    let apply_completion_json =
+        take_string(editor_core_ffi_lsp_apply_completion_item_envelope_json(
+            state,
+            apply_completion.as_ptr(),
+            insert.as_ptr(),
+        ));
+    let apply_completion: serde_json::Value = serde_json::from_str(&apply_completion_json).unwrap();
+    assert_eq!(apply_completion["ok"], true);
+    assert_eq!(apply_completion["operation"], "apply_completion_item");
+    assert_eq!(apply_completion["value"]["applied"], true);
+
+    let invalid_mode = CString::new("future").unwrap();
+    let invalid_json = take_string(
+        editor_core_ffi_lsp_completion_item_to_text_edits_envelope_json(
+            state,
+            completion_item.as_ptr(),
+            invalid_mode.as_ptr(),
+            0,
+            0,
+            false,
+        ),
+    );
+    let invalid: serde_json::Value = serde_json::from_str(&invalid_json).unwrap();
+    assert_eq!(invalid["ok"], false);
+    assert_eq!(invalid["operation"], "completion_item_to_text_edits");
+    assert_eq!(invalid["error"]["code"], "invalid_argument");
+    assert_eq!(
+        invalid["error"]["status"],
+        status(EcfStatus::InvalidArgument)
+    );
+    assert!(
+        invalid["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("invalid completion mode")
+    );
+
+    unsafe { editor_core_ffi_editor_state_free(state) };
+}
+
+#[test]
+fn processor_result_envelope_json_reports_success_and_errors() {
+    let sublime_text = CString::new("TODO\n").expect("cstring");
+    let sublime_state = editor_core_ffi_editor_state_new(sublime_text.as_ptr(), 80);
+    assert!(!sublime_state.is_null());
+
+    let sublime_yaml = CString::new(
+        r#"%YAML 1.2
+---
+name: Demo
+scope: source.demo
+contexts:
+  main:
+    - match: TODO
+      scope: keyword.todo.demo
+"#,
+    )
+    .expect("cstring");
+    let sublime = editor_core_ffi_sublime_processor_new_from_yaml(sublime_yaml.as_ptr());
+    assert!(!sublime.is_null());
+
+    let sublime_json = take_string(editor_core_ffi_sublime_processor_process_envelope_json(
+        sublime,
+        sublime_state,
+    ));
+    let sublime_envelope: serde_json::Value = serde_json::from_str(&sublime_json).unwrap();
+    assert_eq!(sublime_envelope["ok"], true);
+    assert_eq!(sublime_envelope["status"], "success");
+    assert_eq!(sublime_envelope["operation"], "sublime_process");
+    assert_eq!(sublime_envelope["version"], ECF_ABI_VERSION);
+    assert!(
+        !sublime_envelope["value"]["edits"]
+            .as_array()
+            .expect("edits")
+            .is_empty()
+    );
+    assert!(sublime_envelope["error"].is_null());
+
+    let style_id = sublime_envelope["value"]["edits"]
+        .as_array()
+        .expect("edits")
+        .iter()
+        .find_map(|edit| {
+            (edit["op"] == "replace_style_layer")
+                .then(|| edit["intervals"].as_array())
+                .flatten()
+                .and_then(|intervals| intervals.first())
+                .and_then(|interval| interval["style_id"].as_u64())
+        })
+        .expect("sublime style id") as u32;
+    let scope_json = take_string(
+        editor_core_ffi_sublime_processor_scope_for_style_id_envelope_json(sublime, style_id),
+    );
+    let scope_envelope: serde_json::Value = serde_json::from_str(&scope_json).unwrap();
+    assert_eq!(scope_envelope["ok"], true);
+    assert_eq!(scope_envelope["operation"], "sublime_scope_for_style_id");
+    assert!(scope_envelope["value"]["scope"].is_string());
+    assert!(
+        scope_envelope["value"]["scope"]
+            .as_str()
+            .unwrap()
+            .contains("demo")
+    );
+
+    let rust_text = CString::new("fn main() {\nlet x = 1;\n}\n").expect("cstring");
+    let rust_state = editor_core_ffi_editor_state_new(rust_text.as_ptr(), 80);
+    assert!(!rust_state.is_null());
+
+    let fixture_dir = rust_treesitter_fixture_dir();
+    let wasm_path = fixture_dir.join("language.wasm");
+    assert!(wasm_path.exists());
+    let wasm_path = CString::new(wasm_path.to_string_lossy().into_owned()).expect("cstring");
+    let language_id = CString::new("rust").expect("cstring");
+    let highlights = CString::new("(identifier) @id").expect("cstring");
+    let folds = CString::new("(function_item) @fold\n(block) @fold\n").expect("cstring");
+    let capture_styles = CString::new(r#"{"id":777}"#).expect("cstring");
+
+    let treesitter = editor_core_ffi_treesitter_processor_new_wasm_from_path(
+        language_id.as_ptr(),
+        wasm_path.as_ptr(),
+        highlights.as_ptr(),
+        folds.as_ptr(),
+        capture_styles.as_ptr(),
+        424_242,
+        true,
+    );
+    assert!(!treesitter.is_null());
+
+    let treesitter_json = take_string(editor_core_ffi_treesitter_processor_process_envelope_json(
+        treesitter, rust_state,
+    ));
+    let treesitter_envelope: serde_json::Value = serde_json::from_str(&treesitter_json).unwrap();
+    assert_eq!(treesitter_envelope["ok"], true);
+    assert_eq!(treesitter_envelope["status"], "success");
+    assert_eq!(treesitter_envelope["operation"], "treesitter_process");
+    assert!(
+        !treesitter_envelope["value"]["edits"]
+            .as_array()
+            .expect("edits")
+            .is_empty()
+    );
+
+    let mode_json = take_string(
+        editor_core_ffi_treesitter_processor_last_update_mode_envelope_json(treesitter),
+    );
+    let mode_envelope: serde_json::Value = serde_json::from_str(&mode_json).unwrap();
+    assert_eq!(mode_envelope["ok"], true);
+    assert_eq!(mode_envelope["operation"], "treesitter_last_update_mode");
+    assert_eq!(mode_envelope["value"]["mode"], "initial");
+
+    let indents_query =
+        std::fs::read_to_string(fixture_dir.join("indents.scm")).expect("read indents.scm");
+    let indents_query = CString::new(indents_query).expect("cstring");
+    let indenter = editor_core_ffi_treesitter_indenter_new_wasm_from_path(
+        language_id.as_ptr(),
+        wasm_path.as_ptr(),
+        indents_query.as_ptr(),
+    );
+    assert!(!indenter.is_null());
+
+    let indentation_config =
+        CString::new(r#"{"style":{"kind":"spaces","width":4}}"#).expect("cstring");
+    let indenter_json = take_string(
+        editor_core_ffi_treesitter_indenter_reindent_line_envelope_json(
+            indenter,
+            rust_state,
+            1,
+            indentation_config.as_ptr(),
+        ),
+    );
+    let indenter_envelope: serde_json::Value = serde_json::from_str(&indenter_json).unwrap();
+    assert_eq!(indenter_envelope["ok"], true);
+    assert_eq!(indenter_envelope["operation"], "treesitter_reindent_line");
+    assert_eq!(indenter_envelope["value"]["has_edit"], true);
+    assert_eq!(indenter_envelope["value"]["edit"]["text"], "    ");
+
+    let error_json = take_string(editor_core_ffi_treesitter_processor_process_envelope_json(
+        std::ptr::null_mut(),
+        rust_state,
+    ));
+    let error_envelope: serde_json::Value = serde_json::from_str(&error_json).unwrap();
+    assert_eq!(error_envelope["ok"], false);
+    assert_eq!(error_envelope["status"], "error");
+    assert_eq!(error_envelope["operation"], "treesitter_process");
+    assert!(error_envelope["value"].is_null());
+    assert_eq!(error_envelope["error"]["code"], "invalid_argument");
+    assert_eq!(
+        error_envelope["error"]["status"],
+        status(EcfStatus::InvalidArgument)
+    );
+    assert_eq!(error_envelope["error"]["message"], "processor is null");
+
+    unsafe {
+        editor_core_ffi_treesitter_indenter_free(indenter);
+        editor_core_ffi_treesitter_processor_free(treesitter);
+        editor_core_ffi_sublime_processor_free(sublime);
+        editor_core_ffi_editor_state_free(rust_state);
+        editor_core_ffi_editor_state_free(sublime_state);
+    }
 }
 
 #[test]
@@ -129,6 +925,305 @@ fn typed_editor_commands_and_stats_work() {
     assert_eq!(st, status(EcfStatus::Ok));
     assert!(stats.char_count >= 6);
     assert_eq!(stats.is_modified, 1);
+
+    unsafe { editor_core_ffi_editor_state_free(state) };
+}
+
+#[test]
+fn editor_state_execute_envelope_json_reports_success_and_errors() {
+    let initial = CString::new("abc\n").expect("cstring");
+    let state = editor_core_ffi_editor_state_new(initial.as_ptr(), 80);
+    assert!(!state.is_null());
+
+    let command = CString::new(r#"{"kind":"edit","op":"insert_text","text":"!"}"#).unwrap();
+    let ok_json = take_string(editor_core_ffi_editor_state_execute_envelope_json(
+        state,
+        command.as_ptr(),
+    ));
+    let ok: serde_json::Value = serde_json::from_str(&ok_json).unwrap();
+    assert_eq!(ok["ok"], true);
+    assert_eq!(ok["version"], ECF_ABI_VERSION);
+    assert_eq!(ok["value"]["kind"], "success");
+    assert!(ok["error"].is_null());
+
+    let bad_json = CString::new("{this is not json").unwrap();
+    let parse_json = take_string(editor_core_ffi_editor_state_execute_envelope_json(
+        state,
+        bad_json.as_ptr(),
+    ));
+    let parse: serde_json::Value = serde_json::from_str(&parse_json).unwrap();
+    assert_eq!(parse["ok"], false);
+    assert_eq!(parse["error"]["code"], "parse");
+    assert_eq!(parse["error"]["status"], status(EcfStatus::Parse));
+
+    let command = CString::new(r#"{"kind":"view","op":"set_viewport_width","width":0}"#).unwrap();
+    let failed_json = take_string(editor_core_ffi_editor_state_execute_envelope_json(
+        state,
+        command.as_ptr(),
+    ));
+    let failed: serde_json::Value = serde_json::from_str(&failed_json).unwrap();
+    assert_eq!(failed["ok"], false);
+    assert_eq!(failed["error"]["code"], "command_failed");
+    assert_eq!(failed["error"]["status"], status(EcfStatus::CommandFailed));
+    assert!(
+        failed["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("command execution failed")
+    );
+
+    let null_arg_json = take_string(editor_core_ffi_editor_state_execute_envelope_json(
+        state,
+        std::ptr::null(),
+    ));
+    let null_arg: serde_json::Value = serde_json::from_str(&null_arg_json).unwrap();
+    assert_eq!(null_arg["ok"], false);
+    assert_eq!(null_arg["error"]["code"], "invalid_argument");
+    assert_eq!(
+        null_arg["error"]["status"],
+        status(EcfStatus::InvalidArgument)
+    );
+    assert_eq!(null_arg["error"]["message"], "command_json is null");
+
+    unsafe { editor_core_ffi_editor_state_free(state) };
+}
+
+#[test]
+fn editor_state_query_envelope_json_reports_success_and_errors() {
+    let initial = CString::new("hello\nworld\n").expect("cstring");
+    let state = editor_core_ffi_editor_state_new(initial.as_ptr(), 80);
+    assert!(!state.is_null());
+
+    let full_json = take_string(editor_core_ffi_editor_state_full_state_envelope_json(state));
+    let full: serde_json::Value = serde_json::from_str(&full_json).unwrap();
+    assert_eq!(full["ok"], true);
+    assert_eq!(full["status"], "success");
+    assert_eq!(full["operation"], "full_state");
+    assert_eq!(full["version"], ECF_ABI_VERSION);
+    assert!(full["value"]["document"].is_object());
+    assert!(full["value"]["viewport"].is_object());
+    assert!(full["error"].is_null());
+
+    let text_json = take_string(editor_core_ffi_editor_state_text_envelope_json(state));
+    let text: serde_json::Value = serde_json::from_str(&text_json).unwrap();
+    assert_eq!(text["ok"], true);
+    assert_eq!(text["operation"], "text");
+    assert_eq!(text["value"]["text"], "hello\nworld\n");
+
+    let crlf = CString::new("crlf").unwrap();
+    assert!(editor_core_ffi_editor_state_set_line_ending(
+        state,
+        crlf.as_ptr()
+    ));
+
+    let line_ending_json = take_string(editor_core_ffi_editor_state_get_line_ending_envelope_json(
+        state,
+    ));
+    let line_ending: serde_json::Value = serde_json::from_str(&line_ending_json).unwrap();
+    assert_eq!(line_ending["ok"], true);
+    assert_eq!(line_ending["operation"], "line_ending");
+    assert_eq!(line_ending["value"]["line_ending"], "crlf");
+
+    let saving_json = take_string(editor_core_ffi_editor_state_text_for_saving_envelope_json(
+        state,
+    ));
+    let saving: serde_json::Value = serde_json::from_str(&saving_json).unwrap();
+    assert_eq!(saving["ok"], true);
+    assert_eq!(saving["operation"], "text_for_saving");
+    assert_eq!(saving["value"]["line_ending"], "crlf");
+    assert!(saving["value"]["text"].as_str().unwrap().contains("\r\n"));
+
+    let inserted = b"!";
+    let insert_status = editor_core_ffi_editor_insert_text_utf8(state, inserted.as_ptr(), 1);
+    assert_eq!(insert_status, status(EcfStatus::Ok));
+
+    let last_delta_json = take_string(editor_core_ffi_editor_state_last_text_delta_envelope_json(
+        state,
+    ));
+    let last_delta: serde_json::Value = serde_json::from_str(&last_delta_json).unwrap();
+    assert_eq!(last_delta["ok"], true);
+    assert_eq!(last_delta["operation"], "last_text_delta");
+    assert!(!last_delta["value"]["delta"].is_null());
+
+    let taken_delta_json =
+        take_string(editor_core_ffi_editor_state_take_last_text_delta_envelope_json(state));
+    let taken_delta: serde_json::Value = serde_json::from_str(&taken_delta_json).unwrap();
+    assert_eq!(taken_delta["ok"], true);
+    assert_eq!(taken_delta["operation"], "take_last_text_delta");
+    assert!(!taken_delta["value"]["delta"].is_null());
+
+    let after_take_json = take_string(editor_core_ffi_editor_state_last_text_delta_envelope_json(
+        state,
+    ));
+    let after_take: serde_json::Value = serde_json::from_str(&after_take_json).unwrap();
+    assert_eq!(after_take["ok"], true);
+    assert_eq!(after_take["operation"], "last_text_delta");
+    assert!(after_take["value"]["delta"].is_null());
+
+    let null_state_json = take_string(editor_core_ffi_editor_state_text_envelope_json(
+        std::ptr::null(),
+    ));
+    let null_state: serde_json::Value = serde_json::from_str(&null_state_json).unwrap();
+    assert_eq!(null_state["ok"], false);
+    assert_eq!(null_state["status"], "error");
+    assert_eq!(null_state["operation"], "text");
+    assert!(null_state["value"].is_null());
+    assert_eq!(null_state["error"]["code"], "invalid_argument");
+    assert_eq!(
+        null_state["error"]["status"],
+        status(EcfStatus::InvalidArgument)
+    );
+    assert_eq!(null_state["error"]["message"], "state is null");
+
+    unsafe { editor_core_ffi_editor_state_free(state) };
+}
+
+#[test]
+fn editor_state_minimap_envelope_json_reports_success_and_errors() {
+    let initial = CString::new("abc\nsecond\nthird\n").expect("cstring");
+    let state = editor_core_ffi_editor_state_new(initial.as_ptr(), 80);
+    assert!(!state.is_null());
+
+    let ok_json = take_string(editor_core_ffi_editor_state_minimap_envelope_json(
+        state, 0, 20,
+    ));
+    let ok: serde_json::Value = serde_json::from_str(&ok_json).unwrap();
+    assert_eq!(ok["ok"], true);
+    assert_eq!(ok["status"], "success");
+    assert_eq!(ok["surface"], "editor_state_minimap");
+    assert!(ok["view_id"].is_null());
+    assert_eq!(ok["start_visual_row"], 0);
+    assert_eq!(ok["count"], 20);
+    assert!(ok["value"]["lines"].is_array());
+    assert!(ok["error"].is_null());
+    assert_eq!(ok["version"], ECF_ABI_VERSION);
+
+    let failed_json = take_string(editor_core_ffi_editor_state_minimap_envelope_json(
+        std::ptr::null(),
+        0,
+        20,
+    ));
+    let failed: serde_json::Value = serde_json::from_str(&failed_json).unwrap();
+    assert_eq!(failed["ok"], false);
+    assert_eq!(failed["status"], "error");
+    assert_eq!(failed["surface"], "editor_state_minimap");
+    assert!(failed["view_id"].is_null());
+    assert_eq!(failed["value"], serde_json::Value::Null);
+    assert_eq!(failed["error"]["code"], "invalid_argument");
+    assert_eq!(
+        failed["error"]["status"],
+        status(EcfStatus::InvalidArgument)
+    );
+    assert_eq!(failed["error"]["message"], "state is null");
+
+    unsafe { editor_core_ffi_editor_state_free(state) };
+}
+
+#[test]
+fn editor_state_viewport_envelope_json_reports_success_and_errors() {
+    let initial = CString::new("abc\nsecond\nthird\n").expect("cstring");
+    let state = editor_core_ffi_editor_state_new(initial.as_ptr(), 80);
+    assert!(!state.is_null());
+
+    for (surface, function) in [
+        (
+            "editor_state_viewport_styled",
+            editor_core_ffi_editor_state_viewport_styled_envelope_json
+                as extern "C" fn(*const EcfEditorState, u32, u32) -> *mut std::ffi::c_char,
+        ),
+        (
+            "editor_state_viewport_composed",
+            editor_core_ffi_editor_state_viewport_composed_envelope_json
+                as extern "C" fn(*const EcfEditorState, u32, u32) -> *mut std::ffi::c_char,
+        ),
+    ] {
+        let ok_json = take_string(function(state, 0, 20));
+        let ok: serde_json::Value = serde_json::from_str(&ok_json).unwrap();
+        assert_eq!(ok["ok"], true);
+        assert_eq!(ok["status"], "success");
+        assert_eq!(ok["surface"], surface);
+        assert!(ok["view_id"].is_null());
+        assert_eq!(ok["start_visual_row"], 0);
+        assert_eq!(ok["count"], 20);
+        assert!(ok["value"]["lines"].is_array());
+        assert!(ok["error"].is_null());
+        assert_eq!(ok["version"], ECF_ABI_VERSION);
+
+        let failed_json = take_string(function(std::ptr::null(), 0, 20));
+        let failed: serde_json::Value = serde_json::from_str(&failed_json).unwrap();
+        assert_eq!(failed["ok"], false);
+        assert_eq!(failed["status"], "error");
+        assert_eq!(failed["surface"], surface);
+        assert!(failed["view_id"].is_null());
+        assert_eq!(failed["value"], serde_json::Value::Null);
+        assert_eq!(failed["error"]["code"], "invalid_argument");
+        assert_eq!(
+            failed["error"]["status"],
+            status(EcfStatus::InvalidArgument)
+        );
+        assert_eq!(failed["error"]["message"], "state is null");
+    }
+
+    unsafe { editor_core_ffi_editor_state_free(state) };
+}
+
+#[test]
+fn editor_state_derived_snapshot_envelope_json_reports_success_and_errors() {
+    let initial = CString::new("abc\nsecond\nthird\n").expect("cstring");
+    let state = editor_core_ffi_editor_state_new(initial.as_ptr(), 80);
+    assert!(!state.is_null());
+
+    for (snapshot, expected_key) in [
+        ("document_symbols", "symbols"),
+        ("diagnostics", "diagnostics"),
+        ("decorations", "layers"),
+    ] {
+        let snapshot_c = CString::new(snapshot).unwrap();
+        let ok_json = take_string(editor_core_ffi_editor_state_derived_snapshot_envelope_json(
+            state,
+            snapshot_c.as_ptr(),
+        ));
+        let ok: serde_json::Value = serde_json::from_str(&ok_json).unwrap();
+        assert_eq!(ok["ok"], true);
+        assert_eq!(ok["status"], "success");
+        assert_eq!(ok["snapshot"], snapshot);
+        assert!(ok["value"][expected_key].is_array());
+        assert!(ok["error"].is_null());
+        assert_eq!(ok["version"], ECF_ABI_VERSION);
+    }
+
+    let unknown = CString::new("unknown").unwrap();
+    let failed_json = take_string(editor_core_ffi_editor_state_derived_snapshot_envelope_json(
+        state,
+        unknown.as_ptr(),
+    ));
+    let failed: serde_json::Value = serde_json::from_str(&failed_json).unwrap();
+    assert_eq!(failed["ok"], false);
+    assert_eq!(failed["status"], "error");
+    assert_eq!(failed["snapshot"], "unknown");
+    assert_eq!(failed["value"], serde_json::Value::Null);
+    assert_eq!(failed["error"]["code"], "invalid_argument");
+    assert_eq!(
+        failed["error"]["status"],
+        status(EcfStatus::InvalidArgument)
+    );
+    assert!(
+        failed["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("unknown editor state derived snapshot")
+    );
+
+    let null_arg_json = take_string(editor_core_ffi_editor_state_derived_snapshot_envelope_json(
+        state,
+        std::ptr::null(),
+    ));
+    let null_arg: serde_json::Value = serde_json::from_str(&null_arg_json).unwrap();
+    assert_eq!(null_arg["ok"], false);
+    assert_eq!(null_arg["status"], "error");
+    assert!(null_arg["snapshot"].is_null());
+    assert_eq!(null_arg["error"]["code"], "invalid_argument");
+    assert_eq!(null_arg["error"]["message"], "snapshot_utf8 is null");
 
     unsafe { editor_core_ffi_editor_state_free(state) };
 }
@@ -399,6 +1494,539 @@ fn workspace_typed_commands_and_blob_work() {
         &mut out_len,
     );
     assert_eq!(st, status(EcfStatus::Ok));
+
+    unsafe { editor_core_ffi_workspace_free(workspace) };
+}
+
+#[test]
+fn workspace_execute_envelope_json_reports_success_and_errors() {
+    let workspace = editor_core_ffi_workspace_new();
+    assert!(!workspace.is_null());
+
+    let text = CString::new("abc\n").expect("cstring");
+    let mut opened = EcfOpenBufferResult {
+        abi_version: 0,
+        struct_size: 0,
+        buffer_id: 0,
+        view_id: 0,
+    };
+    let st = unsafe {
+        editor_core_ffi_workspace_open_buffer_typed(
+            workspace,
+            std::ptr::null(),
+            text.as_ptr(),
+            80,
+            &mut opened,
+        )
+    };
+    assert_eq!(st, status(EcfStatus::Ok));
+
+    let command = CString::new(r#"{"kind":"edit","op":"insert_text","text":"!"}"#).unwrap();
+    let ok_json = take_string(editor_core_ffi_workspace_execute_envelope_json(
+        workspace,
+        opened.view_id,
+        command.as_ptr(),
+    ));
+    let ok: serde_json::Value = serde_json::from_str(&ok_json).unwrap();
+    assert_eq!(ok["ok"], true);
+    assert_eq!(ok["version"], ECF_ABI_VERSION);
+    assert_eq!(ok["value"]["kind"], "success");
+
+    let bad_json = CString::new("{this is not json").unwrap();
+    let parse_json = take_string(editor_core_ffi_workspace_execute_envelope_json(
+        workspace,
+        opened.view_id,
+        bad_json.as_ptr(),
+    ));
+    let parse: serde_json::Value = serde_json::from_str(&parse_json).unwrap();
+    assert_eq!(parse["ok"], false);
+    assert_eq!(parse["error"]["code"], "parse");
+    assert_eq!(parse["error"]["status"], status(EcfStatus::Parse));
+
+    let command = CString::new(r#"{"kind":"cursor","op":"move_to","line":0,"column":0}"#).unwrap();
+    let failed_json = take_string(editor_core_ffi_workspace_execute_envelope_json(
+        workspace,
+        999_999,
+        command.as_ptr(),
+    ));
+    let failed: serde_json::Value = serde_json::from_str(&failed_json).unwrap();
+    assert_eq!(failed["ok"], false);
+    assert_eq!(failed["error"]["code"], "command_failed");
+    assert_eq!(failed["error"]["status"], status(EcfStatus::CommandFailed));
+    assert!(
+        failed["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("workspace execute failed")
+    );
+
+    unsafe { editor_core_ffi_workspace_free(workspace) };
+}
+
+#[test]
+fn workspace_lifecycle_envelope_json_reports_success_and_errors() {
+    let workspace = editor_core_ffi_workspace_new();
+    assert!(!workspace.is_null());
+
+    let text = CString::new("alpha\nbeta\n").expect("cstring");
+    let uri = CString::new("file:///workspace-lifecycle.txt").expect("cstring");
+    let open_json = take_string(editor_core_ffi_workspace_open_buffer_envelope_json(
+        workspace,
+        uri.as_ptr(),
+        text.as_ptr(),
+        80,
+    ));
+    let open: serde_json::Value = serde_json::from_str(&open_json).unwrap();
+    assert_eq!(open["ok"], true);
+    assert_eq!(open["status"], "success");
+    assert_eq!(open["operation"], "open_buffer");
+    assert_eq!(open["version"], ECF_ABI_VERSION);
+    assert!(open["error"].is_null());
+    let buffer_id = open["value"]["buffer_id"].as_u64().unwrap();
+    let view_id = open["value"]["view_id"].as_u64().unwrap();
+
+    let duplicate_json = take_string(editor_core_ffi_workspace_open_buffer_envelope_json(
+        workspace,
+        uri.as_ptr(),
+        text.as_ptr(),
+        80,
+    ));
+    let duplicate: serde_json::Value = serde_json::from_str(&duplicate_json).unwrap();
+    assert_eq!(duplicate["ok"], false);
+    assert_eq!(duplicate["status"], "error");
+    assert_eq!(duplicate["operation"], "open_buffer");
+    assert!(duplicate["value"].is_null());
+    assert_eq!(duplicate["error"]["code"], "invalid_argument");
+    assert_eq!(
+        duplicate["error"]["status"],
+        status(EcfStatus::InvalidArgument)
+    );
+    assert!(
+        duplicate["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("open_buffer failed")
+    );
+
+    let create_json = take_string(editor_core_ffi_workspace_create_view_envelope_json(
+        workspace, buffer_id, 40,
+    ));
+    let create: serde_json::Value = serde_json::from_str(&create_json).unwrap();
+    assert_eq!(create["ok"], true);
+    assert_eq!(create["status"], "success");
+    assert_eq!(create["operation"], "create_view");
+    assert_eq!(create["version"], ECF_ABI_VERSION);
+    assert!(create["error"].is_null());
+    let second_view_id = create["value"]["view_id"].as_u64().unwrap();
+    assert_ne!(second_view_id, view_id);
+
+    let missing_json = take_string(editor_core_ffi_workspace_create_view_envelope_json(
+        workspace, 999_999, 40,
+    ));
+    let missing: serde_json::Value = serde_json::from_str(&missing_json).unwrap();
+    assert_eq!(missing["ok"], false);
+    assert_eq!(missing["status"], "error");
+    assert_eq!(missing["operation"], "create_view");
+    assert!(missing["value"].is_null());
+    assert_eq!(missing["error"]["code"], "not_found");
+    assert_eq!(missing["error"]["status"], status(EcfStatus::NotFound));
+    assert!(
+        missing["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("create_view failed")
+    );
+
+    let null_workspace_json = take_string(editor_core_ffi_workspace_open_buffer_envelope_json(
+        std::ptr::null_mut(),
+        uri.as_ptr(),
+        text.as_ptr(),
+        80,
+    ));
+    let null_workspace: serde_json::Value = serde_json::from_str(&null_workspace_json).unwrap();
+    assert_eq!(null_workspace["ok"], false);
+    assert_eq!(null_workspace["status"], "error");
+    assert_eq!(null_workspace["operation"], "open_buffer");
+    assert_eq!(null_workspace["error"]["code"], "invalid_argument");
+    assert_eq!(
+        null_workspace["error"]["status"],
+        status(EcfStatus::InvalidArgument)
+    );
+    assert_eq!(null_workspace["error"]["message"], "workspace is null");
+
+    unsafe { editor_core_ffi_workspace_free(workspace) };
+}
+
+#[test]
+fn workspace_result_envelope_json_reports_success_and_errors() {
+    let workspace = editor_core_ffi_workspace_new();
+    assert!(!workspace.is_null());
+
+    let text = CString::new("alpha beta\nsecond alpha\n").expect("cstring");
+    let uri = CString::new("file:///workspace-result.txt").expect("cstring");
+    let mut opened = EcfOpenBufferResult {
+        abi_version: 0,
+        struct_size: 0,
+        buffer_id: 0,
+        view_id: 0,
+    };
+    let st = unsafe {
+        editor_core_ffi_workspace_open_buffer_typed(
+            workspace,
+            uri.as_ptr(),
+            text.as_ptr(),
+            80,
+            &mut opened,
+        )
+    };
+    assert_eq!(st, status(EcfStatus::Ok));
+
+    let query = CString::new("alpha").unwrap();
+    let search_json = take_string(
+        editor_core_ffi_workspace_search_all_open_buffers_envelope_json(
+            workspace,
+            query.as_ptr(),
+            std::ptr::null(),
+        ),
+    );
+    let search: serde_json::Value = serde_json::from_str(&search_json).unwrap();
+    assert_eq!(search["ok"], true);
+    assert_eq!(search["status"], "success");
+    assert_eq!(search["operation"], "search_all_open_buffers");
+    assert_eq!(search["version"], ECF_ABI_VERSION);
+    assert!(search["error"].is_null());
+    let results = search["value"]["results"].as_array().unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["buffer_id"], opened.buffer_id);
+    assert_eq!(results[0]["uri"], "file:///workspace-result.txt");
+    assert_eq!(results[0]["matches"].as_array().unwrap().len(), 2);
+
+    let bad_options = CString::new("{this is not json").unwrap();
+    let parse_json = take_string(
+        editor_core_ffi_workspace_search_all_open_buffers_envelope_json(
+            workspace,
+            query.as_ptr(),
+            bad_options.as_ptr(),
+        ),
+    );
+    let parse: serde_json::Value = serde_json::from_str(&parse_json).unwrap();
+    assert_eq!(parse["ok"], false);
+    assert_eq!(parse["status"], "error");
+    assert_eq!(parse["operation"], "search_all_open_buffers");
+    assert!(parse["value"].is_null());
+    assert_eq!(parse["error"]["code"], "parse");
+    assert_eq!(parse["error"]["status"], status(EcfStatus::Parse));
+    assert!(
+        parse["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("invalid search options JSON")
+    );
+
+    let edits = CString::new(format!(
+        r#"[{{"buffer_id":{},"edits":[{{"start":0,"end":5,"text":"omega"}}]}}]"#,
+        opened.buffer_id
+    ))
+    .unwrap();
+    let apply_json = take_string(editor_core_ffi_workspace_apply_text_edits_envelope_json(
+        workspace,
+        edits.as_ptr(),
+    ));
+    let apply: serde_json::Value = serde_json::from_str(&apply_json).unwrap();
+    assert_eq!(apply["ok"], true);
+    assert_eq!(apply["status"], "success");
+    assert_eq!(apply["operation"], "apply_text_edits");
+    assert_eq!(apply["version"], ECF_ABI_VERSION);
+    assert!(apply["error"].is_null());
+    let applied = apply["value"]["applied"].as_array().unwrap();
+    assert_eq!(applied.len(), 1);
+    assert_eq!(applied[0]["buffer_id"], opened.buffer_id);
+    assert_eq!(applied[0]["edit_count"], 1);
+
+    let bad_edits = CString::new("{this is not json").unwrap();
+    let parse_json = take_string(editor_core_ffi_workspace_apply_text_edits_envelope_json(
+        workspace,
+        bad_edits.as_ptr(),
+    ));
+    let parse: serde_json::Value = serde_json::from_str(&parse_json).unwrap();
+    assert_eq!(parse["ok"], false);
+    assert_eq!(parse["status"], "error");
+    assert_eq!(parse["operation"], "apply_text_edits");
+    assert!(parse["value"].is_null());
+    assert_eq!(parse["error"]["code"], "parse");
+    assert_eq!(parse["error"]["status"], status(EcfStatus::Parse));
+    assert!(
+        parse["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("invalid workspace text edits JSON")
+    );
+
+    let null_workspace_json =
+        take_string(editor_core_ffi_workspace_apply_text_edits_envelope_json(
+            std::ptr::null_mut(),
+            edits.as_ptr(),
+        ));
+    let null_workspace: serde_json::Value = serde_json::from_str(&null_workspace_json).unwrap();
+    assert_eq!(null_workspace["ok"], false);
+    assert_eq!(null_workspace["status"], "error");
+    assert_eq!(null_workspace["operation"], "apply_text_edits");
+    assert_eq!(null_workspace["error"]["code"], "invalid_argument");
+    assert_eq!(
+        null_workspace["error"]["status"],
+        status(EcfStatus::InvalidArgument)
+    );
+    assert_eq!(null_workspace["error"]["message"], "workspace is null");
+
+    unsafe { editor_core_ffi_workspace_free(workspace) };
+}
+
+#[test]
+fn workspace_query_envelope_json_reports_success_and_errors() {
+    let workspace = editor_core_ffi_workspace_new();
+    assert!(!workspace.is_null());
+
+    let empty_info_json = take_string(editor_core_ffi_workspace_info_envelope_json(workspace));
+    let empty_info: serde_json::Value = serde_json::from_str(&empty_info_json).unwrap();
+    assert_eq!(empty_info["ok"], true);
+    assert_eq!(empty_info["status"], "success");
+    assert_eq!(empty_info["operation"], "info");
+    assert_eq!(empty_info["version"], ECF_ABI_VERSION);
+    assert_eq!(empty_info["value"]["buffer_count"], 0);
+    assert_eq!(empty_info["value"]["view_count"], 0);
+    assert_eq!(empty_info["value"]["is_empty"], true);
+    assert!(empty_info["error"].is_null());
+
+    let text = CString::new("hello\nworld\n").expect("cstring");
+    let uri = CString::new("file:///workspace-query.txt").expect("cstring");
+    let mut opened = EcfOpenBufferResult {
+        abi_version: 0,
+        struct_size: 0,
+        buffer_id: 0,
+        view_id: 0,
+    };
+    let st = unsafe {
+        editor_core_ffi_workspace_open_buffer_typed(
+            workspace,
+            uri.as_ptr(),
+            text.as_ptr(),
+            80,
+            &mut opened,
+        )
+    };
+    assert_eq!(st, status(EcfStatus::Ok));
+
+    let info_json = take_string(editor_core_ffi_workspace_info_envelope_json(workspace));
+    let info: serde_json::Value = serde_json::from_str(&info_json).unwrap();
+    assert_eq!(info["ok"], true);
+    assert_eq!(info["operation"], "info");
+    assert_eq!(info["value"]["buffer_count"], 1);
+    assert_eq!(info["value"]["view_count"], 1);
+    assert_eq!(info["value"]["is_empty"], false);
+    assert_eq!(info["value"]["active_buffer_id"], opened.buffer_id);
+    assert_eq!(info["value"]["active_view_id"], opened.view_id);
+
+    let text_json = take_string(editor_core_ffi_workspace_buffer_text_envelope_json(
+        workspace,
+        opened.buffer_id,
+    ));
+    let buffer_text: serde_json::Value = serde_json::from_str(&text_json).unwrap();
+    assert_eq!(buffer_text["ok"], true);
+    assert_eq!(buffer_text["status"], "success");
+    assert_eq!(buffer_text["operation"], "buffer_text");
+    assert_eq!(buffer_text["value"]["text"], "hello\nworld\n");
+    assert!(buffer_text["error"].is_null());
+
+    let viewport_json = take_string(editor_core_ffi_workspace_viewport_state_envelope_json(
+        workspace,
+        opened.view_id,
+    ));
+    let viewport: serde_json::Value = serde_json::from_str(&viewport_json).unwrap();
+    assert_eq!(viewport["ok"], true);
+    assert_eq!(viewport["status"], "success");
+    assert_eq!(viewport["operation"], "viewport_state");
+    assert_eq!(viewport["value"]["width"], 80);
+    assert!(viewport["value"]["total_visual_lines"].as_u64().unwrap() >= 2);
+    assert!(viewport["error"].is_null());
+
+    let missing_text_json = take_string(editor_core_ffi_workspace_buffer_text_envelope_json(
+        workspace, 999_999,
+    ));
+    let missing_text: serde_json::Value = serde_json::from_str(&missing_text_json).unwrap();
+    assert_eq!(missing_text["ok"], false);
+    assert_eq!(missing_text["status"], "error");
+    assert_eq!(missing_text["operation"], "buffer_text");
+    assert!(missing_text["value"].is_null());
+    assert_eq!(missing_text["error"]["code"], "not_found");
+    assert_eq!(missing_text["error"]["status"], status(EcfStatus::NotFound));
+    assert!(
+        missing_text["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("buffer_text failed")
+    );
+
+    let missing_viewport_json = take_string(
+        editor_core_ffi_workspace_viewport_state_envelope_json(workspace, 999_999),
+    );
+    let missing_viewport: serde_json::Value = serde_json::from_str(&missing_viewport_json).unwrap();
+    assert_eq!(missing_viewport["ok"], false);
+    assert_eq!(missing_viewport["status"], "error");
+    assert_eq!(missing_viewport["operation"], "viewport_state");
+    assert_eq!(missing_viewport["error"]["code"], "not_found");
+    assert_eq!(
+        missing_viewport["error"]["status"],
+        status(EcfStatus::NotFound)
+    );
+    assert!(
+        missing_viewport["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("viewport_state_for_view failed")
+    );
+
+    let null_info_json = take_string(editor_core_ffi_workspace_info_envelope_json(
+        std::ptr::null(),
+    ));
+    let null_info: serde_json::Value = serde_json::from_str(&null_info_json).unwrap();
+    assert_eq!(null_info["ok"], false);
+    assert_eq!(null_info["operation"], "info");
+    assert_eq!(null_info["error"]["code"], "invalid_argument");
+    assert_eq!(
+        null_info["error"]["status"],
+        status(EcfStatus::InvalidArgument)
+    );
+    assert_eq!(null_info["error"]["message"], "workspace is null");
+
+    unsafe { editor_core_ffi_workspace_free(workspace) };
+}
+
+#[test]
+fn workspace_minimap_envelope_json_reports_success_and_errors() {
+    let workspace = editor_core_ffi_workspace_new();
+    assert!(!workspace.is_null());
+
+    let text = CString::new("abc\nsecond\nthird\n").expect("cstring");
+    let mut opened = EcfOpenBufferResult {
+        abi_version: 0,
+        struct_size: 0,
+        buffer_id: 0,
+        view_id: 0,
+    };
+    let st = unsafe {
+        editor_core_ffi_workspace_open_buffer_typed(
+            workspace,
+            std::ptr::null(),
+            text.as_ptr(),
+            80,
+            &mut opened,
+        )
+    };
+    assert_eq!(st, status(EcfStatus::Ok));
+
+    let ok_json = take_string(editor_core_ffi_workspace_minimap_envelope_json(
+        workspace,
+        opened.view_id,
+        0,
+        20,
+    ));
+    let ok: serde_json::Value = serde_json::from_str(&ok_json).unwrap();
+    assert_eq!(ok["ok"], true);
+    assert_eq!(ok["status"], "success");
+    assert_eq!(ok["surface"], "workspace_minimap");
+    assert_eq!(ok["view_id"], opened.view_id);
+    assert_eq!(ok["start_visual_row"], 0);
+    assert_eq!(ok["count"], 20);
+    assert!(ok["value"]["lines"].is_array());
+    assert!(ok["error"].is_null());
+    assert_eq!(ok["version"], ECF_ABI_VERSION);
+
+    let failed_json = take_string(editor_core_ffi_workspace_minimap_envelope_json(
+        workspace, 999_999, 0, 20,
+    ));
+    let failed: serde_json::Value = serde_json::from_str(&failed_json).unwrap();
+    assert_eq!(failed["ok"], false);
+    assert_eq!(failed["status"], "error");
+    assert_eq!(failed["surface"], "workspace_minimap");
+    assert_eq!(failed["view_id"], 999_999);
+    assert_eq!(failed["value"], serde_json::Value::Null);
+    assert_eq!(failed["error"]["code"], "internal");
+    assert_eq!(failed["error"]["status"], status(EcfStatus::Internal));
+    assert!(
+        failed["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("get_minimap_content failed")
+    );
+
+    unsafe { editor_core_ffi_workspace_free(workspace) };
+}
+
+#[test]
+fn workspace_viewport_envelope_json_reports_success_and_errors() {
+    let workspace = editor_core_ffi_workspace_new();
+    assert!(!workspace.is_null());
+
+    let text = CString::new("abc\nsecond\nthird\n").expect("cstring");
+    let mut opened = EcfOpenBufferResult {
+        abi_version: 0,
+        struct_size: 0,
+        buffer_id: 0,
+        view_id: 0,
+    };
+    let st = unsafe {
+        editor_core_ffi_workspace_open_buffer_typed(
+            workspace,
+            std::ptr::null(),
+            text.as_ptr(),
+            80,
+            &mut opened,
+        )
+    };
+    assert_eq!(st, status(EcfStatus::Ok));
+
+    for (surface, function, expected_error) in [
+        (
+            "workspace_viewport_styled",
+            editor_core_ffi_workspace_viewport_styled_envelope_json
+                as extern "C" fn(*mut EcfWorkspace, u64, u32, u32) -> *mut std::ffi::c_char,
+            "get_viewport_content_styled failed",
+        ),
+        (
+            "workspace_viewport_composed",
+            editor_core_ffi_workspace_viewport_composed_envelope_json
+                as extern "C" fn(*mut EcfWorkspace, u64, u32, u32) -> *mut std::ffi::c_char,
+            "get_viewport_content_composed failed",
+        ),
+    ] {
+        let ok_json = take_string(function(workspace, opened.view_id, 0, 20));
+        let ok: serde_json::Value = serde_json::from_str(&ok_json).unwrap();
+        assert_eq!(ok["ok"], true);
+        assert_eq!(ok["status"], "success");
+        assert_eq!(ok["surface"], surface);
+        assert_eq!(ok["view_id"], opened.view_id);
+        assert_eq!(ok["start_visual_row"], 0);
+        assert_eq!(ok["count"], 20);
+        assert!(ok["value"]["lines"].is_array());
+        assert!(ok["error"].is_null());
+        assert_eq!(ok["version"], ECF_ABI_VERSION);
+
+        let failed_json = take_string(function(workspace, 999_999, 0, 20));
+        let failed: serde_json::Value = serde_json::from_str(&failed_json).unwrap();
+        assert_eq!(failed["ok"], false);
+        assert_eq!(failed["status"], "error");
+        assert_eq!(failed["surface"], surface);
+        assert_eq!(failed["view_id"], 999_999);
+        assert_eq!(failed["value"], serde_json::Value::Null);
+        assert_eq!(failed["error"]["code"], "internal");
+        assert_eq!(failed["error"]["status"], status(EcfStatus::Internal));
+        assert!(
+            failed["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains(expected_error)
+        );
+    }
 
     unsafe { editor_core_ffi_workspace_free(workspace) };
 }

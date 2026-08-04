@@ -214,6 +214,29 @@ final class EditorStateJSONCommandBridgeTests: XCTestCase {
             XCTAssertEqual(r.replaced, 3)
             XCTAssertEqual(try state.text(), "bar bar bar")
         }
+
+        do {
+            let state = try EditorState(library: library, initialText: "", viewportWidth: 80)
+            assertSuccess(try run(state, #"{"kind":"view","op":"set_auto_pairs_enabled","enabled":true}"#))
+            assertSuccess(try run(state, #"{"kind":"edit","op":"type_char","ch":"("}"#))
+            XCTAssertEqual(try state.text(), "()")
+        }
+
+        do {
+            let state = try EditorState(library: library, initialText: "", viewportWidth: 80)
+            assertSuccess(try run(state, #"{"kind":"edit","op":"apply_snippet","start":0,"end":0,"snippet":"println!(${1:msg})$0"}"#))
+            XCTAssertEqual(try state.text(), "println!(msg)")
+            assertSuccess(try run(state, #"{"kind":"cursor","op":"snippet_next_placeholder"}"#))
+            assertSuccess(try run(state, #"{"kind":"cursor","op":"snippet_prev_placeholder"}"#))
+        }
+
+        do {
+            let state = try EditorState(library: library, initialText: "abc", viewportWidth: 80)
+            assertSuccess(try run(state, #"{"kind":"edit","op":"replace_coalescing_undo","start":0,"length":1,"text":"A"}"#))
+            XCTAssertEqual(try state.text(), "Abc")
+            assertSuccess(try run(state, #"{"kind":"edit","op":"replace_coalescing_undo_with_selection","start":1,"length":1,"text":"B","selection_start":1,"selection_end":2}"#))
+            XCTAssertEqual(try state.text(), "ABc")
+        }
     }
 
     func testCursorCommandsCoverAllOps() throws {
@@ -369,6 +392,14 @@ final class EditorStateJSONCommandBridgeTests: XCTestCase {
             let full = try JSONTestHelpers.decode(FullStateJSON.self, from: try state.fullStateJSON())
             XCTAssertNotNil(full.cursor.selection)
         }
+
+        do {
+            let state = try EditorState(library: library, initialText: "(x)", viewportWidth: 80)
+            assertSuccess(try run(state, #"{"kind":"cursor","op":"move_to","line":0,"column":0}"#))
+            assertSuccess(try run(state, #"{"kind":"cursor","op":"move_to_matching_bracket"}"#))
+            let full = try JSONTestHelpers.decode(FullStateJSON.self, from: try state.fullStateJSON())
+            XCTAssertEqual(full.cursor.position, PositionJSON(line: 0, column: 2))
+        }
     }
 
     func testViewAndStyleCommandsCoverAllOpsAndViewportResult() throws {
@@ -441,6 +472,12 @@ final class EditorStateJSONCommandBridgeTests: XCTestCase {
             assertSuccess(try run(state, #"{"kind":"style","op":"unfold_all"}"#))
             full = try JSONTestHelpers.decode(FullStateJSON.self, from: try state.fullStateJSON())
             XCTAssertFalse(full.folding.regions.contains { $0.isCollapsed })
+        }
+
+        do {
+            let state = try EditorState(library: library, initialText: "(x)", viewportWidth: 80)
+            assertSuccess(try run(state, #"{"kind":"style","op":"update_bracket_match_highlights"}"#))
+            assertSuccess(try run(state, #"{"kind":"style","op":"clear_bracket_match_highlights"}"#))
         }
     }
 
@@ -523,5 +560,99 @@ final class EditorStateJSONCommandBridgeTests: XCTestCase {
         } catch {
             XCTAssertFalse(library.lastErrorMessage().isEmpty)
         }
+
+        do {
+            _ = try state.executeJSON(#"{"kind":"edit","op":"type_char","ch":"too long"}"#)
+            XCTFail("期望抛错，但实际未抛错")
+        } catch {
+            XCTAssertTrue(library.lastErrorMessage().contains("exactly one character"))
+        }
+    }
+
+    func testExecuteEnvelopeReportsSuccessParseAndCommandErrors() throws {
+        let library = try EditorCoreFFITestSupport.shared.loadLibrary()
+        let state = try EditorState(library: library, initialText: "abc\n", viewportWidth: 80)
+
+        let success = try state.executeEnvelope(#"{"kind":"edit","op":"insert_text","text":"!"}"#)
+        XCTAssertTrue(success.ok)
+        XCTAssertEqual(success.version, library.abiVersion)
+        XCTAssertNil(success.error)
+        guard case .object(let successValue)? = success.value else {
+            XCTFail("expected command result object")
+            return
+        }
+        XCTAssertEqual(successValue["kind"], .string("success"))
+
+        let parse = try state.executeEnvelope("{this is not json")
+        XCTAssertFalse(parse.ok)
+        XCTAssertNil(parse.value)
+        XCTAssertEqual(parse.version, library.abiVersion)
+        XCTAssertEqual(parse.error?.code, "parse")
+        XCTAssertEqual(parse.error?.status, .parse)
+        XCTAssertFalse(parse.error?.message.isEmpty ?? false)
+
+        let failure = try state.executeEnvelope(#"{"kind":"view","op":"set_viewport_width","width":0}"#)
+        XCTAssertFalse(failure.ok)
+        XCTAssertNil(failure.value)
+        XCTAssertEqual(failure.version, library.abiVersion)
+        XCTAssertEqual(failure.error?.code, "command_failed")
+        XCTAssertEqual(failure.error?.status, .commandFailed)
+        XCTAssertTrue(failure.error?.message.contains("command execution failed") ?? false)
+    }
+
+    func testCommandEnvelopeDecodesFutureFieldsAndUnknownStatus() throws {
+        let successJSON = """
+        {
+          "ok": true,
+          "value": {
+            "kind": "future_result",
+            "futurePayload": {
+              "enabled": true,
+              "items": [1, "x"]
+            }
+          },
+          "error": null,
+          "version": 2,
+          "futureTopLevel": "ignored"
+        }
+        """
+        let success = try JSONTestHelpers.decode(EcfJSONCommandEnvelope.self, from: successJSON)
+        XCTAssertTrue(success.ok)
+        XCTAssertEqual(success.version, 2)
+        XCTAssertNil(success.error)
+        guard case .object(let successValue)? = success.value else {
+            XCTFail("expected future result object")
+            return
+        }
+        XCTAssertEqual(successValue["kind"], .string("future_result"))
+        XCTAssertEqual(
+            successValue["futurePayload"],
+            .object([
+                "enabled": .bool(true),
+                "items": .array([.number(1), .string("x")]),
+            ])
+        )
+
+        let failureJSON = """
+        {
+          "ok": false,
+          "value": null,
+          "error": {
+            "code": "future_error",
+            "status": 999,
+            "message": "future failure",
+            "futureErrorMetadata": { "retryable": false }
+          },
+          "version": 2,
+          "futureTopLevel": true
+        }
+        """
+        let failure = try JSONTestHelpers.decode(EcfJSONCommandEnvelope.self, from: failureJSON)
+        XCTAssertFalse(failure.ok)
+        XCTAssertNil(failure.value)
+        XCTAssertEqual(failure.version, 2)
+        XCTAssertEqual(failure.error?.code, "future_error")
+        XCTAssertNil(failure.error?.status)
+        XCTAssertEqual(failure.error?.message, "future failure")
     }
 }
