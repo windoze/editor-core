@@ -819,52 +819,6 @@ extension AttoEditorAreaViewController {
         closeTab(id: activeTab.id)
     }
 
-    @discardableResult
-    func closeAllTabsForWindow() -> UInt32 {
-        closeTabGroup(projectedTabOrderForCommands())
-    }
-
-    @discardableResult
-    func closeOtherTabsForActiveTab() -> UInt32 {
-        guard let activeTab else { return 0 }
-        let targets = projectedTabOrderForCommands().filter { $0.id != activeTab.id }
-        return closeTabGroup(targets)
-    }
-
-    @discardableResult
-    func closeTabsToRightOfActiveTab() -> UInt32 {
-        guard let activeTab else { return 0 }
-        let orderedTabs = projectedTabOrderForCommands()
-        guard let activeIndex = orderedTabs.firstIndex(where: { $0.id == activeTab.id }) else {
-            return 0
-        }
-        guard activeIndex < orderedTabs.index(before: orderedTabs.endIndex) else {
-            return 0
-        }
-        return closeTabGroup(Array(orderedTabs[orderedTabs.index(after: activeIndex)...]))
-    }
-
-    private func projectedTabOrderForCommands() -> [AttoEditorTab] {
-        if let projection = makeCoreProjectedTabs() {
-            return projection.tabs.map(\.tab)
-        }
-        return tabs
-    }
-
-    @discardableResult
-    private func closeTabGroup(_ targets: [AttoEditorTab]) -> UInt32 {
-        var closed: UInt32 = 0
-        for target in targets {
-            guard tabs.contains(where: { $0.id == target.id }) else { continue }
-            closeTab(id: target.id)
-            if tabs.contains(where: { $0.id == target.id }) {
-                break
-            }
-            closed += 1
-        }
-        return closed
-    }
-
     func saveActiveTab() {
         guard let tab = activeTab else {
             NSSound.beep()

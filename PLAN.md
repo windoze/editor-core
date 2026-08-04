@@ -125,6 +125,12 @@
   - 产出：`docs/core-workspace-ownership-audit.md`
   - 验证：`git diff --check`
 - [ ] 将更高层 close/move/select/pin/preview/session restore command 转成 core workspace command/query。
+  - [x] 将 close all / close other / close right 的高层 tab group command 改为 dirty/LSP preflight 后执行 core bulk close command，并同步 AppKit projection。
+  - 验证：`swift test --package-path swift --filter AttoCoreWorkspaceCommandTests`
+  - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testCloseTabGroupCommandsUseCoreTabProjection`
+  - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testCloseAllTabsReleasesOwnedLspSessionsWithoutDuplicateDidClose`
+  - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testCloseAllTabsUsesCoreTabProjectionOrder`
+  - 验证：`git diff --check`
 - [ ] 补齐 tab drag/drop、split drag/drop、pane move、tab move 与 core snapshot 的一致性。
 - [ ] 将 dirty state、close prompt、save-all、reload、recent session 和 root change 继续收敛到 core-backed 工作流。
 - [ ] 建立迁移期测试：同一操作同时断言 core snapshot、Swift wrapper 和 AppKit projection。
