@@ -172,7 +172,12 @@ extension AttoEditorCommandTests {
         let searchField = try XCTUnwrap(
             findView(identifier: AttoAccessibilityID.workspaceProblemsPanelSearchField, in: root) as? NSSearchField
         )
+        let metadata = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.workspaceProblemsPanelMetadataLabel, in: root) as? NSTextField
+        )
         XCTAssertEqual(searchField.placeholderString, "Filter workspace problems...")
+        XCTAssertTrue(metadata.stringValue.hasPrefix("2 problems | Fresh | Result #"))
+        XCTAssertTrue(metadata.stringValue.contains(" | diagnostics.workspace | Workspace Problems"))
         let table = try XCTUnwrap(
             findView(identifier: AttoAccessibilityID.workspaceProblemsPanelTable, in: root) as? NSTableView
         )
@@ -431,7 +436,12 @@ extension AttoEditorCommandTests {
         let searchField = try XCTUnwrap(
             findView(identifier: AttoAccessibilityID.problemsPanelSearchField, in: root) as? NSSearchField
         )
+        let metadata = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.problemsPanelMetadataLabel, in: root) as? NSTextField
+        )
         XCTAssertEqual(searchField.placeholderString, "Filter problems...")
+        XCTAssertTrue(metadata.stringValue.hasPrefix("2 problems | Fresh | Result #"))
+        XCTAssertTrue(metadata.stringValue.contains(" | diagnostics.active | problems-panel.txt"))
         let table = try XCTUnwrap(
             findView(identifier: AttoAccessibilityID.problemsPanelTable, in: root) as? NSTableView
         )

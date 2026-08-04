@@ -21,6 +21,7 @@ final class AttoHierarchyPanelController: NSObject, NSTableViewDataSource, NSTab
     private var snapshot: Snapshot?
     private var rows: [Row] = []
     private var filteredRows: [Row] = []
+    private var metadataText: String?
     private var panel: NSPanel?
     private let searchField = NSSearchField(frame: .zero)
     private let metadataLabel = NSTextField(labelWithString: "")
@@ -56,8 +57,9 @@ final class AttoHierarchyPanelController: NSObject, NSTableViewDataSource, NSTab
         return filteredRows[row].entry
     }
 
-    func update(snapshot: Snapshot) {
+    func update(snapshot: Snapshot, metadataText: String? = nil) {
         self.snapshot = snapshot
+        self.metadataText = metadataText
         rows = snapshot.entries.map { entry in
             Row(entry: entry, title: titleForEntry(entry))
         }
@@ -66,8 +68,8 @@ final class AttoHierarchyPanelController: NSObject, NSTableViewDataSource, NSTab
     }
 
     @discardableResult
-    func show(relativeTo window: NSWindow, snapshot: Snapshot) -> Bool {
-        update(snapshot: snapshot)
+    func show(relativeTo window: NSWindow, snapshot: Snapshot, metadataText: String? = nil) -> Bool {
+        update(snapshot: snapshot, metadataText: metadataText)
 
         if panel == nil {
             panel = buildPanel()
@@ -179,7 +181,7 @@ final class AttoHierarchyPanelController: NSObject, NSTableViewDataSource, NSTab
         panel.title = "Hierarchy (\(rows.count))"
         let resultTitle = snapshot?.title ?? "Hierarchy"
         let count = rows.count == 1 ? "1 result" : "\(rows.count) results"
-        metadataLabel.stringValue = "\(resultTitle) | \(count)"
+        metadataLabel.stringValue = metadataText ?? "\(resultTitle) | \(count)"
     }
 
     private func position(panel: NSPanel, relativeTo window: NSWindow) {

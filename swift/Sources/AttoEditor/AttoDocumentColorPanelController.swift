@@ -16,6 +16,7 @@ final class AttoDocumentColorPanelController: NSObject, NSTableViewDataSource, N
     private let onOpen: (Item) -> Void
     private var rows: [Row] = []
     private var filteredRows: [Row] = []
+    private var metadataText: String?
     private var panel: NSPanel?
     private let searchField = NSSearchField(frame: .zero)
     private let metadataLabel = NSTextField(labelWithString: "")
@@ -45,7 +46,8 @@ final class AttoDocumentColorPanelController: NSObject, NSTableViewDataSource, N
         filteredRows.count
     }
 
-    func update(items: [Item]) {
+    func update(items: [Item], metadataText: String? = nil) {
+        self.metadataText = metadataText
         rows = items.map { item in
             let title = titleForItem(item)
             let hex = AttoLspDocumentColorParser.hexString(for: item.color)
@@ -56,8 +58,8 @@ final class AttoDocumentColorPanelController: NSObject, NSTableViewDataSource, N
     }
 
     @discardableResult
-    func show(relativeTo window: NSWindow, items: [Item]) -> Bool {
-        update(items: items)
+    func show(relativeTo window: NSWindow, items: [Item], metadataText: String? = nil) -> Bool {
+        update(items: items, metadataText: metadataText)
 
         if panel == nil {
             panel = buildPanel()
@@ -167,7 +169,10 @@ final class AttoDocumentColorPanelController: NSObject, NSTableViewDataSource, N
     private func updateTitle() {
         guard let panel else { return }
         panel.title = "Document Colors (\(rows.count))"
-        metadataLabel.stringValue = rows.count == 1 ? "Active Tab | 1 color" : "Active Tab | \(rows.count) colors"
+        metadataLabel.stringValue = metadataText
+            ?? AttoLspResultMetadataText.activeTab(
+                countText: AttoLspResultMetadataText.count(rows.count, singular: "color", plural: "colors")
+            )
     }
 
     private func position(panel: NSPanel, relativeTo window: NSWindow) {

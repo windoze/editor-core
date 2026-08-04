@@ -350,7 +350,7 @@ final class AttoAccessibilityIdentifierTests: XCTestCase {
         )
         XCTAssertNotNil(findView(identifier: AttoAccessibilityID.lspLocationPanelScrollView, in: root))
         XCTAssertEqual(searchField.placeholderString, "Filter references...")
-        XCTAssertEqual(metadataLabel.stringValue, "Fresh | Snapshot | References")
+        XCTAssertEqual(metadataLabel.stringValue, "Fresh | Snapshot | locations | References")
         XCTAssertEqual(table.numberOfRows, 2)
 
         searchField.stringValue = ":9:"
@@ -427,7 +427,7 @@ final class AttoAccessibilityIdentifierTests: XCTestCase {
         )
         XCTAssertNotNil(findView(identifier: AttoAccessibilityID.lspSymbolPanelScrollView, in: root))
         XCTAssertEqual(searchField.placeholderString, "Filter document symbols...")
-        XCTAssertEqual(metadataLabel.stringValue, "Fresh | Snapshot | Document Symbols")
+        XCTAssertEqual(metadataLabel.stringValue, "Fresh | Snapshot | symbols | Document Symbols")
         XCTAssertEqual(table.numberOfRows, 2)
 
         searchField.stringValue = "Struct"
@@ -958,11 +958,15 @@ final class AttoAccessibilityIdentifierTests: XCTestCase {
         let searchField = try XCTUnwrap(
             findView(identifier: AttoAccessibilityID.problemsPanelSearchField, in: root) as? NSSearchField
         )
+        let metadataLabel = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.problemsPanelMetadataLabel, in: root) as? NSTextField
+        )
         let table = try XCTUnwrap(
             findView(identifier: AttoAccessibilityID.problemsPanelTable, in: root) as? NSTableView
         )
         XCTAssertNotNil(findView(identifier: AttoAccessibilityID.problemsPanelScrollView, in: root))
         XCTAssertEqual(searchField.placeholderString, "Filter problems...")
+        XCTAssertEqual(metadataLabel.stringValue, "Problems | 2 problems")
         XCTAssertEqual(table.numberOfRows, 2)
 
         searchField.stringValue = "warning"
@@ -1030,11 +1034,15 @@ final class AttoAccessibilityIdentifierTests: XCTestCase {
         let searchField = try XCTUnwrap(
             findView(identifier: AttoAccessibilityID.workspaceProblemsPanelSearchField, in: root) as? NSSearchField
         )
+        let metadataLabel = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.workspaceProblemsPanelMetadataLabel, in: root) as? NSTextField
+        )
         let table = try XCTUnwrap(
             findView(identifier: AttoAccessibilityID.workspaceProblemsPanelTable, in: root) as? NSTableView
         )
         XCTAssertNotNil(findView(identifier: AttoAccessibilityID.workspaceProblemsPanelScrollView, in: root))
         XCTAssertEqual(searchField.placeholderString, "Filter workspace problems...")
+        XCTAssertEqual(metadataLabel.stringValue, "Workspace Problems | 2 problems")
         XCTAssertEqual(table.numberOfRows, 2)
 
         searchField.stringValue = "warning"

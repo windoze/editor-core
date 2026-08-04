@@ -14,6 +14,7 @@ final class AttoInlayHintPanelController: NSObject, NSTableViewDataSource, NSTab
     private let onResolve: (Item) -> Void
     private var rows: [Row] = []
     private var filteredRows: [Row] = []
+    private var metadataText: String?
     private var panel: NSPanel?
     private let searchField = NSSearchField(frame: .zero)
     private let metadataLabel = NSTextField(labelWithString: "")
@@ -41,15 +42,16 @@ final class AttoInlayHintPanelController: NSObject, NSTableViewDataSource, NSTab
         filteredRows.count
     }
 
-    func update(items: [Item]) {
+    func update(items: [Item], metadataText: String? = nil) {
+        self.metadataText = metadataText
         rows = items.map { Row(item: $0, title: titleForItem($0)) }
         applyFilter()
         updateTitle()
     }
 
     @discardableResult
-    func show(relativeTo window: NSWindow, items: [Item]) -> Bool {
-        update(items: items)
+    func show(relativeTo window: NSWindow, items: [Item], metadataText: String? = nil) -> Bool {
+        update(items: items, metadataText: metadataText)
 
         if panel == nil {
             panel = buildPanel()
@@ -159,7 +161,10 @@ final class AttoInlayHintPanelController: NSObject, NSTableViewDataSource, NSTab
     private func updateTitle() {
         guard let panel else { return }
         panel.title = "Inlay Hints (\(rows.count))"
-        metadataLabel.stringValue = rows.count == 1 ? "Active Tab | 1 hint" : "Active Tab | \(rows.count) hints"
+        metadataLabel.stringValue = metadataText
+            ?? AttoLspResultMetadataText.activeTab(
+                countText: AttoLspResultMetadataText.count(rows.count, singular: "hint", plural: "hints")
+            )
     }
 
     private func position(panel: NSPanel, relativeTo window: NSWindow) {

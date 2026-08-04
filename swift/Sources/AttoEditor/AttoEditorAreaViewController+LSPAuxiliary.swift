@@ -49,7 +49,14 @@ extension AttoEditorAreaViewController {
 
         let controller = inlayHintPanelController ?? makeInlayHintPanelController()
         inlayHintPanelController = controller
-        return controller.show(relativeTo: window, items: items)
+        return controller.show(
+            relativeTo: window,
+            items: items,
+            metadataText: lspResultEventPanelMetadata(
+                countText: AttoLspResultMetadataText.count(items.count, singular: "hint", plural: "hints"),
+                family: AuxiliaryRefreshKind.inlayHints.resultEventFamily
+            )
+        )
     }
 
     @discardableResult
@@ -84,7 +91,14 @@ extension AttoEditorAreaViewController {
 
         let controller = documentLinkPanelController ?? makeDocumentLinkPanelController()
         documentLinkPanelController = controller
-        return controller.show(relativeTo: window, items: items)
+        return controller.show(
+            relativeTo: window,
+            items: items,
+            metadataText: lspResultEventPanelMetadata(
+                countText: AttoLspResultMetadataText.count(items.count, singular: "link", plural: "links"),
+                family: AuxiliaryRefreshKind.documentLinks.resultEventFamily
+            )
+        )
     }
 
     @discardableResult
@@ -714,7 +728,14 @@ extension AttoEditorAreaViewController {
 
     private func updateVisibleInlayHintPanel(for tab: AttoEditorTab) {
         if let controller = inlayHintPanelController, controller.isVisible {
-            controller.update(items: currentInlayHintItems(in: tab))
+            let items = currentInlayHintItems(in: tab)
+            controller.update(
+                items: items,
+                metadataText: lspResultEventPanelMetadata(
+                    countText: AttoLspResultMetadataText.count(items.count, singular: "hint", plural: "hints"),
+                    family: AuxiliaryRefreshKind.inlayHints.resultEventFamily
+                )
+            )
         }
         updateVisibleLspWorkbenchPanel()
     }
@@ -763,7 +784,14 @@ extension AttoEditorAreaViewController {
 
     private func updateVisibleDocumentLinkPanel(for tab: AttoEditorTab) {
         if let controller = documentLinkPanelController, controller.isVisible {
-            controller.update(items: currentDocumentLinkItems(in: tab))
+            let items = currentDocumentLinkItems(in: tab)
+            controller.update(
+                items: items,
+                metadataText: lspResultEventPanelMetadata(
+                    countText: AttoLspResultMetadataText.count(items.count, singular: "link", plural: "links"),
+                    family: AuxiliaryRefreshKind.documentLinks.resultEventFamily
+                )
+            )
         }
         updateVisibleLspWorkbenchPanel()
     }

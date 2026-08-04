@@ -54,7 +54,14 @@ extension AttoEditorAreaViewController {
 
         let controller = hierarchyPanelController ?? makeHierarchyPanelController()
         hierarchyPanelController = controller
-        return controller.show(relativeTo: window, snapshot: snapshot)
+        return controller.show(
+            relativeTo: window,
+            snapshot: snapshot,
+            metadataText: lspResultEventPanelMetadata(
+                countText: AttoLspResultMetadataText.count(snapshot.entries.count, singular: "result", plural: "results"),
+                family: "hierarchy"
+            )
+        )
     }
 
     @discardableResult
@@ -568,7 +575,13 @@ extension AttoEditorAreaViewController {
             payload: .hierarchy(snapshot)
         )
         if hierarchyPanelController?.isVisible == true {
-            hierarchyPanelController?.update(snapshot: snapshot)
+            hierarchyPanelController?.update(
+                snapshot: snapshot,
+                metadataText: lspResultEventPanelMetadata(
+                    countText: AttoLspResultMetadataText.count(entries.count, singular: "result", plural: "results"),
+                    family: "hierarchy"
+                )
+            )
         }
         updateVisibleLspWorkbenchPanel()
     }

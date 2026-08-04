@@ -685,16 +685,7 @@ extension AttoEditorAreaViewController {
         entry: AttoLspResultLifecycleEntry<Snapshot>?
     ) -> String {
         guard let entry else { return countText }
-        var parts = [
-            countText,
-            entry.state.displayText,
-            "Result #\(entry.sequence)",
-            entry.family,
-        ]
-        if entry.title.isEmpty == false {
-            parts.append(entry.title)
-        }
-        return parts.joined(separator: " | ")
+        return AttoLspResultMetadataText.entry(entry, countText: countText)
     }
 
     private func lspWorkbenchDocumentColorStatus(count: Int) -> String {
@@ -726,16 +717,7 @@ extension AttoEditorAreaViewController {
         countText: String,
         event: AttoLspResultLifecycleEvent
     ) -> String {
-        var parts = [
-            countText,
-            event.state.displayText,
-            "Result #\(event.sequence)",
-            event.family,
-        ]
-        if event.title.isEmpty == false {
-            parts.append(event.title)
-        }
-        return parts.joined(separator: " | ")
+        AttoLspResultMetadataText.event(event, countText: countText)
     }
 
     private func lspWorkbenchSymbolEntry() -> AttoLspResultLifecycleEntry<LspSymbolResultSnapshot>? {
@@ -773,26 +755,9 @@ extension AttoEditorAreaViewController {
         entry: AttoLspResultLifecycleEntry<AttoDiagnosticsLifecycleSnapshot>?
     ) -> String {
         guard let entry else { return countText }
-        let stateText = entry.snapshot.staleReason.map(lspWorkbenchDiagnosticsStaleText) ?? entry.state.displayText
-        var parts = [
-            countText,
-            stateText,
-            "Result #\(entry.sequence)",
-            entry.family,
-        ]
-        if entry.title.isEmpty == false {
-            parts.append(entry.title)
-        }
-        return parts.joined(separator: " | ")
-    }
-
-    private func lspWorkbenchDiagnosticsStaleText(_ reason: AttoDiagnosticsStaleReason) -> String {
-        switch reason {
-        case .documentEdited:
-            return "Stale: document edited"
-        case .workspaceRefreshRequested:
-            return "Stale: workspace refresh requested"
-        }
+        let stateText = entry.snapshot.staleReason.map(AttoLspResultMetadataText.diagnosticsStaleText)
+            ?? entry.state.displayText
+        return AttoLspResultMetadataText.entry(entry, countText: countText, stateText: stateText)
     }
 
     func makeLspWorkbenchDockView() -> AttoLspWorkbenchDockView {

@@ -93,7 +93,12 @@ extension AttoEditorAreaViewController {
             }
         )
         problemsPanelController = controller
-        return controller.show(relativeTo: window, problems: problems)
+        let countText = AttoLspResultMetadataText.count(problems.count, singular: "problem", plural: "problems")
+        return controller.show(
+            relativeTo: window,
+            problems: problems,
+            metadataText: lspDiagnosticsPanelMetadata(countText: countText, family: "diagnostics.active")
+        )
     }
 
     @discardableResult
@@ -127,11 +132,15 @@ extension AttoEditorAreaViewController {
                 }
             )
             problemsPanelController = controller
+            let countText = AttoLspResultMetadataText.count(problems.count, singular: "problem", plural: "problems")
+            let stateText = entry.snapshot.staleReason.map(AttoLspResultMetadataText.diagnosticsStaleText)
+                ?? entry.state.displayText
             return controller.show(
                 relativeTo: window,
                 problems: problems,
                 title: entry.title.isEmpty ? "Problems" : entry.title,
-                placeholder: "Filter problems history..."
+                placeholder: "Filter problems history...",
+                metadataText: AttoLspResultMetadataText.entry(entry, countText: countText, stateText: stateText)
             )
 
         case .workspace:
@@ -146,11 +155,15 @@ extension AttoEditorAreaViewController {
                 accessibilityIDs: .workspaceProblems
             )
             workspaceProblemsPanelController = controller
+            let countText = AttoLspResultMetadataText.count(problems.count, singular: "problem", plural: "problems")
+            let stateText = entry.snapshot.staleReason.map(AttoLspResultMetadataText.diagnosticsStaleText)
+                ?? entry.state.displayText
             return controller.show(
                 relativeTo: window,
                 problems: problems,
                 title: entry.title.isEmpty ? "Workspace Problems" : entry.title,
-                placeholder: "Filter workspace problems history..."
+                placeholder: "Filter workspace problems history...",
+                metadataText: AttoLspResultMetadataText.entry(entry, countText: countText, stateText: stateText)
             )
         }
     }
@@ -460,20 +473,25 @@ extension AttoEditorAreaViewController {
             accessibilityIDs: .workspaceProblems
         )
         workspaceProblemsPanelController = controller
+        let countText = AttoLspResultMetadataText.count(problems.count, singular: "problem", plural: "problems")
         return controller.show(
             relativeTo: window,
             problems: problems,
             title: "Workspace Problems",
-            placeholder: "Filter workspace problems..."
+            placeholder: "Filter workspace problems...",
+            metadataText: lspDiagnosticsPanelMetadata(countText: countText, family: "diagnostics.workspace")
         )
     }
 
     func updateWorkspaceProblemsPanelIfVisible() {
         guard workspaceProblemsPanelController?.isVisible == true else { return }
+        let problems = workspaceDiagnosticProblems()
+        let countText = AttoLspResultMetadataText.count(problems.count, singular: "problem", plural: "problems")
         workspaceProblemsPanelController?.update(
-            problems: workspaceDiagnosticProblems(),
+            problems: problems,
             title: "Workspace Problems",
-            placeholder: "Filter workspace problems..."
+            placeholder: "Filter workspace problems...",
+            metadataText: lspDiagnosticsPanelMetadata(countText: countText, family: "diagnostics.workspace")
         )
     }
 

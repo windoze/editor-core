@@ -294,10 +294,7 @@ final class AttoLspLocationPanelController: NSObject, NSTableViewDataSource, NST
     }
 
     private static func metadataText(for entry: Entry) -> String {
-        if entry.sequence == 0 {
-            return "\(entry.state.displayText) | Snapshot | \(entry.title)"
-        }
-        return "\(entry.state.displayText) | Result #\(entry.sequence) | \(entry.family) | \(entry.title)"
+        AttoLspResultMetadataText.entry(entry)
     }
 }
 

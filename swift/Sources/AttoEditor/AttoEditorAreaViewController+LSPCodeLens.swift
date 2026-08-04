@@ -150,7 +150,14 @@ extension AttoEditorAreaViewController {
 
         let controller = codeLensPanelController ?? makeCodeLensPanelController()
         codeLensPanelController = controller
-        return controller.show(relativeTo: window, items: items)
+        return controller.show(
+            relativeTo: window,
+            items: items,
+            metadataText: lspResultEventPanelMetadata(
+                countText: AttoLspResultMetadataText.count(items.count, singular: "action", plural: "actions"),
+                family: "code_lens"
+            )
+        )
     }
 
     func codeLensItemsOnPrimaryCaretLine(
@@ -503,7 +510,14 @@ extension AttoEditorAreaViewController {
 
     private func updateVisibleCodeLensPanel(for tab: AttoEditorTab) {
         if let controller = codeLensPanelController, controller.isVisible {
-            controller.update(items: currentCodeLensItems(in: tab))
+            let items = currentCodeLensItems(in: tab)
+            controller.update(
+                items: items,
+                metadataText: lspResultEventPanelMetadata(
+                    countText: AttoLspResultMetadataText.count(items.count, singular: "action", plural: "actions"),
+                    family: "code_lens"
+                )
+            )
         }
         updateVisibleLspWorkbenchPanel()
     }

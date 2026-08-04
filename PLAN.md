@@ -250,7 +250,22 @@
   - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testDefaultCommandPaletteIncludesCoreEditorCommandIDs`
   - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testMainMenuItemsUseCommandIDsAndResolvedKeymap`
   - 验证：`swift test --package-path swift --filter Workbench`
-- [ ] 让 Locations、Symbols、Problems、Workspace Outline、Code Lens、Inlay Hints、Document Links、Document Colors、Hierarchy 统一消费 lifecycle metadata。
+- [x] 让 Locations、Symbols、Problems、Workspace Outline、Code Lens、Inlay Hints、Document Links、Document Colors、Hierarchy 统一消费 lifecycle metadata。
+  - [x] 新增共享 `AttoLspResultMetadataText` 和 `AttoEditorAreaViewController+LSPResultMetadata`，统一 `count | state | Result # | family | title` 文案生成。
+  - [x] Locations、Symbols/Workspace Outline、Workbench 和 Problems 面板统一复用 lifecycle entry metadata；Code Lens、Inlay Hints、Document Links、Document Colors、Hierarchy 通过 result event metadata 传入各自面板。
+  - [x] Problems / Workspace Problems 新增稳定 metadata accessibility identifiers，并保留 controller 直用时的 fallback 文案。
+  - 验证：`swift test --package-path swift --filter AttoAccessibilityIdentifierTests/testLspLocationPanelExposesStableIdentifiersAndFiltersRows`
+  - 验证：`swift test --package-path swift --filter AttoAccessibilityIdentifierTests/testLspSymbolPanelExposesStableIdentifiersAndFiltersRows`
+  - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testWorkspaceOutlinePanelAggregatesDocumentSymbolSnapshots`
+  - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testHierarchyPanelUsesLastHierarchyResults`
+  - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testDocumentLinkPanelUsesDerivedDecorations`
+  - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testInlayHintPanelUsesDerivedDecorations`
+  - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testCodeLensPanelUsesDerivedDecorations`
+  - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testDocumentColorPanelUsesDocumentColorResults`
+  - 验证：`swift test --package-path swift --filter 'AttoEditorCommandTests/test.*ProblemsPanel'`
+  - 验证：`swift test --package-path swift --filter AttoAccessibilityIdentifierTests/testProblemsPanelExposesStableIdentifiersAndFiltersRows`
+  - 验证：`swift test --package-path swift --filter AttoAccessibilityIdentifierTests/testWorkspaceProblemsPanelExposesStableIdentifiersAndFiltersRows`
+  - 验证：`swift test --package-path swift --filter Workbench`
 - [ ] 完成跨 tab/project 的 result ownership、history、pin、refresh、cancel、timeout、stale 和 error 行为。
 - [ ] 补齐 keyboard navigation、focus restore、selection restore 和 panel persistence。
 - [ ] 拆分继续增长的 Workbench/AppKit 测试文件。

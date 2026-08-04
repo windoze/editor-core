@@ -362,10 +362,15 @@ extension AttoEditorCommandTests {
         let searchField = try XCTUnwrap(
             findView(identifier: AttoAccessibilityID.documentLinkPanelSearchField, in: root) as? NSSearchField
         )
+        let metadata = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.documentLinkPanelMetadataLabel, in: root) as? NSTextField
+        )
         let table = try XCTUnwrap(
             findView(identifier: AttoAccessibilityID.documentLinkPanelTable, in: root) as? NSTableView
         )
         XCTAssertEqual(searchField.placeholderString, "Filter document links...")
+        XCTAssertTrue(metadata.stringValue.hasPrefix("2 links | Fresh | Result #"))
+        XCTAssertTrue(metadata.stringValue.contains(" | document_links | Document Links: 2 links"))
         XCTAssertEqual(table.numberOfRows, 2)
         XCTAssertEqual(vc._documentLinkPanelRowCountForTesting(), 2)
         XCTAssertEqual(vc._documentLinkPanelItemsForTesting().map(\.title), [
@@ -480,10 +485,15 @@ extension AttoEditorCommandTests {
         let searchField = try XCTUnwrap(
             findView(identifier: AttoAccessibilityID.inlayHintPanelSearchField, in: root) as? NSSearchField
         )
+        let metadata = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.inlayHintPanelMetadataLabel, in: root) as? NSTextField
+        )
         let table = try XCTUnwrap(
             findView(identifier: AttoAccessibilityID.inlayHintPanelTable, in: root) as? NSTableView
         )
         XCTAssertEqual(searchField.placeholderString, "Filter inlay hints...")
+        XCTAssertTrue(metadata.stringValue.hasPrefix("2 hints | Fresh | Result #"))
+        XCTAssertTrue(metadata.stringValue.contains(" | inlay_hints | Inlay Hints: 2 hints"))
         XCTAssertEqual(table.numberOfRows, 2)
         XCTAssertEqual(vc._inlayHintPanelRowCountForTesting(), 2)
         XCTAssertEqual(vc._inlayHintPanelItemsForTesting().map(\.title), [": Int", "argument:"])
@@ -637,10 +647,15 @@ extension AttoEditorCommandTests {
         let searchField = try XCTUnwrap(
             findView(identifier: AttoAccessibilityID.codeLensPanelSearchField, in: root) as? NSSearchField
         )
+        let metadata = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.codeLensPanelMetadataLabel, in: root) as? NSTextField
+        )
         let table = try XCTUnwrap(
             findView(identifier: AttoAccessibilityID.codeLensPanelTable, in: root) as? NSTableView
         )
         XCTAssertEqual(searchField.placeholderString, "Filter code lens actions...")
+        XCTAssertTrue(metadata.stringValue.hasPrefix("2 actions | Fresh | Result #"))
+        XCTAssertTrue(metadata.stringValue.contains(" | code_lens | Code Lens: 2 actions"))
         XCTAssertEqual(table.numberOfRows, 2)
         XCTAssertEqual(vc._codeLensPanelRowCountForTesting(), 2)
         XCTAssertEqual(vc._codeLensPanelItemsForTesting().map(\.title), ["Run One", "Run Two"])
@@ -1188,10 +1203,15 @@ extension AttoEditorCommandTests {
         let searchField = try XCTUnwrap(
             findView(identifier: AttoAccessibilityID.documentColorPanelSearchField, in: root) as? NSSearchField
         )
+        let metadata = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.documentColorPanelMetadataLabel, in: root) as? NSTextField
+        )
         let table = try XCTUnwrap(
             findView(identifier: AttoAccessibilityID.documentColorPanelTable, in: root) as? NSTableView
         )
         XCTAssertEqual(searchField.placeholderString, "Filter document colors...")
+        XCTAssertTrue(metadata.stringValue.hasPrefix("2 colors | Fresh | Result #"))
+        XCTAssertTrue(metadata.stringValue.contains(" | document_colors | Document Colors: 2 colors"))
         XCTAssertEqual(table.numberOfRows, 2)
         XCTAssertEqual(vc._documentColorPanelRowCountForTesting(), 2)
         XCTAssertEqual(vc._documentColorPanelItemsForTesting().map { AttoLspDocumentColorParser.hexString(for: $0.color) }, [

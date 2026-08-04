@@ -18,7 +18,7 @@
 ## 阶段 7：Result Panels 与 Workbench
 
 - 完成跨 tab / project 的 result panels，并继续将 result family 迁移到已建立的统一 dock/workbench 容器。
-- 让 Locations、Symbols、Problems、Workspace Outline、Code Lens、Inlay Hints、Document Links、Document Colors、Hierarchy 等 result family 统一消费 lifecycle metadata、stale/error 状态、refresh 和 history/pin 策略。
+- 继续让 Locations、Symbols、Problems、Workspace Outline、Code Lens、Inlay Hints、Document Links、Document Colors、Hierarchy 等 result family 统一消费 stale/error 状态、refresh 和 history/pin 策略。
 - 补齐跨 result family 的刷新、过期、取消、超时、错误、空结果和 stale 展示策略。
 - 将仍依赖独立 floating panel 或 feature-local polling 的路径迁移到统一 workbench 入口。
 

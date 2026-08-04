@@ -1271,12 +1271,25 @@ extension AttoEditorAreaViewController {
 
         let controller = documentColorPanelController ?? makeDocumentColorPanelController()
         documentColorPanelController = controller
-        controller.show(relativeTo: window, items: items)
+        controller.show(
+            relativeTo: window,
+            items: items,
+            metadataText: lspResultEventPanelMetadata(
+                countText: AttoLspResultMetadataText.count(items.count, singular: "color", plural: "colors"),
+                family: "document_colors"
+            )
+        )
     }
 
     func updateVisibleDocumentColorPanel(items: [AttoLspDocumentColorParser.Item]) {
         guard let controller = documentColorPanelController, controller.isVisible else { return }
-        controller.update(items: items)
+        controller.update(
+            items: items,
+            metadataText: lspResultEventPanelMetadata(
+                countText: AttoLspResultMetadataText.count(items.count, singular: "color", plural: "colors"),
+                family: "document_colors"
+            )
+        )
     }
 
     func makeDocumentColorPanelController() -> AttoDocumentColorPanelController {

@@ -16,6 +16,7 @@ final class AttoCodeLensPanelController: NSObject, NSTableViewDataSource, NSTabl
     private var filteredRows: [Row] = []
     private var title = "Code Lens"
     private var placeholder = "Filter code lens actions..."
+    private var metadataText: String?
     private var panel: NSPanel?
     private let searchField = NSSearchField(frame: .zero)
     private let metadataLabel = NSTextField(labelWithString: "")
@@ -46,10 +47,12 @@ final class AttoCodeLensPanelController: NSObject, NSTableViewDataSource, NSTabl
     func update(
         items: [Item],
         title: String = "Code Lens",
-        placeholder: String = "Filter code lens actions..."
+        placeholder: String = "Filter code lens actions...",
+        metadataText: String? = nil
     ) {
         self.title = title
         self.placeholder = placeholder
+        self.metadataText = metadataText
         rows = items.map { Row(item: $0, title: titleForItem($0)) }
         applyFilter()
         updateTitle()
@@ -60,9 +63,10 @@ final class AttoCodeLensPanelController: NSObject, NSTableViewDataSource, NSTabl
         relativeTo window: NSWindow,
         items: [Item],
         title: String = "Code Lens",
-        placeholder: String = "Filter code lens actions..."
+        placeholder: String = "Filter code lens actions...",
+        metadataText: String? = nil
     ) -> Bool {
-        update(items: items, title: title, placeholder: placeholder)
+        update(items: items, title: title, placeholder: placeholder, metadataText: metadataText)
 
         if panel == nil {
             panel = buildPanel()
@@ -173,7 +177,10 @@ final class AttoCodeLensPanelController: NSObject, NSTableViewDataSource, NSTabl
         guard let panel else { return }
         panel.title = "\(title) (\(rows.count))"
         searchField.placeholderString = placeholder
-        metadataLabel.stringValue = rows.count == 1 ? "Active Tab | 1 action" : "Active Tab | \(rows.count) actions"
+        metadataLabel.stringValue = metadataText
+            ?? AttoLspResultMetadataText.activeTab(
+                countText: AttoLspResultMetadataText.count(rows.count, singular: "action", plural: "actions")
+            )
     }
 
     private func position(panel: NSPanel, relativeTo window: NSWindow) {

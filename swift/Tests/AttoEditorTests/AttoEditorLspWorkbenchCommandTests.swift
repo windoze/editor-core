@@ -565,7 +565,8 @@ extension AttoEditorCommandTests {
         let table = try XCTUnwrap(
             findView(identifier: AttoAccessibilityID.hierarchyPanelTable, in: root) as? NSTableView
         )
-        XCTAssertEqual(metadata.stringValue, "Incoming Calls | 2 results")
+        XCTAssertTrue(metadata.stringValue.hasPrefix("2 results | Fresh | Result #"))
+        XCTAssertTrue(metadata.stringValue.contains(" | hierarchy | Incoming Calls"))
         XCTAssertEqual(table.numberOfRows, 2)
         XCTAssertEqual(vc._hierarchyPanelRowCountForTesting(), 2)
         XCTAssertEqual(vc._hierarchyPanelEntriesForTesting().map(\.name), ["render", "layout"])

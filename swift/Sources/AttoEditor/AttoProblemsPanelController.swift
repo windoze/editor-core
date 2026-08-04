@@ -10,6 +10,7 @@ final class AttoProblemsPanelController: NSObject, NSTableViewDataSource, NSTabl
         let panel: String
         let root: String
         let searchField: String
+        let metadataLabel: String
         let table: String
         let scrollView: String
         let row: String
@@ -19,6 +20,7 @@ final class AttoProblemsPanelController: NSObject, NSTableViewDataSource, NSTabl
             panel: AttoAccessibilityID.problemsPanel,
             root: AttoAccessibilityID.problemsPanelRoot,
             searchField: AttoAccessibilityID.problemsPanelSearchField,
+            metadataLabel: AttoAccessibilityID.problemsPanelMetadataLabel,
             table: AttoAccessibilityID.problemsPanelTable,
             scrollView: AttoAccessibilityID.problemsPanelScrollView,
             row: AttoAccessibilityID.problemsPanelRow,
@@ -29,6 +31,7 @@ final class AttoProblemsPanelController: NSObject, NSTableViewDataSource, NSTabl
             panel: AttoAccessibilityID.workspaceProblemsPanel,
             root: AttoAccessibilityID.workspaceProblemsPanelRoot,
             searchField: AttoAccessibilityID.workspaceProblemsPanelSearchField,
+            metadataLabel: AttoAccessibilityID.workspaceProblemsPanelMetadataLabel,
             table: AttoAccessibilityID.workspaceProblemsPanelTable,
             scrollView: AttoAccessibilityID.workspaceProblemsPanelScrollView,
             row: AttoAccessibilityID.workspaceProblemsPanelRow,
@@ -65,8 +68,10 @@ final class AttoProblemsPanelController: NSObject, NSTableViewDataSource, NSTabl
     private var filteredRows: [Row] = []
     private var title = "Problems"
     private var placeholder = "Filter problems..."
+    private var metadataText: String?
     private var panel: NSPanel?
     private let searchField = NSSearchField(frame: .zero)
+    private let metadataLabel = NSTextField(labelWithString: "")
     private let tableView = NSTableView(frame: .zero)
     private let scrollView = NSScrollView(frame: .zero)
 
@@ -135,12 +140,18 @@ final class AttoProblemsPanelController: NSObject, NSTableViewDataSource, NSTabl
         filteredRows.count
     }
 
-    func update(diagnostics: [EcuDiagnostic], title: String = "Problems", placeholder: String = "Filter problems...") {
+    func update(
+        diagnostics: [EcuDiagnostic],
+        title: String = "Problems",
+        placeholder: String = "Filter problems...",
+        metadataText: String? = nil
+    ) {
         self.diagnostics = diagnostics
         workspaceDiagnostics = []
         problems = []
         self.title = title
         self.placeholder = placeholder
+        self.metadataText = metadataText
         let titleForDiagnostic = titleForDiagnostic ?? { $0.message }
         rows = diagnostics.map { diagnostic in
             Row(
@@ -159,13 +170,15 @@ final class AttoProblemsPanelController: NSObject, NSTableViewDataSource, NSTabl
     func update(
         workspaceDiagnostics: [WorkspaceDiagnostic],
         title: String = "Workspace Problems",
-        placeholder: String = "Filter workspace problems..."
+        placeholder: String = "Filter workspace problems...",
+        metadataText: String? = nil
     ) {
         diagnostics = []
         self.workspaceDiagnostics = workspaceDiagnostics
         problems = []
         self.title = title
         self.placeholder = placeholder
+        self.metadataText = metadataText
         let titleForWorkspaceDiagnostic = titleForWorkspaceDiagnostic ?? { $0.message }
         rows = workspaceDiagnostics.map { diagnostic in
             Row(
@@ -184,13 +197,15 @@ final class AttoProblemsPanelController: NSObject, NSTableViewDataSource, NSTabl
     func update(
         problems: [AttoUnifiedDiagnosticProblem],
         title: String = "Problems",
-        placeholder: String = "Filter problems..."
+        placeholder: String = "Filter problems...",
+        metadataText: String? = nil
     ) {
         diagnostics = []
         workspaceDiagnostics = []
         self.problems = problems
         self.title = title
         self.placeholder = placeholder
+        self.metadataText = metadataText
         let titleForProblem = titleForProblem ?? { $0.message }
         rows = problems.map { problem in
             Row(
@@ -211,9 +226,10 @@ final class AttoProblemsPanelController: NSObject, NSTableViewDataSource, NSTabl
         relativeTo window: NSWindow,
         diagnostics: [EcuDiagnostic],
         title: String = "Problems",
-        placeholder: String = "Filter problems..."
+        placeholder: String = "Filter problems...",
+        metadataText: String? = nil
     ) -> Bool {
-        update(diagnostics: diagnostics, title: title, placeholder: placeholder)
+        update(diagnostics: diagnostics, title: title, placeholder: placeholder, metadataText: metadataText)
         return showUpdatedPanel(relativeTo: window)
     }
 
@@ -222,9 +238,15 @@ final class AttoProblemsPanelController: NSObject, NSTableViewDataSource, NSTabl
         relativeTo window: NSWindow,
         workspaceDiagnostics: [WorkspaceDiagnostic],
         title: String = "Workspace Problems",
-        placeholder: String = "Filter workspace problems..."
+        placeholder: String = "Filter workspace problems...",
+        metadataText: String? = nil
     ) -> Bool {
-        update(workspaceDiagnostics: workspaceDiagnostics, title: title, placeholder: placeholder)
+        update(
+            workspaceDiagnostics: workspaceDiagnostics,
+            title: title,
+            placeholder: placeholder,
+            metadataText: metadataText
+        )
         return showUpdatedPanel(relativeTo: window)
     }
 
@@ -233,9 +255,10 @@ final class AttoProblemsPanelController: NSObject, NSTableViewDataSource, NSTabl
         relativeTo window: NSWindow,
         problems: [AttoUnifiedDiagnosticProblem],
         title: String = "Problems",
-        placeholder: String = "Filter problems..."
+        placeholder: String = "Filter problems...",
+        metadataText: String? = nil
     ) -> Bool {
-        update(problems: problems, title: title, placeholder: placeholder)
+        update(problems: problems, title: title, placeholder: placeholder, metadataText: metadataText)
         return showUpdatedPanel(relativeTo: window)
     }
 
@@ -293,6 +316,14 @@ final class AttoProblemsPanelController: NSObject, NSTableViewDataSource, NSTabl
         searchField.delegate = self
         searchField.translatesAutoresizingMaskIntoConstraints = false
 
+        metadataLabel.identifier = NSUserInterfaceItemIdentifier(accessibilityIDs.metadataLabel)
+        metadataLabel.font = NSFont.systemFont(ofSize: 11)
+        metadataLabel.textColor = NSColor(attoHex: 0xA6A6A6)
+        metadataLabel.lineBreakMode = .byTruncatingTail
+        metadataLabel.maximumNumberOfLines = 1
+        metadataLabel.translatesAutoresizingMaskIntoConstraints = false
+        metadataLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("problem"))
         column.title = "Problem"
         column.width = 720
@@ -315,6 +346,7 @@ final class AttoProblemsPanelController: NSObject, NSTableViewDataSource, NSTabl
         scrollView.translatesAutoresizingMaskIntoConstraints = false
 
         root.addSubview(searchField)
+        root.addSubview(metadataLabel)
         root.addSubview(scrollView)
 
         NSLayoutConstraint.activate([
@@ -322,9 +354,13 @@ final class AttoProblemsPanelController: NSObject, NSTableViewDataSource, NSTabl
             searchField.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -12),
             searchField.topAnchor.constraint(equalTo: root.topAnchor, constant: 12),
 
+            metadataLabel.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 12),
+            metadataLabel.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -12),
+            metadataLabel.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 6),
+
             scrollView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            scrollView.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 10),
+            scrollView.topAnchor.constraint(equalTo: metadataLabel.bottomAnchor, constant: 8),
             scrollView.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -10),
         ])
 
@@ -336,6 +372,8 @@ final class AttoProblemsPanelController: NSObject, NSTableViewDataSource, NSTabl
         guard let panel else { return }
         panel.title = "\(title) (\(rows.count))"
         searchField.placeholderString = placeholder
+        metadataLabel.stringValue = metadataText
+            ?? "\(title) | \(AttoLspResultMetadataText.count(rows.count, singular: "problem", plural: "problems"))"
     }
 
     private func position(panel: NSPanel, relativeTo window: NSWindow) {
