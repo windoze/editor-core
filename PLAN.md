@@ -124,9 +124,10 @@
 - [x] 梳理 AttoEditor 仍保留的 Swift-only tab/split/session/project 状态，分类为 UI cache 或待迁移事实源。
   - 产出：`docs/core-workspace-ownership-audit.md`
   - 验证：`git diff --check`
-- [ ] 将更高层 close/move/select/pin/preview/session restore command 转成 core workspace command/query。
+- [x] 将更高层 close/move/select/pin/preview/session restore command 转成 core workspace command/query。
   - [x] 将 close all / close other / close right 的高层 tab group command 改为 dirty/LSP preflight 后执行 core bulk close command，并同步 AppKit projection。
   - [x] 补 session restore 的 core snapshot / Swift wrapper / AppKit projection 一致性测试，确认 restoreSession 通过 core tab/view commands 重建 tabs/panes/selection。
+  - [x] 将 move/select/pin/preview 高层 tab command 的回归覆盖收敛到 core workspace command 测试，验证 core snapshot、Swift wrapper 和 AppKit projection 一致。
   - 验证：`swift test --package-path swift --filter AttoCoreWorkspaceCommandTests`
   - 验证：`swift test --package-path swift --filter AttoCoreWorkspaceSessionRestoreTests`
   - 验证：`swift test --package-path swift --filter 'AttoEditorCommandTests/testSession(SnapshotRestoresUnsavedUntitledBuffers|RestoreRestoresSplitPanesIntoCoreMirror|RestorePrefersPaneLayoutSnapshotOverLegacyPaneCount)'`
