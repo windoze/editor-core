@@ -1280,19 +1280,71 @@ fn atomic_apply_runtime_failure_result(
     plan: WorkspaceEditTransactionPlan,
 ) -> Result<WorkspaceEditTransactionApplyResult, UiError> {
     let mut plan = plan;
-    rollback_atomic_apply_side_effects(
+    let rollback_failure = rollback_atomic_apply_side_effects(
         tabs,
         tab_order,
         active_tab,
         preview_tab,
         filesystem_rollback,
         open_tab_rollback,
-    )?;
+    );
+    if rollback_failure.has_failure() {
+        let uri = rollback_failure_uri(&plan);
+        for detail in rollback_failure.skipped_details(uri) {
+            mark_skipped(&mut plan.skipped_uris, &mut plan.skipped_details, detail);
+        }
+    }
     clear_applied_resource_operations(&mut plan);
     Ok(WorkspaceEditTransactionApplyResult {
         result: result_from_plan("apply", apply_mode, plan, Vec::new(), 0, 0),
         undo_record: None,
     })
+}
+
+#[derive(Debug, Default, Clone)]
+struct AtomicRollbackFailure {
+    filesystem: Option<String>,
+    open_tab: Option<String>,
+}
+
+impl AtomicRollbackFailure {
+    fn has_failure(&self) -> bool {
+        self.filesystem.is_some() || self.open_tab.is_some()
+    }
+
+    fn skipped_details(self, uri: String) -> Vec<WorkspaceEditTransactionSkippedDetail> {
+        let mut details = Vec::new();
+        if let Some(message) = self.filesystem {
+            details.push(skipped_detail(
+                uri.clone(),
+                "secondary_filesystem_rollback_failed",
+                Some("rollback"),
+                format!(
+                    "filesystem rollback failed after atomic WorkspaceEdit apply failure: {message}"
+                ),
+            ));
+        }
+        if let Some(message) = self.open_tab {
+            details.push(skipped_detail(
+                uri,
+                "secondary_open_tab_rollback_failed",
+                Some("rollback"),
+                format!(
+                    "open tab rollback failed after atomic WorkspaceEdit apply failure: {message}"
+                ),
+            ));
+        }
+        details
+    }
+}
+
+fn rollback_failure_uri(plan: &WorkspaceEditTransactionPlan) -> String {
+    plan.skipped_details
+        .iter()
+        .next()
+        .map(|detail| detail.uri.clone())
+        .or_else(|| plan.documents.first().map(|document| document.uri.clone()))
+        .unwrap_or_else(|| "workspace://workspace-edit".to_string())
 }
 
 fn clear_applied_resource_operations(plan: &mut WorkspaceEditTransactionPlan) {
@@ -1308,7 +1360,7 @@ fn rollback_atomic_apply_side_effects(
     preview_tab: &mut Option<TabId>,
     filesystem_rollback: &mut FilesystemRollback,
     open_tab_rollback: &mut OpenTabRollback,
-) -> Result<(), UiError> {
+) -> AtomicRollbackFailure {
     let filesystem_rollback_result = filesystem_rollback.rollback();
     let had_open_tab_rollback = open_tab_rollback.has_entries();
     let open_tab_rollback_result = if had_open_tab_rollback {
@@ -1317,27 +1369,9 @@ fn rollback_atomic_apply_side_effects(
         Ok(())
     };
 
-    if !had_open_tab_rollback {
-        return filesystem_rollback_result.map_err(|err| {
-            UiError::Processor(format!(
-                "atomic workspace edit apply failed; filesystem rollback also failed: {err}"
-            ))
-        });
-    }
-
-    match (filesystem_rollback_result, open_tab_rollback_result) {
-        (Ok(()), Ok(())) => Ok(()),
-        (Err(filesystem_rollback_err), Ok(())) => Err(UiError::Processor(format!(
-            "atomic workspace edit apply failed; filesystem rollback also failed: {filesystem_rollback_err}; open tab state was rolled back"
-        ))),
-        (Ok(()), Err(open_tab_rollback_err)) => Err(UiError::Processor(format!(
-            "atomic workspace edit apply failed; filesystem side effects were rolled back; open tab rollback also failed: {open_tab_rollback_err}"
-        ))),
-        (Err(filesystem_rollback_err), Err(open_tab_rollback_err)) => {
-            Err(UiError::Processor(format!(
-                "atomic workspace edit apply failed; filesystem rollback also failed: {filesystem_rollback_err}; open tab rollback also failed: {open_tab_rollback_err}"
-            )))
-        }
+    AtomicRollbackFailure {
+        filesystem: filesystem_rollback_result.err(),
+        open_tab: open_tab_rollback_result.err(),
     }
 }
 
@@ -1835,6 +1869,9 @@ fn conflict_kind_for_skipped_reason(reason: &str) -> &'static str {
         | "file_text_edit_read_failed"
         | "file_text_edit_rollback_failed"
         | "file_text_edit_write_failed" => "apply_failure",
+        "secondary_filesystem_rollback_failed" | "secondary_open_tab_rollback_failed" => {
+            "secondary_rollback_failure"
+        }
         _ => "other",
     }
 }
@@ -1866,6 +1903,7 @@ fn conflict_resolution_for_kind(kind: &str) -> &'static str {
         "unsupported_uri" => "unsupported",
         "resource_options" => "adjust_options",
         "apply_failure" => "retry_after_io",
+        "secondary_rollback_failure" => "manual_recovery",
         _ => "inspect",
     }
 }
@@ -3196,4 +3234,109 @@ fn close_tab(
     }
 
     closed
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn atomic_runtime_failure_result_reports_secondary_filesystem_rollback_failure() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "editor-core-ui-secondary-rollback-{}-{unique}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let from = root.join("from.txt");
+        let to = root.join("to.txt");
+        std::fs::write(&from, "from\n").unwrap();
+        std::fs::write(&to, "to\n").unwrap();
+
+        let uri = "file:///tmp/project/Target.swift".to_string();
+        let mut skipped_uris = BTreeSet::new();
+        let mut skipped_details = BTreeSet::new();
+        mark_skipped(
+            &mut skipped_uris,
+            &mut skipped_details,
+            skipped_detail(
+                uri.clone(),
+                "text_edit_apply_failed",
+                Some("text_edit"),
+                "primary apply failure",
+            ),
+        );
+
+        let mut filesystem_rollback = FilesystemRollback::default();
+        filesystem_rollback
+            .entries
+            .push(FilesystemRollbackEntry::MovePath {
+                from: from.clone(),
+                to: to.clone(),
+            });
+        let mut open_tab_rollback = OpenTabRollback::default();
+        let mut tabs = BTreeMap::new();
+        let mut tab_order = Vec::new();
+        let mut active_tab = None;
+        let mut preview_tab = None;
+        let plan = WorkspaceEditTransactionPlan {
+            skipped_uris,
+            skipped_details,
+            unsupported_operation_uris: Vec::new(),
+            unopened_file_text_edit_uris: BTreeSet::new(),
+            resource_operations: Vec::new(),
+            documents: vec![WorkspaceEditTransactionDocument {
+                uri: uri.clone(),
+                edit_count: 1,
+                has_overlapping_edits: false,
+                expected_version: None,
+                actual_version: None,
+                version_mismatch: false,
+                is_open: false,
+                is_dirty: false,
+                tab_id: None,
+            }],
+        };
+
+        let result = atomic_apply_runtime_failure_result(
+            &mut tabs,
+            &mut tab_order,
+            &mut active_tab,
+            &mut preview_tab,
+            &mut filesystem_rollback,
+            &mut open_tab_rollback,
+            WorkspaceEditApplyMode::Atomic,
+            plan,
+        )
+        .unwrap()
+        .result;
+
+        assert!(!result.applied);
+        assert!(result.conflicts.iter().any(|conflict| {
+            conflict.uri == uri
+                && conflict.kind == "apply_failure"
+                && conflict.reason == "text_edit_apply_failed"
+                && conflict.operation.as_deref() == Some("text_edit")
+        }));
+        assert!(result.conflicts.iter().any(|conflict| {
+            conflict.uri == uri
+                && conflict.kind == "secondary_rollback_failure"
+                && conflict.reason == "secondary_filesystem_rollback_failed"
+                && conflict.operation.as_deref() == Some("rollback")
+                && conflict.severity == "error"
+                && conflict.apply_impact == "blocks_atomic_apply"
+                && conflict.resolution == "manual_recovery"
+                && conflict
+                    .message
+                    .contains("filesystem rollback failed after atomic WorkspaceEdit apply failure")
+        }));
+        assert!(from.exists());
+        assert!(to.exists());
+
+        let _ = std::fs::remove_dir_all(root);
+    }
 }

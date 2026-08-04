@@ -600,6 +600,52 @@ final class AttoWorkspaceEditSummaryTests: XCTestCase {
         XCTAssertTrue(conflictSection.detailText.contains("Apply impact: Blocks atomic apply"))
     }
 
+    func testWorkspaceEditPreviewListsSecondaryRollbackFailureConflict() throws {
+        let result = try decodeTransactionResult("""
+        {
+          "mode": "apply",
+          "apply_mode": "atomic",
+          "applied": false,
+          "applied_uris": [],
+          "applied_edit_count": 0,
+          "applied_resource_operation_count": 0,
+          "conflicts": [
+            {
+              "uri": "file:///project/target.swift",
+              "kind": "secondary_rollback_failure",
+              "severity": "error",
+              "apply_impact": "blocks_atomic_apply",
+              "resolution": "manual_recovery",
+              "reason": "secondary_filesystem_rollback_failed",
+              "operation": "rollback",
+              "message": "filesystem rollback failed after atomic WorkspaceEdit apply failure"
+            }
+          ],
+          "skipped_uris": ["file:///project/target.swift"],
+          "documents": [
+            {
+              "uri": "file:///project/target.swift",
+              "edit_count": 1,
+              "is_open": false
+            }
+          ]
+        }
+        """)
+
+        let preview = AttoWorkspaceEditPreview(result: result)
+
+        XCTAssertFalse(preview.canApply)
+        XCTAssertEqual(preview.applyButtonTitle, "Resolve Conflicts First")
+        XCTAssertTrue(preview.displayText.contains("- Secondary rollback failure rollback: 1 conflict"))
+        let sections = AttoWorkspaceEditPreviewDetailBuilder.sections(
+            preview: preview,
+            workspaceEdit: try XCTUnwrap(AttoWorkspaceEditParser.parse(#"{ "documentChanges": [] }"#))
+        ) { _ in nil }
+        let conflictSection = try XCTUnwrap(sections.first)
+        XCTAssertTrue(conflictSection.detailText.contains("Category: Secondary rollback failure"))
+        XCTAssertTrue(conflictSection.detailText.contains("Suggested action: Inspect the workspace and recover files or tabs manually before retrying."))
+    }
+
     func testWorkspaceEditPreviewDefaultsLegacyConflictFields() throws {
         let result = try decodeTransactionResult("""
         {

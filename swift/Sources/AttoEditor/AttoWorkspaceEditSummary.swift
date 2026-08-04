@@ -458,6 +458,8 @@ struct AttoWorkspaceEditPreview: Equatable {
             return "Resource options"
         case "apply_failure":
             return "Apply failure"
+        case "secondary_rollback_failure":
+            return "Secondary rollback failure"
         case "", "other":
             return "Other conflict"
         default:
@@ -512,6 +514,8 @@ struct AttoWorkspaceEditPreview: Equatable {
             return "Adjust the resource operation options before retrying."
         case "retry_after_io":
             return "Review the failure and retry after the file can be read or written."
+        case "manual_recovery":
+            return "Inspect the workspace and recover files or tabs manually before retrying."
         default:
             return conflictResolutionHintForKind(conflict.kind)
         }
@@ -539,6 +543,8 @@ struct AttoWorkspaceEditPreview: Equatable {
             return "Adjust the resource operation options before retrying."
         case "apply_failure":
             return "Review the failure and retry after the file can be read or written."
+        case "secondary_rollback_failure":
+            return "Inspect the workspace and recover files or tabs manually before retrying."
         default:
             return "Review this conflict before retrying the WorkspaceEdit."
         }
@@ -579,8 +585,10 @@ struct AttoWorkspaceEditPreview: Equatable {
             return 8
         case "apply_failure":
             return 9
-        default:
+        case "secondary_rollback_failure":
             return 10
+        default:
+            return 11
         }
     }
 
