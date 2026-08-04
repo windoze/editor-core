@@ -49,9 +49,15 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
         static let `default` = SearchOptions(caseSensitive: false, wholeWord: false, regex: false)
     }
 
+    enum WorkspaceSearchProviderResult {
+        case results([SearchResult])
+        case unavailable
+        case failed(String)
+    }
+
     var onOpenResult: ((URL, AttoCommandLine.FileLocation) -> Void)?
     var openedFilesSearchProvider: ((String, SearchOptions) -> [SearchResult])?
-    var workspaceFilesSearchProvider: ((String, [String], [String], SearchOptions) -> [SearchResult]?)?
+    var workspaceFilesSearchProvider: ((String, [String], [String], SearchOptions) -> WorkspaceSearchProviderResult)?
     var workspaceFilesReplaceProvider: ((String, String, [String], [String], SearchOptions) -> Bool)? {
         didSet {
             updateReplaceControls()
@@ -262,8 +268,8 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
     }
 
     func setWorkspaceSearchGlobs(include: [String], exclude: [String]) {
-        let normalizedInclude = Self.normalizedGlobPatterns(include)
-        let normalizedExclude = Self.normalizedGlobPatterns(exclude)
+        let normalizedInclude = AttoFindInFilesSearchEngine.normalizedGlobPatterns(include)
+        let normalizedExclude = AttoFindInFilesSearchEngine.normalizedGlobPatterns(exclude)
         guard normalizedInclude != workspaceSearchIncludeGlobs
             || normalizedExclude != workspaceSearchExcludeGlobs
         else {
@@ -309,6 +315,22 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
     func _searchOptionsForTesting() -> SearchOptions {
         _ = view
         return currentSearchOptions()
+    }
+
+    func _performSearchForTesting(query: String, scope: Scope) {
+        _ = view
+        scopeControl.selectedSegment = scope.rawValue
+        queryField.stringValue = query
+        performSearch()
+    }
+
+    func _searchResultsForTesting() -> [SearchResult] {
+        results
+    }
+
+    func _statusTextForTesting() -> String {
+        _ = view
+        return statusLabel.stringValue
     }
 
     func _replaceWorkspaceMatchesForTesting(
@@ -406,16 +428,30 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
             let token = lastSearchToken &+ 1
             lastSearchToken = token
             statusLabel.stringValue = "Searching…"
-            if let found = workspaceFilesSearchProvider(
+            let providerResult = workspaceFilesSearchProvider(
                 rawQuery,
                 workspaceSearchIncludeGlobs,
                 workspaceSearchExcludeGlobs,
                 currentSearchOptions()
-            ) {
+            )
+            switch providerResult {
+            case .results(let found):
                 guard lastSearchToken == token else { return }
                 results = found
                 tableView.reloadData()
                 statusLabel.stringValue = "\(found.count) results"
+                updateReplaceControls()
+                return
+            case .unavailable:
+                break
+            case .failed(let reason):
+                guard lastSearchToken == token else { return }
+                results = []
+                tableView.reloadData()
+                let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+                statusLabel.stringValue = trimmed.isEmpty
+                    ? "Workspace search failed"
+                    : "Workspace search failed: \(trimmed)"
                 updateReplaceControls()
                 return
             }
@@ -436,7 +472,7 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
 
         let options = currentSearchOptions()
         DispatchQueue.global(qos: .userInitiated).async { [rawQuery, token, files, options] in
-            let found = Self.search(query: rawQuery, options: options, inFiles: files)
+            let found = AttoFindInFilesSearchEngine.search(query: rawQuery, options: options, inFiles: files)
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 guard self.lastSearchToken == token else { return }
@@ -523,234 +559,17 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
     }
 
     private func filteredWorkspaceFiles(_ files: [URL]) -> [URL] {
-        guard workspaceSearchIncludeGlobs.isEmpty == false
-            || workspaceSearchExcludeGlobs.isEmpty == false
-        else {
-            return files
-        }
-
-        return files.filter { url in
-            let relativePath = relativePathForDisplay(url, rootURL: rootURL)
-            return Self.isWorkspaceSearchPathIncluded(
-                relativePath,
-                includeGlobs: workspaceSearchIncludeGlobs,
-                excludeGlobs: workspaceSearchExcludeGlobs
-            )
-        }
+        AttoFindInFilesSearchEngine.filteredWorkspaceFiles(
+            files,
+            rootURL: rootURL,
+            includeGlobs: workspaceSearchIncludeGlobs,
+            excludeGlobs: workspaceSearchExcludeGlobs
+        )
     }
 
     private func open(result: SearchResult) {
         let loc = AttoCommandLine.FileLocation(line1: max(1, result.line1), column1: max(1, result.column1))
         onOpenResult?(result.url, loc)
-    }
-
-    nonisolated static func isWorkspaceSearchPathIncluded(
-        _ relativePath: String,
-        includeGlobs: [String],
-        excludeGlobs: [String]
-    ) -> Bool {
-        let path = relativePath.replacingOccurrences(of: "\\", with: "/")
-        let include = normalizedGlobPatterns(includeGlobs)
-        let exclude = normalizedGlobPatterns(excludeGlobs)
-
-        let included = include.isEmpty || include.contains { globMatches(path: path, pattern: $0) }
-        guard included else { return false }
-        return exclude.contains { globMatches(path: path, pattern: $0) } == false
-    }
-
-    nonisolated private static func normalizedGlobPatterns(_ patterns: [String]) -> [String] {
-        var seen: Set<String> = []
-        var out: [String] = []
-        for pattern in patterns {
-            var normalized = pattern
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .replacingOccurrences(of: "\\", with: "/")
-            while normalized.contains("//") {
-                normalized = normalized.replacingOccurrences(of: "//", with: "/")
-            }
-            if normalized.hasPrefix("./") {
-                normalized.removeFirst(2)
-            }
-            if normalized.hasSuffix("/") {
-                normalized.append("**")
-            }
-            guard normalized.isEmpty == false else { continue }
-            guard seen.insert(normalized).inserted else { continue }
-            out.append(normalized)
-        }
-        return out
-    }
-
-    nonisolated private static func globMatches(path: String, pattern: String) -> Bool {
-        let candidates: [String]
-        if pattern.contains("/") {
-            candidates = [path]
-        } else {
-            candidates = path
-                .split(separator: "/", omittingEmptySubsequences: true)
-                .map(String.init)
-        }
-
-        return candidates.contains { candidate in
-            guard let regex = try? NSRegularExpression(
-                pattern: globRegex(pattern),
-                options: [.caseInsensitive]
-            ) else {
-                return false
-            }
-            let range = NSRange(candidate.startIndex..<candidate.endIndex, in: candidate)
-            return regex.firstMatch(in: candidate, options: [], range: range) != nil
-        }
-    }
-
-    nonisolated private static func globRegex(_ pattern: String) -> String {
-        var out = "^"
-        var index = pattern.startIndex
-
-        while index < pattern.endIndex {
-            let char = pattern[index]
-            let next = pattern.index(after: index)
-
-            if char == "*" {
-                if next < pattern.endIndex, pattern[next] == "*" {
-                    let afterDoubleStar = pattern.index(after: next)
-                    if afterDoubleStar < pattern.endIndex, pattern[afterDoubleStar] == "/" {
-                        out += "(?:.*/)?"
-                        index = pattern.index(after: afterDoubleStar)
-                    } else {
-                        out += ".*"
-                        index = afterDoubleStar
-                    }
-                } else {
-                    out += "[^/]*"
-                    index = next
-                }
-                continue
-            }
-
-            if char == "?" {
-                out += "[^/]"
-                index = next
-                continue
-            }
-
-            out += NSRegularExpression.escapedPattern(for: String(char))
-            index = next
-        }
-
-        out += "$"
-        return out
-    }
-
-    nonisolated private static func search(
-        query: String,
-        options: SearchOptions,
-        inFiles files: [URL]
-    ) -> [SearchResult] {
-        var out: [SearchResult] = []
-        out.reserveCapacity(128)
-
-        // MVP: cap results to keep the UI responsive.
-        let maxResults = 2000
-
-        for url in files {
-            if out.count >= maxResults { break }
-
-            guard let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
-            let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
-            for (idx, lineSub) in lines.enumerated() {
-                if out.count >= maxResults { break }
-
-                let line = String(lineSub)
-                guard let range = firstSearchRange(
-                    query: query,
-                    options: options,
-                    in: line
-                ) else {
-                    continue
-                }
-
-                let col1 = line.distance(from: line.startIndex, to: range.lowerBound) + 1
-                let trimmed = line.trimmingCharacters(in: .whitespaces)
-                let preview = trimmed.count > 240 ? String(trimmed.prefix(240)) + "…" : trimmed
-                out.append(
-                    SearchResult(
-                        url: url.standardizedFileURL,
-                        line1: idx + 1,
-                        column1: col1,
-                        lineText: preview
-                    )
-                )
-            }
-        }
-
-        // Stable order: file path, then line.
-        out.sort { a, b in
-            if a.url.path != b.url.path { return a.url.path < b.url.path }
-            if a.line1 != b.line1 { return a.line1 < b.line1 }
-            return a.column1 < b.column1
-        }
-
-        return out
-    }
-
-    nonisolated private static func firstSearchRange(
-        query: String,
-        options: SearchOptions,
-        in line: String
-    ) -> Range<String.Index>? {
-        if options.regex {
-            let regexOptions: NSRegularExpression.Options = options.caseSensitive ? [] : [.caseInsensitive]
-            guard let regex = try? NSRegularExpression(pattern: query, options: regexOptions) else {
-                return nil
-            }
-            let nsRange = NSRange(line.startIndex..<line.endIndex, in: line)
-            for match in regex.matches(in: line, options: [], range: nsRange) {
-                guard let range = Range(match.range, in: line), range.isEmpty == false else {
-                    continue
-                }
-                if options.wholeWord == false || isWholeWordRange(range, in: line) {
-                    return range
-                }
-            }
-            return nil
-        }
-
-        let compareOptions: String.CompareOptions = options.caseSensitive
-            ? []
-            : [.caseInsensitive, .diacriticInsensitive]
-        var searchRange = line.startIndex..<line.endIndex
-        while let range = line.range(of: query, options: compareOptions, range: searchRange) {
-            if options.wholeWord == false || isWholeWordRange(range, in: line) {
-                return range
-            }
-            guard range.upperBound < line.endIndex else { return nil }
-            searchRange = range.upperBound..<line.endIndex
-        }
-        return nil
-    }
-
-    nonisolated private static func isWholeWordRange(_ range: Range<String.Index>, in line: String) -> Bool {
-        guard range.isEmpty == false else { return false }
-        if range.lowerBound > line.startIndex {
-            let before = line[line.index(before: range.lowerBound)]
-            if isSearchWordCharacter(before) {
-                return false
-            }
-        }
-        if range.upperBound < line.endIndex {
-            let after = line[range.upperBound]
-            if isSearchWordCharacter(after) {
-                return false
-            }
-        }
-        return true
-    }
-
-    nonisolated private static func isSearchWordCharacter(_ character: Character) -> Bool {
-        character == "_" || character.unicodeScalars.allSatisfy {
-            CharacterSet.alphanumerics.contains($0)
-        }
     }
 
     // MARK: - NSTableViewDataSource

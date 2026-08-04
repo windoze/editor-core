@@ -145,12 +145,17 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
             self?.editorAreaController.findInOpenTabs(query: query, options: options) ?? []
         }
         findInFilesController.workspaceFilesSearchProvider = { [weak self] query, includeGlobs, excludeGlobs, options in
-            self?.editorAreaController.findInWorkspaceFiles(
+            guard let self else { return .unavailable }
+            guard self.supportsCoreWorkspaceFileSearch else { return .unavailable }
+            guard let results = self.editorAreaController.findInWorkspaceFiles(
                 query: query,
                 includeGlobs: includeGlobs,
                 excludeGlobs: excludeGlobs,
                 options: options
-            )
+            ) else {
+                return .failed("core workspace search unavailable")
+            }
+            return .results(results)
         }
         findInFilesController.workspaceFilesReplaceProvider = { [weak self] query, replacement, includeGlobs, excludeGlobs, options in
             self?.editorAreaController.replaceInWorkspaceFiles(
@@ -410,6 +415,10 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
 
     private var supportsCoreWorkspaceFileList: Bool {
         editorAreaController.coreDocuments?.library.featureFlags.contains(.multiDocumentWorkspaceFileList) ?? false
+    }
+
+    private var supportsCoreWorkspaceFileSearch: Bool {
+        editorAreaController.coreDocuments?.library.featureFlags.contains(.multiDocumentWorkspaceFileSearch) ?? false
     }
 
     private func coreRecentFileURLs() -> [URL]? {

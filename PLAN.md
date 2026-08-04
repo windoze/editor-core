@@ -417,7 +417,12 @@
 
 ### 剩余任务
 
-- [ ] 将 workspace search、replace-in-files 和 project index 统一到 core-backed 数据源。
+- [x] 将 workspace search、replace-in-files 和 project index 统一到 core-backed 数据源。
+  - [x] Find in Files workspace scope 使用 core workspace search envelope；Replace in Files 使用 core workspace file replacement WorkspaceEdit envelope；Quick Open/project file list 使用 core project file index / workspace file list。
+  - [x] Find in Files workspace provider 改为显式 `.results` / `.unavailable` / `.failed`，旧 runtime 仅在 unavailable 时 fallback，本机 core search 失败时不再悄悄混用 Swift 本地逐文件搜索。
+  - 验证：`swift test --package-path swift --filter AttoFindInFilesWorkspaceSearchProviderTests`
+  - 验证：`swift test --package-path swift --filter 'AttoEditorCommandTests/test(FindInWorkspaceFilesUsesCoreWorkspaceSearch|QuickOpenUsesCoreWorkspaceFileListWhenAvailable)'`
+  - 验证：`swift test --package-path swift --filter testFindInFilesWorkspaceReplaceUsesCoreWorkspaceEditTransaction`
 - [ ] 支持 ignored files、binary files、large files、pagination、cancellation 和 result refresh。
 - [ ] 让 Find in Files、Quick Open、recent files/projects 和 session restore 消费同一套 core-backed 数据源。
 
