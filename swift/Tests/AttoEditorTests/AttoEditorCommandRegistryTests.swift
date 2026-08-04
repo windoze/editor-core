@@ -216,6 +216,21 @@ extension AttoEditorCommandTests {
         XCTAssertTrue(defaultKeymapIDs.contains("workbench.command_palette"))
     }
 
+    func testRegisteredCommandsHaveDiscoverableSurfacePolicy() throws {
+        let delegate = AttoAppDelegate(keyBindings: AttoKeymap.defaultBindings)
+        let registryIDs = Set(delegate._defaultCommandsForTesting().map(\.id))
+        let menuIDs = Set(commandIDs(in: AttoMainMenuBuilder.build(appDelegate: delegate)))
+        let defaultKeymapIDs = Set(AttoKeymap.defaultBindings.keys)
+        var paletteOnlyCommandIDs = Set(AttoEditorAreaViewController.CursorMovementCommand.allCases.map(\.id))
+        paletteOnlyCommandIDs.insert("workspace.show_workspace_edit_history")
+
+        let discoverableIDs = menuIDs.union(defaultKeymapIDs).union(paletteOnlyCommandIDs)
+        XCTAssertTrue(
+            registryIDs.subtracting(discoverableIDs).isEmpty,
+            "Registered commands need menu/keymap coverage or an explicit palette-only policy: \(registryIDs.subtracting(discoverableIDs).sorted())"
+        )
+    }
+
     func testCommandRegistryCarriesParameterSchemasAndMacroPolicies() throws {
         let delegate = AttoAppDelegate(keyBindings: [:])
         XCTAssertTrue(delegate._commandConflictsForTesting().isEmpty)

@@ -318,7 +318,9 @@
     - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testSublimeBoundaryCommandsExposeDiscoverableFeedback`
     - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testDefaultCommandPaletteIncludesCoreEditorCommandIDs`
     - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testMainMenuItemsUseCommandIDsAndResolvedKeymap`
-- [ ] 确保新增命令都有 palette/menu/keymap 入口、可发现反馈和测试。
+- [x] 确保新增命令都有 palette/menu/keymap 入口、可发现反馈和测试。
+  - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testRegisteredCommandsHaveDiscoverableSurfacePolicy`
+  - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testCommandSurfacesReferenceRegisteredCommandIDs`
 
 ## 阶段 9：Settings Selector 与配置 UI
 

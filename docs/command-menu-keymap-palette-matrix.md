@@ -38,6 +38,8 @@ fallback for commands that intentionally do not have a default shortcut.
 - Add a command registry entry before adding a menu item or default key binding.
 - Add menu coverage when a command is expected to be discoverable from the native menu bar.
 - Add a default key binding only for commands that are frequent, low-risk, and consistent with platform conventions.
+- Add a palette-only policy in `AttoEditorCommandRegistryTests/testRegisteredCommandsHaveDiscoverableSurfacePolicy`
+  only when a command is intentionally discoverable through the command palette without a menu/default-keymap entry.
 - Add parameter schema coverage for commands that can be invoked from keymap, palette recents, macros, or IPC with arguments.
 - Add App main-path tests for every command that changes editor state, file/project state, LSP lifecycle, workspace edit transactions, or persistent configuration.
 
@@ -50,4 +52,5 @@ fallback for commands that intentionally do not have a default shortcut.
 ## Verification
 
 - `swift test --package-path swift --filter AttoEditorCommandTests/testCommandSurfacesReferenceRegisteredCommandIDs`
+- `swift test --package-path swift --filter AttoEditorCommandTests/testRegisteredCommandsHaveDiscoverableSurfacePolicy`
 - `swift test --package-path swift --filter AttoEditorCommandTests/testMainMenuItemsUseCommandIDsAndResolvedKeymap`
