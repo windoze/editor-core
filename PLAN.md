@@ -337,7 +337,9 @@
   - 验证：`swift test --package-path swift --filter AttoConfigurationSettingsTests/testScopedSettingsSupportSublimeSelectorGrammar`
   - 验证：`swift test --package-path swift --filter AttoConfigurationSettingsTests/testScopedSettingsMatchGlobFileExtensionAndBareLanguageSelectors`
   - 验证：`swift test --package-path swift --filter AttoConfigurationSettingsTests/testSettingsResolutionAppliesMatchingScopedSettings`
-- [ ] 建立 schema-aware settings UI，展示 effective value、source、override 和 validation error。
+- [x] 建立 schema-aware settings UI，展示 effective value、source、override 和 validation error。
+  - 交付：Preferences 增加 Settings 页，按当前 schema 展示全局 effective value、source、user/workspace/runtime override、scoped override 摘要和 validation error。
+  - 验证：`swift test --package-path swift --filter AttoSettingsSchemaPageTests`
 - [ ] 持久化 runtime overrides，并定义 user/workspace/runtime 的合并和回滚行为。
 - [ ] 完成跨 schema 字段迁移和无效配置降级反馈。
 

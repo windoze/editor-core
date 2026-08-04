@@ -5,11 +5,14 @@ import Foundation
 
 private enum AttoPreferencesPage: Int, CaseIterable {
     case editor
+    case settings
 
     var title: String {
         switch self {
         case .editor:
             return "Editor"
+        case .settings:
+            return "Settings"
         }
     }
 
@@ -17,6 +20,8 @@ private enum AttoPreferencesPage: Int, CaseIterable {
         switch self {
         case .editor:
             return "textformat"
+        case .settings:
+            return "slider.horizontal.3"
         }
     }
 }
@@ -26,10 +31,26 @@ final class AttoPreferencesWindowController: NSWindowController {
     private let splitViewController = NSSplitViewController()
     private let sidebarViewController = AttoPreferencesSidebarViewController(pages: AttoPreferencesPage.allCases)
     private let contentHostViewController = AttoPreferencesContentHostViewController()
+    private let settingsStore: AttoConfigurationSettingsStore
+    private let workspaceRootURLProvider: @MainActor () -> URL?
+    private let runtimeSettingsProvider: @MainActor () -> AttoConfigurationSettings?
+    private let baseSnapshotProvider: @MainActor (URL?) -> AttoConfigurationSnapshot
 
     private var cachedPages: [AttoPreferencesPage: NSViewController] = [:]
 
-    init() {
+    init(
+        settingsStore: AttoConfigurationSettingsStore = AttoConfigurationSettingsStore(),
+        workspaceRootURLProvider: @escaping @MainActor () -> URL? = { nil },
+        runtimeSettingsProvider: @escaping @MainActor () -> AttoConfigurationSettings? = { nil },
+        baseSnapshotProvider: @escaping @MainActor (URL?) -> AttoConfigurationSnapshot = {
+            AttoPreferences.shared.effectiveConfigurationSnapshot(workspaceRootURL: $0)
+        }
+    ) {
+        self.settingsStore = settingsStore
+        self.workspaceRootURLProvider = workspaceRootURLProvider
+        self.runtimeSettingsProvider = runtimeSettingsProvider
+        self.baseSnapshotProvider = baseSnapshotProvider
+
         let win = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 720, height: 480),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -76,6 +97,13 @@ final class AttoPreferencesWindowController: NSWindowController {
             switch page {
             case .editor:
                 created = AttoPreferencesEditorPageViewController()
+            case .settings:
+                created = AttoSettingsSchemaPageViewController(
+                    settingsStore: settingsStore,
+                    workspaceRootURLProvider: workspaceRootURLProvider,
+                    runtimeSettingsProvider: runtimeSettingsProvider,
+                    baseSnapshotProvider: baseSnapshotProvider
+                )
             }
             cachedPages[page] = created
             return created
@@ -83,6 +111,20 @@ final class AttoPreferencesWindowController: NSWindowController {
 
         contentHostViewController.setContentViewController(vc)
         sidebarViewController.selectPage(page)
+    }
+
+    func _showSettingsPageForTesting() {
+        showPage(.settings)
+    }
+
+    func _settingsSchemaRowsForTesting() -> [AttoSettingsSchemaRow] {
+        showPage(.settings)
+        guard let page = cachedPages[.settings] as? AttoSettingsSchemaPageViewController else {
+            return []
+        }
+        _ = page.view
+        page.reloadRows()
+        return page.rowsForTesting()
     }
 }
 

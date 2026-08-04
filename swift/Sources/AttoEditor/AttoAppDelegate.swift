@@ -2851,7 +2851,15 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
 
     private func showPreferencesWindow() {
         if preferencesWindowController == nil {
-            preferencesWindowController = AttoPreferencesWindowController()
+            preferencesWindowController = AttoPreferencesWindowController(
+                settingsStore: settingsStore,
+                workspaceRootURLProvider: { [weak self] in
+                    self?.activeWindow()?.workspaceRootURL
+                },
+                runtimeSettingsProvider: { [weak self] in
+                    self?.runtimeConfigurationSettings
+                }
+            )
         }
         preferencesWindowController?.showWindow(nil)
         preferencesWindowController?.window?.makeKeyAndOrderFront(nil)

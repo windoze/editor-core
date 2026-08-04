@@ -24,7 +24,7 @@
 
 ## 阶段 9：Settings Selector 与配置 UI
 
-- 建立 schema-aware settings UI，支持 user / workspace / runtime override 的可见、可编辑、可回滚状态。
+- 补齐 schema-aware settings UI 中 user / workspace / runtime override 的可编辑、可回滚状态；当前已具备 effective value、source、override 和 validation error 可见性。
 - 将 runtime override 持久化策略、跨 schema 字段迁移和无效配置反馈产品化。
 - 补齐 per-document / per-language / per-workspace settings 应用的测试。
 
