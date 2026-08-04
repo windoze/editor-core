@@ -126,7 +126,10 @@
   - 验证：`git diff --check`
 - [ ] 将更高层 close/move/select/pin/preview/session restore command 转成 core workspace command/query。
   - [x] 将 close all / close other / close right 的高层 tab group command 改为 dirty/LSP preflight 后执行 core bulk close command，并同步 AppKit projection。
+  - [x] 补 session restore 的 core snapshot / Swift wrapper / AppKit projection 一致性测试，确认 restoreSession 通过 core tab/view commands 重建 tabs/panes/selection。
   - 验证：`swift test --package-path swift --filter AttoCoreWorkspaceCommandTests`
+  - 验证：`swift test --package-path swift --filter AttoCoreWorkspaceSessionRestoreTests`
+  - 验证：`swift test --package-path swift --filter 'AttoEditorCommandTests/testSession(SnapshotRestoresUnsavedUntitledBuffers|RestoreRestoresSplitPanesIntoCoreMirror|RestorePrefersPaneLayoutSnapshotOverLegacyPaneCount)'`
   - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testCloseTabGroupCommandsUseCoreTabProjection`
   - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testCloseAllTabsReleasesOwnedLspSessionsWithoutDuplicateDidClose`
   - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testCloseAllTabsUsesCoreTabProjectionOrder`
