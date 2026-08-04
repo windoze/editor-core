@@ -45,6 +45,7 @@ extension AttoEditorAreaViewController {
         }
 
         dockView.update(items: lspWorkbenchItems())
+        lspWorkbenchDockShouldRemainVisible = true
         dockView.isHidden = false
         contentHostBottomToStatusConstraint?.isActive = false
         contentHostBottomToWorkbenchDockConstraint?.isActive = true
@@ -53,12 +54,31 @@ extension AttoEditorAreaViewController {
         return true
     }
 
-    func hideLspWorkbenchDock() {
+    func hideLspWorkbenchDock(restoreFocus: Bool = true) {
         guard let dockView = lspWorkbenchDockView else { return }
+        lspWorkbenchDockShouldRemainVisible = false
         dockView.isHidden = true
         contentHostBottomToWorkbenchDockConstraint?.isActive = false
         contentHostBottomToStatusConstraint?.isActive = true
         view.layoutSubtreeIfNeeded()
+        if restoreFocus {
+            restoreFocusToActiveEditor()
+        }
+    }
+
+    func restoreLspWorkbenchDockVisibilityIfNeeded() {
+        guard lspWorkbenchDockShouldRemainVisible,
+              let dockView = lspWorkbenchDockView
+        else { return }
+        dockView.update(items: lspWorkbenchItems())
+        dockView.isHidden = false
+        contentHostBottomToStatusConstraint?.isActive = false
+        contentHostBottomToWorkbenchDockConstraint?.isActive = true
+        view.layoutSubtreeIfNeeded()
+    }
+
+    func restoreFocusToActiveEditor() {
+        activeTab?.editCore.focusEditor()
     }
 
     func updateVisibleLspWorkbenchPanel() {
@@ -841,6 +861,9 @@ extension AttoEditorAreaViewController {
             },
             onOpenHistory: { [weak self] item in
                 self?.showLspWorkbenchHistoryPanel(family: item.id)
+            },
+            onClose: { [weak self] in
+                self?.restoreFocusToActiveEditor()
             }
         )
     }

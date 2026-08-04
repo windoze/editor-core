@@ -21,4 +21,8 @@ extension AttoEditorAreaViewController {
     func _lspWorkbenchDockIsVisibleForTesting() -> Bool {
         lspWorkbenchDockView?.isVisible == true
     }
+
+    func _lspWorkbenchDockShouldRemainVisibleForTesting() -> Bool {
+        lspWorkbenchDockShouldRemainVisible
+    }
 }

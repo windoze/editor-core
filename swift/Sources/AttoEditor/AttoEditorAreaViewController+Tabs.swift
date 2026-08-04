@@ -1300,6 +1300,7 @@ extension AttoEditorAreaViewController {
         cancelFoldingRangesUI()
 
         showTabContent(tab)
+        restoreLspWorkbenchDockVisibilityIfNeeded()
         refreshTabBar()
         attachStatusObserver(to: tab.editCore.editorView)
         updateStatusBar()

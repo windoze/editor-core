@@ -50,6 +50,7 @@ final class AttoLspWorkbenchPanelController: NSObject, NSTableViewDataSource, NS
     private var panel: NSPanel?
     private let onOpen: (Item) -> Void
     private let onOpenHistory: (Item) -> Void
+    private let onClose: () -> Void
     private let searchField = NSSearchField(frame: .zero)
     private let metadataLabel = NSTextField(labelWithString: "")
     private let tableView = NSTableView(frame: .zero)
@@ -57,10 +58,12 @@ final class AttoLspWorkbenchPanelController: NSObject, NSTableViewDataSource, NS
 
     init(
         onOpen: @escaping (Item) -> Void,
-        onOpenHistory: @escaping (Item) -> Void = { _ in }
+        onOpenHistory: @escaping (Item) -> Void = { _ in },
+        onClose: @escaping () -> Void = {}
     ) {
         self.onOpen = onOpen
         self.onOpenHistory = onOpenHistory
+        self.onClose = onClose
         super.init()
     }
 
@@ -160,6 +163,7 @@ final class AttoLspWorkbenchPanelController: NSObject, NSTableViewDataSource, NS
         guard let panel else { return }
         panel.orderOut(nil)
         panel.parent?.removeChildWindow(panel)
+        onClose()
     }
 
     private func buildPanel() -> NSPanel {

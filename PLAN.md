@@ -266,7 +266,7 @@
   - 验证：`swift test --package-path swift --filter AttoAccessibilityIdentifierTests/testProblemsPanelExposesStableIdentifiersAndFiltersRows`
   - 验证：`swift test --package-path swift --filter AttoAccessibilityIdentifierTests/testWorkspaceProblemsPanelExposesStableIdentifiersAndFiltersRows`
   - 验证：`swift test --package-path swift --filter Workbench`
-- [ ] 完成跨 tab/project 的 result ownership、history、pin、refresh、cancel、timeout、stale 和 error 行为。
+- [x] 完成跨 tab/project 的 result ownership、history、pin、refresh、cancel、timeout、stale 和 error 行为。
   - [x] 为 result lifecycle entry/event 增加 owner descriptor，并让 Workbench 与 result panel 的 current result 按 active tab / current workspace 过滤；history count 保留跨 tab 可见。
     - 验证：`swift test --package-path swift --filter AttoLspResultOwnerLifecycleTests`
     - 验证：`swift test --package-path swift --filter AttoEditorLspWorkbenchOwnershipTests/testLspWorkbenchCurrentResultsFollowActiveTabOwnership`
@@ -289,11 +289,12 @@
       - 验证：`swift test --package-path swift --filter AttoEditorLspWorkbenchRefreshTests`
       - 验证：`swift test --package-path swift --filter Diagnostics`
       - 验证：`swift test --package-path swift --filter Workbench`
-- [ ] 补齐 keyboard navigation、focus restore、selection restore 和 panel persistence。
+- [x] 补齐 keyboard navigation、focus restore、selection restore 和 panel persistence。
   - [x] 先补 Workbench History / Problems panel 的 selection restore 与空结果键盘保护。
     - 验证：`swift test --package-path swift --filter AttoAccessibilityIdentifierTests`
     - 验证：`swift test --package-path swift --filter Workbench`
-  - [ ] 再补 Workbench floating panel / dock 的 focus restore 与可见性持久化。
+  - [x] 再补 Workbench floating panel / dock 的 focus restore 与可见性持久化。
+    - 验证：`swift test --package-path swift --filter Workbench`
 - [ ] 拆分继续增长的 Workbench/AppKit 测试文件。
 
 ## 阶段 8：Command / Keymap / Sublime 行为

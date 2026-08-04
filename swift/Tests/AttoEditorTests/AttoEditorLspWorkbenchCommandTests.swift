@@ -58,6 +58,10 @@ extension AttoEditorCommandTests {
         XCTAssertEqual(statuses["Document Colors"], "request on open")
         XCTAssertEqual(statuses["Locations"], "0 locations")
         XCTAssertTrue(vc._lspWorkbenchPanelIsVisibleForTesting())
+
+        panel.close()
+        XCTAssertFalse(vc._lspWorkbenchPanelIsVisibleForTesting())
+        XCTAssertTrue(window.firstResponder === vc.activeTab?.editCore.editorView)
     }
 
     func testLspWorkbenchDockSummarizesResultFamiliesInline() throws {
@@ -67,7 +71,9 @@ extension AttoEditorCommandTests {
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
         let fileURL = tempDir.appendingPathComponent("workbench-dock.txt")
+        let secondFileURL = tempDir.appendingPathComponent("workbench-dock-second.txt")
         try "docs\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        try "second\n".write(to: secondFileURL, atomically: true, encoding: .utf8)
 
         let vc = makeEditorArea(workspaceRootURL: tempDir)
         let window = attachToWindow(vc)
@@ -90,6 +96,7 @@ extension AttoEditorCommandTests {
 
         XCTAssertFalse(vc._lspWorkbenchDockIsVisibleForTesting())
         XCTAssertTrue(vc.showLspWorkbenchDock())
+        XCTAssertTrue(vc._lspWorkbenchDockShouldRemainVisibleForTesting())
         let dockRoot = try XCTUnwrap(findView(identifier: AttoAccessibilityID.lspWorkbenchDock, in: vc.view))
         let metadata = try XCTUnwrap(
             findView(identifier: AttoAccessibilityID.lspWorkbenchDockMetadataLabel, in: dockRoot) as? NSTextField
@@ -111,8 +118,14 @@ extension AttoEditorCommandTests {
         XCTAssertEqual(vc._lspWorkbenchDockSelectedItemForTesting()?.id, "document_links")
         XCTAssertTrue(vc._lspWorkbenchDockIsVisibleForTesting())
 
+        XCTAssertTrue(vc.openFile(url: secondFileURL, mode: .pinned))
+        XCTAssertTrue(vc._lspWorkbenchDockIsVisibleForTesting())
+        XCTAssertTrue(vc._lspWorkbenchDockShouldRemainVisibleForTesting())
+
         vc.hideLspWorkbenchDock()
         XCTAssertFalse(vc._lspWorkbenchDockIsVisibleForTesting())
+        XCTAssertFalse(vc._lspWorkbenchDockShouldRemainVisibleForTesting())
+        XCTAssertTrue(window.firstResponder === vc.activeTab?.editCore.editorView)
     }
 
     func testLspWorkbenchPanelShowsLifecycleStateForLocationsAndSymbols() throws {

@@ -41,6 +41,7 @@ final class AttoEditorAreaViewController: NSViewController {
     var contentHostBottomToWorkbenchDockConstraint: NSLayoutConstraint?
     let statusBarView = AttoStatusBarView()
     var lspWorkbenchDockHeightConstraint: NSLayoutConstraint?
+    var lspWorkbenchDockShouldRemainVisible = false
     let derivedStateStore = AttoDerivedStateStore()
     let emptyStateLabel = NSTextField(labelWithString: "Open a file to start editing")
     var lastPresentedLspFailureDetail: String?
