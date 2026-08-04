@@ -176,9 +176,31 @@ pub(crate) fn require_mut<'a, T>(ptr: *mut T, name: &str) -> Result<&'a mut T, S
     Ok(unsafe { &mut *ptr })
 }
 
+pub(crate) fn require_mut_status<'a, T>(
+    ptr: *mut T,
+    name: &str,
+) -> Result<&'a mut T, (EcfStatus, String)> {
+    if ptr.is_null() {
+        return Err((EcfStatus::InvalidArgument, format!("{name} is null")));
+    }
+    // SAFETY: checked for null; caller promises unique mutable pointer.
+    Ok(unsafe { &mut *ptr })
+}
+
 pub(crate) fn require_ref<'a, T>(ptr: *const T, name: &str) -> Result<&'a T, String> {
     if ptr.is_null() {
         return Err(format!("{name} is null"));
+    }
+    // SAFETY: checked for null; caller promises valid pointer.
+    Ok(unsafe { &*ptr })
+}
+
+pub(crate) fn require_ref_status<'a, T>(
+    ptr: *const T,
+    name: &str,
+) -> Result<&'a T, (EcfStatus, String)> {
+    if ptr.is_null() {
+        return Err((EcfStatus::InvalidArgument, format!("{name} is null")));
     }
     // SAFETY: checked for null; caller promises valid pointer.
     Ok(unsafe { &*ptr })
@@ -202,6 +224,16 @@ pub(crate) fn optional_string(ptr: *const c_char, name: &str) -> Result<Option<S
     require_string(ptr, name).map(Some)
 }
 
+pub(crate) fn optional_string_status(
+    ptr: *const c_char,
+    name: &str,
+) -> Result<Option<String>, (EcfStatus, String)> {
+    if ptr.is_null() {
+        return Ok(None);
+    }
+    require_string_status(ptr, name).map(Some)
+}
+
 pub(crate) fn parse_json<T: for<'de> Deserialize<'de>>(
     text: &str,
     what: &str,
@@ -209,8 +241,22 @@ pub(crate) fn parse_json<T: for<'de> Deserialize<'de>>(
     serde_json::from_str(text).map_err(|err| format!("invalid {what} JSON: {err}"))
 }
 
+pub(crate) fn parse_json_status<T: for<'de> Deserialize<'de>>(
+    text: &str,
+    what: &str,
+) -> Result<T, (EcfStatus, String)> {
+    parse_json(text, what).map_err(|message| (EcfStatus::Parse, message))
+}
+
 pub(crate) fn parse_json_value(text: &str, what: &str) -> Result<Value, String> {
     serde_json::from_str(text).map_err(|err| format!("invalid {what} JSON: {err}"))
+}
+
+pub(crate) fn parse_json_value_status(
+    text: &str,
+    what: &str,
+) -> Result<Value, (EcfStatus, String)> {
+    parse_json_value(text, what).map_err(|message| (EcfStatus::Parse, message))
 }
 
 pub(crate) fn status_result<F>(f: F) -> i32
@@ -257,6 +303,10 @@ pub(crate) fn usize_from_u32(v: u32, what: &str) -> Result<usize, String> {
 
 pub(crate) fn usize_from_u64(v: u64, what: &str) -> Result<usize, String> {
     usize::try_from(v).map_err(|_| format!("{what} exceeds usize range: {v}"))
+}
+
+pub(crate) fn status_usize_from_u64(v: u64, what: &str) -> Result<usize, (EcfStatus, String)> {
+    usize_from_u64(v, what).map_err(|msg| (EcfStatus::InvalidArgument, msg))
 }
 
 pub(crate) fn u64_from_usize(v: usize, what: &str) -> Result<u64, String> {

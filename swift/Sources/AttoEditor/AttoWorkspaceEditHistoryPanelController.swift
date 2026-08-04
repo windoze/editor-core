@@ -10,6 +10,12 @@ final class AttoWorkspaceEditHistoryPanelController: NSObject, NSTableViewDataSo
         let title: String
         let detail: String
         let status: String
+        let conflictCount: Int
+        let firstConflictURI: String?
+        let firstSaveableConflictURI: String?
+        let firstDiscardableConflictURI: String?
+        let workspaceEditJSON: String?
+        let requestRetryLabel: String?
         let canUndoLatest: Bool
     }
 
@@ -17,14 +23,50 @@ final class AttoWorkspaceEditHistoryPanelController: NSObject, NSTableViewDataSo
     private var filteredItems: [Item] = []
     private var panel: NSPanel?
     private let onUndoLatest: () -> Void
+    private let onReapply: (String) -> Void
+    private let onRerunRequest: (UInt64) -> Void
+    private let onOpenConflict: (String) -> Void
+    private let onSaveConflict: (String) -> Void
+    private let onDiscardConflict: (String) -> Void
+    private let onSaveConflictAndReapply: (String, String) -> Void
+    private let onDiscardConflictAndReapply: (String, String) -> Void
+    private let onSaveConflictAndRerunRequest: (String, UInt64) -> Void
+    private let onDiscardConflictAndRerunRequest: (String, UInt64) -> Void
     private let searchField = NSSearchField(frame: .zero)
     private let metadataLabel = NSTextField(labelWithString: "")
     private let tableView = NSTableView(frame: .zero)
     private let scrollView = NSScrollView(frame: .zero)
+    private let openConflictButton = NSButton(title: "Open Conflict", target: nil, action: nil)
+    private let saveConflictButton = NSButton(title: "Save Conflict", target: nil, action: nil)
+    private let discardConflictButton = NSButton(title: "Discard Conflict", target: nil, action: nil)
+    private let saveAndReapplyButton = NSButton(title: "Save & Reapply", target: nil, action: nil)
+    private let discardAndReapplyButton = NSButton(title: "Discard & Reapply", target: nil, action: nil)
+    private let rerunRequestButton = NSButton(title: "Rerun Request", target: nil, action: nil)
+    private let reapplyButton = NSButton(title: "Reapply", target: nil, action: nil)
     private let undoButton = NSButton(title: "Undo Latest", target: nil, action: nil)
 
-    init(onUndoLatest: @escaping () -> Void) {
+    init(
+        onUndoLatest: @escaping () -> Void,
+        onReapply: @escaping (String) -> Void,
+        onRerunRequest: @escaping (UInt64) -> Void,
+        onOpenConflict: @escaping (String) -> Void,
+        onSaveConflict: @escaping (String) -> Void,
+        onDiscardConflict: @escaping (String) -> Void,
+        onSaveConflictAndReapply: @escaping (String, String) -> Void,
+        onDiscardConflictAndReapply: @escaping (String, String) -> Void,
+        onSaveConflictAndRerunRequest: @escaping (String, UInt64) -> Void,
+        onDiscardConflictAndRerunRequest: @escaping (String, UInt64) -> Void
+    ) {
         self.onUndoLatest = onUndoLatest
+        self.onReapply = onReapply
+        self.onRerunRequest = onRerunRequest
+        self.onOpenConflict = onOpenConflict
+        self.onSaveConflict = onSaveConflict
+        self.onDiscardConflict = onDiscardConflict
+        self.onSaveConflictAndReapply = onSaveConflictAndReapply
+        self.onDiscardConflictAndReapply = onDiscardConflictAndReapply
+        self.onSaveConflictAndRerunRequest = onSaveConflictAndRerunRequest
+        self.onDiscardConflictAndRerunRequest = onDiscardConflictAndRerunRequest
         super.init()
     }
 
@@ -74,9 +116,17 @@ final class AttoWorkspaceEditHistoryPanelController: NSObject, NSTableViewDataSo
         panel.parent?.removeChildWindow(panel)
     }
 
+    func close() {
+        guard let panel else { return }
+        panel.parent?.removeChildWindow(panel)
+        panel.delegate = nil
+        panel.close()
+        self.panel = nil
+    }
+
     private func buildPanel() -> NSPanel {
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 780, height: 420),
+            contentRect: NSRect(x: 0, y: 0, width: 1120, height: 420),
             styleMask: [.titled, .closable, .resizable, .utilityWindow],
             backing: .buffered,
             defer: false
@@ -84,8 +134,11 @@ final class AttoWorkspaceEditHistoryPanelController: NSObject, NSTableViewDataSo
         panel.isFloatingPanel = true
         panel.level = .floating
         panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        panel.animationBehavior = .none
         panel.titleVisibility = .visible
         panel.isMovableByWindowBackground = true
+        panel.minSize = NSSize(width: 1120, height: 360)
         panel.delegate = self
         panel.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.workspaceEditHistoryPanel)
 
@@ -114,7 +167,7 @@ final class AttoWorkspaceEditHistoryPanelController: NSObject, NSTableViewDataSo
 
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("workspaceEditHistory"))
         column.title = "WorkspaceEdit History"
-        column.width = 740
+        column.width = 1080
         tableView.addTableColumn(column)
         tableView.headerView = nil
         tableView.dataSource = self
@@ -131,6 +184,53 @@ final class AttoWorkspaceEditHistoryPanelController: NSObject, NSTableViewDataSo
         scrollView.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.workspaceEditHistoryPanelScrollView)
         scrollView.translatesAutoresizingMaskIntoConstraints = false
 
+        openConflictButton.target = self
+        openConflictButton.action = #selector(openConflictClicked(_:))
+        openConflictButton.identifier = NSUserInterfaceItemIdentifier(
+            AttoAccessibilityID.workspaceEditHistoryPanelOpenConflictButton
+        )
+        openConflictButton.translatesAutoresizingMaskIntoConstraints = false
+
+        saveConflictButton.target = self
+        saveConflictButton.action = #selector(saveConflictClicked(_:))
+        saveConflictButton.identifier = NSUserInterfaceItemIdentifier(
+            AttoAccessibilityID.workspaceEditHistoryPanelSaveConflictButton
+        )
+        saveConflictButton.translatesAutoresizingMaskIntoConstraints = false
+
+        discardConflictButton.target = self
+        discardConflictButton.action = #selector(discardConflictClicked(_:))
+        discardConflictButton.identifier = NSUserInterfaceItemIdentifier(
+            AttoAccessibilityID.workspaceEditHistoryPanelDiscardConflictButton
+        )
+        discardConflictButton.translatesAutoresizingMaskIntoConstraints = false
+
+        saveAndReapplyButton.target = self
+        saveAndReapplyButton.action = #selector(saveAndReapplyClicked(_:))
+        saveAndReapplyButton.identifier = NSUserInterfaceItemIdentifier(
+            AttoAccessibilityID.workspaceEditHistoryPanelSaveAndReapplyButton
+        )
+        saveAndReapplyButton.translatesAutoresizingMaskIntoConstraints = false
+
+        discardAndReapplyButton.target = self
+        discardAndReapplyButton.action = #selector(discardAndReapplyClicked(_:))
+        discardAndReapplyButton.identifier = NSUserInterfaceItemIdentifier(
+            AttoAccessibilityID.workspaceEditHistoryPanelDiscardAndReapplyButton
+        )
+        discardAndReapplyButton.translatesAutoresizingMaskIntoConstraints = false
+
+        rerunRequestButton.target = self
+        rerunRequestButton.action = #selector(rerunRequestClicked(_:))
+        rerunRequestButton.identifier = NSUserInterfaceItemIdentifier(
+            AttoAccessibilityID.workspaceEditHistoryPanelRerunRequestButton
+        )
+        rerunRequestButton.translatesAutoresizingMaskIntoConstraints = false
+
+        reapplyButton.target = self
+        reapplyButton.action = #selector(reapplyClicked(_:))
+        reapplyButton.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.workspaceEditHistoryPanelReapplyButton)
+        reapplyButton.translatesAutoresizingMaskIntoConstraints = false
+
         undoButton.target = self
         undoButton.action = #selector(undoLatestClicked(_:))
         undoButton.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.workspaceEditHistoryPanelUndoButton)
@@ -139,6 +239,13 @@ final class AttoWorkspaceEditHistoryPanelController: NSObject, NSTableViewDataSo
         root.addSubview(searchField)
         root.addSubview(metadataLabel)
         root.addSubview(scrollView)
+        root.addSubview(openConflictButton)
+        root.addSubview(saveConflictButton)
+        root.addSubview(discardConflictButton)
+        root.addSubview(saveAndReapplyButton)
+        root.addSubview(discardAndReapplyButton)
+        root.addSubview(rerunRequestButton)
+        root.addSubview(reapplyButton)
         root.addSubview(undoButton)
 
         NSLayoutConstraint.activate([
@@ -155,6 +262,35 @@ final class AttoWorkspaceEditHistoryPanelController: NSObject, NSTableViewDataSo
             scrollView.topAnchor.constraint(equalTo: metadataLabel.bottomAnchor, constant: 8),
             scrollView.bottomAnchor.constraint(equalTo: undoButton.topAnchor, constant: -10),
 
+            openConflictButton.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 12),
+            openConflictButton.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -12),
+            openConflictButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 28),
+
+            saveConflictButton.leadingAnchor.constraint(equalTo: openConflictButton.trailingAnchor, constant: 8),
+            saveConflictButton.bottomAnchor.constraint(equalTo: openConflictButton.bottomAnchor),
+            saveConflictButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 28),
+
+            discardConflictButton.leadingAnchor.constraint(equalTo: saveConflictButton.trailingAnchor, constant: 8),
+            discardConflictButton.bottomAnchor.constraint(equalTo: openConflictButton.bottomAnchor),
+            discardConflictButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 28),
+
+            saveAndReapplyButton.leadingAnchor.constraint(equalTo: discardConflictButton.trailingAnchor, constant: 8),
+            saveAndReapplyButton.bottomAnchor.constraint(equalTo: openConflictButton.bottomAnchor),
+            saveAndReapplyButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 28),
+
+            discardAndReapplyButton.leadingAnchor.constraint(equalTo: saveAndReapplyButton.trailingAnchor, constant: 8),
+            discardAndReapplyButton.trailingAnchor.constraint(lessThanOrEqualTo: rerunRequestButton.leadingAnchor, constant: -12),
+            discardAndReapplyButton.bottomAnchor.constraint(equalTo: openConflictButton.bottomAnchor),
+            discardAndReapplyButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 28),
+
+            rerunRequestButton.trailingAnchor.constraint(equalTo: reapplyButton.leadingAnchor, constant: -8),
+            rerunRequestButton.bottomAnchor.constraint(equalTo: reapplyButton.bottomAnchor),
+            rerunRequestButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 28),
+
+            reapplyButton.trailingAnchor.constraint(equalTo: undoButton.leadingAnchor, constant: -8),
+            reapplyButton.bottomAnchor.constraint(equalTo: undoButton.bottomAnchor),
+            reapplyButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 28),
+
             undoButton.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -12),
             undoButton.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -12),
             undoButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 28),
@@ -168,7 +304,7 @@ final class AttoWorkspaceEditHistoryPanelController: NSObject, NSTableViewDataSo
     private func position(panel: NSPanel, relativeTo window: NSWindow) {
         guard let screen = window.screen ?? NSScreen.main else { return }
 
-        let width = max(panel.frame.width, 780)
+        let width = max(panel.frame.width, 1120)
         let height = max(panel.frame.height, 420)
         let winFrame = window.frame
         var x = winFrame.maxX - width - 56
@@ -185,11 +321,25 @@ final class AttoWorkspaceEditHistoryPanelController: NSObject, NSTableViewDataSo
         let appliedCount = items.filter { $0.status == "Applied" }.count
         let partialCount = items.filter { $0.status == "Partial" }.count
         let rejectedCount = items.filter { $0.status == "Rejected" }.count
-        metadataLabel.stringValue = "\(appliedCount) applied | \(partialCount) partial | \(rejectedCount) rejected"
+        let conflictCount = items.reduce(0) { $0 + $1.conflictCount }
+        metadataLabel.stringValue =
+            "\(appliedCount) applied | \(partialCount) partial | \(rejectedCount) rejected | \(conflictCount) conflicts"
     }
 
     private func updateButtonState() {
+        let canRerun = selectedRerunRequestSequence() != nil
         undoButton.isEnabled = items.contains { $0.canUndoLatest }
+        openConflictButton.isEnabled = selectedConflictTargetURI() != nil
+        saveConflictButton.isEnabled = selectedSaveableConflictTargetURI() != nil
+        discardConflictButton.isEnabled = selectedDiscardableConflictTargetURI() != nil
+        saveAndReapplyButton.title = canRerun ? "Save & Rerun" : "Save & Reapply"
+        discardAndReapplyButton.title = canRerun ? "Discard & Rerun" : "Discard & Reapply"
+        saveAndReapplyButton.isEnabled =
+            selectedSaveAndRerunConflictTarget() != nil || selectedSaveAndReapplyConflictTarget() != nil
+        discardAndReapplyButton.isEnabled =
+            selectedDiscardAndRerunConflictTarget() != nil || selectedDiscardAndReapplyConflictTarget() != nil
+        rerunRequestButton.isEnabled = canRerun
+        reapplyButton.isEnabled = selectedReapplyWorkspaceEditJSON() != nil
     }
 
     private func applyFilter() {
@@ -201,6 +351,10 @@ final class AttoWorkspaceEditHistoryPanelController: NSObject, NSTableViewDataSo
                 item.title.localizedCaseInsensitiveContains(query)
                     || item.detail.localizedCaseInsensitiveContains(query)
                     || item.status.localizedCaseInsensitiveContains(query)
+                    || item.firstConflictURI?.localizedCaseInsensitiveContains(query) == true
+                    || item.firstSaveableConflictURI?.localizedCaseInsensitiveContains(query) == true
+                    || item.firstDiscardableConflictURI?.localizedCaseInsensitiveContains(query) == true
+                    || item.requestRetryLabel?.localizedCaseInsensitiveContains(query) == true
             }
         }
         tableView.reloadData()
@@ -209,6 +363,7 @@ final class AttoWorkspaceEditHistoryPanelController: NSObject, NSTableViewDataSo
         } else {
             tableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
         }
+        updateButtonState()
     }
 
     func numberOfRows(in tableView: NSTableView) -> Int {
@@ -282,14 +437,163 @@ final class AttoWorkspaceEditHistoryPanelController: NSObject, NSTableViewDataSo
         applyFilter()
     }
 
+    func tableViewSelectionDidChange(_ notification: Notification) {
+        updateButtonState()
+    }
+
+    private func selectedConflictTargetURI() -> String? {
+        selectedItem()?.firstConflictURI
+    }
+
+    private func selectedSaveableConflictTargetURI() -> String? {
+        selectedItem()?.firstSaveableConflictURI
+    }
+
+    private func selectedDiscardableConflictTargetURI() -> String? {
+        selectedItem()?.firstDiscardableConflictURI
+    }
+
+    private func selectedReapplyWorkspaceEditJSON() -> String? {
+        guard let json = selectedItem()?.workspaceEditJSON, json.isEmpty == false else { return nil }
+        return json
+    }
+
+    private func selectedRerunRequestSequence() -> UInt64? {
+        guard let item = selectedItem(),
+              item.requestRetryLabel?.isEmpty == false
+        else {
+            return nil
+        }
+        return item.sequence
+    }
+
+    private func selectedSaveAndReapplyConflictTarget() -> (uri: String, workspaceEditJSON: String)? {
+        guard let item = selectedItem(),
+              item.status == "Rejected",
+              item.requestRetryLabel == nil,
+              let uri = item.firstSaveableConflictURI,
+              let json = item.workspaceEditJSON,
+              json.isEmpty == false
+        else {
+            return nil
+        }
+        return (uri: uri, workspaceEditJSON: json)
+    }
+
+    private func selectedDiscardAndReapplyConflictTarget() -> (uri: String, workspaceEditJSON: String)? {
+        guard let item = selectedItem(),
+              item.status == "Rejected",
+              item.requestRetryLabel == nil,
+              let uri = item.firstDiscardableConflictURI,
+              let json = item.workspaceEditJSON,
+              json.isEmpty == false
+        else {
+            return nil
+        }
+        return (uri: uri, workspaceEditJSON: json)
+    }
+
+    private func selectedSaveAndRerunConflictTarget() -> (uri: String, sequence: UInt64)? {
+        guard let item = selectedItem(),
+              item.status == "Rejected",
+              item.requestRetryLabel?.isEmpty == false,
+              let uri = item.firstSaveableConflictURI
+        else {
+            return nil
+        }
+        return (uri: uri, sequence: item.sequence)
+    }
+
+    private func selectedDiscardAndRerunConflictTarget() -> (uri: String, sequence: UInt64)? {
+        guard let item = selectedItem(),
+              item.status == "Rejected",
+              item.requestRetryLabel?.isEmpty == false,
+              let uri = item.firstDiscardableConflictURI
+        else {
+            return nil
+        }
+        return (uri: uri, sequence: item.sequence)
+    }
+
+    private func selectedItem() -> Item? {
+        let row = tableView.selectedRow
+        guard row >= 0, row < filteredItems.count else { return nil }
+        return filteredItems[row]
+    }
+
+    @objc private func openConflictClicked(_ sender: Any?) {
+        guard let uri = selectedConflictTargetURI() else {
+            NSSound.beep()
+            return
+        }
+        onOpenConflict(uri)
+    }
+
+    @objc private func saveConflictClicked(_ sender: Any?) {
+        guard let uri = selectedSaveableConflictTargetURI() else {
+            NSSound.beep()
+            return
+        }
+        onSaveConflict(uri)
+    }
+
+    @objc private func discardConflictClicked(_ sender: Any?) {
+        guard let uri = selectedDiscardableConflictTargetURI() else {
+            NSSound.beep()
+            return
+        }
+        onDiscardConflict(uri)
+    }
+
+    @objc private func saveAndReapplyClicked(_ sender: Any?) {
+        if let target = selectedSaveAndRerunConflictTarget() {
+            onSaveConflictAndRerunRequest(target.uri, target.sequence)
+            return
+        }
+        guard let target = selectedSaveAndReapplyConflictTarget() else {
+            NSSound.beep()
+            return
+        }
+        onSaveConflictAndReapply(target.uri, target.workspaceEditJSON)
+    }
+
+    @objc private func discardAndReapplyClicked(_ sender: Any?) {
+        if let target = selectedDiscardAndRerunConflictTarget() {
+            onDiscardConflictAndRerunRequest(target.uri, target.sequence)
+            return
+        }
+        guard let target = selectedDiscardAndReapplyConflictTarget() else {
+            NSSound.beep()
+            return
+        }
+        onDiscardConflictAndReapply(target.uri, target.workspaceEditJSON)
+    }
+
+    @objc private func rerunRequestClicked(_ sender: Any?) {
+        guard let sequence = selectedRerunRequestSequence() else {
+            NSSound.beep()
+            return
+        }
+        onRerunRequest(sequence)
+    }
+
+    @objc private func reapplyClicked(_ sender: Any?) {
+        guard let workspaceEditJSON = selectedReapplyWorkspaceEditJSON() else {
+            NSSound.beep()
+            return
+        }
+        onReapply(workspaceEditJSON)
+    }
+
     @objc private func undoLatestClicked(_ sender: Any?) {
         onUndoLatest()
     }
 
     func windowWillClose(_ notification: Notification) {
-        if notification.object as AnyObject? === panel {
-            panel?.parent?.removeChildWindow(panel!)
-        }
+        guard let panel,
+              notification.object as AnyObject? === panel
+        else { return }
+        panel.parent?.removeChildWindow(panel)
     }
 }
 
@@ -297,7 +601,8 @@ enum AttoWorkspaceEditHistoryFormatter {
     @MainActor
     static func items(
         from snapshot: EcuWorkspaceEditTransactionEventsSnapshot,
-        consumedUndoSequences: Set<UInt64> = []
+        consumedUndoSequences: Set<UInt64> = [],
+        requestRetryLabelsBySequence: [UInt64: String] = [:]
     ) -> [AttoWorkspaceEditHistoryPanelController.Item] {
         let latestUndoableSequence = snapshot.events.last { event in
             isUndoableTransactionOperation(event.operation)
@@ -312,8 +617,18 @@ enum AttoWorkspaceEditHistoryFormatter {
                 sequence: event.sequence,
                 operation: event.operation,
                 title: "#\(event.sequence) \(operationTitle(event.operation)) WorkspaceEdit",
-                detail: "\(editCount) text edits, \(resourceCount) resource ops | \(uriSummary(for: result))",
+                detail: detailText(
+                    editCount: editCount,
+                    resourceCount: resourceCount,
+                    result: result
+                ),
                 status: status(for: result),
+                conflictCount: result.conflicts.count,
+                firstConflictURI: result.conflicts.first { $0.uri.isEmpty == false }?.uri,
+                firstSaveableConflictURI: firstSaveOrDiscardConflictURI(in: result.conflicts),
+                firstDiscardableConflictURI: firstSaveOrDiscardConflictURI(in: result.conflicts),
+                workspaceEditJSON: event.workspaceEditJSON,
+                requestRetryLabel: requestRetryLabelsBySequence[event.sequence],
                 canUndoLatest: event.sequence == latestUndoableSequence
             )
         }
@@ -340,12 +655,47 @@ enum AttoWorkspaceEditHistoryFormatter {
             result.appliedURIs
                 + result.skippedURIs
                 + result.dirtyDocumentURIs
+                + result.conflicts.map(\.uri)
                 + result.documents.map(\.uri)
         )
         guard uris.isEmpty == false else { return "No document URI" }
         let names = uris.prefix(3).map(displayName(for:))
         let suffix = uris.count > 3 ? " +\(uris.count - 3)" : ""
         return names.joined(separator: ", ") + suffix
+    }
+
+    private static func detailText(
+        editCount: Int,
+        resourceCount: Int,
+        result: EcuWorkspaceEditTransactionResult
+    ) -> String {
+        var parts = [
+            "\(editCount) text edits, \(resourceCount) resource ops",
+        ]
+        if result.conflicts.isEmpty == false {
+            parts.append(conflictSummary(for: result.conflicts))
+        }
+        parts.append(uriSummary(for: result))
+        return parts.joined(separator: " | ")
+    }
+
+    private static func conflictSummary(for conflicts: [EcuWorkspaceEditTransactionConflict]) -> String {
+        let countText = conflicts.count == 1 ? "1 conflict" : "\(conflicts.count) conflicts"
+        guard let first = conflicts.first(where: { $0.uri.isEmpty == false }) else { return countText }
+        let kind = first.kind.isEmpty ? "conflict" : first.kind.replacingOccurrences(of: "_", with: " ")
+        return "\(countText): \(kind) in \(displayName(for: first.uri))"
+    }
+
+    private static func firstSaveOrDiscardConflictURI(
+        in conflicts: [EcuWorkspaceEditTransactionConflict]
+    ) -> String? {
+        conflicts.first { conflict in
+            conflict.uri.isEmpty == false && isSaveOrDiscardConflict(conflict)
+        }?.uri
+    }
+
+    private static func isSaveOrDiscardConflict(_ conflict: EcuWorkspaceEditTransactionConflict) -> Bool {
+        conflict.resolution == "save_or_discard" || conflict.kind == "dirty_document"
     }
 
     private static func uniqueURIs(_ uris: [String]) -> [String] {

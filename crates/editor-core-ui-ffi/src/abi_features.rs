@@ -88,6 +88,34 @@ pub const ECU_FEATURE_EDITOR_UI_MINIMAP_ENVELOPE: u64 = 1 << 39;
 pub const ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_REDO: u64 = 1 << 40;
 /// Feature bit: per-EditorUi view-point payload hit-tests can return structured result envelopes.
 pub const ECU_FEATURE_EDITOR_UI_VIEW_POINT_PAYLOAD_ENVELOPE: u64 = 1 << 41;
+/// Feature bit: multi-document project LSP auto-start plans can be queried.
+pub const ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_START_PLAN: u64 = 1 << 42;
+/// Feature bit: multi-document project LSP lifecycle outcome events can be recorded and queried.
+pub const ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_LIFECYCLE_EVENTS: u64 = 1 << 43;
+/// Feature bit: multi-document project LSP stop/shutdown plans can be queried.
+pub const ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_STOP_PLAN: u64 = 1 << 44;
+/// Feature bit: multi-document project LSP restart plans can be queried.
+pub const ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_RESTART_PLAN: u64 = 1 << 45;
+/// Feature bit: multi-document project LSP lifecycle plans/events can return structured result envelopes.
+pub const ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_LIFECYCLE_ENVELOPE: u64 = 1 << 46;
+/// Feature bit: per-EditorUi LSP derived-state apply helpers can return structured result envelopes.
+pub const ECU_FEATURE_LSP_DERIVED_STATE_APPLICATION_ENVELOPE: u64 = 1 << 47;
+/// Feature bit: per-EditorUi LSP semantic token raw-buffer apply can return structured result envelopes.
+pub const ECU_FEATURE_LSP_SEMANTIC_TOKENS_APPLICATION_ENVELOPE: u64 = 1 << 48;
+/// Feature bit: multi-document workspace root file search is available.
+pub const ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_SEARCH: u64 = 1 << 49;
+/// Feature bit: multi-document workspace file replacement WorkspaceEdit generation is available.
+pub const ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_REPLACEMENT: u64 = 1 << 50;
+/// Feature bit: multi-document recent file URI tracking is available.
+pub const ECU_FEATURE_MULTI_DOCUMENT_RECENT_FILES: u64 = 1 << 51;
+/// Feature bit: multi-document workspace roots can list local project files.
+pub const ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_LIST: u64 = 1 << 52;
+/// Feature bit: multi-document recent project/workspace root URI tracking is available.
+pub const ECU_FEATURE_MULTI_DOCUMENT_RECENT_PROJECTS: u64 = 1 << 53;
+/// Feature bit: multi-document core-owned project file index snapshots are available.
+pub const ECU_FEATURE_MULTI_DOCUMENT_PROJECT_FILE_INDEX: u64 = 1 << 54;
+/// Feature bit: multi-document core-owned project file index fuzzy queries are available.
+pub const ECU_FEATURE_MULTI_DOCUMENT_PROJECT_FILE_INDEX_QUERY: u64 = 1 << 55;
 
 pub const ECU_FEATURE_FLAGS: u64 = ECU_FEATURE_JSON_COMMAND_DISPATCH
     | ECU_FEATURE_TYPED_DERIVED_SNAPSHOTS
@@ -130,7 +158,21 @@ pub const ECU_FEATURE_FLAGS: u64 = ECU_FEATURE_JSON_COMMAND_DISPATCH
     | ECU_FEATURE_LSP_WORKSPACE_EDIT_APPLICATION_ENVELOPE
     | ECU_FEATURE_EDITOR_UI_MINIMAP_ENVELOPE
     | ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_REDO
-    | ECU_FEATURE_EDITOR_UI_VIEW_POINT_PAYLOAD_ENVELOPE;
+    | ECU_FEATURE_EDITOR_UI_VIEW_POINT_PAYLOAD_ENVELOPE
+    | ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_START_PLAN
+    | ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_LIFECYCLE_EVENTS
+    | ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_STOP_PLAN
+    | ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_RESTART_PLAN
+    | ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_LIFECYCLE_ENVELOPE
+    | ECU_FEATURE_LSP_DERIVED_STATE_APPLICATION_ENVELOPE
+    | ECU_FEATURE_LSP_SEMANTIC_TOKENS_APPLICATION_ENVELOPE
+    | ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_SEARCH
+    | ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_REPLACEMENT
+    | ECU_FEATURE_MULTI_DOCUMENT_RECENT_FILES
+    | ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_LIST
+    | ECU_FEATURE_MULTI_DOCUMENT_RECENT_PROJECTS
+    | ECU_FEATURE_MULTI_DOCUMENT_PROJECT_FILE_INDEX
+    | ECU_FEATURE_MULTI_DOCUMENT_PROJECT_FILE_INDEX_QUERY;
 
 struct FeatureDescriptor {
     bit: u8,
@@ -391,6 +433,90 @@ const FEATURE_DESCRIPTORS: &[FeatureDescriptor] = &[
         flag: ECU_FEATURE_EDITOR_UI_VIEW_POINT_PAYLOAD_ENVELOPE,
         name: "editor_ui_view_point_payload_envelope",
         description: "Per-EditorUi view-point payload hit-tests can return structured result envelopes.",
+    },
+    FeatureDescriptor {
+        bit: 42,
+        flag: ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_START_PLAN,
+        name: "multi_document_project_lsp_start_plan",
+        description: "Multi-document project LSP auto-start plans can be queried.",
+    },
+    FeatureDescriptor {
+        bit: 43,
+        flag: ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_LIFECYCLE_EVENTS,
+        name: "multi_document_project_lsp_lifecycle_events",
+        description: "Multi-document project LSP lifecycle outcome events can be recorded and queried.",
+    },
+    FeatureDescriptor {
+        bit: 44,
+        flag: ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_STOP_PLAN,
+        name: "multi_document_project_lsp_stop_plan",
+        description: "Multi-document project LSP stop/shutdown plans can be queried.",
+    },
+    FeatureDescriptor {
+        bit: 45,
+        flag: ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_RESTART_PLAN,
+        name: "multi_document_project_lsp_restart_plan",
+        description: "Multi-document project LSP restart plans can be queried.",
+    },
+    FeatureDescriptor {
+        bit: 46,
+        flag: ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_LIFECYCLE_ENVELOPE,
+        name: "multi_document_project_lsp_lifecycle_envelope",
+        description: "Multi-document project LSP lifecycle plans and events can return structured result envelopes.",
+    },
+    FeatureDescriptor {
+        bit: 47,
+        flag: ECU_FEATURE_LSP_DERIVED_STATE_APPLICATION_ENVELOPE,
+        name: "lsp_derived_state_application_envelope",
+        description: "Per-EditorUi LSP diagnostics, symbols, highlights, folding ranges, inlay hints, code lens, and document-link apply helpers can return structured result envelopes.",
+    },
+    FeatureDescriptor {
+        bit: 48,
+        flag: ECU_FEATURE_LSP_SEMANTIC_TOKENS_APPLICATION_ENVELOPE,
+        name: "lsp_semantic_tokens_application_envelope",
+        description: "Per-EditorUi LSP semantic token raw-buffer apply helper can return structured result envelopes.",
+    },
+    FeatureDescriptor {
+        bit: 49,
+        flag: ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_SEARCH,
+        name: "multi_document_workspace_file_search",
+        description: "Multi-document workspace roots can search local project files with core search semantics.",
+    },
+    FeatureDescriptor {
+        bit: 50,
+        flag: ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_REPLACEMENT,
+        name: "multi_document_workspace_file_replacement",
+        description: "Multi-document workspace roots can generate WorkspaceEdit payloads for replacing local project file search matches.",
+    },
+    FeatureDescriptor {
+        bit: 51,
+        flag: ECU_FEATURE_MULTI_DOCUMENT_RECENT_FILES,
+        name: "multi_document_recent_files",
+        description: "Multi-document recent file URI tracking.",
+    },
+    FeatureDescriptor {
+        bit: 52,
+        flag: ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_LIST,
+        name: "multi_document_workspace_file_list",
+        description: "Multi-document workspace roots can list local project files for Quick Open.",
+    },
+    FeatureDescriptor {
+        bit: 53,
+        flag: ECU_FEATURE_MULTI_DOCUMENT_RECENT_PROJECTS,
+        name: "multi_document_recent_projects",
+        description: "Multi-document recent project/workspace root URI tracking.",
+    },
+    FeatureDescriptor {
+        bit: 54,
+        flag: ECU_FEATURE_MULTI_DOCUMENT_PROJECT_FILE_INDEX,
+        name: "multi_document_project_file_index",
+        description: "Multi-document core-owned project file index snapshots.",
+    },
+    FeatureDescriptor {
+        bit: 55,
+        flag: ECU_FEATURE_MULTI_DOCUMENT_PROJECT_FILE_INDEX_QUERY,
+        name: "multi_document_project_file_index_query",
+        description: "Multi-document core-owned project file index fuzzy path queries.",
     },
 ];
 

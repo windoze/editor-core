@@ -105,6 +105,8 @@ fn take_lsp_result_slot_json(ui: &mut EditorUi, slot: &str) -> Result<Option<Str
         "linked_editing_range" => ui.lsp_take_last_linked_editing_range_result_json(),
         "document_diagnostic" => ui.lsp_take_last_document_diagnostic_result_json(),
         "workspace_diagnostic" => ui.lsp_take_last_workspace_diagnostic_result_json(),
+        "formatting" => ui.lsp_take_last_formatting_result_json(),
+        "range_formatting" => ui.lsp_take_last_range_formatting_result_json(),
         "document_color" => ui.lsp_take_last_document_color_result_json(),
         "color_presentation" => ui.lsp_take_last_color_presentation_result_json(),
         "prepare_call_hierarchy" => ui.lsp_take_last_prepare_call_hierarchy_result_json(),

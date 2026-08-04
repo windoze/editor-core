@@ -25,6 +25,7 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("file.close_tabs_to_right"))
         XCTAssertTrue(ids.contains("file.move_tab_left"))
         XCTAssertTrue(ids.contains("file.move_tab_right"))
+        XCTAssertTrue(ids.contains("file.open_recent_project"))
         XCTAssertTrue(ids.contains("editor.delete_lines"))
         XCTAssertTrue(ids.contains("editor.move_lines_up"))
         XCTAssertTrue(ids.contains("editor.move_lines_down"))
@@ -82,12 +83,26 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.show_location_history"))
         XCTAssertTrue(ids.contains("lsp.show_locations_panel"))
         XCTAssertTrue(ids.contains("lsp.show_workbench_panel"))
+        XCTAssertTrue(ids.contains("lsp.show_workbench_history"))
+        XCTAssertTrue(ids.contains("lsp.show_workbench_pinned_results"))
+        XCTAssertTrue(ids.contains("lsp.show_workbench_selected_history"))
+        XCTAssertTrue(ids.contains("lsp.jump_workbench_first_result"))
+        XCTAssertTrue(ids.contains("lsp.jump_workbench_selected_result"))
+        XCTAssertTrue(ids.contains("lsp.refresh_workbench_selected_result"))
+        XCTAssertTrue(ids.contains("lsp.pin_workbench_current_results"))
+        XCTAssertTrue(ids.contains("lsp.pin_workbench_selected_result"))
+        XCTAssertTrue(ids.contains("lsp.unpin_workbench_current_results"))
+        XCTAssertTrue(ids.contains("lsp.unpin_workbench_selected_result"))
+        XCTAssertTrue(ids.contains("lsp.clear_workbench_stale_results"))
+        XCTAssertTrue(ids.contains("lsp.clear_workbench_selected_stale_result"))
         XCTAssertTrue(ids.contains("lsp.show_problems_panel"))
         XCTAssertTrue(ids.contains("lsp.call_hierarchy_incoming"))
         XCTAssertTrue(ids.contains("lsp.call_hierarchy_outgoing"))
         XCTAssertTrue(ids.contains("lsp.type_hierarchy_supertypes"))
         XCTAssertTrue(ids.contains("lsp.type_hierarchy_subtypes"))
         XCTAssertTrue(ids.contains("lsp.show_hierarchy_panel"))
+        XCTAssertTrue(ids.contains("lsp.refresh_hierarchy_panel"))
+        XCTAssertTrue(ids.contains("lsp.expand_hierarchy_selection"))
         XCTAssertTrue(ids.contains("lsp.document_symbols"))
         XCTAssertTrue(ids.contains("lsp.workspace_symbols"))
         XCTAssertTrue(ids.contains("lsp.show_last_symbols"))
@@ -121,10 +136,13 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(ids.contains("lsp.clear_project_lsp_health_log"))
         XCTAssertTrue(ids.contains("lsp.export_project_lsp_health_log"))
         XCTAssertTrue(ids.contains("lsp.restart_server"))
+        XCTAssertTrue(ids.contains("lsp.shutdown_server"))
         XCTAssertTrue(ids.contains("lsp.restart_project_servers"))
+        XCTAssertTrue(ids.contains("lsp.shutdown_project_servers"))
         XCTAssertTrue(ids.contains("lsp.document_colors"))
         XCTAssertTrue(ids.contains("lsp.pick_document_color"))
         XCTAssertTrue(ids.contains("lsp.show_document_colors_panel"))
+        XCTAssertTrue(ids.contains("lsp.refresh_document_colors"))
         XCTAssertTrue(ids.contains("lsp.refresh_folding_ranges"))
         XCTAssertTrue(ids.contains("lsp.selection_range"))
         XCTAssertTrue(ids.contains("lsp.linked_editing"))
@@ -143,6 +161,11 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(openFile.group, "File")
         XCTAssertFalse(openFile.requiresEditor)
         XCTAssertTrue(openFile.isEnabled)
+
+        let openRecentProject = try XCTUnwrap(commands.first { $0.id == "file.open_recent_project" })
+        XCTAssertEqual(openRecentProject.group, "File")
+        XCTAssertFalse(openRecentProject.requiresEditor)
+        XCTAssertTrue(openRecentProject.isEnabled)
 
         let cursor = try XCTUnwrap(commands.first { $0.id == "cursor.move_down" })
         XCTAssertEqual(cursor.group, "Cursor")
@@ -298,6 +321,10 @@ final class AttoEditorCommandTests: XCTestCase {
 
         let openFile = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "file.open_file"))
         XCTAssertEqual(openFile.macroPolicy, .promptRequired)
+        let openRecentProject = try XCTUnwrap(
+            delegate._commandSchemaForTesting(commandID: "file.open_recent_project")
+        )
+        XCTAssertEqual(openRecentProject.macroPolicy, .promptRequired)
     }
 
     func testCommandRegistryDisablesCommandsForMissingOptionalRuntimeFeatures() throws {
@@ -1357,6 +1384,82 @@ final class AttoEditorCommandTests: XCTestCase {
         )
     }
 
+    func testCodeLensCommandWorkspaceEditResultAppliesViaCoreTransaction() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("code-lens-command-main.txt")
+        let captureURL = tempDir.appendingPathComponent("code-lens-command-lsp-stdin.txt")
+        let scriptURL = tempDir.appendingPathComponent("code-lens-command-fake-lsp.py")
+        try "abc\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let resultJSON = """
+        {
+          "changes": {
+            "\(fileURL.absoluteString)": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 1 },
+                  "end": { "line": 0, "character": 2 }
+                },
+                "newText": "B"
+              }
+            ]
+          }
+        }
+        """
+        try writeExecuteCommandWorkspaceEditFakeLspServerScript(
+            captureURL: captureURL,
+            scriptURL: scriptURL,
+            resultJSON: resultJSON
+        )
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let window = attachToWindow(vc)
+        defer { window.close() }
+        vc.openFile(url: fileURL, mode: .pinned)
+        let tab = try XCTUnwrap(vc.activeTab)
+        try tab.editCore.editor.lspEnable(
+            command: scriptURL.path,
+            rootURI: tempDir.standardizedFileURL.absoluteString,
+            documentURI: fileURL.standardizedFileURL.absoluteString,
+            languageId: "plaintext"
+        )
+        defer {
+            vc.cancelExecuteCommandUI()
+            tab.editCore.editor.lspDisable()
+        }
+
+        let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
+        let item = try XCTUnwrap(AttoLspCodeLensParser.item(fromCodeLensJSON: """
+        {
+          "range": {
+            "start": { "line": 0, "character": 0 },
+            "end": { "line": 0, "character": 0 }
+          },
+          "command": {
+            "title": "Apply edit",
+            "command": "atto.applyEdit",
+            "arguments": []
+          }
+        }
+        """))
+
+        XCTAssertTrue(vc.applyCodeLens(item))
+        let captured = waitForCapturedLspInput(
+            at: captureURL,
+            containing: #""method":"workspace/executeCommand""#
+        )
+        XCTAssertTrue(captured.contains(#""method":"workspace/executeCommand""#), captured)
+        XCTAssertEqual(
+            waitForCoreWorkspaceEditTransactionSequence(vc, expected: coreTransactionCursor + 1),
+            coreTransactionCursor + 1
+        )
+        XCTAssertEqual(try XCTUnwrap(vc.activeTab).editCore.editor.text(), "aBc\n")
+    }
+
     func testCodeLensActionTitlesUseCoreDocumentURIProjection() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
@@ -1532,7 +1635,8 @@ final class AttoEditorCommandTests: XCTestCase {
         try "projected\n".write(to: projectedURL, atomically: true, encoding: .utf8)
 
         let vc = makeEditorArea(workspaceRootURL: tempDir)
-        _ = attachToWindow(vc)
+        let window = attachToWindow(vc)
+        defer { window.close() }
         vc.openFile(url: fileURL, mode: .pinned)
 
         let tab = try XCTUnwrap(vc.tabs.first)
@@ -2167,6 +2271,7 @@ final class AttoEditorCommandTests: XCTestCase {
         let fileMenu = try XCTUnwrap(topLevelMenu(title: "File", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "file.reload", in: fileMenu))
         XCTAssertNotNil(findMenuItem(commandID: "file.pin_tab", in: fileMenu))
+        XCTAssertNotNil(findMenuItem(commandID: "file.open_recent_project", in: fileMenu))
         XCTAssertNotNil(findMenuItem(commandID: "file.close_all_tabs", in: fileMenu))
         XCTAssertNotNil(findMenuItem(commandID: "file.close_other_tabs", in: fileMenu))
         XCTAssertNotNil(findMenuItem(commandID: "file.close_tabs_to_right", in: fileMenu))
@@ -2188,6 +2293,8 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "editor.format_selection", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "settings.open_user_settings", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "settings.open_workspace_settings", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "settings.validate_user_settings", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "settings.validate_workspace_settings", in: menu))
         let workspaceUndo = try XCTUnwrap(findMenuItem(commandID: "workspace.undo_last_workspace_edit", in: menu))
         XCTAssertEqual(workspaceUndo.keyEquivalent, "z")
         XCTAssertEqual(
@@ -2249,12 +2356,26 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_last_locations", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_location_history", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_workbench_panel", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.show_workbench_history", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.show_workbench_pinned_results", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.show_workbench_selected_history", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.jump_workbench_first_result", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.jump_workbench_selected_result", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.refresh_workbench_selected_result", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.pin_workbench_current_results", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.pin_workbench_selected_result", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.unpin_workbench_current_results", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.unpin_workbench_selected_result", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.clear_workbench_stale_results", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.clear_workbench_selected_stale_result", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_problems_panel", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.call_hierarchy_incoming", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.call_hierarchy_outgoing", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.type_hierarchy_supertypes", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.type_hierarchy_subtypes", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_hierarchy_panel", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.refresh_hierarchy_panel", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.expand_hierarchy_selection", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.document_symbols", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.workspace_symbols", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_last_symbols", in: menu))
@@ -2287,10 +2408,13 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertNotNil(findMenuItem(commandID: "lsp.clear_project_lsp_health_log", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.export_project_lsp_health_log", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.restart_server", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.shutdown_server", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.restart_project_servers", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.shutdown_project_servers", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.document_colors", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.pick_document_color", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_document_colors_panel", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.refresh_document_colors", in: menu))
     }
 
     func testWorkspaceDiagnosticsResultNavigatesWithoutPanelWindow() throws {
@@ -3066,6 +3190,7 @@ final class AttoEditorCommandTests: XCTestCase {
         let summaryCell = try XCTUnwrap(table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? NSTableCellView)
         XCTAssertTrue(summaryCell.textField?.stringValue.contains("Summary -") == true)
         XCTAssertTrue(summaryCell.textField?.stringValue.contains("status failures 1") == true)
+        XCTAssertTrue(summaryCell.textField?.stringValue.contains("lifecycle attempts 0") == true)
         XCTAssertTrue(summaryCell.textField?.stringValue.contains("health events 1") == true)
         XCTAssertTrue(summaryCell.textField?.stringValue.contains("persisted logs 1") == true)
 
@@ -4138,6 +4263,151 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(vc._transientStatusTextForTesting(), "Completion: no results")
     }
 
+    func testCompletionAdditionalTextEditsApplyViaWorkspaceEditTransaction() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("completion-workspace-edit.swift")
+        try "import Old\npri\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let window = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+        allowWorkspaceEditPreviewConfirmation(vc)
+        let tab = try XCTUnwrap(vc.activeTab)
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        try editorView.editor.setSelections([EcuSelectionRange(start: 14, end: 14)], primaryIndex: 0)
+        let context = try vc.completionRequestContextForCurrentSelection(tab, beepOnFailure: false, showFeedback: true)
+        let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
+        let item = try XCTUnwrap(AttoLspCompletionParser.items(fromCompletionResultJSON: """
+        [
+          {
+            "label": "print",
+            "textEdit": {
+              "range": {
+                "start": { "line": 1, "character": 0 },
+                "end": { "line": 1, "character": 3 }
+              },
+              "newText": "print()"
+            },
+            "additionalTextEdits": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 0 },
+                  "end": { "line": 0, "character": 10 }
+                },
+                "newText": "import New"
+              }
+            ]
+          }
+        ]
+        """).first)
+
+        XCTAssertTrue(vc.applyCompletionItem(item, context: context, beepOnFailure: false))
+        XCTAssertEqual(try editorView.editor.text(), "import New\nprint()\n")
+        XCTAssertEqual(
+            try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting()),
+            coreTransactionCursor + 1
+        )
+        XCTAssertTrue(window.title.contains("●"))
+    }
+
+    func testSnippetCompletionAdditionalTextEditsUseWorkspaceEditTransaction() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("completion-snippet-workspace-edit.swift")
+        try "import Old\npri\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let window = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+        allowWorkspaceEditPreviewConfirmation(vc)
+        let tab = try XCTUnwrap(vc.activeTab)
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        try editorView.editor.setSelections([EcuSelectionRange(start: 14, end: 14)], primaryIndex: 0)
+        let context = try vc.completionRequestContextForCurrentSelection(tab, beepOnFailure: false, showFeedback: true)
+        let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
+        let item = try XCTUnwrap(AttoLspCompletionParser.items(fromCompletionResultJSON: """
+        [
+          {
+            "label": "print",
+            "insertTextFormat": 2,
+            "textEdit": {
+              "range": {
+                "start": { "line": 1, "character": 0 },
+                "end": { "line": 1, "character": 3 }
+              },
+              "newText": "print(${1:value})$0"
+            },
+            "additionalTextEdits": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 0 },
+                  "end": { "line": 0, "character": 10 }
+                },
+                "newText": "import Foundation"
+              }
+            ]
+          }
+        ]
+        """).first)
+
+        XCTAssertTrue(vc.applyCompletionItem(item, context: context, beepOnFailure: false))
+        XCTAssertEqual(try editorView.editor.text(), "import Foundation\nprint(value)\n")
+        XCTAssertEqual(
+            try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting()),
+            coreTransactionCursor + 1
+        )
+        XCTAssertTrue(try editorView.editor.hasActiveSnippetSession())
+        XCTAssertTrue(window.title.contains("●"))
+    }
+
+    func testCompletionWorkspaceEditRetryOwnerRerunsCompletionRequest() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("completion-retry.swift")
+        let captureURL = tempDir.appendingPathComponent("completion-retry-lsp-stdin.txt")
+        let scriptURL = tempDir.appendingPathComponent("completion-retry-fake-lsp.py")
+        try "pri\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        try writeCompletionFakeLspServerScript(captureURL: captureURL, scriptURL: scriptURL)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+        let tab = try XCTUnwrap(vc.activeTab)
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        try editorView.editor.setSelections([EcuSelectionRange(start: 3, end: 3)], primaryIndex: 0)
+        try tab.editCore.editor.lspEnable(
+            command: scriptURL.path,
+            rootURI: tempDir.standardizedFileURL.absoluteString,
+            documentURI: fileURL.standardizedFileURL.absoluteString,
+            languageId: "plaintext"
+        )
+        defer {
+            vc.cancelCompletionUI()
+            tab.editCore.editor.lspDisable()
+        }
+
+        let context = try vc.completionRequestContextForCurrentSelection(tab, beepOnFailure: false, showFeedback: true)
+        XCTAssertTrue(vc.retryCompletionWorkspaceEditRequest(context: context))
+
+        let captured = waitForCapturedLspInput(
+            at: captureURL,
+            containing: #""method":"textDocument/completion""#
+        )
+        XCTAssertTrue(captured.contains(#""method":"textDocument/completion""#), captured)
+        XCTAssertTrue(captured.contains(#""line":0"#), captured)
+        XCTAssertTrue(captured.contains(#""character":3"#), captured)
+    }
+
     func testApplyLinkedEditingRangeResultCreatesMulticursorSelections() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
@@ -4496,6 +4766,108 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(vc._transientStatusTextForTesting(), "Type hierarchy: no results")
     }
 
+    func testHierarchyResultEntriesRetainExpansionRequestJSON() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("hierarchy-expand.swift")
+        let entries = AttoLspHierarchyParser.incomingCalls(fromResultJSON: """
+        [
+          {
+            "from": {
+              "name": "render",
+              "kind": 12,
+              "detail": "View.swift",
+              "uri": "\(fileURL.absoluteString)",
+              "selectionRange": {
+                "start": { "line": 3, "character": 9 },
+                "end": { "line": 3, "character": 15 }
+              }
+            },
+            "fromRanges": [
+              {
+                "start": { "line": 4, "character": 12 },
+                "end": { "line": 4, "character": 18 }
+              }
+            ]
+          }
+        ]
+        """)
+        let entry = try XCTUnwrap(entries.first)
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+
+        XCTAssertEqual(entry.name, "render")
+        XCTAssertEqual(entry.target.line, 4)
+        XCTAssertEqual(entry.target.utf16Character, 12)
+        let item = try XCTUnwrap(vc.hierarchyExpansionItem(from: entry))
+        XCTAssertEqual(item.name, "render")
+        XCTAssertEqual(item.target.line, 4)
+        XCTAssertEqual(item.target.utf16Character, 12)
+        XCTAssertTrue(item.requestJSON.contains(#""name":"render""#))
+        XCTAssertTrue(item.requestJSON.contains(#""selectionRange""#))
+    }
+
+    func testHierarchyRefreshModeUpdatesWorkbenchWithoutOpeningQuickPanel() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("hierarchy-refresh.swift")
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let resultEventCursor = vc._latestLspResultLifecycleEventSequenceForTesting()
+        let target = AttoLspDefinitionParser.Target(
+            uri: fileURL.absoluteString,
+            line: 2,
+            utf16Character: 8
+        )
+        let rootItem = AttoLspHierarchyParser.Item(
+            name: "caller",
+            detail: "Root.swift",
+            kindLabel: "function",
+            target: target,
+            requestJSON: #"{"name":"caller","uri":"file:///hierarchy-refresh.swift"}"#
+        )
+        let refreshRequest = AttoEditorAreaViewController.HierarchyPanelRefreshRequest(
+            tabID: UUID(),
+            kind: .callIncoming,
+            item: rootItem
+        )
+        let entry = AttoLspHierarchyParser.Entry(
+            name: "render",
+            detail: "View.swift",
+            kindLabel: "function",
+            target: target,
+            relatedRangeCount: 1
+        )
+
+        XCTAssertTrue(vc.finishHierarchyRefresh(
+            [entry],
+            kind: .callIncoming,
+            refreshRequest: refreshRequest,
+            showFeedback: false,
+            editorView: nil
+        ))
+
+        let snapshot = try XCTUnwrap(vc._hierarchyPanelSnapshotForTesting())
+        XCTAssertEqual(snapshot.title, "Incoming Calls")
+        XCTAssertEqual(snapshot.entries.map(\.name), ["render"])
+        XCTAssertEqual(vc._hierarchyPanelRefreshRequestForTesting(), refreshRequest)
+        XCTAssertFalse(vc._hierarchyPanelIsVisibleForTesting())
+
+        let events = vc._lspResultLifecycleEventsForTesting(after: resultEventCursor)
+            .filter { $0.family == "hierarchy" }
+        XCTAssertEqual(events.map(\.payload), [.hierarchy(title: "Incoming Calls", itemCount: 1)])
+
+        let workbenchItem = try XCTUnwrap(vc.lspWorkbenchItems().first { $0.title == "Hierarchy" })
+        XCTAssertTrue(workbenchItem.status.hasPrefix("1 result | Fresh | Result #"))
+        XCTAssertTrue(workbenchItem.status.contains(" | hierarchy | Incoming Calls"))
+        XCTAssertEqual(workbenchItem.historyCount, 1)
+        XCTAssertEqual(workbenchItem.jumpTargetCount, 1)
+    }
+
     func testHierarchyPanelUsesLastHierarchyResults() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
@@ -4616,6 +4988,49 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(vc._transientStatusTextForTesting(), "Format selection: no results")
     }
 
+    func testFormattingEditsApplyViaWorkspaceEditTransaction() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("formatting-transaction.txt")
+        try "unformatted\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        let captureURL = tempDir.appendingPathComponent("formatting-transaction-lsp-stdin.txt")
+        let scriptURL = tempDir.appendingPathComponent("formatting-transaction-fake-lsp.py")
+        try writeFormattingFakeLspServerScript(captureURL: captureURL, scriptURL: scriptURL)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+        let tab = try XCTUnwrap(vc.activeTab)
+        try tab.editCore.editor.lspEnable(
+            command: scriptURL.path,
+            rootURI: tempDir.standardizedFileURL.absoluteString,
+            documentURI: fileURL.standardizedFileURL.absoluteString,
+            languageId: "plaintext"
+        )
+        defer {
+            vc.cancelFormattingUI()
+            tab.editCore.editor.lspDisable()
+        }
+
+        allowWorkspaceEditPreviewConfirmation(vc)
+        let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
+
+        XCTAssertTrue(vc.formatDocumentWithLspInActiveTab())
+        let captured = waitForCapturedLspInput(
+            at: captureURL,
+            containing: #""method":"textDocument/formatting""#
+        )
+        XCTAssertTrue(captured.contains(#""method":"textDocument/formatting""#), captured)
+        XCTAssertEqual(
+            waitForCoreWorkspaceEditTransactionSequence(vc, expected: coreTransactionCursor + 1),
+            coreTransactionCursor + 1
+        )
+        XCTAssertEqual(try tab.editCore.editor.text(), "formatted\n")
+    }
+
     func testDocumentColorResultsRecordLspResultEvents() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
@@ -4674,6 +5089,60 @@ final class AttoEditorCommandTests: XCTestCase {
                 .documentColors(mode: "presentations", itemCount: 1),
                 .colorPresentations(itemCount: 2),
             ]
+        )
+    }
+
+    func testColorPresentationEditsApplyViaWorkspaceEditTransaction() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("color-presentation-transaction.txt")
+        try "let color = #ff0000\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        vc.openFile(url: fileURL, mode: .pinned)
+        let tabID = try XCTUnwrap(vc.openFileItems().first?.id)
+        let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
+        let item = AttoLspDocumentColorParser.Item(
+            range: EcuSelectionRange(start: 12, end: 19),
+            startLine: 0,
+            startUTF16Character: 12,
+            color: AttoLspDocumentColorParser.Color(red: 1, green: 0, blue: 0, alpha: 1)
+        )
+
+        XCTAssertTrue(vc.showColorPresentationResultJSONInActiveTab("""
+        [
+          {
+            "label": "rgb(255, 0, 0)",
+            "textEdit": {
+              "range": {
+                "start": { "line": 0, "character": 12 },
+                "end": { "line": 0, "character": 19 }
+              },
+              "newText": "rgb(255, 0, 0)"
+            },
+            "additionalTextEdits": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 0 },
+                  "end": { "line": 0, "character": 0 }
+                },
+                "newText": "// palette\\n"
+              }
+            ]
+          }
+        ]
+        """, item: item, tabID: tabID))
+
+        XCTAssertEqual(
+            try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting()),
+            coreTransactionCursor + 1
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(vc.activeTab).editCore.editor.text(),
+            "// palette\nlet color = rgb(255, 0, 0)\n"
         )
     }
 
@@ -5056,7 +5525,11 @@ final class AttoEditorCommandTests: XCTestCase {
         try "abc\n".write(to: fileURL, atomically: true, encoding: .utf8)
 
         let ctx = delegate._createWindowForTesting(workspaceRootURL: tempDir)
-        defer { ctx.window.close() }
+        defer {
+            ctx.editorAreaController.workspaceEditRequestRetryOwnersByTransactionSequence.removeAll()
+            ctx.editorAreaController.workspaceEditHistoryPanelController?.hide()
+            ctx.window.close()
+        }
         ctx.editorAreaController.openFile(url: fileURL, mode: .pinned)
 
         XCTAssertTrue(delegate.executeCommand(id: "cursor.move_right"))
@@ -5163,7 +5636,10 @@ final class AttoEditorCommandTests: XCTestCase {
         try "abc\ndef\n".write(to: fileURL, atomically: true, encoding: .utf8)
 
         let ctx = delegate._createWindowForTesting(workspaceRootURL: tempDir)
-        defer { ctx.window.close() }
+        defer {
+            ctx.editorAreaController.workspaceEditHistoryPanelController?.hide()
+            ctx.window.close()
+        }
         ctx.editorAreaController.openFile(url: fileURL, mode: .pinned)
 
         let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: ctx.editorAreaController.view))
@@ -5182,855 +5658,6 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(try editorView.editor.selectionOffsets().start, 6)
     }
 
-    func testCommandMacroRecordsAndReplaysCommandSequence() throws {
-        let delegate = AttoAppDelegate(keyBindings: [:])
-        let tempDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tempDir) }
-
-        let fileURL = tempDir.appendingPathComponent("macro.txt")
-        try "abc\ndef\n".write(to: fileURL, atomically: true, encoding: .utf8)
-
-        let ctx = delegate._createWindowForTesting(workspaceRootURL: tempDir)
-        defer { ctx.window.close() }
-        ctx.editorAreaController.openFile(url: fileURL, mode: .pinned)
-
-        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: ctx.editorAreaController.view))
-        XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "macro.replay_last"))
-
-        XCTAssertTrue(delegate.executeCommand(id: "macro.toggle_recording"))
-        XCTAssertTrue(delegate._isRecordingMacroForTesting())
-        XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "macro.replay_last"))
-
-        XCTAssertTrue(delegate.executeCommand(id: "go.line", arguments: ["line": .integer(2), "column": .integer(2)]))
-        XCTAssertTrue(delegate.executeCommand(id: "editor.find"))
-        XCTAssertTrue(delegate.executeCommand(id: "editor.duplicate_lines"))
-
-        XCTAssertTrue(delegate.executeCommand(id: "macro.toggle_recording"))
-        XCTAssertFalse(delegate._isRecordingMacroForTesting())
-
-        let recorded = delegate._lastMacroCommandsForTesting()
-        XCTAssertEqual(recorded.map(\.commandID), ["go.line", "editor.duplicate_lines"])
-        XCTAssertEqual(recorded.first?.arguments, ["line": .integer(2), "column": .integer(2)])
-        XCTAssertEqual(recorded.last?.arguments, [:])
-        XCTAssertEqual(try editorView.editor.text(), "abc\ndef\ndef\n")
-        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "macro.replay_last"))
-
-        XCTAssertTrue(delegate.executeCommand(id: "macro.replay_last"))
-        XCTAssertEqual(try editorView.editor.text(), "abc\ndef\ndef\ndef\n")
-        XCTAssertEqual(delegate._lastMacroCommandsForTesting(), recorded)
-    }
-
-    func testCommandMacroPersistsSublimeMacroFileAcrossDelegates() throws {
-        let tempDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tempDir) }
-
-        let macroURL = tempDir.appendingPathComponent("Last Macro.sublime-macro")
-        let macroStore = AttoMacroStore(macroFileURL: macroURL)
-        let firstDelegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
-
-        let firstFileURL = tempDir.appendingPathComponent("macro-record.txt")
-        try "abc\ndef\n".write(to: firstFileURL, atomically: true, encoding: .utf8)
-
-        let firstContext = firstDelegate._createWindowForTesting(workspaceRootURL: tempDir)
-        defer { firstContext.window.close() }
-        firstContext.editorAreaController.openFile(url: firstFileURL, mode: .pinned)
-
-        XCTAssertTrue(firstDelegate.executeCommand(id: "macro.toggle_recording"))
-        XCTAssertTrue(firstDelegate.executeCommand(id: "go.line", arguments: ["line": .integer(2), "column": .integer(2)]))
-        XCTAssertTrue(firstDelegate.executeCommand(id: "editor.duplicate_lines"))
-        XCTAssertTrue(firstDelegate.executeCommand(id: "macro.toggle_recording"))
-
-        XCTAssertTrue(FileManager.default.fileExists(atPath: macroURL.path))
-        let rawJSON = try JSONSerialization.jsonObject(with: Data(contentsOf: macroURL)) as? [[String: Any]]
-        let stored = try XCTUnwrap(rawJSON)
-        XCTAssertEqual(stored.count, 2)
-        XCTAssertEqual(stored[0]["command"] as? String, "go.line")
-        let goLineArgs = try XCTUnwrap(stored[0]["args"] as? [String: Any])
-        XCTAssertEqual((goLineArgs["line"] as? NSNumber)?.intValue, 2)
-        XCTAssertEqual((goLineArgs["column"] as? NSNumber)?.intValue, 2)
-        XCTAssertEqual(stored[1]["command"] as? String, "editor.duplicate_lines")
-        XCTAssertNil(stored[1]["args"])
-
-        let secondDelegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
-        let loaded = secondDelegate._lastMacroCommandsForTesting()
-        XCTAssertEqual(loaded.map(\.commandID), ["go.line", "editor.duplicate_lines"])
-        XCTAssertEqual(loaded.first?.arguments, ["line": .integer(2), "column": .integer(2)])
-
-        let replayFileURL = tempDir.appendingPathComponent("macro-replay.txt")
-        try "abc\ndef\n".write(to: replayFileURL, atomically: true, encoding: .utf8)
-        let secondContext = secondDelegate._createWindowForTesting(workspaceRootURL: tempDir)
-        defer { secondContext.window.close() }
-        secondContext.editorAreaController.openFile(url: replayFileURL, mode: .pinned)
-
-        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: secondContext.editorAreaController.view))
-        XCTAssertTrue(secondDelegate._commandIsEnabledForTesting(commandID: "macro.replay_last"))
-        XCTAssertTrue(secondDelegate.executeCommand(id: "macro.replay_last"))
-        XCTAssertEqual(try editorView.editor.text(), "abc\ndef\ndef\n")
-    }
-
-    func testCommandMacroSavesAndReplaysNamedSublimeMacroFiles() throws {
-        let tempDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tempDir) }
-
-        let macroURL = tempDir.appendingPathComponent("Last Macro.sublime-macro")
-        let macroStore = AttoMacroStore(macroFileURL: macroURL)
-        let firstDelegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
-
-        let firstFileURL = tempDir.appendingPathComponent("macro-named-record.txt")
-        try "abc\ndef\n".write(to: firstFileURL, atomically: true, encoding: .utf8)
-
-        let firstContext = firstDelegate._createWindowForTesting(workspaceRootURL: tempDir)
-        defer { firstContext.window.close() }
-        firstContext.editorAreaController.openFile(url: firstFileURL, mode: .pinned)
-
-        XCTAssertFalse(firstDelegate._commandIsEnabledForTesting(commandID: "macro.save_named"))
-        XCTAssertTrue(firstDelegate.executeCommand(id: "macro.toggle_recording"))
-        XCTAssertTrue(firstDelegate.executeCommand(id: "go.line", arguments: ["line": .integer(2), "column": .integer(2)]))
-        XCTAssertTrue(firstDelegate.executeCommand(id: "editor.duplicate_lines"))
-        XCTAssertTrue(firstDelegate.executeCommand(id: "macro.toggle_recording"))
-        XCTAssertTrue(firstDelegate._commandIsEnabledForTesting(commandID: "macro.save_named"))
-
-        XCTAssertTrue(firstDelegate.executeCommand(
-            id: "macro.save_named",
-            arguments: ["name": .string("Duplicate Current Line")]
-        ))
-        let namedMacroURL = tempDir.appendingPathComponent("Duplicate Current Line.sublime-macro")
-        XCTAssertTrue(FileManager.default.fileExists(atPath: namedMacroURL.path))
-        XCTAssertEqual(macroStore.namedMacroNames(), ["Duplicate Current Line"])
-
-        let secondDelegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
-        XCTAssertTrue(secondDelegate._commandIsEnabledForTesting(commandID: "macro.replay_named"))
-        let replayNamedSchema = try XCTUnwrap(secondDelegate._commandSchemaForTesting(commandID: "macro.replay_named"))
-        XCTAssertEqual(replayNamedSchema.parameters.first?.choices.map(\.title), ["Duplicate Current Line"])
-        XCTAssertThrowsError(try replayNamedSchema.normalizedArguments(["name": .string("Missing Macro")]))
-
-        let replayFileURL = tempDir.appendingPathComponent("macro-named-replay.txt")
-        try "abc\ndef\n".write(to: replayFileURL, atomically: true, encoding: .utf8)
-        let secondContext = secondDelegate._createWindowForTesting(workspaceRootURL: tempDir)
-        defer { secondContext.window.close() }
-        secondContext.editorAreaController.openFile(url: replayFileURL, mode: .pinned)
-
-        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: secondContext.editorAreaController.view))
-        XCTAssertTrue(secondDelegate.executeCommand(
-            id: "macro.replay_named",
-            arguments: ["name": .string("Duplicate Current Line")]
-        ))
-        XCTAssertEqual(try editorView.editor.text(), "abc\ndef\ndef\n")
-    }
-
-    func testCommandMacroRenamesAndDeletesNamedSublimeMacroFiles() throws {
-        let tempDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tempDir) }
-
-        let macroURL = tempDir.appendingPathComponent("Last Macro.sublime-macro")
-        let macroStore = AttoMacroStore(macroFileURL: macroURL)
-        let delegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
-
-        let recordFileURL = tempDir.appendingPathComponent("macro-rename-record.txt")
-        try "abc\ndef\n".write(to: recordFileURL, atomically: true, encoding: .utf8)
-
-        let context = delegate._createWindowForTesting(workspaceRootURL: tempDir)
-        defer { context.window.close() }
-        context.editorAreaController.openFile(url: recordFileURL, mode: .pinned)
-
-        XCTAssertTrue(delegate.executeCommand(id: "macro.toggle_recording"))
-        XCTAssertTrue(delegate.executeCommand(id: "go.line", arguments: ["line": .integer(2), "column": .integer(2)]))
-        XCTAssertTrue(delegate.executeCommand(id: "editor.duplicate_lines"))
-        XCTAssertTrue(delegate.executeCommand(id: "macro.toggle_recording"))
-        XCTAssertTrue(delegate.executeCommand(id: "macro.save_named", arguments: ["name": .string("Old Macro")]))
-
-        let oldURL = tempDir.appendingPathComponent("Old Macro.sublime-macro")
-        let newURL = tempDir.appendingPathComponent("Renamed Macro.sublime-macro")
-        XCTAssertTrue(FileManager.default.fileExists(atPath: oldURL.path))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: newURL.path))
-        XCTAssertEqual(macroStore.namedMacroNames(), ["Old Macro"])
-
-        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "macro.rename_named"))
-        XCTAssertTrue(delegate.executeCommand(
-            id: "macro.rename_named",
-            arguments: ["oldName": .string("Old Macro"), "newName": .string("Renamed Macro")]
-        ))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: oldURL.path))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: newURL.path))
-        XCTAssertEqual(macroStore.namedMacroNames(), ["Renamed Macro"])
-
-        let renameSchema = try XCTUnwrap(delegate._commandSchemaForTesting(commandID: "macro.rename_named"))
-        XCTAssertEqual(renameSchema.parameters.first?.choices.map(\.title), ["Renamed Macro"])
-        XCTAssertThrowsError(try renameSchema.normalizedArguments([
-            "oldName": .string("Old Macro"),
-            "newName": .string("Another Macro"),
-        ]))
-
-        let replayFileURL = tempDir.appendingPathComponent("macro-rename-replay.txt")
-        try "abc\ndef\n".write(to: replayFileURL, atomically: true, encoding: .utf8)
-        context.editorAreaController.openFile(url: replayFileURL, mode: .pinned)
-        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: context.editorAreaController.view))
-        XCTAssertTrue(delegate.executeCommand(
-            id: "macro.replay_named",
-            arguments: ["name": .string("Renamed Macro")]
-        ))
-        XCTAssertEqual(try editorView.editor.text(), "abc\ndef\ndef\n")
-
-        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "macro.delete_named"))
-        delegate._setMacroDeleteConfirmationProviderForTesting { name in
-            XCTAssertEqual(name, "Renamed Macro")
-            return false
-        }
-        XCTAssertTrue(delegate.executeCommand(
-            id: "macro.delete_named",
-            arguments: ["name": .string("Renamed Macro")]
-        ))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: newURL.path))
-        XCTAssertEqual(macroStore.namedMacroNames(), ["Renamed Macro"])
-
-        delegate._setMacroDeleteConfirmationProviderForTesting { name in
-            XCTAssertEqual(name, "Renamed Macro")
-            return true
-        }
-        XCTAssertTrue(delegate.executeCommand(
-            id: "macro.delete_named",
-            arguments: ["name": .string("Renamed Macro")]
-        ))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: newURL.path))
-        XCTAssertEqual(macroStore.namedMacroNames(), [])
-        XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "macro.replay_named"))
-        XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "macro.rename_named"))
-        XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "macro.delete_named"))
-        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "macro.undo_delete"))
-        XCTAssertTrue(delegate.executeCommand(id: "macro.undo_delete"))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: newURL.path))
-        XCTAssertEqual(macroStore.namedMacroNames(), ["Renamed Macro"])
-        XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "macro.undo_delete"))
-    }
-
-    func testCommandMacroBatchDeletesNamedSublimeMacroFiles() throws {
-        let tempDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tempDir) }
-
-        let macroURL = tempDir.appendingPathComponent("Last Macro.sublime-macro")
-        let macroStore = AttoMacroStore(macroFileURL: macroURL)
-        let delegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
-        let commands = [AttoRecordedCommand(commandID: "editor.duplicate_lines", arguments: [:])]
-        try macroStore.save(commands, named: "One", maxCount: 20)
-        try macroStore.save(commands, named: "Two", maxCount: 20)
-        try macroStore.save(commands, named: "Three", maxCount: 20)
-
-        let oneURL = tempDir.appendingPathComponent("One.sublime-macro")
-        let twoURL = tempDir.appendingPathComponent("Two.sublime-macro")
-        let threeURL = tempDir.appendingPathComponent("Three.sublime-macro")
-        XCTAssertEqual(macroStore.namedMacroNames(), ["One", "Three", "Two"])
-        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "macro.delete_named_batch"))
-        XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "macro.undo_delete"))
-
-        delegate._setMacroDeleteBatchConfirmationProviderForTesting { names in
-            XCTAssertEqual(names, ["One", "Two"])
-            return false
-        }
-        XCTAssertTrue(delegate.executeCommand(
-            id: "macro.delete_named_batch",
-            arguments: ["names": .json("[\"One\", \"Two\", \"One.sublime-macro\"]")]
-        ))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: oneURL.path))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: twoURL.path))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: threeURL.path))
-        XCTAssertEqual(macroStore.namedMacroNames(), ["One", "Three", "Two"])
-
-        delegate._setMacroDeleteBatchConfirmationProviderForTesting { names in
-            XCTAssertEqual(names, ["One", "Two"])
-            return true
-        }
-        XCTAssertTrue(delegate.executeCommand(
-            id: "macro.delete_named_batch",
-            arguments: ["names": .json("[\"One\", \"Two\"]")]
-        ))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: oneURL.path))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: twoURL.path))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: threeURL.path))
-        XCTAssertEqual(macroStore.namedMacroNames(), ["Three"])
-        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "macro.undo_delete"))
-        XCTAssertTrue(delegate.executeCommand(id: "macro.undo_delete"))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: oneURL.path))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: twoURL.path))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: threeURL.path))
-        XCTAssertEqual(macroStore.namedMacroNames(), ["One", "Three", "Two"])
-        XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "macro.undo_delete"))
-
-        XCTAssertTrue(delegate.executeCommand(
-            id: "macro.delete_named_batch",
-            arguments: ["names": .json("[\"Missing\"]")]
-        ))
-        XCTAssertEqual(macroStore.namedMacroNames(), ["One", "Three", "Two"])
-    }
-
-    func testCommandMacroUndoDeleteUsesMultiLevelHistory() throws {
-        let tempDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tempDir) }
-
-        let macroStore = AttoMacroStore(macroFileURL: tempDir.appendingPathComponent("Last Macro.sublime-macro"))
-        let delegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
-        let commands = [AttoRecordedCommand(commandID: "editor.duplicate_lines", arguments: [:])]
-        try macroStore.save(commands, named: "Alpha", maxCount: 20)
-        try macroStore.save(commands, named: "Beta", maxCount: 20)
-        try macroStore.save(commands, named: "Gamma", maxCount: 20)
-
-        delegate._setMacroDeleteBatchConfirmationProviderForTesting { _ in true }
-
-        XCTAssertTrue(delegate.executeCommand(
-            id: "macro.delete_named",
-            arguments: ["name": .string("Alpha")]
-        ))
-        XCTAssertEqual(macroStore.namedMacroNames(), ["Beta", "Gamma"])
-
-        XCTAssertTrue(delegate.executeCommand(
-            id: "macro.delete_named_batch",
-            arguments: ["names": .json("[\"Beta\", \"Gamma\"]")]
-        ))
-        XCTAssertEqual(macroStore.namedMacroNames(), [])
-
-        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "macro.undo_delete"))
-        XCTAssertTrue(delegate.executeCommand(id: "macro.undo_delete"))
-        XCTAssertEqual(macroStore.namedMacroNames(), ["Beta", "Gamma"])
-
-        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "macro.undo_delete"))
-        XCTAssertTrue(delegate.executeCommand(id: "macro.undo_delete"))
-        XCTAssertEqual(macroStore.namedMacroNames(), ["Alpha", "Beta", "Gamma"])
-        XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "macro.undo_delete"))
-    }
-
-    func testCommandMacroUndoDeleteHistoryPersistsAcrossDelegates() throws {
-        let tempDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tempDir) }
-
-        let macroStore = AttoMacroStore(macroFileURL: tempDir.appendingPathComponent("Last Macro.sublime-macro"))
-        let commands = [AttoRecordedCommand(commandID: "editor.duplicate_lines", arguments: [:])]
-        try macroStore.save(commands, named: "Alpha", maxCount: 20)
-        try macroStore.save(commands, named: "Beta", maxCount: 20)
-        try macroStore.save(commands, named: "Gamma", maxCount: 20)
-
-        let firstDelegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
-        firstDelegate._setMacroDeleteBatchConfirmationProviderForTesting { _ in true }
-        XCTAssertTrue(firstDelegate.executeCommand(
-            id: "macro.delete_named",
-            arguments: ["name": .string("Alpha")]
-        ))
-        XCTAssertTrue(firstDelegate.executeCommand(
-            id: "macro.delete_named_batch",
-            arguments: ["names": .json("[\"Beta\", \"Gamma\"]")]
-        ))
-        XCTAssertEqual(macroStore.namedMacroNames(), [])
-
-        let secondDelegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
-        XCTAssertTrue(secondDelegate._commandIsEnabledForTesting(commandID: "macro.undo_delete"))
-        XCTAssertEqual(macroStore.namedMacroNames(), [])
-
-        XCTAssertTrue(secondDelegate.executeCommand(id: "macro.undo_delete"))
-        XCTAssertEqual(macroStore.namedMacroNames(), ["Beta", "Gamma"])
-        XCTAssertTrue(secondDelegate._commandIsEnabledForTesting(commandID: "macro.undo_delete"))
-
-        let thirdDelegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
-        XCTAssertTrue(thirdDelegate.executeCommand(id: "macro.undo_delete"))
-        XCTAssertEqual(macroStore.namedMacroNames(), ["Alpha", "Beta", "Gamma"])
-        XCTAssertFalse(thirdDelegate._commandIsEnabledForTesting(commandID: "macro.undo_delete"))
-
-        let fourthDelegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
-        XCTAssertFalse(fourthDelegate._commandIsEnabledForTesting(commandID: "macro.undo_delete"))
-    }
-
-    func testCommandMacroDeleteHistoryPanelRestoresSelectedEntry() throws {
-        let tempDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tempDir) }
-
-        let macroStore = AttoMacroStore(macroFileURL: tempDir.appendingPathComponent("Last Macro.sublime-macro"))
-        let delegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
-        let context = delegate._createWindowForTesting(workspaceRootURL: tempDir)
-        defer { context.window.close() }
-
-        let commands = [AttoRecordedCommand(commandID: "editor.duplicate_lines", arguments: [:])]
-        try macroStore.save(commands, named: "Alpha", maxCount: 20)
-        try macroStore.save(commands, named: "Beta", maxCount: 20)
-        try macroStore.save(commands, named: "Gamma", maxCount: 20)
-
-        delegate._setMacroDeleteBatchConfirmationProviderForTesting { _ in true }
-        XCTAssertTrue(delegate.executeCommand(
-            id: "macro.delete_named",
-            arguments: ["name": .string("Alpha")]
-        ))
-        XCTAssertTrue(delegate.executeCommand(
-            id: "macro.delete_named_batch",
-            arguments: ["names": .json("[\"Beta\", \"Gamma\"]")]
-        ))
-        XCTAssertEqual(macroStore.namedMacroNames(), [])
-
-        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "macro.show_delete_history"))
-        XCTAssertTrue(delegate.executeCommand(id: "macro.show_delete_history"))
-
-        let historyPanel = try XCTUnwrap(context.window.childWindows?.first {
-            $0.identifier?.rawValue == AttoAccessibilityID.commandPalettePanel(prefix: "AttoEditor.Macro.DeleteHistory")
-        })
-        let root = try XCTUnwrap(historyPanel.contentView)
-        let searchField = try XCTUnwrap(
-            findView(
-                identifier: AttoAccessibilityID.commandPaletteSearchField(prefix: "AttoEditor.Macro.DeleteHistory"),
-                in: root
-            ) as? NSSearchField
-        )
-        XCTAssertEqual(searchField.placeholderString, "Filter deleted macros...")
-
-        let table = try XCTUnwrap(
-            findView(
-                identifier: AttoAccessibilityID.commandPaletteTable(prefix: "AttoEditor.Macro.DeleteHistory"),
-                in: root
-            ) as? NSTableView
-        )
-        XCTAssertEqual(table.numberOfRows, 2)
-        let firstCell = try XCTUnwrap(table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? NSTableCellView)
-        XCTAssertEqual(firstCell.textField?.stringValue, "1. Beta, Gamma (2 macros)")
-        let secondCell = try XCTUnwrap(table.view(atColumn: 0, row: 1, makeIfNecessary: true) as? NSTableCellView)
-        XCTAssertEqual(secondCell.textField?.stringValue, "2. Alpha")
-
-        XCTAssertTrue(delegate._restoreDeletedMacroHistoryEntryForTesting(displayIndex: 1))
-        XCTAssertEqual(macroStore.namedMacroNames(), ["Alpha"])
-        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "macro.show_delete_history"))
-
-        XCTAssertTrue(delegate.executeCommand(id: "macro.undo_delete"))
-        XCTAssertEqual(macroStore.namedMacroNames(), ["Alpha", "Beta", "Gamma"])
-        XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "macro.show_delete_history"))
-    }
-
-    func testCommandMacroDeleteHistoryPanelSupportsVisualBatchRemovalAndRestore() throws {
-        let tempDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tempDir) }
-
-        let macroStore = AttoMacroStore(macroFileURL: tempDir.appendingPathComponent("Last Macro.sublime-macro"))
-        let delegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
-        let context = delegate._createWindowForTesting(workspaceRootURL: tempDir)
-        defer { context.window.close() }
-
-        let commands = [AttoRecordedCommand(commandID: "editor.duplicate_lines", arguments: [:])]
-        try macroStore.save(commands, named: "Alpha", maxCount: 20)
-        try macroStore.save(commands, named: "Beta", maxCount: 20)
-        try macroStore.save(commands, named: "Gamma", maxCount: 20)
-        try macroStore.save(commands, named: "Delta", maxCount: 20)
-
-        delegate._setMacroDeleteBatchConfirmationProviderForTesting { _ in true }
-        XCTAssertTrue(delegate.executeCommand(
-            id: "macro.delete_named",
-            arguments: ["name": .string("Alpha")]
-        ))
-        XCTAssertTrue(delegate.executeCommand(
-            id: "macro.delete_named",
-            arguments: ["name": .string("Beta")]
-        ))
-        XCTAssertTrue(delegate.executeCommand(
-            id: "macro.delete_named_batch",
-            arguments: ["names": .json("[\"Gamma\", \"Delta\"]")]
-        ))
-        XCTAssertEqual(macroStore.namedMacroNames(), [])
-
-        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "macro.manage_delete_history"))
-        XCTAssertTrue(delegate.executeCommand(id: "macro.manage_delete_history"))
-
-        let historyPanel = try XCTUnwrap(context.window.childWindows?.first {
-            $0.identifier?.rawValue == AttoAccessibilityID.deletedMacroHistoryPanel
-        })
-        let root = try XCTUnwrap(historyPanel.contentView)
-        let table = try XCTUnwrap(
-            findView(identifier: AttoAccessibilityID.deletedMacroHistoryPanelTable, in: root) as? NSTableView
-        )
-        let restoreButton = try XCTUnwrap(
-            findView(identifier: AttoAccessibilityID.deletedMacroHistoryPanelRestoreButton, in: root) as? NSButton
-        )
-        let removeButton = try XCTUnwrap(
-            findView(identifier: AttoAccessibilityID.deletedMacroHistoryPanelRemoveButton, in: root) as? NSButton
-        )
-        let clearButton = try XCTUnwrap(
-            findView(identifier: AttoAccessibilityID.deletedMacroHistoryPanelClearButton, in: root) as? NSButton
-        )
-
-        func title(at row: Int) throws -> String {
-            let cell = try XCTUnwrap(table.view(atColumn: 0, row: row, makeIfNecessary: true) as? NSTableCellView)
-            return try XCTUnwrap(cell.textField?.stringValue)
-        }
-
-        XCTAssertTrue(table.allowsMultipleSelection)
-        XCTAssertEqual(table.numberOfRows, 3)
-        XCTAssertEqual(try title(at: 0), "1. Gamma, Delta (2 macros)")
-        XCTAssertEqual(try title(at: 1), "2. Beta")
-        XCTAssertEqual(try title(at: 2), "3. Alpha")
-        XCTAssertTrue(restoreButton.isEnabled)
-        XCTAssertTrue(removeButton.isEnabled)
-        XCTAssertTrue(clearButton.isEnabled)
-
-        table.selectRowIndexes(IndexSet([0, 2]), byExtendingSelection: false)
-        table.delegate?.tableViewSelectionDidChange?(
-            Notification(name: NSTableView.selectionDidChangeNotification, object: table)
-        )
-        XCTAssertFalse(restoreButton.isEnabled)
-        XCTAssertTrue(removeButton.isEnabled)
-
-        var removalAttempts: [[(displayIndex: Int, title: String)]] = []
-        delegate._setMacroDeleteHistoryEntriesRemovalConfirmationProviderForTesting { items in
-            removalAttempts.append(items)
-            return true
-        }
-        removeButton.performClick(nil)
-        XCTAssertEqual(removalAttempts.count, 1)
-        XCTAssertEqual(removalAttempts.first?.map(\.displayIndex), [1, 3])
-        XCTAssertEqual(removalAttempts.first?.map(\.title), ["Gamma, Delta (2 macros)", "Alpha"])
-        XCTAssertEqual(table.numberOfRows, 1)
-        XCTAssertEqual(try title(at: 0), "1. Beta")
-        XCTAssertTrue(restoreButton.isEnabled)
-        XCTAssertTrue(removeButton.isEnabled)
-        XCTAssertTrue(clearButton.isEnabled)
-
-        table.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
-        table.delegate?.tableViewSelectionDidChange?(
-            Notification(name: NSTableView.selectionDidChangeNotification, object: table)
-        )
-        restoreButton.performClick(nil)
-        XCTAssertEqual(macroStore.namedMacroNames(), ["Beta"])
-        XCTAssertFalse(delegate._commandIsEnabledForTesting(commandID: "macro.manage_delete_history"))
-        XCTAssertFalse(historyPanel.isVisible)
-    }
-
-    func testCommandMacroDeleteHistoryWithoutWindowDoesNotRestoreEntry() throws {
-        let tempDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tempDir) }
-
-        let macroStore = AttoMacroStore(macroFileURL: tempDir.appendingPathComponent("Last Macro.sublime-macro"))
-        let delegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
-        let commands = [AttoRecordedCommand(commandID: "editor.duplicate_lines", arguments: [:])]
-        try macroStore.save(commands, named: "Alpha", maxCount: 20)
-
-        delegate._setMacroDeleteConfirmationProviderForTesting { _ in true }
-        XCTAssertTrue(delegate.executeCommand(
-            id: "macro.delete_named",
-            arguments: ["name": .string("Alpha")]
-        ))
-        XCTAssertEqual(macroStore.namedMacroNames(), [])
-        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "macro.show_delete_history"))
-
-        XCTAssertTrue(delegate.executeCommand(id: "macro.show_delete_history"))
-        XCTAssertEqual(macroStore.namedMacroNames(), [])
-        XCTAssertTrue(delegate._commandIsEnabledForTesting(commandID: "macro.undo_delete"))
-    }
-
-    func testCommandMacroClearDeleteHistoryClearsPersistentUndoStack() throws {
-        let tempDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tempDir) }
-
-        let macroStore = AttoMacroStore(macroFileURL: tempDir.appendingPathComponent("Last Macro.sublime-macro"))
-        let commands = [AttoRecordedCommand(commandID: "editor.duplicate_lines", arguments: [:])]
-        try macroStore.save(commands, named: "Alpha", maxCount: 20)
-        try macroStore.save(commands, named: "Beta", maxCount: 20)
-        try macroStore.save(commands, named: "Gamma", maxCount: 20)
-
-        let firstDelegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
-        firstDelegate._setMacroDeleteBatchConfirmationProviderForTesting { _ in true }
-        XCTAssertTrue(firstDelegate.executeCommand(
-            id: "macro.delete_named",
-            arguments: ["name": .string("Alpha")]
-        ))
-        XCTAssertTrue(firstDelegate.executeCommand(
-            id: "macro.delete_named_batch",
-            arguments: ["names": .json("[\"Beta\", \"Gamma\"]")]
-        ))
-        XCTAssertEqual(macroStore.namedMacroNames(), [])
-        XCTAssertTrue(firstDelegate._commandIsEnabledForTesting(commandID: "macro.clear_delete_history"))
-
-        var clearAttempts: [(records: Int, macros: Int)] = []
-        firstDelegate._setMacroDeleteHistoryClearConfirmationProviderForTesting { records, macros in
-            clearAttempts.append((records, macros))
-            return false
-        }
-        XCTAssertTrue(firstDelegate.executeCommand(id: "macro.clear_delete_history"))
-        XCTAssertEqual(clearAttempts.count, 1)
-        XCTAssertEqual(clearAttempts.first?.records, 2)
-        XCTAssertEqual(clearAttempts.first?.macros, 3)
-        XCTAssertTrue(firstDelegate._commandIsEnabledForTesting(commandID: "macro.undo_delete"))
-
-        let secondDelegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
-        XCTAssertTrue(secondDelegate._commandIsEnabledForTesting(commandID: "macro.undo_delete"))
-        XCTAssertTrue(secondDelegate._commandIsEnabledForTesting(commandID: "macro.clear_delete_history"))
-
-        secondDelegate._setMacroDeleteHistoryClearConfirmationProviderForTesting { records, macros in
-            XCTAssertEqual(records, 2)
-            XCTAssertEqual(macros, 3)
-            return true
-        }
-        XCTAssertTrue(secondDelegate.executeCommand(id: "macro.clear_delete_history"))
-        XCTAssertFalse(secondDelegate._commandIsEnabledForTesting(commandID: "macro.undo_delete"))
-        XCTAssertFalse(secondDelegate._commandIsEnabledForTesting(commandID: "macro.show_delete_history"))
-        XCTAssertFalse(secondDelegate._commandIsEnabledForTesting(commandID: "macro.clear_delete_history"))
-
-        let thirdDelegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
-        XCTAssertFalse(thirdDelegate._commandIsEnabledForTesting(commandID: "macro.undo_delete"))
-        XCTAssertFalse(thirdDelegate._commandIsEnabledForTesting(commandID: "macro.clear_delete_history"))
-        XCTAssertEqual(macroStore.namedMacroNames(), [])
-    }
-
-    func testCommandMacroRemoveDeleteHistoryEntryRemovesPersistentSelectedRecord() throws {
-        let tempDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tempDir) }
-
-        let macroStore = AttoMacroStore(macroFileURL: tempDir.appendingPathComponent("Last Macro.sublime-macro"))
-        let commands = [AttoRecordedCommand(commandID: "editor.duplicate_lines", arguments: [:])]
-        try macroStore.save(commands, named: "Alpha", maxCount: 20)
-        try macroStore.save(commands, named: "Beta", maxCount: 20)
-        try macroStore.save(commands, named: "Gamma", maxCount: 20)
-
-        let firstDelegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
-        firstDelegate._setMacroDeleteBatchConfirmationProviderForTesting { _ in true }
-        XCTAssertTrue(firstDelegate.executeCommand(
-            id: "macro.delete_named",
-            arguments: ["name": .string("Alpha")]
-        ))
-        XCTAssertTrue(firstDelegate.executeCommand(
-            id: "macro.delete_named_batch",
-            arguments: ["names": .json("[\"Beta\", \"Gamma\"]")]
-        ))
-        XCTAssertEqual(macroStore.namedMacroNames(), [])
-        XCTAssertTrue(firstDelegate._commandIsEnabledForTesting(commandID: "macro.remove_delete_history_entry"))
-
-        let schema = try XCTUnwrap(firstDelegate._commandSchemaForTesting(commandID: "macro.remove_delete_history_entry"))
-        XCTAssertEqual(schema.parameters.first?.choices.map(\.title), ["1. Beta, Gamma (2 macros)", "2. Alpha"])
-        XCTAssertThrowsError(try schema.normalizedArguments(["index": .integer(3)]))
-
-        var removalAttempts: [(index: Int, title: String)] = []
-        firstDelegate._setMacroDeleteHistoryEntryRemovalConfirmationProviderForTesting { index, title in
-            removalAttempts.append((index, title))
-            return false
-        }
-        XCTAssertTrue(firstDelegate.executeCommand(
-            id: "macro.remove_delete_history_entry",
-            arguments: ["index": .integer(2)]
-        ))
-        XCTAssertEqual(removalAttempts.count, 1)
-        XCTAssertEqual(removalAttempts.first?.index, 2)
-        XCTAssertEqual(removalAttempts.first?.title, "Alpha")
-        XCTAssertTrue(firstDelegate._commandIsEnabledForTesting(commandID: "macro.undo_delete"))
-
-        let secondDelegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
-        secondDelegate._setMacroDeleteHistoryEntryRemovalConfirmationProviderForTesting { index, title in
-            XCTAssertEqual(index, 2)
-            XCTAssertEqual(title, "Alpha")
-            return true
-        }
-        XCTAssertTrue(secondDelegate.executeCommand(
-            id: "macro.remove_delete_history_entry",
-            arguments: ["index": .integer(2)]
-        ))
-        XCTAssertTrue(secondDelegate._commandIsEnabledForTesting(commandID: "macro.undo_delete"))
-
-        let thirdDelegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
-        XCTAssertTrue(thirdDelegate.executeCommand(id: "macro.undo_delete"))
-        XCTAssertEqual(macroStore.namedMacroNames(), ["Beta", "Gamma"])
-        XCTAssertFalse(thirdDelegate._commandIsEnabledForTesting(commandID: "macro.undo_delete"))
-        XCTAssertFalse(thirdDelegate._commandIsEnabledForTesting(commandID: "macro.remove_delete_history_entry"))
-    }
-
-    func testCommandMacroRemoveDeleteHistoryEntriesRemovesPersistentSelectedRecords() throws {
-        let tempDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tempDir) }
-
-        let macroStore = AttoMacroStore(macroFileURL: tempDir.appendingPathComponent("Last Macro.sublime-macro"))
-        let commands = [AttoRecordedCommand(commandID: "editor.duplicate_lines", arguments: [:])]
-        try macroStore.save(commands, named: "Alpha", maxCount: 20)
-        try macroStore.save(commands, named: "Beta", maxCount: 20)
-        try macroStore.save(commands, named: "Gamma", maxCount: 20)
-        try macroStore.save(commands, named: "Delta", maxCount: 20)
-
-        let firstDelegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
-        firstDelegate._setMacroDeleteBatchConfirmationProviderForTesting { _ in true }
-        XCTAssertTrue(firstDelegate.executeCommand(
-            id: "macro.delete_named",
-            arguments: ["name": .string("Alpha")]
-        ))
-        XCTAssertTrue(firstDelegate.executeCommand(
-            id: "macro.delete_named",
-            arguments: ["name": .string("Beta")]
-        ))
-        XCTAssertTrue(firstDelegate.executeCommand(
-            id: "macro.delete_named_batch",
-            arguments: ["names": .json("[\"Gamma\", \"Delta\"]")]
-        ))
-        XCTAssertEqual(macroStore.namedMacroNames(), [])
-        XCTAssertTrue(firstDelegate._commandIsEnabledForTesting(commandID: "macro.remove_delete_history_entries"))
-
-        var removalAttempts: [[(displayIndex: Int, title: String)]] = []
-        firstDelegate._setMacroDeleteHistoryEntriesRemovalConfirmationProviderForTesting { items in
-            removalAttempts.append(items)
-            return false
-        }
-        XCTAssertTrue(firstDelegate.executeCommand(
-            id: "macro.remove_delete_history_entries",
-            arguments: ["indices": .json("[1, 3, 1]")]
-        ))
-        XCTAssertEqual(removalAttempts.count, 1)
-        XCTAssertEqual(removalAttempts.first?.map(\.displayIndex), [1, 3])
-        XCTAssertEqual(removalAttempts.first?.map(\.title), ["Gamma, Delta (2 macros)", "Alpha"])
-        XCTAssertTrue(firstDelegate._commandIsEnabledForTesting(commandID: "macro.undo_delete"))
-
-        let secondDelegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
-        secondDelegate._setMacroDeleteHistoryEntriesRemovalConfirmationProviderForTesting { items in
-            XCTAssertEqual(items.map(\.displayIndex), [1, 3])
-            XCTAssertEqual(items.map(\.title), ["Gamma, Delta (2 macros)", "Alpha"])
-            return true
-        }
-        XCTAssertTrue(secondDelegate.executeCommand(
-            id: "macro.remove_delete_history_entries",
-            arguments: ["indices": .json("[1, 3]")]
-        ))
-        XCTAssertTrue(secondDelegate._commandIsEnabledForTesting(commandID: "macro.undo_delete"))
-
-        let thirdDelegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
-        XCTAssertTrue(thirdDelegate.executeCommand(id: "macro.undo_delete"))
-        XCTAssertEqual(macroStore.namedMacroNames(), ["Beta"])
-        XCTAssertFalse(thirdDelegate._commandIsEnabledForTesting(commandID: "macro.undo_delete"))
-        XCTAssertFalse(thirdDelegate._commandIsEnabledForTesting(commandID: "macro.remove_delete_history_entries"))
-    }
-
-    func testCommandMacroImportsAndExportsSublimeMacroFiles() throws {
-        let tempDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tempDir) }
-
-        let externalDir = tempDir.appendingPathComponent("External", isDirectory: true)
-        try FileManager.default.createDirectory(at: externalDir, withIntermediateDirectories: true)
-
-        let sourceMacroURL = externalDir.appendingPathComponent("External Macro.sublime-macro")
-        try """
-        [
-          {
-            "command": "go.line",
-            "args": {
-              "line": 2,
-              "column": 2
-            }
-          },
-          {
-            "command": "editor.duplicate_lines"
-          }
-        ]
-        """.write(to: sourceMacroURL, atomically: true, encoding: .utf8)
-
-        let internalDir = tempDir.appendingPathComponent("Internal", isDirectory: true)
-        let macroURL = internalDir.appendingPathComponent("Last Macro.sublime-macro")
-        let macroStore = AttoMacroStore(macroFileURL: macroURL)
-        let importDelegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
-        XCTAssertTrue(importDelegate._commandIsEnabledForTesting(commandID: "macro.import_file"))
-        XCTAssertFalse(importDelegate._commandIsEnabledForTesting(commandID: "macro.export_named"))
-
-        XCTAssertTrue(importDelegate.executeCommand(
-            id: "macro.import_file",
-            arguments: [
-                "path": .string(sourceMacroURL.path),
-                "name": .string("Imported Macro"),
-            ]
-        ))
-        XCTAssertEqual(macroStore.namedMacroNames(), ["Imported Macro"])
-        let importedURL = internalDir.appendingPathComponent("Imported Macro.sublime-macro")
-        XCTAssertTrue(FileManager.default.fileExists(atPath: importedURL.path))
-        let importedCommands = try XCTUnwrap(macroStore.loadNamedMacro("Imported Macro", maxCount: 512))
-        XCTAssertEqual(importedCommands.map(\.commandID), ["go.line", "editor.duplicate_lines"])
-        XCTAssertEqual(importedCommands.first?.arguments, ["line": .integer(2), "column": .integer(2)])
-        XCTAssertTrue(importDelegate._commandIsEnabledForTesting(commandID: "macro.export_named"))
-
-        let exportSchema = try XCTUnwrap(importDelegate._commandSchemaForTesting(commandID: "macro.export_named"))
-        XCTAssertEqual(exportSchema.parameters.first?.choices.map(\.title), ["Imported Macro"])
-
-        let exportURL = externalDir.appendingPathComponent("Round Trip.sublime-macro")
-        XCTAssertTrue(importDelegate.executeCommand(
-            id: "macro.export_named",
-            arguments: [
-                "name": .string("Imported Macro"),
-                "path": .string(exportURL.path),
-            ]
-        ))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: exportURL.path))
-        let exportedJSON = try JSONSerialization.jsonObject(with: Data(contentsOf: exportURL)) as? [[String: Any]]
-        let exported = try XCTUnwrap(exportedJSON)
-        XCTAssertEqual(exported.count, 2)
-        XCTAssertEqual(exported[0]["command"] as? String, "go.line")
-        let exportedArgs = try XCTUnwrap(exported[0]["args"] as? [String: Any])
-        XCTAssertEqual((exportedArgs["line"] as? NSNumber)?.intValue, 2)
-        XCTAssertEqual((exportedArgs["column"] as? NSNumber)?.intValue, 2)
-        XCTAssertEqual(exported[1]["command"] as? String, "editor.duplicate_lines")
-
-        XCTAssertEqual(
-            try XCTUnwrap(macroStore.loadNamedMacro("Imported Macro", maxCount: 512)),
-            importedCommands
-        )
-    }
-
-    func testCommandMacroImportExportUsesNativeFileSelectionProviders() throws {
-        let tempDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tempDir) }
-
-        let externalDir = tempDir.appendingPathComponent("External", isDirectory: true)
-        try FileManager.default.createDirectory(at: externalDir, withIntermediateDirectories: true)
-        let sourceMacroURL = externalDir.appendingPathComponent("Panel Source.sublime-macro")
-        try """
-        [
-          {
-            "command": "editor.duplicate_lines"
-          }
-        ]
-        """.write(to: sourceMacroURL, atomically: true, encoding: .utf8)
-
-        let internalDir = tempDir.appendingPathComponent("Internal", isDirectory: true)
-        let macroStore = AttoMacroStore(macroFileURL: internalDir.appendingPathComponent("Last Macro.sublime-macro"))
-        let delegate = AttoAppDelegate(keyBindings: [:], macroStore: macroStore)
-        delegate._setMacroImportSelectionProviderForTesting {
-            (url: sourceMacroURL, name: "Panel Imported")
-        }
-
-        XCTAssertTrue(delegate.executeCommand(id: "macro.import_file"))
-        XCTAssertEqual(macroStore.namedMacroNames(), ["Panel Imported"])
-
-        let exportURL = externalDir.appendingPathComponent("Panel Export.sublime-macro")
-        delegate._setMacroExportSelectionProviderForTesting { names in
-            XCTAssertEqual(names, ["Panel Imported"])
-            return (name: "Panel Imported", url: exportURL)
-        }
-
-        XCTAssertTrue(delegate.executeCommand(id: "macro.export_named"))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: exportURL.path))
-        let exportedJSON = try JSONSerialization.jsonObject(with: Data(contentsOf: exportURL)) as? [[String: Any]]
-        let exported = try XCTUnwrap(exportedJSON)
-        XCTAssertEqual(exported.count, 1)
-        XCTAssertEqual(exported[0]["command"] as? String, "editor.duplicate_lines")
-    }
-
     func testExecuteCommandAcceptsTypedArgumentsForParameterizedCommands() throws {
         let delegate = AttoAppDelegate(keyBindings: [:])
         let tempDir = FileManager.default.temporaryDirectory
@@ -6042,7 +5669,10 @@ final class AttoEditorCommandTests: XCTestCase {
         try "abc\ndef\n".write(to: fileURL, atomically: true, encoding: .utf8)
 
         let ctx = delegate._createWindowForTesting(workspaceRootURL: tempDir)
-        defer { ctx.window.close() }
+        defer {
+            ctx.editorAreaController.workspaceEditHistoryPanelController?.hide()
+            ctx.window.close()
+        }
         ctx.editorAreaController.openFile(url: fileURL, mode: .pinned)
 
         let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: ctx.editorAreaController.view))
@@ -6425,7 +6055,10 @@ final class AttoEditorCommandTests: XCTestCase {
         try "abc\n".write(to: fileURL, atomically: true, encoding: .utf8)
 
         let ctx = delegate._createWindowForTesting(workspaceRootURL: tempDir)
-        defer { ctx.window.close() }
+        defer {
+            ctx.editorAreaController.closeWorkspaceEditHistoryPanel()
+            ctx.window.close()
+        }
         ctx.editorAreaController.openFile(url: fileURL, mode: .pinned)
         allowWorkspaceEditPreviewConfirmation(ctx.editorAreaController)
 
@@ -6473,9 +6106,11 @@ final class AttoEditorCommandTests: XCTestCase {
         let secondItem = try XCTUnwrap(items.first { $0.sequence == 2 })
         XCTAssertEqual(firstItem.operation, "apply")
         XCTAssertEqual(firstItem.status, "Applied")
+        XCTAssertEqual(firstItem.workspaceEditJSON, workspaceEdit)
         XCTAssertFalse(firstItem.canUndoLatest)
         XCTAssertTrue(firstItem.detail.contains("1 text edits, 0 resource ops"))
         XCTAssertTrue(firstItem.detail.contains("history-main.txt"))
+        XCTAssertEqual(secondItem.workspaceEditJSON, secondWorkspaceEdit)
         XCTAssertTrue(secondItem.canUndoLatest)
         XCTAssertTrue(secondItem.title.contains("Apply WorkspaceEdit"))
 
@@ -6495,6 +6130,344 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(redoItem.operation, "redo")
         XCTAssertTrue(redoItem.canUndoLatest)
         XCTAssertTrue(redoItem.title.contains("Redo WorkspaceEdit"))
+    }
+
+    func testWorkspaceEditHistoryPanelRerunsRecordedRequestOwner() throws {
+        let delegate = AttoAppDelegate(keyBindings: [:])
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("history-rerun-request.txt")
+        try "main\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let ctx = delegate._createWindowForTesting(workspaceRootURL: tempDir)
+        defer {
+            ctx.editorAreaController.closeWorkspaceEditHistoryPanel()
+            ctx.window.close()
+        }
+        ctx.editorAreaController.openFile(url: fileURL, mode: .pinned)
+        let tab = try XCTUnwrap(ctx.editorAreaController.activeTab)
+        allowWorkspaceEditPreviewConfirmation(ctx.editorAreaController)
+        var rerunCount = 0
+        let requestRetryOwner = AttoWorkspaceEditRequestRetryOwner(label: "Synthetic Request") {
+            rerunCount += 1
+            return true
+        }
+
+        let workspaceEdit = """
+        {
+          "changes": {
+            "\(fileURL.absoluteString)": [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 0 },
+                  "end": { "line": 0, "character": 0 }
+                },
+                "newText": "updated "
+              }
+            ]
+          }
+        }
+        """
+
+        XCTAssertTrue(
+            ctx.editorAreaController.applyWorkspaceEditJSONToActiveTab(
+                workspaceEdit,
+                requestRetryOwner: requestRetryOwner
+            ).accepted
+        )
+        XCTAssertEqual(try ctx.editorAreaController._coreWorkspaceEditTransactionLatestSequenceForTesting(), 1)
+        XCTAssertEqual(try tab.editCore.editor.text(), "updated main\n")
+
+        XCTAssertTrue(delegate.executeCommand(id: "workspace.show_workspace_edit_history"))
+        let items = ctx.editorAreaController._workspaceEditHistoryPanelItemsForTesting()
+        let item = try XCTUnwrap(items.first)
+        XCTAssertEqual(item.sequence, 1)
+        XCTAssertEqual(item.requestRetryLabel, "Synthetic Request")
+
+        let historyPanel = try XCTUnwrap(ctx.window.childWindows?.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.workspaceEditHistoryPanel
+        })
+        let root = try XCTUnwrap(historyPanel.contentView)
+        let rerunRequestButton = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.workspaceEditHistoryPanelRerunRequestButton,
+                in: root
+            ) as? NSButton
+        )
+        XCTAssertTrue(rerunRequestButton.isEnabled)
+
+        XCTAssertTrue(invokeButtonAction(rerunRequestButton))
+
+        XCTAssertEqual(rerunCount, 1)
+        XCTAssertEqual(
+            ctx.editorAreaController._transientStatusTextForTesting(),
+            "Retrying WorkspaceEdit request: Synthetic Request"
+        )
+    }
+
+    func testWorkspaceEditHistoryPanelOpensConflictTarget() throws {
+        let delegate = AttoAppDelegate(keyBindings: [:])
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let dirtyURL = tempDir.appendingPathComponent("history-conflict-dirty.txt")
+        let mainURL = tempDir.appendingPathComponent("history-conflict-main.txt")
+        try "dirty\n".write(to: dirtyURL, atomically: true, encoding: .utf8)
+        try "main\n".write(to: mainURL, atomically: true, encoding: .utf8)
+
+        let ctx = delegate._createWindowForTesting(workspaceRootURL: tempDir)
+        defer {
+            ctx.editorAreaController.closeWorkspaceEditHistoryPanel()
+            ctx.window.close()
+        }
+        ctx.editorAreaController.openFile(url: dirtyURL, mode: .pinned)
+        let dirtyTab = try XCTUnwrap(ctx.editorAreaController.activeTab)
+        XCTAssertTrue(ctx.editorAreaController.executeActiveEditorCommandJSON(#"{"kind":"edit","op":"insert_text","text":"!"}"#))
+        ctx.editorAreaController.openFile(url: mainURL, mode: .pinned)
+        allowWorkspaceEditPreviewConfirmation(ctx.editorAreaController)
+
+        let workspaceEdit = """
+        {
+          "documentChanges": [
+            {
+              "textDocument": {
+                "uri": "\(mainURL.absoluteString)"
+              },
+              "edits": [
+                {
+                  "range": {
+                    "start": { "line": 0, "character": 0 },
+                    "end": { "line": 0, "character": 0 }
+                  },
+                  "newText": "updated "
+                }
+              ]
+            },
+            {
+              "kind": "delete",
+              "uri": "\(dirtyURL.absoluteString)"
+            }
+          ]
+        }
+        """
+
+        XCTAssertTrue(ctx.editorAreaController.applyWorkspaceEditJSONToActiveTab(workspaceEdit))
+        XCTAssertEqual(try XCTUnwrap(ctx.editorAreaController.activeTab).fileURL.standardizedFileURL, mainURL.standardizedFileURL)
+        XCTAssertEqual(try XCTUnwrap(ctx.editorAreaController.activeTab).editCore.editor.text(), "updated main\n")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dirtyURL.path))
+        XCTAssertEqual(try dirtyTab.editCore.editor.text(), "!dirty\n")
+
+        XCTAssertTrue(delegate.executeCommand(id: "workspace.show_workspace_edit_history"))
+        let items = ctx.editorAreaController._workspaceEditHistoryPanelItemsForTesting()
+        let item = try XCTUnwrap(items.first)
+        XCTAssertEqual(item.status, "Partial")
+        XCTAssertEqual(item.conflictCount, 1)
+        XCTAssertEqual(item.firstConflictURI, dirtyURL.absoluteString)
+        XCTAssertEqual(item.firstSaveableConflictURI, dirtyURL.absoluteString)
+        XCTAssertEqual(item.firstDiscardableConflictURI, dirtyURL.absoluteString)
+        XCTAssertTrue(item.detail.contains("1 conflict"))
+        XCTAssertTrue(item.detail.contains("history-conflict-dirty.txt"))
+
+        let historyPanel = try XCTUnwrap(ctx.window.childWindows?.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.workspaceEditHistoryPanel
+        })
+        let root = try XCTUnwrap(historyPanel.contentView)
+        let openConflictButton = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.workspaceEditHistoryPanelOpenConflictButton,
+                in: root
+            ) as? NSButton
+        )
+        let saveConflictButton = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.workspaceEditHistoryPanelSaveConflictButton,
+                in: root
+            ) as? NSButton
+        )
+        let discardConflictButton = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.workspaceEditHistoryPanelDiscardConflictButton,
+                in: root
+            ) as? NSButton
+        )
+        let saveAndReapplyButton = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.workspaceEditHistoryPanelSaveAndReapplyButton,
+                in: root
+            ) as? NSButton
+        )
+        let discardAndReapplyButton = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.workspaceEditHistoryPanelDiscardAndReapplyButton,
+                in: root
+            ) as? NSButton
+        )
+        let reapplyButton = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.workspaceEditHistoryPanelReapplyButton,
+                in: root
+            ) as? NSButton
+        )
+        XCTAssertTrue(openConflictButton.isEnabled)
+        XCTAssertTrue(saveConflictButton.isEnabled)
+        XCTAssertTrue(discardConflictButton.isEnabled)
+        XCTAssertFalse(saveAndReapplyButton.isEnabled)
+        XCTAssertFalse(discardAndReapplyButton.isEnabled)
+        XCTAssertTrue(reapplyButton.isEnabled)
+
+        XCTAssertTrue(invokeButtonAction(openConflictButton))
+
+        XCTAssertEqual(ctx.editorAreaController.selectedTabID, dirtyTab.id)
+        XCTAssertEqual(ctx.editorAreaController.activeTab?.fileURL.standardizedFileURL, dirtyURL.standardizedFileURL)
+        XCTAssertEqual(
+            ctx.editorAreaController._transientStatusTextForTesting(),
+            "Opened WorkspaceEdit conflict: \(dirtyURL.lastPathComponent)"
+        )
+
+        XCTAssertTrue(invokeButtonAction(saveConflictButton))
+
+        XCTAssertEqual(try String(contentsOf: dirtyURL, encoding: .utf8), "!dirty\n")
+        let savedDirtyItem = try XCTUnwrap(
+            ctx.editorAreaController.openFileItems().first {
+                $0.url.standardizedFileURL == dirtyURL.standardizedFileURL
+            }
+        )
+        XCTAssertFalse(savedDirtyItem.isDirty)
+        XCTAssertEqual(
+            ctx.editorAreaController._transientStatusTextForTesting(),
+            "Saved WorkspaceEdit conflict: \(dirtyURL.lastPathComponent)"
+        )
+
+        XCTAssertTrue(ctx.editorAreaController.executeActiveEditorCommandJSON(#"{"kind":"edit","op":"insert_text","text":"?"}"#))
+        XCTAssertEqual(try dirtyTab.editCore.editor.text(), "!?dirty\n")
+
+        XCTAssertTrue(invokeButtonAction(discardConflictButton))
+
+        XCTAssertEqual(try dirtyTab.editCore.editor.text(), "!dirty\n")
+        XCTAssertEqual(try String(contentsOf: dirtyURL, encoding: .utf8), "!dirty\n")
+        let discardedDirtyItem = try XCTUnwrap(
+            ctx.editorAreaController.openFileItems().first {
+                $0.url.standardizedFileURL == dirtyURL.standardizedFileURL
+            }
+        )
+        XCTAssertFalse(discardedDirtyItem.isDirty)
+        XCTAssertEqual(
+            ctx.editorAreaController._transientStatusTextForTesting(),
+            "Discarded WorkspaceEdit conflict changes: \(dirtyURL.lastPathComponent)"
+        )
+    }
+
+    func testWorkspaceEditHistoryPanelSaveAndReapplyRejectedTransaction() throws {
+        let delegate = AttoAppDelegate(keyBindings: [:])
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let dirtyURL = tempDir.appendingPathComponent("history-reapply-dirty.txt")
+        let mainURL = tempDir.appendingPathComponent("history-reapply-main.txt")
+        try "dirty\n".write(to: dirtyURL, atomically: true, encoding: .utf8)
+        try "main\n".write(to: mainURL, atomically: true, encoding: .utf8)
+
+        let ctx = delegate._createWindowForTesting(workspaceRootURL: tempDir)
+        defer {
+            ctx.editorAreaController.closeWorkspaceEditHistoryPanel()
+            ctx.window.close()
+        }
+        ctx.editorAreaController.openFile(url: dirtyURL, mode: .pinned)
+        XCTAssertTrue(ctx.editorAreaController.executeActiveEditorCommandJSON(#"{"kind":"edit","op":"insert_text","text":"!"}"#))
+        ctx.editorAreaController.openFile(url: mainURL, mode: .pinned)
+        allowWorkspaceEditPreviewConfirmation(ctx.editorAreaController)
+
+        let workspaceEdit = """
+        {
+          "applyMode": "atomic",
+          "workspaceEdit": {
+            "documentChanges": [
+              {
+                "textDocument": {
+                  "uri": "\(mainURL.absoluteString)"
+                },
+                "edits": [
+                  {
+                    "range": {
+                      "start": { "line": 0, "character": 0 },
+                      "end": { "line": 0, "character": 0 }
+                    },
+                    "newText": "updated "
+                  }
+                ]
+              },
+              {
+                "kind": "delete",
+                "uri": "\(dirtyURL.absoluteString)"
+              }
+            ]
+          }
+        }
+        """
+
+        let coreDocuments = try XCTUnwrap(ctx.editorAreaController.coreDocuments)
+        try ctx.editorAreaController.syncOpenTabsToCoreBeforeWorkspaceEditApply(coreDocuments)
+        let rejected = try coreDocuments.applyWorkspaceEditTransaction(workspaceEdit)
+        XCTAssertFalse(rejected.applied)
+        XCTAssertEqual(rejected.conflicts.first?.uri, dirtyURL.absoluteString)
+        XCTAssertEqual(try ctx.editorAreaController._coreWorkspaceEditTransactionLatestSequenceForTesting(), 1)
+        XCTAssertEqual(try XCTUnwrap(ctx.editorAreaController.activeTab).editCore.editor.text(), "main\n")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dirtyURL.path))
+
+        XCTAssertTrue(delegate.executeCommand(id: "workspace.show_workspace_edit_history"))
+        let items = ctx.editorAreaController._workspaceEditHistoryPanelItemsForTesting()
+        let item = try XCTUnwrap(items.first)
+        XCTAssertEqual(item.status, "Rejected")
+        XCTAssertEqual(item.workspaceEditJSON, workspaceEdit)
+        XCTAssertEqual(item.firstSaveableConflictURI, dirtyURL.absoluteString)
+        XCTAssertEqual(item.firstDiscardableConflictURI, dirtyURL.absoluteString)
+
+        let historyPanel = try XCTUnwrap(ctx.window.childWindows?.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.workspaceEditHistoryPanel
+        })
+        let root = try XCTUnwrap(historyPanel.contentView)
+        let saveAndReapplyButton = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.workspaceEditHistoryPanelSaveAndReapplyButton,
+                in: root
+            ) as? NSButton
+        )
+        let discardAndReapplyButton = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.workspaceEditHistoryPanelDiscardAndReapplyButton,
+                in: root
+            ) as? NSButton
+        )
+        let reapplyButton = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.workspaceEditHistoryPanelReapplyButton,
+                in: root
+            ) as? NSButton
+        )
+        XCTAssertTrue(saveAndReapplyButton.isEnabled)
+        XCTAssertTrue(discardAndReapplyButton.isEnabled)
+        XCTAssertTrue(reapplyButton.isEnabled)
+
+        XCTAssertTrue(invokeButtonAction(saveAndReapplyButton))
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dirtyURL.path))
+        XCTAssertEqual(try XCTUnwrap(ctx.editorAreaController.activeTab).editCore.editor.text(), "updated main\n")
+        XCTAssertEqual(try ctx.editorAreaController._coreWorkspaceEditTransactionLatestSequenceForTesting(), 2)
+        let refreshedItems = ctx.editorAreaController._workspaceEditHistoryPanelItemsForTesting()
+        let reappliedItem = try XCTUnwrap(refreshedItems.first { $0.sequence == 2 })
+        XCTAssertEqual(reappliedItem.status, "Applied")
+        XCTAssertEqual(reappliedItem.workspaceEditJSON, workspaceEdit)
+        XCTAssertEqual(
+            ctx.editorAreaController._transientStatusTextForTesting(),
+            "Saved conflict and reapplied WorkspaceEdit"
+        )
     }
 
     func testWorkspaceEditPreviewConfirmationCanCancelCoreTransaction() throws {
@@ -6640,6 +6613,134 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: dirtyURL.path))
         let dirtyItem = try XCTUnwrap(vc.openFileItems().first { $0.url.standardizedFileURL == dirtyURL.standardizedFileURL })
         XCTAssertTrue(dirtyItem.isDirty)
+    }
+
+    func testWorkspaceEditRuntimeResourceFailureShowsRollbackPopover() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: tempDir.appendingPathComponent("src", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let activeURL = tempDir.appendingPathComponent("active.txt")
+        let oldURL = tempDir.appendingPathComponent("src/Old.swift")
+        let targetURL = tempDir.appendingPathComponent("src/Target.swift")
+        let createdURL = tempDir.appendingPathComponent("generated/Created.swift")
+        let blockerURL = tempDir.appendingPathComponent("blocker")
+        let blockedChildURL = tempDir.appendingPathComponent("blocker/Child.swift")
+        try "active\n".write(to: activeURL, atomically: true, encoding: .utf8)
+        try "old\n".write(to: oldURL, atomically: true, encoding: .utf8)
+        try "target\n".write(to: targetURL, atomically: true, encoding: .utf8)
+        try "blocker\n".write(to: blockerURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: activeURL, mode: .pinned)
+        allowWorkspaceEditPreviewConfirmation(vc)
+        let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
+
+        let workspaceEdit = """
+        {
+          "applyMode": "atomic",
+          "workspaceEdit": {
+            "documentChanges": [
+              {
+                "kind": "create",
+                "uri": "\(createdURL.absoluteString)"
+              },
+              {
+                "kind": "rename",
+                "oldUri": "\(oldURL.absoluteString)",
+                "newUri": "\(targetURL.absoluteString)",
+                "options": { "overwrite": true }
+              },
+              {
+                "kind": "create",
+                "uri": "\(blockedChildURL.absoluteString)"
+              }
+            ]
+          }
+        }
+        """
+
+        XCTAssertFalse(vc.applyWorkspaceEditJSONToActiveTab(workspaceEdit))
+        XCTAssertEqual(
+            try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting()),
+            coreTransactionCursor
+        )
+        XCTAssertEqual(try String(contentsOf: oldURL, encoding: .utf8), "old\n")
+        XCTAssertEqual(try String(contentsOf: targetURL, encoding: .utf8), "target\n")
+        XCTAssertEqual(try String(contentsOf: blockerURL, encoding: .utf8), "blocker\n")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: createdURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: tempDir.appendingPathComponent("generated").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: blockedChildURL.path))
+
+        let popoverText = try XCTUnwrap(vc.workspaceEditPopoverLabel?.stringValue)
+        XCTAssertTrue(popoverText.contains("Workspace edit failed."))
+        XCTAssertTrue(popoverText.contains("Filesystem side effects were rolled back."))
+        XCTAssertTrue(popoverText.contains("No WorkspaceEdit transaction was recorded."))
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "Workspace edit failed")
+    }
+
+    func testWorkspaceEditUnsupportedResourceOperationShowsPartialSummary() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let activeURL = tempDir.appendingPathComponent("unsupported-main.txt")
+        try "main\n".write(to: activeURL, atomically: true, encoding: .utf8)
+
+        let outsideRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorOutside-\(UUID().uuidString)", isDirectory: true)
+        let outsideOldURL = outsideRoot.appendingPathComponent("UnsupportedOld.swift")
+        let outsideNewURL = outsideRoot.appendingPathComponent("UnsupportedNew.swift")
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: activeURL, mode: .pinned)
+        allowWorkspaceEditPreviewConfirmation(vc)
+        let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
+
+        let workspaceEdit = """
+        {
+          "documentChanges": [
+            {
+              "textDocument": {
+                "uri": "\(activeURL.absoluteString)"
+              },
+              "edits": [
+                {
+                  "range": {
+                    "start": { "line": 0, "character": 0 },
+                    "end": { "line": 0, "character": 4 }
+                  },
+                  "newText": "MAIN"
+                }
+              ]
+            },
+            {
+              "kind": "rename",
+              "oldUri": "\(outsideOldURL.absoluteString)",
+              "newUri": "\(outsideNewURL.absoluteString)"
+            }
+          ]
+        }
+        """
+
+        XCTAssertTrue(vc.applyWorkspaceEditJSONToActiveTab(workspaceEdit))
+        XCTAssertEqual(
+            try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting()),
+            coreTransactionCursor + 1
+        )
+        XCTAssertEqual(try XCTUnwrap(vc.activeTab).editCore.editor.text(), "MAIN\n")
+
+        let popoverText = try XCTUnwrap(vc.workspaceEditPopoverLabel?.stringValue)
+        XCTAssertTrue(popoverText.contains("Workspace edit partially applied."))
+        XCTAssertTrue(popoverText.contains("UnsupportedNew.swift [unsupported operation]"))
+        XCTAssertTrue(popoverText.contains("UnsupportedOld.swift [unsupported operation]"))
     }
 
     func testWorkspaceEditPreviewOpenConflictDecisionSelectsTargetTab() throws {
@@ -7024,6 +7125,607 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(vc.activeTab).editCore.editor.text(), "updated main\n")
     }
 
+    func testRenameWorkspaceEditSaveAndRetryRerunsRenameRequestInsteadOfOldPayload() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let dirtyURL = tempDir.appendingPathComponent("rename-retry-dirty.txt")
+        let mainURL = tempDir.appendingPathComponent("rename-retry-main.txt")
+        let captureURL = tempDir.appendingPathComponent("rename-retry-lsp-stdin.txt")
+        let scriptURL = tempDir.appendingPathComponent("rename-retry-fake-lsp.sh")
+        try "dirty\n".write(to: dirtyURL, atomically: true, encoding: .utf8)
+        try "main\n".write(to: mainURL, atomically: true, encoding: .utf8)
+        try writeFakeLspServerScript(captureURL: captureURL, scriptURL: scriptURL)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: dirtyURL, mode: .pinned)
+        XCTAssertTrue(vc.executeActiveEditorCommandJSON(#"{"kind":"edit","op":"insert_text","text":"!"}"#))
+        vc.openFile(url: mainURL, mode: .pinned)
+        let mainTab = try XCTUnwrap(vc.activeTab)
+        try mainTab.editCore.editor.lspEnable(
+            command: scriptURL.path,
+            rootURI: tempDir.standardizedFileURL.absoluteString,
+            documentURI: mainURL.standardizedFileURL.absoluteString,
+            languageId: "plaintext"
+        )
+        defer {
+            vc.cancelRenameUI()
+            mainTab.editCore.editor.lspDisable()
+        }
+
+        var previews: [AttoWorkspaceEditPreview] = []
+        vc._setWorkspaceEditPreviewDecisionProviderForTesting { preview in
+            previews.append(preview)
+            return .saveAndRetry(dirtyURL.absoluteString)
+        }
+        let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
+
+        let workspaceEdit = """
+        {
+          "applyMode": "atomic",
+          "workspaceEdit": {
+            "documentChanges": [
+              {
+                "textDocument": {
+                  "uri": "\(mainURL.absoluteString)"
+                },
+                "edits": [
+                  {
+                    "range": {
+                      "start": { "line": 0, "character": 0 },
+                      "end": { "line": 0, "character": 0 }
+                    },
+                    "newText": "updated "
+                  }
+                ]
+              },
+              {
+                "kind": "delete",
+                "uri": "\(dirtyURL.absoluteString)"
+              }
+            ]
+          }
+        }
+        """
+
+        XCTAssertTrue(vc._applyRenameResultJSONForTesting(workspaceEdit, newName: "renamedSymbol"))
+
+        XCTAssertEqual(previews.count, 1)
+        XCTAssertFalse(previews[0].canApply)
+        XCTAssertEqual(previews[0].firstSaveableConflictTargetURI, dirtyURL.absoluteString)
+        XCTAssertEqual(
+            try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting()),
+            coreTransactionCursor
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dirtyURL.path))
+        XCTAssertEqual(try String(contentsOf: dirtyURL, encoding: .utf8), "!dirty\n")
+        XCTAssertEqual(try String(contentsOf: mainURL, encoding: .utf8), "main\n")
+        XCTAssertEqual(try XCTUnwrap(vc.activeTab).fileURL.standardizedFileURL, mainURL.standardizedFileURL)
+
+        let captured = waitForCapturedLspInput(
+            at: captureURL,
+            containing: #""method":"textDocument/rename""#
+        )
+        XCTAssertTrue(captured.contains(#""method":"textDocument/rename""#), captured)
+        XCTAssertTrue(captured.contains(#""newName":"renamedSymbol""#), captured)
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "Retrying WorkspaceEdit request: Rename: renamedSymbol")
+    }
+
+    func testCodeActionWorkspaceEditSaveAndRetryRerunsCodeActionRequestInsteadOfOldPayload() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let dirtyURL = tempDir.appendingPathComponent("code-action-retry-dirty.txt")
+        let mainURL = tempDir.appendingPathComponent("code-action-retry-main.txt")
+        let captureURL = tempDir.appendingPathComponent("code-action-retry-lsp-stdin.txt")
+        let scriptURL = tempDir.appendingPathComponent("code-action-retry-fake-lsp.py")
+        try "dirty\n".write(to: dirtyURL, atomically: true, encoding: .utf8)
+        try "main\n".write(to: mainURL, atomically: true, encoding: .utf8)
+        try writeCodeActionFakeLspServerScript(captureURL: captureURL, scriptURL: scriptURL)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: dirtyURL, mode: .pinned)
+        XCTAssertTrue(vc.executeActiveEditorCommandJSON(#"{"kind":"edit","op":"insert_text","text":"!"}"#))
+        vc.openFile(url: mainURL, mode: .pinned)
+        let mainTab = try XCTUnwrap(vc.activeTab)
+        try mainTab.editCore.editor.lspEnable(
+            command: scriptURL.path,
+            rootURI: tempDir.standardizedFileURL.absoluteString,
+            documentURI: mainURL.standardizedFileURL.absoluteString,
+            languageId: "plaintext"
+        )
+        defer {
+            vc.cancelCodeActionUI()
+            mainTab.editCore.editor.lspDisable()
+        }
+
+        var previews: [AttoWorkspaceEditPreview] = []
+        vc._setWorkspaceEditPreviewDecisionProviderForTesting { preview in
+            previews.append(preview)
+            return .saveAndRetry(dirtyURL.absoluteString)
+        }
+        let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
+        let requestContext = try vc.codeActionRequestContext(
+            tab: mainTab,
+            onlyKinds: ["quickfix"],
+            showFeedback: true
+        )
+
+        let resultJSON = """
+        [
+          {
+            "title": "Fix conflict",
+            "kind": "quickfix",
+            "edit": {
+              "documentChanges": [
+                {
+                  "textDocument": {
+                    "uri": "\(mainURL.absoluteString)"
+                  },
+                  "edits": [
+                    {
+                      "range": {
+                        "start": { "line": 0, "character": 0 },
+                        "end": { "line": 0, "character": 0 }
+                      },
+                      "newText": "updated "
+                    }
+                  ]
+                },
+                {
+                  "kind": "delete",
+                  "uri": "\(dirtyURL.absoluteString)"
+                }
+              ]
+            }
+          }
+        ]
+        """
+        let item = try XCTUnwrap(AttoLspCodeActionParser.items(fromCodeActionResultJSON: resultJSON).first)
+
+        XCTAssertTrue(vc.applyCodeAction(item, showFeedback: true, requestContext: requestContext))
+
+        XCTAssertEqual(previews.count, 1)
+        XCTAssertEqual(previews[0].firstSaveableConflictTargetURI, dirtyURL.absoluteString)
+        XCTAssertEqual(
+            try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting()),
+            coreTransactionCursor
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dirtyURL.path))
+        XCTAssertEqual(try String(contentsOf: dirtyURL, encoding: .utf8), "!dirty\n")
+        XCTAssertEqual(try String(contentsOf: mainURL, encoding: .utf8), "main\n")
+        XCTAssertEqual(try XCTUnwrap(vc.activeTab).fileURL.standardizedFileURL, mainURL.standardizedFileURL)
+
+        let captured = waitForCapturedLspInput(
+            at: captureURL,
+            containing: #""method":"textDocument/codeAction""#
+        )
+        XCTAssertTrue(captured.contains(#""method":"textDocument/codeAction""#), captured)
+        XCTAssertTrue(captured.contains(#""only":["quickfix"]"#), captured)
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "Retrying WorkspaceEdit request: Code Actions: quickfix")
+    }
+
+    func testCodeLensCommandWorkspaceEditSaveAndRetryRerunsExecuteCommandInsteadOfOldPayload() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let dirtyURL = tempDir.appendingPathComponent("code-lens-retry-dirty.txt")
+        let mainURL = tempDir.appendingPathComponent("code-lens-retry-main.txt")
+        let captureURL = tempDir.appendingPathComponent("code-lens-retry-lsp-stdin.txt")
+        let scriptURL = tempDir.appendingPathComponent("code-lens-retry-fake-lsp.py")
+        try "dirty\n".write(to: dirtyURL, atomically: true, encoding: .utf8)
+        try "main\n".write(to: mainURL, atomically: true, encoding: .utf8)
+
+        let resultJSON = """
+        {
+          "applyMode": "atomic",
+          "workspaceEdit": {
+            "documentChanges": [
+              {
+                "textDocument": {
+                  "uri": "\(mainURL.absoluteString)"
+                },
+                "edits": [
+                  {
+                    "range": {
+                      "start": { "line": 0, "character": 0 },
+                      "end": { "line": 0, "character": 0 }
+                    },
+                    "newText": "updated "
+                  }
+                ]
+              },
+              {
+                "kind": "delete",
+                "uri": "\(dirtyURL.absoluteString)"
+              }
+            ]
+          }
+        }
+        """
+        try writeExecuteCommandWorkspaceEditFakeLspServerScript(
+            captureURL: captureURL,
+            scriptURL: scriptURL,
+            resultJSON: resultJSON
+        )
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: dirtyURL, mode: .pinned)
+        XCTAssertTrue(vc.executeActiveEditorCommandJSON(#"{"kind":"edit","op":"insert_text","text":"!"}"#))
+        vc.openFile(url: mainURL, mode: .pinned)
+        let mainTab = try XCTUnwrap(vc.activeTab)
+        try mainTab.editCore.editor.lspEnable(
+            command: scriptURL.path,
+            rootURI: tempDir.standardizedFileURL.absoluteString,
+            documentURI: mainURL.standardizedFileURL.absoluteString,
+            languageId: "plaintext"
+        )
+        defer {
+            vc.cancelExecuteCommandUI()
+            mainTab.editCore.editor.lspDisable()
+        }
+
+        var previews: [AttoWorkspaceEditPreview] = []
+        var decisions: [AttoWorkspaceEditPreviewDecision] = [
+            .saveAndRetry(dirtyURL.absoluteString),
+            .cancel,
+        ]
+        vc._setWorkspaceEditPreviewDecisionProviderForTesting { preview in
+            previews.append(preview)
+            return decisions.removeFirst()
+        }
+        let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
+        let item = try XCTUnwrap(AttoLspCodeLensParser.item(fromCodeLensJSON: """
+        {
+          "range": {
+            "start": { "line": 0, "character": 0 },
+            "end": { "line": 0, "character": 0 }
+          },
+          "command": {
+            "title": "Apply command edit",
+            "command": "atto.applyEdit",
+            "arguments": []
+          }
+        }
+        """))
+
+        XCTAssertTrue(vc.applyCodeLens(item))
+
+        let captured = waitForCapturedLspInput(
+            at: captureURL,
+            containing: #""method":"workspace/executeCommand""#,
+            minimumOccurrences: 2
+        )
+        XCTAssertEqual(occurrenceCount(of: #""method":"workspace/executeCommand""#, in: captured), 2)
+        waitUntil { previews.count >= 2 }
+        XCTAssertEqual(previews.count, 2)
+        XCTAssertFalse(previews[0].canApply)
+        XCTAssertEqual(previews[0].firstSaveableConflictTargetURI, dirtyURL.absoluteString)
+        XCTAssertTrue(previews[1].canApply)
+        XCTAssertTrue(previews[1].conflicts.isEmpty)
+        XCTAssertEqual(
+            try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting()),
+            coreTransactionCursor
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dirtyURL.path))
+        XCTAssertEqual(try String(contentsOf: dirtyURL, encoding: .utf8), "!dirty\n")
+        XCTAssertEqual(try String(contentsOf: mainURL, encoding: .utf8), "main\n")
+    }
+
+    func testInlayHintResolveWorkspaceEditSaveAndRetryRerunsResolveRequestInsteadOfOldPayload() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let dirtyURL = tempDir.appendingPathComponent("inlay-retry-dirty.txt")
+        let mainURL = tempDir.appendingPathComponent("inlay-retry-main.txt")
+        let captureURL = tempDir.appendingPathComponent("inlay-retry-lsp-stdin.txt")
+        let scriptURL = tempDir.appendingPathComponent("inlay-retry-fake-lsp.py")
+        try "dirty\n".write(to: dirtyURL, atomically: true, encoding: .utf8)
+        try "main\n".write(to: mainURL, atomically: true, encoding: .utf8)
+        try writeInlayHintResolveFakeLspServerScript(captureURL: captureURL, scriptURL: scriptURL)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: dirtyURL, mode: .pinned)
+        XCTAssertTrue(vc.executeActiveEditorCommandJSON(#"{"kind":"edit","op":"insert_text","text":"!"}"#))
+        vc.openFile(url: mainURL, mode: .pinned)
+        let mainTab = try XCTUnwrap(vc.activeTab)
+        try mainTab.editCore.editor.lspEnable(
+            command: scriptURL.path,
+            rootURI: tempDir.standardizedFileURL.absoluteString,
+            documentURI: mainURL.standardizedFileURL.absoluteString,
+            languageId: "plaintext"
+        )
+        defer {
+            vc.cancelInlayHintResolveUI()
+            mainTab.editCore.editor.lspDisable()
+        }
+
+        var previews: [AttoWorkspaceEditPreview] = []
+        vc._setWorkspaceEditPreviewDecisionProviderForTesting { preview in
+            previews.append(preview)
+            return .saveAndRetry(dirtyURL.absoluteString)
+        }
+        let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
+        let hintJSON = """
+        {
+          "position": { "line": 0, "character": 0 },
+          "label": ": String"
+        }
+        """
+        let context = AttoEditorAreaViewController.InlayHintResolveContext(
+            tabID: mainTab.id,
+            hintJSON: hintJSON,
+            showFeedback: true
+        )
+        let workspaceEdit = """
+        {
+          "applyMode": "atomic",
+          "workspaceEdit": {
+            "documentChanges": [
+              {
+                "textDocument": {
+                  "uri": "\(mainURL.absoluteString)"
+                },
+                "edits": [
+                  {
+                    "range": {
+                      "start": { "line": 0, "character": 0 },
+                      "end": { "line": 0, "character": 0 }
+                    },
+                    "newText": "updated "
+                  }
+                ]
+              },
+              {
+                "kind": "delete",
+                "uri": "\(dirtyURL.absoluteString)"
+              }
+            ]
+          }
+        }
+        """
+
+        XCTAssertTrue(
+            vc.applyWorkspaceEditJSONToActiveTab(
+                workspaceEdit,
+                requestRetryOwner: vc.inlayHintResolveWorkspaceEditRequestRetryOwner(context: context)
+            ).accepted
+        )
+
+        XCTAssertEqual(previews.count, 1)
+        XCTAssertEqual(previews[0].firstSaveableConflictTargetURI, dirtyURL.absoluteString)
+        XCTAssertEqual(
+            try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting()),
+            coreTransactionCursor
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dirtyURL.path))
+        XCTAssertEqual(try String(contentsOf: dirtyURL, encoding: .utf8), "!dirty\n")
+        XCTAssertEqual(try String(contentsOf: mainURL, encoding: .utf8), "main\n")
+        XCTAssertEqual(try XCTUnwrap(vc.activeTab).fileURL.standardizedFileURL, mainURL.standardizedFileURL)
+
+        let captured = waitForCapturedLspInput(
+            at: captureURL,
+            containing: #""method":"inlayHint/resolve""#
+        )
+        XCTAssertTrue(captured.contains(#""method":"inlayHint/resolve""#), captured)
+        XCTAssertTrue(captured.contains(#"": String""#), captured)
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "Retrying WorkspaceEdit request: Inlay Hint Resolve")
+    }
+
+    func testColorPresentationWorkspaceEditSaveAndRetryRerunsColorPresentationRequest() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let dirtyURL = tempDir.appendingPathComponent("color-presentation-retry-dirty.txt")
+        let mainURL = tempDir.appendingPathComponent("color-presentation-retry-main.txt")
+        let captureURL = tempDir.appendingPathComponent("color-presentation-retry-lsp-stdin.txt")
+        let scriptURL = tempDir.appendingPathComponent("color-presentation-retry-fake-lsp.py")
+        try "dirty\n".write(to: dirtyURL, atomically: true, encoding: .utf8)
+        try "#ff0000\n".write(to: mainURL, atomically: true, encoding: .utf8)
+        try writeColorPresentationFakeLspServerScript(captureURL: captureURL, scriptURL: scriptURL)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: dirtyURL, mode: .pinned)
+        XCTAssertTrue(vc.executeActiveEditorCommandJSON(#"{"kind":"edit","op":"insert_text","text":"!"}"#))
+        vc.openFile(url: mainURL, mode: .pinned)
+        let mainTab = try XCTUnwrap(vc.activeTab)
+        try mainTab.editCore.editor.lspEnable(
+            command: scriptURL.path,
+            rootURI: tempDir.standardizedFileURL.absoluteString,
+            documentURI: mainURL.standardizedFileURL.absoluteString,
+            languageId: "plaintext"
+        )
+        defer {
+            vc.cancelColorPresentationUI()
+            mainTab.editCore.editor.lspDisable()
+        }
+
+        var previews: [AttoWorkspaceEditPreview] = []
+        vc._setWorkspaceEditPreviewDecisionProviderForTesting { preview in
+            previews.append(preview)
+            return .saveAndRetry(dirtyURL.absoluteString)
+        }
+        let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
+        let context = AttoEditorAreaViewController.ColorPresentationRequestContext(
+            tabID: mainTab.id,
+            item: AttoLspDocumentColorParser.Item(
+                range: EcuSelectionRange(start: 0, end: 7),
+                startLine: 0,
+                startUTF16Character: 0,
+                color: AttoLspDocumentColorParser.Color(red: 1, green: 0, blue: 0, alpha: 1)
+            ),
+            showFeedback: true
+        )
+        let workspaceEdit = """
+        {
+          "applyMode": "atomic",
+          "workspaceEdit": {
+            "documentChanges": [
+              {
+                "textDocument": {
+                  "uri": "\(mainURL.absoluteString)"
+                },
+                "edits": [
+                  {
+                    "range": {
+                      "start": { "line": 0, "character": 0 },
+                      "end": { "line": 0, "character": 0 }
+                    },
+                    "newText": "updated "
+                  }
+                ]
+              },
+              {
+                "kind": "delete",
+                "uri": "\(dirtyURL.absoluteString)"
+              }
+            ]
+          }
+        }
+        """
+
+        XCTAssertTrue(
+            vc.applyWorkspaceEditJSONToActiveTab(
+                workspaceEdit,
+                requestRetryOwner: vc.colorPresentationWorkspaceEditRequestRetryOwner(context: context)
+            ).accepted
+        )
+
+        XCTAssertEqual(previews.count, 1)
+        XCTAssertEqual(previews[0].firstSaveableConflictTargetURI, dirtyURL.absoluteString)
+        XCTAssertEqual(
+            try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting()),
+            coreTransactionCursor
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dirtyURL.path))
+        XCTAssertEqual(try String(contentsOf: dirtyURL, encoding: .utf8), "!dirty\n")
+        XCTAssertEqual(try String(contentsOf: mainURL, encoding: .utf8), "#ff0000\n")
+        XCTAssertEqual(try XCTUnwrap(vc.activeTab).fileURL.standardizedFileURL, mainURL.standardizedFileURL)
+
+        let captured = waitForCapturedLspInput(
+            at: captureURL,
+            containing: #""method":"textDocument/colorPresentation""#
+        )
+        XCTAssertTrue(captured.contains(#""method":"textDocument/colorPresentation""#), captured)
+        XCTAssertTrue(captured.contains(#""red":1"#), captured)
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "Retrying WorkspaceEdit request: Color Presentation")
+    }
+
+    func testFormattingWorkspaceEditSaveAndRetryRerunsFormattingRequestInsteadOfOldPayload() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let dirtyURL = tempDir.appendingPathComponent("formatting-retry-dirty.txt")
+        let mainURL = tempDir.appendingPathComponent("formatting-retry-main.txt")
+        let captureURL = tempDir.appendingPathComponent("formatting-retry-lsp-stdin.txt")
+        let scriptURL = tempDir.appendingPathComponent("formatting-retry-fake-lsp.py")
+        try "dirty\n".write(to: dirtyURL, atomically: true, encoding: .utf8)
+        try "main\n".write(to: mainURL, atomically: true, encoding: .utf8)
+        try writeFormattingFakeLspServerScript(captureURL: captureURL, scriptURL: scriptURL)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: dirtyURL, mode: .pinned)
+        XCTAssertTrue(vc.executeActiveEditorCommandJSON(#"{"kind":"edit","op":"insert_text","text":"!"}"#))
+        vc.openFile(url: mainURL, mode: .pinned)
+        let mainTab = try XCTUnwrap(vc.activeTab)
+        try mainTab.editCore.editor.lspEnable(
+            command: scriptURL.path,
+            rootURI: tempDir.standardizedFileURL.absoluteString,
+            documentURI: mainURL.standardizedFileURL.absoluteString,
+            languageId: "plaintext"
+        )
+        defer {
+            vc.cancelFormattingUI()
+            mainTab.editCore.editor.lspDisable()
+        }
+
+        var previews: [AttoWorkspaceEditPreview] = []
+        var decisions: [AttoWorkspaceEditPreviewDecision] = [
+            .saveAndRetry(dirtyURL.absoluteString),
+            .cancel,
+        ]
+        vc._setWorkspaceEditPreviewDecisionProviderForTesting { preview in
+            previews.append(preview)
+            return decisions.isEmpty ? .cancel : decisions.removeFirst()
+        }
+        let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
+        let context = AttoEditorAreaViewController.FormattingRequestContext(
+            tabID: mainTab.id,
+            kind: .document,
+            showFeedback: true
+        )
+        let workspaceEdit = """
+        {
+          "applyMode": "atomic",
+          "workspaceEdit": {
+            "documentChanges": [
+              {
+                "textDocument": {
+                  "uri": "\(mainURL.absoluteString)"
+                },
+                "edits": [
+                  {
+                    "range": {
+                      "start": { "line": 0, "character": 0 },
+                      "end": { "line": 0, "character": 0 }
+                    },
+                    "newText": "updated "
+                  }
+                ]
+              },
+              {
+                "kind": "delete",
+                "uri": "\(dirtyURL.absoluteString)"
+              }
+            ]
+          }
+        }
+        """
+
+        XCTAssertTrue(
+            vc.applyWorkspaceEditJSONToActiveTab(
+                workspaceEdit,
+                requestRetryOwner: vc.formattingWorkspaceEditRequestRetryOwner(context: context)
+            ).accepted
+        )
+
+        XCTAssertEqual(previews.count, 1)
+        XCTAssertEqual(previews[0].firstSaveableConflictTargetURI, dirtyURL.absoluteString)
+        XCTAssertEqual(
+            try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting()),
+            coreTransactionCursor
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dirtyURL.path))
+        XCTAssertEqual(try String(contentsOf: dirtyURL, encoding: .utf8), "!dirty\n")
+        XCTAssertEqual(try String(contentsOf: mainURL, encoding: .utf8), "main\n")
+        XCTAssertEqual(try XCTUnwrap(vc.activeTab).fileURL.standardizedFileURL, mainURL.standardizedFileURL)
+
+        let captured = waitForCapturedLspInput(
+            at: captureURL,
+            containing: #""method":"textDocument/formatting""#
+        )
+        XCTAssertTrue(captured.contains(#""method":"textDocument/formatting""#), captured)
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "Retrying WorkspaceEdit request: Format Document")
+    }
+
     func testWorkspaceEditPreviewTextUsesCoreDocumentURIProjection() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
@@ -7116,6 +7818,7 @@ final class AttoEditorCommandTests: XCTestCase {
         let vc = makeEditorArea(workspaceRootURL: tempDir)
         let window = attachToWindow(vc)
         vc.openFile(url: fileURL, mode: .pinned)
+        allowWorkspaceEditPreviewConfirmation(vc)
         let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
 
         let workspaceEdit = """
@@ -7151,6 +7854,13 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(try editorView.editor.text(), "abc\n")
         XCTAssertEqual(try String(contentsOf: fileURL, encoding: .utf8), "abc\n")
         XCTAssertFalse(window.title.contains("●"))
+
+        let popoverText = try XCTUnwrap(vc.workspaceEditPopoverLabel?.stringValue)
+        XCTAssertTrue(popoverText.contains("Workspace edit was not applied."), popoverText)
+        XCTAssertTrue(
+            popoverText.contains("versioned.txt (1 edit) [text_edit: version_mismatch]"),
+            popoverText
+        )
     }
 
     func testRenameResultRecordsLspResultEvent() throws {
@@ -8651,7 +9361,8 @@ final class AttoEditorCommandTests: XCTestCase {
         try writeFakeLspServerScript(captureURL: captureURL, scriptURL: scriptURL)
 
         let vc = makeEditorArea(workspaceRootURL: tempDir)
-        _ = attachToWindow(vc)
+        let window = attachToWindow(vc)
+        defer { window.close() }
         vc._setLspEnvironmentProviderForTesting {
             [
                 "ATTO_EDITOR_DISABLE_LSP": "1",
@@ -8682,6 +9393,116 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(tab.lspServerConfig?.languageId, "rust")
         XCTAssertTrue(captured.contains(fileURL.standardizedFileURL.absoluteString), captured)
         XCTAssertTrue(captured.contains(alternateRoot.standardizedFileURL.absoluteString), captured)
+        let lifecycle = try XCTUnwrap(try vc._coreProjectLspLifecycleEventsForTesting())
+        let coreTabID = try XCTUnwrap(tab.coreTabID)
+        XCTAssertEqual(lifecycle.latestSequence, 2)
+        XCTAssertEqual(lifecycle.events.count, 2)
+        XCTAssertEqual(lifecycle.events.map(\.operation), ["start", "start"])
+        XCTAssertEqual(lifecycle.events.map(\.trigger), ["auto_start", "auto_start"])
+        XCTAssertEqual(lifecycle.events.map(\.status), ["requested", "started"])
+        XCTAssertEqual(lifecycle.events.map(\.tabId), [coreTabID, coreTabID])
+        let attemptId = try XCTUnwrap(lifecycle.events[0].attemptId)
+        XCTAssertEqual(attemptId, lifecycle.events[0].sequence)
+        XCTAssertEqual(lifecycle.events[1].attemptId, attemptId)
+        XCTAssertEqual(lifecycle.events[1].documentURI, lifecycle.events[0].documentURI)
+        XCTAssertEqual(lifecycle.events[1].documentURI, fileURL.standardizedFileURL.absoluteString)
+        XCTAssertEqual(lifecycle.events[1].languageId, "rust")
+        XCTAssertEqual(lifecycle.events[1].command, scriptURL.path)
+
+        vc._drainProjectLspPanelLifecycleEventsForTesting()
+        let drainedLifecycle = vc._projectLspLifecycleEventsForTesting(after: 0)
+        XCTAssertEqual(drainedLifecycle.count, 2)
+        XCTAssertEqual(drainedLifecycle.map(\.status), ["requested", "started"])
+
+        XCTAssertTrue(vc.showProjectLspStatusEventsPanel())
+        let statusPanel = try XCTUnwrap(window.childWindows?.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.commandPalettePanel(prefix: "AttoEditor.LSP.ProjectStatusEvents")
+        })
+        let statusRoot = try XCTUnwrap(statusPanel.contentView)
+        let statusTable = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.commandPaletteTable(prefix: "AttoEditor.LSP.ProjectStatusEvents"),
+                in: statusRoot
+            ) as? NSTableView
+        )
+        XCTAssertEqual(statusTable.numberOfRows, 2)
+        let statusTitles = (0..<statusTable.numberOfRows).compactMap { row -> String? in
+            (statusTable.view(atColumn: 0, row: row, makeIfNecessary: true) as? NSTableCellView)?
+                .textField?.stringValue
+        }
+        XCTAssertTrue(
+            statusTitles.contains(where: {
+                $0.contains("Lifecycle") && $0.contains("started") && $0.contains("rust")
+                    && $0.contains("attempt #\(attemptId)")
+            }),
+            statusTitles.joined(separator: "\n")
+        )
+
+        XCTAssertTrue(vc.showProjectLspDashboardPanel())
+        let dashboardPanel = try XCTUnwrap(window.childWindows?.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.commandPalettePanel(prefix: "AttoEditor.LSP.ProjectDashboard")
+        })
+        let dashboardRoot = try XCTUnwrap(dashboardPanel.contentView)
+        let dashboardTable = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.commandPaletteTable(prefix: "AttoEditor.LSP.ProjectDashboard"),
+                in: dashboardRoot
+            ) as? NSTableView
+        )
+        let dashboardTitles = (0..<dashboardTable.numberOfRows).compactMap { row -> String? in
+            (dashboardTable.view(atColumn: 0, row: row, makeIfNecessary: true) as? NSTableCellView)?
+                .textField?.stringValue
+        }
+        XCTAssertTrue(
+            dashboardTitles.contains(where: { $0.contains("Summary -") && $0.contains("lifecycle events 2") }),
+            dashboardTitles.joined(separator: "\n")
+        )
+        XCTAssertTrue(
+            dashboardTitles.contains(where: { $0.contains("Summary -") && $0.contains("lifecycle attempts 1") }),
+            dashboardTitles.joined(separator: "\n")
+        )
+        XCTAssertTrue(
+            dashboardTitles.contains(where: {
+                $0.contains("Lifecycle -") && $0.contains("started") && $0.contains("attempt #\(attemptId)")
+            }),
+            dashboardTitles.joined(separator: "\n")
+        )
+    }
+
+    func testProjectLspAutoStartUsesCoreStartPlanLanguageFilter() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("mismatch.rs")
+        try "fn main() {}".write(to: fileURL, atomically: true, encoding: .utf8)
+        let captureURL = tempDir.appendingPathComponent("mismatch-lsp-stdin.txt")
+        let scriptURL = tempDir.appendingPathComponent("mismatch-fake-lsp.sh")
+        try writeFakeLspServerScript(captureURL: captureURL, scriptURL: scriptURL)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = vc.view
+        vc._setLspEnvironmentProviderForTesting { ["ATTO_EDITOR_DISABLE_LSP": "1"] }
+        vc.openFile(url: fileURL, mode: .pinned)
+        let tab = try XCTUnwrap(vc.activeTab)
+        XCTAssertEqual(try vc._coreMultiDocumentSnapshotForTesting()?.tabs.first?.languageId, "rust")
+
+        tab.lspServerConfig = AttoLspServerLaunchConfig(
+            command: scriptURL.path,
+            args: nil,
+            languageId: "python"
+        )
+        vc.syncProjectLspServerConfigsToCore()
+        XCTAssertEqual(try vc._coreProjectLspStartPlanForTesting(), [])
+
+        vc._setLspEnvironmentProviderForTesting { [:] }
+        XCTAssertEqual(vc.startProjectLspServersForOpenTabs(), 0)
+        XCTAssertFalse(try tab.editCore.editor.lspIsEnabled())
+        XCTAssertFalse(FileManager.default.fileExists(atPath: captureURL.path))
+        let lifecycle = try XCTUnwrap(try vc._coreProjectLspLifecycleEventsForTesting())
+        XCTAssertEqual(lifecycle.latestSequence, 0)
+        XCTAssertTrue(lifecycle.events.isEmpty)
     }
 
     func testProjectLspLaunchConfigsSyncToCoreProjectStore() throws {
@@ -8751,6 +9572,452 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(try vc._coreProjectLspServerConfigsForTesting(), [])
     }
 
+    func testProjectLspLaunchConfigsUseCoreWorkspaceRoots() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        let extraRoot = tempDir.appendingPathComponent("extra-root", isDirectory: true)
+        try FileManager.default.createDirectory(at: extraRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("main.rs")
+        try "fn main() {}".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = vc.view
+        vc._setLspEnvironmentProviderForTesting { ["ATTO_EDITOR_DISABLE_LSP": "1"] }
+        vc.openFile(url: fileURL, mode: .pinned)
+        let tab = try XCTUnwrap(vc.activeTab)
+        tab.lspServerConfig = AttoLspServerLaunchConfig(
+            command: "/usr/bin/rust-analyzer",
+            args: nil,
+            languageId: "rust"
+        )
+
+        let rootURI = tempDir.standardizedFileURL.absoluteString
+        let extraRootURI = extraRoot.standardizedFileURL.absoluteString
+        _ = try XCTUnwrap(vc.coreDocuments).setWorkspaceRootsReturningChange([rootURI, extraRootURI])
+
+        vc.syncProjectLspServerConfigsToCore()
+
+        let config = try XCTUnwrap(try vc._coreProjectLspServerConfigsForTesting().first)
+        XCTAssertEqual(config.workspaceRoots, [rootURI, extraRootURI])
+    }
+
+    func testClosingConfiguredProjectLspTabRecordsStopOutcome() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("close_project_lsp.txt")
+        try "close".write(to: fileURL, atomically: true, encoding: .utf8)
+        let captureURL = tempDir.appendingPathComponent("close-project-lsp-stdin.txt")
+        let scriptURL = tempDir.appendingPathComponent("close-project-fake-lsp.sh")
+        try writeAppendingFakeLspServerScript(captureURL: captureURL, scriptURL: scriptURL)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+        let tab = try XCTUnwrap(vc.activeTab)
+        let coreTabID = try XCTUnwrap(tab.coreTabID)
+        let config = AttoLspServerLaunchConfig(
+            command: scriptURL.path,
+            args: "--stdio",
+            languageId: "plaintext"
+        )
+        try tab.editCore.editor.lspEnable(
+            command: config.command,
+            args: config.args,
+            rootURI: tempDir.standardizedFileURL.absoluteString,
+            documentURI: fileURL.standardizedFileURL.absoluteString,
+            languageId: config.languageId
+        )
+        tab.lspServerConfig = config
+        defer { tab.editCore.editor.lspDisable() }
+
+        _ = waitForCapturedLspInput(
+            at: captureURL,
+            containing: #""method":"textDocument/didOpen""#
+        )
+
+        vc.closeTab(id: tab.id)
+
+        XCTAssertFalse(vc.tabs.contains { $0.id == tab.id })
+        let lifecycle = try XCTUnwrap(try vc._coreProjectLspLifecycleEventsForTesting())
+        XCTAssertEqual(lifecycle.latestSequence, 2)
+        XCTAssertEqual(lifecycle.events.count, 2)
+        XCTAssertEqual(lifecycle.events.map(\.operation), ["stop", "stop"])
+        XCTAssertEqual(lifecycle.events.map(\.trigger), ["tab_close", "tab_close"])
+        XCTAssertEqual(lifecycle.events.map(\.status), ["requested", "stopped"])
+        XCTAssertEqual(lifecycle.events.map(\.tabId), [coreTabID, coreTabID])
+        let attemptId = try XCTUnwrap(lifecycle.events[0].attemptId)
+        XCTAssertEqual(attemptId, lifecycle.events[0].sequence)
+        XCTAssertEqual(lifecycle.events[1].attemptId, attemptId)
+        XCTAssertEqual(lifecycle.events[1].documentURI, lifecycle.events[0].documentURI)
+        XCTAssertEqual(lifecycle.events[1].documentURI, fileURL.standardizedFileURL.absoluteString)
+        XCTAssertEqual(lifecycle.events[1].languageId, "plaintext")
+        XCTAssertEqual(lifecycle.events[1].command, scriptURL.path)
+        XCTAssertEqual(lifecycle.events[1].args, ["--stdio"])
+    }
+
+    func testPlainTextSyntaxSwitchRecordsProjectLspStopOutcome() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("plain_stop.txt")
+        try "plain".write(to: fileURL, atomically: true, encoding: .utf8)
+        let captureURL = tempDir.appendingPathComponent("plain-stop-lsp-stdin.txt")
+        let scriptURL = tempDir.appendingPathComponent("plain-stop-fake-lsp.sh")
+        try writeAppendingFakeLspServerScript(captureURL: captureURL, scriptURL: scriptURL)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+        let tab = try XCTUnwrap(vc.activeTab)
+        let coreTabID = try XCTUnwrap(tab.coreTabID)
+        let config = AttoLspServerLaunchConfig(
+            command: scriptURL.path,
+            args: nil,
+            languageId: "plaintext"
+        )
+        try tab.editCore.editor.lspEnable(
+            command: config.command,
+            rootURI: tempDir.standardizedFileURL.absoluteString,
+            documentURI: fileURL.standardizedFileURL.absoluteString,
+            languageId: config.languageId
+        )
+        tab.lspServerConfig = config
+        defer { tab.editCore.editor.lspDisable() }
+
+        _ = waitForCapturedLspInput(
+            at: captureURL,
+            containing: #""method":"textDocument/didOpen""#
+        )
+
+        vc.setSyntaxLanguageForActiveTab(languageId: nil)
+
+        XCTAssertFalse(try tab.editCore.editor.lspIsEnabled())
+        XCTAssertNil(tab.lspServerConfig)
+        XCTAssertTrue(tab.suppressesAutomaticLspStart)
+        XCTAssertNil(tab.syntaxLanguageId)
+        XCTAssertEqual(tab.languageSupportSource, .plainText)
+        let lifecycle = try XCTUnwrap(try vc._coreProjectLspLifecycleEventsForTesting())
+        XCTAssertEqual(lifecycle.latestSequence, 2)
+        XCTAssertEqual(lifecycle.events.count, 2)
+        XCTAssertEqual(lifecycle.events.map(\.operation), ["stop", "stop"])
+        XCTAssertEqual(lifecycle.events.map(\.trigger), ["language_change", "language_change"])
+        XCTAssertEqual(lifecycle.events.map(\.status), ["requested", "stopped"])
+        XCTAssertEqual(lifecycle.events.map(\.tabId), [coreTabID, coreTabID])
+        let attemptId = try XCTUnwrap(lifecycle.events[0].attemptId)
+        XCTAssertEqual(attemptId, lifecycle.events[0].sequence)
+        XCTAssertEqual(lifecycle.events[1].attemptId, attemptId)
+        XCTAssertEqual(lifecycle.events[1].documentURI, lifecycle.events[0].documentURI)
+        XCTAssertEqual(lifecycle.events[1].documentURI, fileURL.standardizedFileURL.absoluteString)
+        XCTAssertEqual(lifecycle.events[1].languageId, "plaintext")
+        XCTAssertEqual(lifecycle.events[1].command, scriptURL.path)
+    }
+
+    func testShutdownLspServerRequiresRunningSession() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("shutdown_unavailable.txt")
+        try "plain".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        XCTAssertFalse(vc.shutdownLspServerInActiveTab())
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "LSP server shutdown: unavailable")
+    }
+
+    func testShutdownLspServerInActiveTabRequiresCoreStopPlanMatch() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("shutdown_plan_gate.txt")
+        try "shutdown".write(to: fileURL, atomically: true, encoding: .utf8)
+        let captureURL = tempDir.appendingPathComponent("shutdown-plan-gate-lsp-stdin.txt")
+        let scriptURL = tempDir.appendingPathComponent("shutdown-plan-gate-fake-lsp.py")
+        try writeInlayHintResolveFakeLspServerScript(captureURL: captureURL, scriptURL: scriptURL)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+        let tab = try XCTUnwrap(vc.activeTab)
+        let coreTabID = try XCTUnwrap(tab.coreTabID)
+        let config = AttoLspServerLaunchConfig(
+            command: scriptURL.path,
+            args: nil,
+            languageId: "plaintext"
+        )
+        try tab.editCore.editor.lspEnable(
+            command: config.command,
+            rootURI: tempDir.standardizedFileURL.absoluteString,
+            documentURI: fileURL.standardizedFileURL.absoluteString,
+            languageId: config.languageId
+        )
+        tab.lspServerConfig = config
+        defer { tab.editCore.editor.lspDisable() }
+
+        _ = waitForCapturedLspInput(
+            at: captureURL,
+            containing: #""method":"textDocument/didOpen""#
+        )
+
+        XCTAssertTrue(try XCTUnwrap(vc.coreDocuments).closeTab(coreTabID))
+
+        XCTAssertFalse(vc.shutdownLspServerInActiveTab())
+        XCTAssertTrue(try tab.editCore.editor.lspIsEnabled())
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "LSP server shutdown: unavailable")
+
+        let captured = try String(contentsOf: captureURL, encoding: .utf8)
+        XCTAssertFalse(captured.contains(#""method":"shutdown""#), captured)
+        XCTAssertFalse(captured.contains(#""method":"exit""#), captured)
+        let lifecycle = try XCTUnwrap(try vc._coreProjectLspLifecycleEventsForTesting())
+        XCTAssertEqual(lifecycle.latestSequence, 1)
+        XCTAssertEqual(lifecycle.events.count, 1)
+        XCTAssertEqual(lifecycle.events[0].operation, "stop")
+        XCTAssertEqual(lifecycle.events[0].trigger, "manual_shutdown")
+        XCTAssertEqual(lifecycle.events[0].status, "skipped")
+        XCTAssertEqual(lifecycle.events[0].tabId, coreTabID)
+        XCTAssertNil(lifecycle.events[0].attemptId)
+        XCTAssertEqual(lifecycle.events[0].errorMessage, "No project LSP stop plan matches this document.")
+    }
+
+    func testShutdownLspServerStopsActiveSessionAndRecordsOutcome() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("shutdown_project_lsp.txt")
+        try "shutdown".write(to: fileURL, atomically: true, encoding: .utf8)
+        let captureURL = tempDir.appendingPathComponent("shutdown-lsp-stdin.txt")
+        let scriptURL = tempDir.appendingPathComponent("shutdown-fake-lsp.py")
+        try writeInlayHintResolveFakeLspServerScript(captureURL: captureURL, scriptURL: scriptURL)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+        let tab = try XCTUnwrap(vc.activeTab)
+        let coreTabID = try XCTUnwrap(tab.coreTabID)
+        let config = AttoLspServerLaunchConfig(
+            command: scriptURL.path,
+            args: nil,
+            languageId: "plaintext"
+        )
+        try tab.editCore.editor.lspEnable(
+            command: config.command,
+            rootURI: tempDir.standardizedFileURL.absoluteString,
+            documentURI: fileURL.standardizedFileURL.absoluteString,
+            languageId: config.languageId
+        )
+        tab.lspServerConfig = config
+        tab.syntaxLanguageId = "plaintext"
+        tab.languageSupportSource = .lspServices
+        defer { tab.editCore.editor.lspDisable() }
+
+        _ = waitForCapturedLspInput(
+            at: captureURL,
+            containing: #""method":"textDocument/didOpen""#
+        )
+
+        XCTAssertTrue(vc.shutdownLspServerInActiveTab())
+
+        let captured = waitForCapturedLspInput(
+            at: captureURL,
+            containing: #""method":"exit""#
+        )
+        XCTAssertTrue(captured.contains(#""method":"textDocument/didClose""#), captured)
+        XCTAssertTrue(captured.contains(#""method":"shutdown""#), captured)
+        XCTAssertTrue(captured.contains(#""method":"exit""#), captured)
+        XCTAssertFalse(try tab.editCore.editor.lspIsEnabled())
+        XCTAssertEqual(tab.lspServerConfig, config)
+        XCTAssertTrue(tab.suppressesAutomaticLspStart)
+        XCTAssertEqual(tab.languageSupportSource, .plainText)
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "LSP server shut down")
+
+        let projectedConfig = try XCTUnwrap(try vc._coreProjectLspServerConfigsForTesting().first)
+        XCTAssertEqual(projectedConfig.command, scriptURL.path)
+        XCTAssertFalse(projectedConfig.autoStart)
+
+        let lifecycle = try XCTUnwrap(try vc._coreProjectLspLifecycleEventsForTesting())
+        XCTAssertEqual(lifecycle.latestSequence, 2)
+        XCTAssertEqual(lifecycle.events.count, 2)
+        XCTAssertEqual(lifecycle.events.map(\.operation), ["stop", "stop"])
+        XCTAssertEqual(lifecycle.events.map(\.trigger), ["manual_shutdown", "manual_shutdown"])
+        XCTAssertEqual(lifecycle.events.map(\.status), ["requested", "stopped"])
+        XCTAssertEqual(lifecycle.events.map(\.tabId), [coreTabID, coreTabID])
+        XCTAssertEqual(lifecycle.events[0].documentURI, fileURL.standardizedFileURL.absoluteString)
+        XCTAssertEqual(lifecycle.events[1].documentURI, fileURL.standardizedFileURL.absoluteString)
+        XCTAssertEqual(lifecycle.events[0].languageId, "plaintext")
+        XCTAssertEqual(lifecycle.events[1].languageId, "plaintext")
+        XCTAssertEqual(lifecycle.events[0].command, scriptURL.path)
+        XCTAssertEqual(lifecycle.events[1].command, scriptURL.path)
+        let attemptId = try XCTUnwrap(lifecycle.events[0].attemptId)
+        XCTAssertEqual(attemptId, lifecycle.events[0].sequence)
+        XCTAssertEqual(lifecycle.events[1].attemptId, attemptId)
+    }
+
+    func testShutdownProjectLspServersRequiresRunningConfiguredTabs() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("shutdown_project_unavailable.txt")
+        try "plain".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        XCTAssertFalse(vc.shutdownProjectLspServers())
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "LSP server shutdown: unavailable")
+    }
+
+    func testShutdownProjectLspServersStopsConfiguredOpenTabsAndRecordsOutcomes() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let firstURL = tempDir.appendingPathComponent("shutdown_project_first.txt")
+        let secondURL = tempDir.appendingPathComponent("shutdown_project_second.txt")
+        try "first".write(to: firstURL, atomically: true, encoding: .utf8)
+        try "second".write(to: secondURL, atomically: true, encoding: .utf8)
+
+        let firstCaptureURL = tempDir.appendingPathComponent("first-shutdown-project-lsp-stdin.txt")
+        let secondCaptureURL = tempDir.appendingPathComponent("second-shutdown-project-lsp-stdin.txt")
+        let firstScriptURL = tempDir.appendingPathComponent("first-shutdown-project-fake-lsp.py")
+        let secondScriptURL = tempDir.appendingPathComponent("second-shutdown-project-fake-lsp.py")
+        try writeInlayHintResolveFakeLspServerScript(captureURL: firstCaptureURL, scriptURL: firstScriptURL)
+        try writeInlayHintResolveFakeLspServerScript(captureURL: secondCaptureURL, scriptURL: secondScriptURL)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: firstURL, mode: .pinned)
+        let firstTab = try XCTUnwrap(vc.activeTab)
+        let firstCoreTabID = try XCTUnwrap(firstTab.coreTabID)
+        let firstConfig = AttoLspServerLaunchConfig(
+            command: firstScriptURL.path,
+            args: nil,
+            languageId: "plaintext"
+        )
+        try firstTab.editCore.editor.lspEnable(
+            command: firstConfig.command,
+            rootURI: tempDir.standardizedFileURL.absoluteString,
+            documentURI: firstURL.standardizedFileURL.absoluteString,
+            languageId: firstConfig.languageId
+        )
+        firstTab.lspServerConfig = firstConfig
+        firstTab.syntaxLanguageId = "plaintext"
+        firstTab.languageSupportSource = .lspServices
+
+        vc.openFile(url: secondURL, mode: .pinned)
+        let secondTab = try XCTUnwrap(vc.activeTab)
+        let secondCoreTabID = try XCTUnwrap(secondTab.coreTabID)
+        let secondConfig = AttoLspServerLaunchConfig(
+            command: secondScriptURL.path,
+            args: nil,
+            languageId: "plaintext"
+        )
+        try secondTab.editCore.editor.lspEnable(
+            command: secondConfig.command,
+            rootURI: tempDir.standardizedFileURL.absoluteString,
+            documentURI: secondURL.standardizedFileURL.absoluteString,
+            languageId: secondConfig.languageId
+        )
+        secondTab.lspServerConfig = secondConfig
+        secondTab.syntaxLanguageId = "plaintext"
+        secondTab.languageSupportSource = .lspServices
+        defer {
+            firstTab.editCore.editor.lspDisable()
+            secondTab.editCore.editor.lspDisable()
+        }
+
+        _ = waitForCapturedLspInput(
+            at: firstCaptureURL,
+            containing: #""method":"textDocument/didOpen""#
+        )
+        _ = waitForCapturedLspInput(
+            at: secondCaptureURL,
+            containing: #""method":"textDocument/didOpen""#
+        )
+
+        XCTAssertTrue(vc.shutdownProjectLspServers())
+
+        let firstCaptured = waitForCapturedLspInput(
+            at: firstCaptureURL,
+            containing: #""method":"exit""#
+        )
+        let secondCaptured = waitForCapturedLspInput(
+            at: secondCaptureURL,
+            containing: #""method":"exit""#
+        )
+        for captured in [firstCaptured, secondCaptured] {
+            XCTAssertTrue(captured.contains(#""method":"textDocument/didClose""#), captured)
+            XCTAssertTrue(captured.contains(#""method":"shutdown""#), captured)
+            XCTAssertTrue(captured.contains(#""method":"exit""#), captured)
+        }
+
+        XCTAssertFalse(try firstTab.editCore.editor.lspIsEnabled())
+        XCTAssertFalse(try secondTab.editCore.editor.lspIsEnabled())
+        XCTAssertEqual(firstTab.lspServerConfig, firstConfig)
+        XCTAssertEqual(secondTab.lspServerConfig, secondConfig)
+        XCTAssertTrue(firstTab.suppressesAutomaticLspStart)
+        XCTAssertTrue(secondTab.suppressesAutomaticLspStart)
+        XCTAssertEqual(firstTab.languageSupportSource, .plainText)
+        XCTAssertEqual(secondTab.languageSupportSource, .plainText)
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "LSP servers shut down: 2")
+
+        let projectedConfigs = try vc._coreProjectLspServerConfigsForTesting()
+        XCTAssertEqual(projectedConfigs.count, 2)
+        XCTAssertTrue(projectedConfigs.allSatisfy { $0.autoStart == false })
+
+        let lifecycle = try XCTUnwrap(try vc._coreProjectLspLifecycleEventsForTesting())
+        XCTAssertEqual(lifecycle.latestSequence, 4)
+        XCTAssertEqual(lifecycle.events.map(\.operation), ["stop", "stop", "stop", "stop"])
+        XCTAssertEqual(
+            lifecycle.events.map(\.trigger),
+            ["project_shutdown", "project_shutdown", "project_shutdown", "project_shutdown"]
+        )
+        XCTAssertEqual(lifecycle.events.map(\.status), ["requested", "stopped", "requested", "stopped"])
+        let firstAttemptId = try XCTUnwrap(lifecycle.events[0].attemptId)
+        XCTAssertEqual(firstAttemptId, lifecycle.events[0].sequence)
+        XCTAssertEqual(lifecycle.events[1].attemptId, firstAttemptId)
+        XCTAssertEqual(lifecycle.events[1].tabId, lifecycle.events[0].tabId)
+        XCTAssertEqual(lifecycle.events[1].documentURI, lifecycle.events[0].documentURI)
+        let secondAttemptId = try XCTUnwrap(lifecycle.events[2].attemptId)
+        XCTAssertEqual(secondAttemptId, lifecycle.events[2].sequence)
+        XCTAssertEqual(lifecycle.events[3].attemptId, secondAttemptId)
+        XCTAssertEqual(lifecycle.events[3].tabId, lifecycle.events[2].tabId)
+        XCTAssertEqual(lifecycle.events[3].documentURI, lifecycle.events[2].documentURI)
+        XCTAssertEqual(
+            Set(lifecycle.events.map(\.tabId)),
+            Set([firstCoreTabID, secondCoreTabID])
+        )
+        XCTAssertEqual(
+            Set(lifecycle.events.map(\.documentURI)),
+            Set([
+                firstURL.standardizedFileURL.absoluteString,
+                secondURL.standardizedFileURL.absoluteString,
+            ])
+        )
+        XCTAssertEqual(
+            Set(lifecycle.events.map(\.command)),
+            Set([firstScriptURL.path, secondScriptURL.path])
+        )
+    }
+
     func testRestartLspServerRequiresSavedLaunchConfig() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
@@ -8784,6 +10051,7 @@ final class AttoEditorCommandTests: XCTestCase {
         _ = attachToWindow(vc)
         vc.openFile(url: fileURL, mode: .pinned)
         let tab = try XCTUnwrap(vc.activeTab)
+        let coreTabID = try XCTUnwrap(tab.coreTabID)
         let config = AttoLspServerLaunchConfig(
             command: scriptURL.path,
             args: nil,
@@ -8821,6 +10089,130 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(tab.lspServerConfig, config)
         XCTAssertEqual(tab.syntaxLanguageId, "plaintext")
         XCTAssertEqual(vc._transientStatusTextForTesting(), "LSP server restarted")
+        let lifecycle = try XCTUnwrap(try vc._coreProjectLspLifecycleEventsForTesting())
+        XCTAssertEqual(lifecycle.latestSequence, 2)
+        XCTAssertEqual(lifecycle.events.count, 2)
+        XCTAssertEqual(lifecycle.events.map(\.operation), ["restart", "restart"])
+        XCTAssertEqual(lifecycle.events.map(\.trigger), ["manual_restart", "manual_restart"])
+        XCTAssertEqual(lifecycle.events.map(\.status), ["requested", "started"])
+        XCTAssertEqual(lifecycle.events.map(\.tabId), [coreTabID, coreTabID])
+        XCTAssertEqual(lifecycle.events[0].documentURI, fileURL.standardizedFileURL.absoluteString)
+        XCTAssertEqual(lifecycle.events[1].documentURI, fileURL.standardizedFileURL.absoluteString)
+        XCTAssertEqual(lifecycle.events[0].languageId, "plaintext")
+        XCTAssertEqual(lifecycle.events[1].languageId, "plaintext")
+        XCTAssertEqual(lifecycle.events[0].command, scriptURL.path)
+        XCTAssertEqual(lifecycle.events[1].command, scriptURL.path)
+        let attemptId = try XCTUnwrap(lifecycle.events[0].attemptId)
+        XCTAssertEqual(attemptId, lifecycle.events[0].sequence)
+        XCTAssertEqual(lifecycle.events[1].attemptId, attemptId)
+    }
+
+    func testRestartLspServerInActiveTabUsesCoreRestartPlanRoot() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        let plannedRoot = tempDir.appendingPathComponent("active-planned-root", isDirectory: true)
+        try FileManager.default.createDirectory(at: plannedRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("restart_plan_root.txt")
+        try "restart".write(to: fileURL, atomically: true, encoding: .utf8)
+        let captureURL = tempDir.appendingPathComponent("restart-plan-root-lsp-stdin.txt")
+        let scriptURL = tempDir.appendingPathComponent("restart-plan-root-fake-lsp.sh")
+        try writeAppendingFakeLspServerScript(captureURL: captureURL, scriptURL: scriptURL)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+        let tab = try XCTUnwrap(vc.activeTab)
+        let config = AttoLspServerLaunchConfig(
+            command: scriptURL.path,
+            args: nil,
+            languageId: "plaintext"
+        )
+        try tab.editCore.editor.lspEnable(
+            command: config.command,
+            rootURI: tempDir.standardizedFileURL.absoluteString,
+            documentURI: fileURL.standardizedFileURL.absoluteString,
+            languageId: config.languageId
+        )
+        tab.lspServerConfig = config
+        defer { tab.editCore.editor.lspDisable() }
+
+        _ = waitForCapturedLspInput(
+            at: captureURL,
+            containing: #""method":"textDocument/didOpen""#
+        )
+
+        let plannedRootURI = plannedRoot.standardizedFileURL.absoluteString
+        try vc.coreDocuments?.setWorkspaceRoots([plannedRootURI])
+
+        XCTAssertTrue(vc.restartLspServerInActiveTab())
+
+        let captured = waitForCapturedLspInput(
+            at: captureURL,
+            containing: plannedRootURI,
+            minimumOccurrences: 1
+        )
+        XCTAssertGreaterThanOrEqual(occurrenceCount(of: "--session--", in: captured), 2, captured)
+        XCTAssertTrue(captured.contains(plannedRootURI), captured)
+        XCTAssertEqual(tab.lspServerConfig, config)
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "LSP server restarted")
+    }
+
+    func testRestartLspServerInActiveTabRecordsSkippedWhenCorePlanDoesNotMatch() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("restart_plan_gate.txt")
+        try "restart".write(to: fileURL, atomically: true, encoding: .utf8)
+        let captureURL = tempDir.appendingPathComponent("restart-plan-gate-lsp-stdin.txt")
+        let scriptURL = tempDir.appendingPathComponent("restart-plan-gate-fake-lsp.sh")
+        try writeAppendingFakeLspServerScript(captureURL: captureURL, scriptURL: scriptURL)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+        let tab = try XCTUnwrap(vc.activeTab)
+        let coreTabID = try XCTUnwrap(tab.coreTabID)
+        let config = AttoLspServerLaunchConfig(
+            command: scriptURL.path,
+            args: nil,
+            languageId: "plaintext"
+        )
+        try tab.editCore.editor.lspEnable(
+            command: config.command,
+            rootURI: tempDir.standardizedFileURL.absoluteString,
+            documentURI: fileURL.standardizedFileURL.absoluteString,
+            languageId: config.languageId
+        )
+        tab.lspServerConfig = config
+        defer { tab.editCore.editor.lspDisable() }
+
+        _ = waitForCapturedLspInput(
+            at: captureURL,
+            containing: #""method":"textDocument/didOpen""#
+        )
+
+        XCTAssertTrue(try XCTUnwrap(vc.coreDocuments).closeTab(coreTabID))
+
+        XCTAssertFalse(vc.restartLspServerInActiveTab())
+        XCTAssertTrue(try tab.editCore.editor.lspIsEnabled())
+        XCTAssertEqual(vc._transientStatusTextForTesting(), "LSP server restart: unavailable")
+
+        let captured = try String(contentsOf: captureURL, encoding: .utf8)
+        XCTAssertEqual(occurrenceCount(of: "--session--", in: captured), 1, captured)
+
+        let lifecycle = try XCTUnwrap(try vc._coreProjectLspLifecycleEventsForTesting())
+        XCTAssertEqual(lifecycle.latestSequence, 1)
+        XCTAssertEqual(lifecycle.events.count, 1)
+        XCTAssertEqual(lifecycle.events[0].operation, "restart")
+        XCTAssertEqual(lifecycle.events[0].trigger, "manual_restart")
+        XCTAssertEqual(lifecycle.events[0].status, "skipped")
+        XCTAssertEqual(lifecycle.events[0].tabId, coreTabID)
+        XCTAssertNil(lifecycle.events[0].attemptId)
+        XCTAssertEqual(lifecycle.events[0].errorMessage, "No project LSP restart plan matches this document.")
     }
 
     func testProjectLspProcessHealthAutoRestartsExitedConfiguredTab() throws {
@@ -8839,6 +10231,7 @@ final class AttoEditorCommandTests: XCTestCase {
         _ = attachToWindow(vc)
         vc.openFile(url: fileURL, mode: .pinned)
         let tab = try XCTUnwrap(vc.activeTab)
+        let coreTabID = try XCTUnwrap(tab.coreTabID)
         let config = AttoLspServerLaunchConfig(
             command: scriptURL.path,
             args: nil,
@@ -8887,6 +10280,94 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertTrue(captured.contains(fileURL.standardizedFileURL.absoluteString), captured)
         XCTAssertEqual(tab.lspServerConfig, config)
         XCTAssertEqual(vc._transientStatusTextForTesting(), "LSP server auto-restarted")
+        let lifecycle = try XCTUnwrap(try vc._coreProjectLspLifecycleEventsForTesting())
+        XCTAssertEqual(lifecycle.latestSequence, 2)
+        XCTAssertEqual(lifecycle.events.count, 2)
+        XCTAssertEqual(lifecycle.events.map(\.operation), ["restart", "restart"])
+        XCTAssertEqual(lifecycle.events.map(\.trigger), ["auto_restart", "auto_restart"])
+        XCTAssertEqual(lifecycle.events.map(\.status), ["requested", "started"])
+        XCTAssertEqual(lifecycle.events.map(\.tabId), [coreTabID, coreTabID])
+        let attemptId = try XCTUnwrap(lifecycle.events[0].attemptId)
+        XCTAssertEqual(attemptId, lifecycle.events[0].sequence)
+        XCTAssertEqual(lifecycle.events[1].attemptId, attemptId)
+        XCTAssertEqual(lifecycle.events[1].documentURI, lifecycle.events[0].documentURI)
+    }
+
+    func testProjectLspAutoRestartUsesCoreRestartPlanRoot() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        let plannedRoot = tempDir.appendingPathComponent("planned-root", isDirectory: true)
+        try FileManager.default.createDirectory(at: plannedRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("auto_restart_plan_root.txt")
+        try "restart".write(to: fileURL, atomically: true, encoding: .utf8)
+        let captureURL = tempDir.appendingPathComponent("auto-restart-plan-root-lsp-stdin.txt")
+        let scriptURL = tempDir.appendingPathComponent("auto-restart-plan-root-fake-lsp.sh")
+        try writeAppendingFakeLspServerScript(captureURL: captureURL, scriptURL: scriptURL)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+        let tab = try XCTUnwrap(vc.activeTab)
+        let coreTabID = try XCTUnwrap(tab.coreTabID)
+        let config = AttoLspServerLaunchConfig(
+            command: scriptURL.path,
+            args: nil,
+            languageId: "plaintext"
+        )
+        try tab.editCore.editor.lspEnable(
+            command: config.command,
+            rootURI: tempDir.standardizedFileURL.absoluteString,
+            documentURI: fileURL.standardizedFileURL.absoluteString,
+            languageId: config.languageId
+        )
+        tab.lspServerConfig = config
+        defer { tab.editCore.editor.lspDisable() }
+
+        _ = waitForCapturedLspInput(
+            at: captureURL,
+            containing: #""method":"textDocument/didOpen""#
+        )
+
+        let plannedRootURI = plannedRoot.standardizedFileURL.absoluteString
+        try vc.coreDocuments?.setWorkspaceRoots([plannedRootURI])
+
+        XCTAssertTrue(vc._recordProjectLspProcessHealthForTesting(status: EcuLspStatusSnapshot(
+            availability: .failed,
+            state: .failed,
+            server: EcuLspServerStatus(name: "fake-lsp", version: nil, command: scriptURL.path),
+            activity: nil,
+            detail: "server exited",
+            capabilities: nil,
+            process: EcuLspProcessStatus(
+                pid: 321,
+                state: .exited,
+                exitCode: 9,
+                stderrTail: "crash"
+            ),
+            workspaceFolders: []
+        )))
+
+        let captured = waitForCapturedLspInput(
+            at: captureURL,
+            containing: plannedRootURI,
+            minimumOccurrences: 1
+        )
+        XCTAssertGreaterThanOrEqual(
+            occurrenceCount(of: #""method":"textDocument/didOpen""#, in: captured),
+            2,
+            captured
+        )
+        XCTAssertTrue(captured.contains(plannedRootURI), captured)
+        XCTAssertEqual(tab.lspServerConfig, config)
+        XCTAssertEqual(vc._projectLspAutoRestartAttemptsForTesting(tabId: coreTabID), 1)
+        let lifecycle = try XCTUnwrap(try vc._coreProjectLspLifecycleEventsForTesting())
+        XCTAssertEqual(lifecycle.events.map(\.trigger), ["auto_restart", "auto_restart"])
+        XCTAssertEqual(lifecycle.events.map(\.status), ["requested", "started"])
+        let attemptId = try XCTUnwrap(lifecycle.events[0].attemptId)
+        XCTAssertEqual(attemptId, lifecycle.events[0].sequence)
+        XCTAssertEqual(lifecycle.events[1].attemptId, attemptId)
     }
 
     func testProjectLspAutoRestartCanBeDisabledByPreferences() throws {
@@ -9320,6 +10801,29 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(firstTab.lspServerConfig, firstConfig)
         XCTAssertEqual(secondTab.lspServerConfig, secondConfig)
         XCTAssertEqual(vc._transientStatusTextForTesting(), "LSP servers restarted: 2")
+        let lifecycle = try XCTUnwrap(try vc._coreProjectLspLifecycleEventsForTesting())
+        XCTAssertEqual(lifecycle.latestSequence, 4)
+        XCTAssertEqual(lifecycle.events.map(\.operation), ["restart", "restart", "restart", "restart"])
+        XCTAssertEqual(
+            lifecycle.events.map(\.trigger),
+            ["project_restart", "project_restart", "project_restart", "project_restart"]
+        )
+        XCTAssertEqual(lifecycle.events.map(\.status), ["requested", "started", "requested", "started"])
+        let firstAttemptId = try XCTUnwrap(lifecycle.events[0].attemptId)
+        XCTAssertEqual(firstAttemptId, lifecycle.events[0].sequence)
+        XCTAssertEqual(lifecycle.events[1].attemptId, firstAttemptId)
+        XCTAssertEqual(lifecycle.events[1].documentURI, lifecycle.events[0].documentURI)
+        let secondAttemptId = try XCTUnwrap(lifecycle.events[2].attemptId)
+        XCTAssertEqual(secondAttemptId, lifecycle.events[2].sequence)
+        XCTAssertEqual(lifecycle.events[3].attemptId, secondAttemptId)
+        XCTAssertEqual(lifecycle.events[3].documentURI, lifecycle.events[2].documentURI)
+        XCTAssertEqual(
+            Set(lifecycle.events.map(\.documentURI)),
+            Set([
+                firstURL.standardizedFileURL.absoluteString,
+                secondURL.standardizedFileURL.absoluteString,
+            ])
+        )
     }
 
     func testFormatOnSaveRunsBeforeWritingFile() throws {
@@ -9714,6 +11218,359 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(results[0].line1, 1)
         XCTAssertEqual(results[0].column1, 2)
         XCTAssertEqual(results[0].lineText, "needlealpha")
+    }
+
+    func testFindInOpenTabsUsesCoreSearchOptions() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("opened-search-options.txt")
+        try "Needle needle word sword\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let insensitive = vc.findInOpenTabs(
+            query: "needle",
+            options: AttoFindInFilesViewController.SearchOptions(
+                caseSensitive: false,
+                wholeWord: false,
+                regex: false
+            )
+        )
+        XCTAssertEqual(insensitive.count, 2)
+
+        let sensitive = vc.findInOpenTabs(
+            query: "needle",
+            options: AttoFindInFilesViewController.SearchOptions(
+                caseSensitive: true,
+                wholeWord: false,
+                regex: false
+            )
+        )
+        XCTAssertEqual(sensitive.count, 1)
+        XCTAssertEqual(sensitive[0].column1, 8)
+
+        let wholeWord = vc.findInOpenTabs(
+            query: "word",
+            options: AttoFindInFilesViewController.SearchOptions(
+                caseSensitive: false,
+                wholeWord: true,
+                regex: false
+            )
+        )
+        XCTAssertEqual(wholeWord.count, 1)
+        XCTAssertEqual(wholeWord[0].column1, 15)
+    }
+
+    func testFindInWorkspaceFilesUsesCoreWorkspaceSearch() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: tempDir.appendingPathComponent("src", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let sourceURL = tempDir.appendingPathComponent("src/main.rs")
+        let optionsURL = tempDir.appendingPathComponent("src/options.swift")
+        let readmeURL = tempDir.appendingPathComponent("README.md")
+        try "fn main() {\n    let needle = 1;\n}\n".write(to: sourceURL, atomically: true, encoding: .utf8)
+        try "Needle\nneedle\nalpha7\n".write(to: optionsURL, atomically: true, encoding: .utf8)
+        try "needle in docs\n".write(to: readmeURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let results = try XCTUnwrap(
+            vc.findInWorkspaceFiles(query: "needle", includeGlobs: ["*.rs"], excludeGlobs: [])
+        )
+
+        XCTAssertEqual(results.count, 1)
+        XCTAssertEqual(results[0].url.standardizedFileURL, sourceURL.standardizedFileURL)
+        XCTAssertEqual(results[0].line1, 2)
+        XCTAssertEqual(results[0].column1, 9)
+        XCTAssertEqual(results[0].lineText, "let needle = 1;")
+
+        let excluded = try XCTUnwrap(
+            vc.findInWorkspaceFiles(query: "needle", includeGlobs: [], excludeGlobs: ["src/**"])
+        )
+        XCTAssertEqual(excluded.map(\.url.standardizedFileURL), [readmeURL.standardizedFileURL])
+
+        let caseSensitive = try XCTUnwrap(
+            vc.findInWorkspaceFiles(
+                query: "Needle",
+                includeGlobs: ["*.swift"],
+                excludeGlobs: [],
+                options: AttoFindInFilesViewController.SearchOptions(
+                    caseSensitive: true,
+                    wholeWord: false,
+                    regex: false
+                )
+            )
+        )
+        XCTAssertEqual(caseSensitive.count, 1)
+        XCTAssertEqual(caseSensitive[0].url.standardizedFileURL, optionsURL.standardizedFileURL)
+        XCTAssertEqual(caseSensitive[0].line1, 1)
+        XCTAssertEqual(caseSensitive[0].column1, 1)
+
+        let caseInsensitive = try XCTUnwrap(
+            vc.findInWorkspaceFiles(
+                query: "needle",
+                includeGlobs: ["*.swift"],
+                excludeGlobs: [],
+                options: AttoFindInFilesViewController.SearchOptions(
+                    caseSensitive: false,
+                    wholeWord: false,
+                    regex: false
+                )
+            )
+        )
+        XCTAssertEqual(caseInsensitive.count, 2)
+
+        let regex = try XCTUnwrap(
+            vc.findInWorkspaceFiles(
+                query: #"alpha\d"#,
+                includeGlobs: ["*.swift"],
+                excludeGlobs: [],
+                options: AttoFindInFilesViewController.SearchOptions(
+                    caseSensitive: true,
+                    wholeWord: false,
+                    regex: true
+                )
+            )
+        )
+        XCTAssertEqual(regex.count, 1)
+        XCTAssertEqual(regex[0].line1, 3)
+
+        let literal = try XCTUnwrap(
+            vc.findInWorkspaceFiles(
+                query: #"alpha\d"#,
+                includeGlobs: ["*.swift"],
+                excludeGlobs: [],
+                options: AttoFindInFilesViewController.SearchOptions(
+                    caseSensitive: true,
+                    wholeWord: false,
+                    regex: false
+                )
+            )
+        )
+        XCTAssertTrue(literal.isEmpty)
+    }
+
+    func testQuickOpenUsesCoreWorkspaceFileListWhenAvailable() throws {
+        let delegate = AttoAppDelegate(keyBindings: [:])
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: tempDir.appendingPathComponent("src", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let cachedURL = tempDir.appendingPathComponent("src/cached.rs")
+        try "fn cached() {}\n".write(to: cachedURL, atomically: true, encoding: .utf8)
+
+        let ctx = delegate._createWindowForTesting(workspaceRootURL: tempDir)
+        XCTAssertEqual(ctx.fileIndex.entries().map(\.relativePath), ["src/cached.rs"])
+
+        let coreOnlyURL = tempDir.appendingPathComponent("src/core_only.rs")
+        try "fn core_only() {}\n".write(to: coreOnlyURL, atomically: true, encoding: .utf8)
+        let coreModelURL = tempDir.appendingPathComponent("src/core_model.rs")
+        try "fn core_model() {}\n".write(to: coreModelURL, atomically: true, encoding: .utf8)
+
+        let entries = ctx.workspaceFileEntries()
+        XCTAssertEqual(entries.map(\.relativePath), ["src/cached.rs", "src/core_model.rs", "src/core_only.rs"])
+        let coreIndex = try XCTUnwrap(ctx.editorAreaController.coreDocuments?.projectFileIndexSnapshot())
+        XCTAssertEqual(coreIndex.files.map(\.relativePath), ["src/cached.rs", "src/core_model.rs", "src/core_only.rs"])
+
+        let quickOpenTitles = delegate._quickOpenCommandsForTesting().map(\.title)
+        XCTAssertTrue(quickOpenTitles.contains("src/cached.rs"))
+        XCTAssertTrue(quickOpenTitles.contains("src/core_only.rs"))
+
+        let queriedTitles = delegate._quickOpenCommandsForTesting(query: "cm").map(\.title)
+        XCTAssertEqual(queriedTitles, ["src/core_model.rs"])
+    }
+
+    func testWindowSessionSnapshotUsesCoreWorkspaceRootURIWhenAvailable() throws {
+        let delegate = AttoAppDelegate(keyBindings: [:])
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        let alternateRoot = tempDir.appendingPathComponent("core-root", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: alternateRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let ctx = delegate._createWindowForTesting(workspaceRootURL: tempDir)
+        let coreDocuments = try XCTUnwrap(ctx.editorAreaController.coreDocuments)
+        try coreDocuments.setWorkspaceRoots([alternateRoot.standardizedFileURL.absoluteString])
+
+        let snapshot = ctx.makeSessionSnapshot()
+        XCTAssertEqual(snapshot.workspaceRootPath, alternateRoot.standardizedFileURL.path)
+        XCTAssertEqual(snapshot.workspaceRootURI, alternateRoot.standardizedFileURL.absoluteString)
+        XCTAssertEqual(snapshot.validatedWorkspaceRootURL()?.standardizedFileURL, alternateRoot.standardizedFileURL)
+    }
+
+    func testFindInFilesWorkspaceReplaceUsesCoreWorkspaceEditTransaction() throws {
+        let delegate = AttoAppDelegate(keyBindings: [:])
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: tempDir.appendingPathComponent("src", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let sourceURL = tempDir.appendingPathComponent("src/main.rs")
+        let readmeURL = tempDir.appendingPathComponent("README.md")
+        try "alpha1 in source\nalphaX in source\n".write(to: sourceURL, atomically: true, encoding: .utf8)
+        try "alpha2 in docs\n".write(to: readmeURL, atomically: true, encoding: .utf8)
+
+        let ctx = delegate._createWindowForTesting(workspaceRootURL: tempDir)
+        defer { ctx.window.close() }
+        ctx.editorAreaController.openFile(url: sourceURL, mode: .pinned)
+        allowWorkspaceEditPreviewConfirmation(ctx.editorAreaController)
+        ctx.findInFilesController.setWorkspaceSearchGlobs(include: ["*.rs"], exclude: [])
+        ctx.findInFilesController._setSearchOptionsForTesting(
+            AttoFindInFilesViewController.SearchOptions(
+                caseSensitive: true,
+                wholeWord: false,
+                regex: true
+            )
+        )
+        ctx.findInFilesController.view.layoutSubtreeIfNeeded()
+
+        XCTAssertTrue(ctx.findInFilesController._replaceAllButtonIsEnabledForTesting(query: #"alpha(\d)"#))
+        XCTAssertFalse(ctx.findInFilesController._replaceAllButtonIsEnabledForTesting(
+            query: #"alpha(\d)"#,
+            scope: .openedFiles
+        ))
+
+        let coreTransactionCursor = try XCTUnwrap(
+            ctx.editorAreaController._coreWorkspaceEditTransactionLatestSequenceForTesting()
+        )
+        XCTAssertTrue(ctx.findInFilesController._replaceWorkspaceMatchesForTesting(
+            query: #"alpha(\d)"#,
+            replacement: "beta$1",
+            scope: .workspace
+        ))
+
+        XCTAssertEqual(try String(contentsOf: sourceURL, encoding: .utf8), "alpha1 in source\nalphaX in source\n")
+        XCTAssertEqual(try String(contentsOf: readmeURL, encoding: .utf8), "alpha2 in docs\n")
+        XCTAssertEqual(try ctx.editorAreaController.activeTab?.editCore.editor.text(), "beta1 in source\nalphaX in source\n")
+        XCTAssertEqual(
+            try XCTUnwrap(ctx.editorAreaController._coreWorkspaceEditTransactionLatestSequenceForTesting()),
+            coreTransactionCursor + 1
+        )
+    }
+
+    func testWindowRecentFilesUseCoreMultiDocumentStoreForSessionSnapshot() throws {
+        let delegate = AttoAppDelegate(keyBindings: [:])
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let firstURL = tempDir.appendingPathComponent("first.txt")
+        let secondURL = tempDir.appendingPathComponent("second.txt")
+        try "first\n".write(to: firstURL, atomically: true, encoding: .utf8)
+        try "second\n".write(to: secondURL, atomically: true, encoding: .utf8)
+
+        let ctx = delegate._createWindowForTesting(workspaceRootURL: tempDir)
+        defer { ctx.window.close() }
+        let coreDocuments = try XCTUnwrap(ctx.editorAreaController.coreDocuments)
+
+        ctx.rememberRecentFile(firstURL)
+        ctx.rememberRecentFile(secondURL)
+        ctx.rememberRecentFile(firstURL)
+
+        XCTAssertEqual(try coreDocuments.recentFiles().map(\.uri), [
+            firstURL.standardizedFileURL.absoluteString,
+            secondURL.standardizedFileURL.absoluteString,
+        ])
+        XCTAssertEqual(ctx.makeSessionSnapshot().recentFilePaths, [
+            firstURL.standardizedFileURL.path,
+            secondURL.standardizedFileURL.path,
+        ])
+
+        try coreDocuments.restoreRecentFileURIs([secondURL.standardizedFileURL.absoluteString])
+        XCTAssertEqual(ctx.recentFileURLs(), [secondURL.standardizedFileURL])
+        XCTAssertEqual(ctx.makeSessionSnapshot().recentFilePaths, [secondURL.standardizedFileURL.path])
+
+        ctx.restoreRecentFiles(filePaths: [
+            firstURL.path,
+            secondURL.path,
+            firstURL.path,
+            tempDir.appendingPathComponent("missing.txt").path,
+        ])
+        XCTAssertEqual(try coreDocuments.recentFiles().map(\.uri), [
+            firstURL.standardizedFileURL.absoluteString,
+            secondURL.standardizedFileURL.absoluteString,
+        ])
+    }
+
+    func testWindowWorkspaceRootsUseCoreRecentProjectsStore() throws {
+        let delegate = AttoAppDelegate(keyBindings: [:])
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        let firstRootURL = tempDir.appendingPathComponent("first", isDirectory: true)
+        let secondRootURL = tempDir.appendingPathComponent("second", isDirectory: true)
+        try FileManager.default.createDirectory(at: firstRootURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: secondRootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let ctx = delegate._createWindowForTesting(workspaceRootURL: firstRootURL)
+        defer { delegate._closeWindowsForTesting() }
+        let coreDocuments = try XCTUnwrap(ctx.editorAreaController.coreDocuments)
+
+        XCTAssertEqual(try coreDocuments.recentProjects().map(\.uri), [
+            firstRootURL.standardizedFileURL.absoluteString,
+        ])
+        XCTAssertEqual(ctx.recentProjectURLs(), [firstRootURL.standardizedFileURL])
+
+        ctx.setWorkspaceRootURL(secondRootURL)
+        XCTAssertEqual(try coreDocuments.recentProjects().map(\.uri), [
+            secondRootURL.standardizedFileURL.absoluteString,
+            firstRootURL.standardizedFileURL.absoluteString,
+        ])
+        XCTAssertEqual(ctx.recentProjectURLs(), [
+            secondRootURL.standardizedFileURL,
+            firstRootURL.standardizedFileURL,
+        ])
+
+        ctx.setWorkspaceRootURL(firstRootURL)
+        XCTAssertEqual(try coreDocuments.recentProjects().map(\.uri), [
+            firstRootURL.standardizedFileURL.absoluteString,
+            secondRootURL.standardizedFileURL.absoluteString,
+        ])
+
+        let snapshot = try XCTUnwrap(delegate._makeSessionSnapshotForTesting())
+        XCTAssertEqual(snapshot.recentProjectURIs, [
+            firstRootURL.standardizedFileURL.absoluteString,
+            secondRootURL.standardizedFileURL.absoluteString,
+        ])
+
+        ctx.restoreRecentProjectURIs([
+            secondRootURL.standardizedFileURL.absoluteString,
+            firstRootURL.standardizedFileURL.absoluteString,
+            secondRootURL.standardizedFileURL.absoluteString,
+            tempDir.appendingPathComponent("missing", isDirectory: true).standardizedFileURL.absoluteString,
+            "not-a-uri",
+        ])
+        XCTAssertEqual(try coreDocuments.recentProjects().map(\.uri), [
+            secondRootURL.standardizedFileURL.absoluteString,
+            firstRootURL.standardizedFileURL.absoluteString,
+        ])
+
+        let recentProjectCommands = delegate._recentProjectCommandsForTesting()
+        XCTAssertEqual(recentProjectCommands.count, 2)
+        XCTAssertTrue(recentProjectCommands[0].id.hasPrefix("file.open_recent_project:"))
+        XCTAssertTrue(recentProjectCommands[0].title.contains(secondRootURL.lastPathComponent))
+        XCTAssertTrue(recentProjectCommands[1].title.contains(firstRootURL.lastPathComponent))
+
+        recentProjectCommands[0].run()
+        XCTAssertEqual(delegate._workspaceRootURLsForTesting().last, secondRootURL.standardizedFileURL)
     }
 
     func testSplitRightCreatesSharedDocumentPane() throws {
@@ -10843,6 +12700,53 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertEqual(coreSnapshot.tabs[0].activeViewIndex, 0)
     }
 
+    func testSessionSnapshotRestoresUnsavedUntitledBuffers() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let untitledURL = tempDir.appendingPathComponent("untitled-1.txt")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: untitledURL.path))
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        XCTAssertTrue(vc.openFile(url: untitledURL, mode: .pinned, isUntitled: true))
+
+        let tab = try XCTUnwrap(vc.tabs.first)
+        try tab.editCore.editor.insertText("draft text\n")
+
+        let snapshot = vc.makeSessionSnapshot()
+        XCTAssertEqual(snapshot.tabs.count, 1)
+        XCTAssertEqual(snapshot.tabs[0].filePath, untitledURL.standardizedFileURL.path)
+        XCTAssertEqual(snapshot.tabs[0].isUntitled, true)
+        XCTAssertEqual(snapshot.tabs[0].unsavedText, "draft text\n")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: untitledURL.path))
+
+        let restored = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(restored)
+        restored.restoreSession(tabs: snapshot.tabs, selectedTabIndex: snapshot.selectedTabIndex)
+
+        let restoredTab = try XCTUnwrap(restored.tabs.first)
+        XCTAssertEqual(restored.tabs.count, 1)
+        XCTAssertEqual(restoredTab.fileURL.standardizedFileURL, untitledURL.standardizedFileURL)
+        XCTAssertTrue(restoredTab.isUntitled)
+        XCTAssertEqual(try restoredTab.editCore.editor.text(), "draft text\n")
+        XCTAssertTrue(restored.isTabDirtyForDataLossDecision(restoredTab))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: untitledURL.path))
+
+        let restoredSnapshot = restored.makeSessionSnapshot()
+        XCTAssertEqual(restoredSnapshot.tabs.count, 1)
+        XCTAssertEqual(restoredSnapshot.tabs[0].isUntitled, true)
+        XCTAssertEqual(restoredSnapshot.tabs[0].unsavedText, "draft text\n")
+
+        let coreDocuments = try XCTUnwrap(restored.coreDocuments)
+        let coreSnapshot = try coreDocuments.snapshot()
+        let coreTab = try XCTUnwrap(coreSnapshot.tabs.first)
+        XCTAssertTrue(coreTab.isModified)
+        XCTAssertEqual(try coreDocuments.tabText(tabId: coreTab.id), "draft text\n")
+    }
+
     func testSessionRestorePrefersPaneLayoutSnapshotOverLegacyPaneCount() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
@@ -10936,6 +12840,31 @@ final class AttoEditorCommandTests: XCTestCase {
         return (try? String(contentsOf: url, encoding: .utf8)) ?? ""
     }
 
+    @discardableResult
+    private func waitUntil(_ condition: () -> Bool) -> Bool {
+        for _ in 0..<100 {
+            if condition() {
+                return true
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+        }
+        return condition()
+    }
+
+    private func waitForCoreWorkspaceEditTransactionSequence(
+        _ vc: AttoEditorAreaViewController,
+        expected: UInt64
+    ) -> UInt64? {
+        for _ in 0..<100 {
+            let sequence = try? vc._coreWorkspaceEditTransactionLatestSequenceForTesting()
+            if sequence == expected {
+                return sequence
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+        }
+        return try? vc._coreWorkspaceEditTransactionLatestSequenceForTesting()
+    }
+
     private func occurrenceCount(of needle: String, in haystack: String) -> Int {
         guard needle.isEmpty == false else { return 0 }
         return haystack.components(separatedBy: needle).count - 1
@@ -10949,6 +12878,364 @@ final class AttoEditorCommandTests: XCTestCase {
         body='\(initBody)'
         printf 'Content-Length: %s\\r\\n\\r\\n%s' "${#body}" "$body"
         cat > '\(capturePath)'
+        """
+        try script.write(to: scriptURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
+    }
+
+    private func writeExecuteCommandWorkspaceEditFakeLspServerScript(
+        captureURL: URL,
+        scriptURL: URL,
+        resultJSON: String
+    ) throws {
+        let capturePath = captureURL.path
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+        let resultPayload = resultJSON
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+            .replacingOccurrences(of: "\n", with: "\\n")
+        let script = """
+        #!/usr/bin/env python3
+        import json
+        import sys
+
+        capture_path = '\(capturePath)'
+        result_payload = json.loads('\(resultPayload)')
+
+        def read_message():
+            headers = {}
+            while True:
+                line = sys.stdin.buffer.readline()
+                if not line:
+                    return None
+                if line in (b'\\r\\n', b'\\n'):
+                    break
+                key, _, value = line.decode('ascii', 'ignore').partition(':')
+                headers[key.lower()] = value.strip()
+
+            length = int(headers.get('content-length', '0'))
+            if length <= 0:
+                return None
+
+            body = sys.stdin.buffer.read(length)
+            with open(capture_path, 'ab') as fh:
+                fh.write(b'\\n--message--\\n')
+                fh.write(body)
+            return json.loads(body.decode('utf-8'))
+
+        def send_message(payload):
+            body = json.dumps(payload, separators=(',', ':')).encode('utf-8')
+            sys.stdout.buffer.write(
+                b'Content-Length: ' + str(len(body)).encode('ascii') + b'\\r\\n\\r\\n' + body
+            )
+            sys.stdout.buffer.flush()
+
+        while True:
+            message = read_message()
+            if message is None:
+                break
+
+            method = message.get('method')
+            if method == 'initialize':
+                send_message({
+                    'jsonrpc': '2.0',
+                    'id': message.get('id'),
+                    'result': {
+                        'capabilities': {
+                            'textDocumentSync': 1,
+                            'executeCommandProvider': {
+                                'commands': ['atto.applyEdit']
+                            }
+                        }
+                    }
+                })
+            elif method == 'workspace/executeCommand':
+                send_message({
+                    'jsonrpc': '2.0',
+                    'id': message.get('id'),
+                    'result': result_payload
+                })
+            elif method == 'shutdown':
+                send_message({'jsonrpc': '2.0', 'id': message.get('id'), 'result': None})
+            elif method == 'exit':
+                break
+        """
+        try script.write(to: scriptURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
+    }
+
+    private func writeInlayHintResolveFakeLspServerScript(captureURL: URL, scriptURL: URL) throws {
+        let capturePath = captureURL.path
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+        let script = """
+        #!/usr/bin/env python3
+        import json
+        import sys
+
+        capture_path = '\(capturePath)'
+
+        def read_message():
+            headers = {}
+            while True:
+                line = sys.stdin.buffer.readline()
+                if not line:
+                    return None
+                if line in (b'\\r\\n', b'\\n'):
+                    break
+                key, _, value = line.decode('ascii', 'ignore').partition(':')
+                headers[key.lower()] = value.strip()
+
+            length = int(headers.get('content-length', '0'))
+            if length <= 0:
+                return None
+
+            body = sys.stdin.buffer.read(length)
+            with open(capture_path, 'ab') as fh:
+                fh.write(b'\\n--message--\\n')
+                fh.write(body)
+            return json.loads(body.decode('utf-8'))
+
+        def send_message(payload):
+            body = json.dumps(payload, separators=(',', ':')).encode('utf-8')
+            sys.stdout.buffer.write(
+                b'Content-Length: ' + str(len(body)).encode('ascii') + b'\\r\\n\\r\\n' + body
+            )
+            sys.stdout.buffer.flush()
+
+        while True:
+            message = read_message()
+            if message is None:
+                break
+
+            method = message.get('method')
+            if method == 'initialize':
+                send_message({
+                    'jsonrpc': '2.0',
+                    'id': message.get('id'),
+                    'result': {
+                        'capabilities': {
+                            'textDocumentSync': 1,
+                            'inlayHintProvider': {
+                                'resolveProvider': True
+                            }
+                        }
+                    }
+                })
+            elif method == 'shutdown':
+                send_message({'jsonrpc': '2.0', 'id': message.get('id'), 'result': None})
+            elif method == 'exit':
+                break
+        """
+        try script.write(to: scriptURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
+    }
+
+    private func writeColorPresentationFakeLspServerScript(captureURL: URL, scriptURL: URL) throws {
+        let capturePath = captureURL.path
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+        let script = """
+        #!/usr/bin/env python3
+        import json
+        import sys
+
+        capture_path = '\(capturePath)'
+
+        def read_message():
+            headers = {}
+            while True:
+                line = sys.stdin.buffer.readline()
+                if not line:
+                    return None
+                if line in (b'\\r\\n', b'\\n'):
+                    break
+                key, _, value = line.decode('ascii', 'ignore').partition(':')
+                headers[key.lower()] = value.strip()
+
+            length = int(headers.get('content-length', '0'))
+            if length <= 0:
+                return None
+
+            body = sys.stdin.buffer.read(length)
+            with open(capture_path, 'ab') as fh:
+                fh.write(b'\\n--message--\\n')
+                fh.write(body)
+            return json.loads(body.decode('utf-8'))
+
+        def send_message(payload):
+            body = json.dumps(payload, separators=(',', ':')).encode('utf-8')
+            sys.stdout.buffer.write(
+                b'Content-Length: ' + str(len(body)).encode('ascii') + b'\\r\\n\\r\\n' + body
+            )
+            sys.stdout.buffer.flush()
+
+        while True:
+            message = read_message()
+            if message is None:
+                break
+
+            method = message.get('method')
+            if method == 'initialize':
+                send_message({
+                    'jsonrpc': '2.0',
+                    'id': message.get('id'),
+                    'result': {
+                        'capabilities': {
+                            'textDocumentSync': 1,
+                            'colorProvider': True
+                        }
+                    }
+                })
+            elif method == 'shutdown':
+                send_message({'jsonrpc': '2.0', 'id': message.get('id'), 'result': None})
+            elif method == 'exit':
+                break
+        """
+        try script.write(to: scriptURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
+    }
+
+    private func writeCodeActionFakeLspServerScript(captureURL: URL, scriptURL: URL) throws {
+        let capturePath = captureURL.path
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+        let script = """
+        #!/usr/bin/env python3
+        import json
+        import sys
+
+        capture_path = '\(capturePath)'
+
+        def read_message():
+            headers = {}
+            while True:
+                line = sys.stdin.buffer.readline()
+                if not line:
+                    return None
+                if line in (b'\\r\\n', b'\\n'):
+                    break
+                key, _, value = line.decode('ascii', 'ignore').partition(':')
+                headers[key.lower()] = value.strip()
+
+            length = int(headers.get('content-length', '0'))
+            if length <= 0:
+                return None
+
+            body = sys.stdin.buffer.read(length)
+            with open(capture_path, 'ab') as fh:
+                fh.write(b'\\n--message--\\n')
+                fh.write(body)
+            return json.loads(body.decode('utf-8'))
+
+        def send_message(payload):
+            body = json.dumps(payload, separators=(',', ':')).encode('utf-8')
+            sys.stdout.buffer.write(
+                b'Content-Length: ' + str(len(body)).encode('ascii') + b'\\r\\n\\r\\n' + body
+            )
+            sys.stdout.buffer.flush()
+
+        while True:
+            message = read_message()
+            if message is None:
+                break
+
+            method = message.get('method')
+            if method == 'initialize':
+                send_message({
+                    'jsonrpc': '2.0',
+                    'id': message.get('id'),
+                    'result': {
+                        'capabilities': {
+                            'textDocumentSync': 1,
+                            'codeActionProvider': True
+                        }
+                    }
+                })
+            elif method == 'textDocument/codeAction':
+                send_message({'jsonrpc': '2.0', 'id': message.get('id'), 'result': []})
+            elif method == 'shutdown':
+                send_message({'jsonrpc': '2.0', 'id': message.get('id'), 'result': None})
+            elif method == 'exit':
+                break
+        """
+        try script.write(to: scriptURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
+    }
+
+    private func writeCompletionFakeLspServerScript(captureURL: URL, scriptURL: URL) throws {
+        let capturePath = captureURL.path
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+        let script = """
+        #!/usr/bin/env python3
+        import json
+        import sys
+
+        capture_path = '\(capturePath)'
+
+        def read_message():
+            headers = {}
+            while True:
+                line = sys.stdin.buffer.readline()
+                if not line:
+                    return None
+                if line in (b'\\r\\n', b'\\n'):
+                    break
+                key, _, value = line.decode('ascii', 'ignore').partition(':')
+                headers[key.lower()] = value.strip()
+
+            length = int(headers.get('content-length', '0'))
+            if length <= 0:
+                return None
+
+            body = sys.stdin.buffer.read(length)
+            with open(capture_path, 'ab') as fh:
+                fh.write(b'\\n--message--\\n')
+                fh.write(body)
+            return json.loads(body.decode('utf-8'))
+
+        def send_message(payload):
+            body = json.dumps(payload, separators=(',', ':')).encode('utf-8')
+            sys.stdout.buffer.write(
+                b'Content-Length: ' + str(len(body)).encode('ascii') + b'\\r\\n\\r\\n' + body
+            )
+            sys.stdout.buffer.flush()
+
+        while True:
+            message = read_message()
+            if message is None:
+                break
+
+            method = message.get('method')
+            if method == 'initialize':
+                send_message({
+                    'jsonrpc': '2.0',
+                    'id': message.get('id'),
+                    'result': {
+                        'capabilities': {
+                            'textDocumentSync': 1,
+                            'completionProvider': {
+                                'resolveProvider': False,
+                                'triggerCharacters': ['.']
+                            }
+                        }
+                    }
+                })
+            elif method == 'textDocument/completion':
+                send_message({
+                    'jsonrpc': '2.0',
+                    'id': message.get('id'),
+                    'result': {
+                        'isIncomplete': False,
+                        'items': []
+                    }
+                })
+            elif method == 'shutdown':
+                send_message({'jsonrpc': '2.0', 'id': message.get('id'), 'result': None})
+            elif method == 'exit':
+                break
         """
         try script.write(to: scriptURL, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
@@ -11154,6 +13441,23 @@ final class AttoEditorCommandTests: XCTestCase {
             }
         }
         return nil
+    }
+
+    @discardableResult
+    private func invokeButtonAction(
+        _ button: NSButton,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) -> Bool {
+        guard let action = button.action else {
+            XCTFail("Button has no action", file: file, line: line)
+            return false
+        }
+        let sent = NSApp.sendAction(action, to: button.target, from: button)
+        if sent == false {
+            XCTFail("Button action was not handled", file: file, line: line)
+        }
+        return sent
     }
 
     private func findMenuItem(commandID: String, in menu: NSMenu) -> NSMenuItem? {

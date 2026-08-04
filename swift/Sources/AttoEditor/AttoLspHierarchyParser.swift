@@ -16,6 +16,23 @@ enum AttoLspHierarchyParser {
         let kindLabel: String?
         let target: AttoLspDefinitionParser.Target
         let relatedRangeCount: Int?
+        let requestJSON: String?
+
+        init(
+            name: String,
+            detail: String?,
+            kindLabel: String?,
+            target: AttoLspDefinitionParser.Target,
+            relatedRangeCount: Int?,
+            requestJSON: String? = nil
+        ) {
+            self.name = name
+            self.detail = detail
+            self.kindLabel = kindLabel
+            self.target = target
+            self.relatedRangeCount = relatedRangeCount
+            self.requestJSON = requestJSON
+        }
     }
 
     static func prepareCallItems(fromResultJSON json: String) -> [Item] {
@@ -52,7 +69,8 @@ enum AttoLspHierarchyParser {
                 detail: item.detail,
                 kindLabel: item.kindLabel,
                 target: target,
-                relatedRangeCount: ranges.isEmpty ? nil : ranges.count
+                relatedRangeCount: ranges.isEmpty ? nil : ranges.count,
+                requestJSON: item.requestJSON
             )
         }
     }
@@ -67,7 +85,8 @@ enum AttoLspHierarchyParser {
                 detail: item.detail,
                 kindLabel: item.kindLabel,
                 target: target,
-                relatedRangeCount: call.fromRanges.isEmpty ? nil : call.fromRanges.count
+                relatedRangeCount: call.fromRanges.isEmpty ? nil : call.fromRanges.count,
+                requestJSON: item.requestJSON
             )
         }
     }
@@ -87,7 +106,8 @@ enum AttoLspHierarchyParser {
                 detail: item.detail,
                 kindLabel: item.kindLabel,
                 target: item.target,
-                relatedRangeCount: ranges.isEmpty ? nil : ranges.count
+                relatedRangeCount: ranges.isEmpty ? nil : ranges.count,
+                requestJSON: item.requestJSON
             )
         }
     }
@@ -100,7 +120,8 @@ enum AttoLspHierarchyParser {
                 detail: item.detail,
                 kindLabel: item.kindLabel,
                 target: item.target,
-                relatedRangeCount: call.fromRanges.isEmpty ? nil : call.fromRanges.count
+                relatedRangeCount: call.fromRanges.isEmpty ? nil : call.fromRanges.count,
+                requestJSON: item.requestJSON
             )
         }
     }
@@ -112,7 +133,8 @@ enum AttoLspHierarchyParser {
                 detail: item.detail,
                 kindLabel: item.kindLabel,
                 target: item.target,
-                relatedRangeCount: nil
+                relatedRangeCount: nil,
+                requestJSON: item.requestJSON
             )
         }
     }
@@ -125,7 +147,8 @@ enum AttoLspHierarchyParser {
                 detail: item.detail,
                 kindLabel: item.kindLabel,
                 target: item.target,
-                relatedRangeCount: nil
+                relatedRangeCount: nil,
+                requestJSON: item.requestJSON
             )
         }
     }

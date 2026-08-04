@@ -8,6 +8,7 @@ enum AttoWorkspaceEditPreviewResolution {
     case apply
     case stop
     case retry
+    case rerunRequest
 }
 
 private let attoWorkspaceEditPreviewRetryLimit = 8
@@ -117,6 +118,8 @@ extension AttoEditorAreaViewController {
             renameContext = RenameRequestContext(
                 tabID: tab.id,
                 documentURI: projectedFileURL(for: tab).absoluteString,
+                logicalLine: pos.line,
+                logicalColumn: pos.column,
                 newName: trimmed,
                 showFeedback: showFeedback
             )
@@ -137,20 +140,34 @@ extension AttoEditorAreaViewController {
 
     @discardableResult
     func applyWorkspaceEditJSONToActiveTab(_ workspaceEditJSON: String, documentURI: String? = nil) -> Bool {
+        applyWorkspaceEditJSONToActiveTab(
+            workspaceEditJSON,
+            documentURI: documentURI,
+            requestRetryOwner: nil
+        ).accepted
+    }
+
+    @discardableResult
+    func applyWorkspaceEditJSONToActiveTab(
+        _ workspaceEditJSON: String,
+        documentURI: String? = nil,
+        requestRetryOwner: AttoWorkspaceEditRequestRetryOwner?
+    ) -> AttoWorkspaceEditApplyOutcome {
         guard activeTab != nil else {
             NSSound.beep()
-            return false
+            return .stopped
         }
 
         guard let workspaceEdit = AttoWorkspaceEditParser.parse(workspaceEditJSON) else {
             NSSound.beep()
-            return false
+            return .stopped
         }
 
         return applyWorkspaceEditToActiveTab(
             workspaceEdit,
             workspaceEditJSON: workspaceEditJSON,
-            documentURI: documentURI
+            documentURI: documentURI,
+            requestRetryOwner: requestRetryOwner
         )
     }
 
@@ -164,7 +181,7 @@ extension AttoEditorAreaViewController {
             AttoWorkspaceEditParser.parse(workspaceEdit),
             workspaceEditJSON: workspaceEditJSON,
             documentURI: documentURI
-        )
+        ).accepted
     }
 
     @discardableResult
@@ -172,10 +189,25 @@ extension AttoEditorAreaViewController {
         _ workspaceEdit: AttoWorkspaceEditParser.ParseResult,
         workspaceEditJSON: String,
         documentURI: String? = nil
-    ) -> Bool {
+    ) -> AttoWorkspaceEditApplyOutcome {
+        applyWorkspaceEditToActiveTab(
+            workspaceEdit,
+            workspaceEditJSON: workspaceEditJSON,
+            documentURI: documentURI,
+            requestRetryOwner: nil
+        )
+    }
+
+    @discardableResult
+    func applyWorkspaceEditToActiveTab(
+        _ workspaceEdit: AttoWorkspaceEditParser.ParseResult,
+        workspaceEditJSON: String,
+        documentURI: String? = nil,
+        requestRetryOwner: AttoWorkspaceEditRequestRetryOwner?
+    ) -> AttoWorkspaceEditApplyOutcome {
         guard let initialActiveTab = activeTab else {
             NSSound.beep()
-            return false
+            return .stopped
         }
 
         if coreDocuments != nil {
@@ -183,16 +215,18 @@ extension AttoEditorAreaViewController {
                 workspaceEdit,
                 workspaceEditJSON: workspaceEditJSON,
                 documentURI: documentURI,
-                initialActiveTab: initialActiveTab
+                initialActiveTab: initialActiveTab,
+                requestRetryOwner: requestRetryOwner
             )
         }
 
-        return applyWorkspaceEditWithSwiftFallback(
+        let applied = applyWorkspaceEditWithSwiftFallback(
             workspaceEdit,
             workspaceEditJSON: workspaceEditJSON,
             documentURI: documentURI,
             initialActiveTab: initialActiveTab
         )
+        return applied ? .applied : .stopped
     }
 
     @discardableResult
@@ -201,9 +235,10 @@ extension AttoEditorAreaViewController {
         workspaceEditJSON: String,
         documentURI: String?,
         initialActiveTab: AttoEditorTab,
+        requestRetryOwner: AttoWorkspaceEditRequestRetryOwner? = nil,
         previewRetryDepth: Int = 0
-    ) -> Bool {
-        guard let coreDocuments else { return false }
+    ) -> AttoWorkspaceEditApplyOutcome {
+        guard let coreDocuments else { return .stopped }
         let feedbackEditorView = activeTab?.editCore.editorView ?? initialActiveTab.editCore.editorView
 
         do {
@@ -213,7 +248,8 @@ extension AttoEditorAreaViewController {
                 coreDocuments,
                 workspaceEdit: workspaceEdit,
                 workspaceEditJSON: workspaceEditJSON,
-                editorView: feedbackEditorView
+                editorView: feedbackEditorView,
+                requestRetryOwner: requestRetryOwner
             )
             switch previewResolution {
             case .apply:
@@ -222,20 +258,28 @@ extension AttoEditorAreaViewController {
                 if transientStatusText == transientStatusBeforeConfirmation {
                     setTransientStatusText("Workspace edit cancelled")
                 }
-                return false
+                return .stopped
             case .retry:
                 guard previewRetryDepth < attoWorkspaceEditPreviewRetryLimit else {
                     setTransientStatusText("WorkspaceEdit retry limit reached")
                     NSSound.beep()
-                    return false
+                    return .stopped
                 }
                 return applyWorkspaceEditWithCoreTransaction(
                     workspaceEdit,
                     workspaceEditJSON: workspaceEditJSON,
                     documentURI: documentURI,
                     initialActiveTab: initialActiveTab,
+                    requestRetryOwner: requestRetryOwner,
                     previewRetryDepth: previewRetryDepth + 1
                 )
+            case .rerunRequest:
+                guard let requestRetryOwner else {
+                    setTransientStatusText("WorkspaceEdit retry source unavailable")
+                    NSSound.beep()
+                    return .stopped
+                }
+                return rerunWorkspaceEditRequest(requestRetryOwner) ? .requestRerunStarted : .stopped
             }
 
             let projectedURLsBeforeApply = projectedFileURLsByTabID()
@@ -244,12 +288,24 @@ extension AttoEditorAreaViewController {
                 coreDocuments,
                 projectedURLsBeforeSync: projectedURLsBeforeApply
             )
+            recordWorkspaceEditRequestRetryOwner(
+                requestRetryOwner,
+                forLatestTransactionIn: coreDocuments
+            )
 
             let result = AttoWorkspaceEditApplyResult(
                 applied: coreResult.applied,
                 appliedURI: coreResult.appliedURI ?? documentURI ?? initialActiveTab.fileURL.absoluteString,
                 appliedEditCount: coreResult.appliedEditCount + coreResult.appliedResourceOperationCount,
                 skippedURIs: coreResult.skippedURIs,
+                skippedDetails: coreResult.skippedDetails.map {
+                    AttoWorkspaceEditApplyResult.SkippedDetail(
+                        uri: $0.uri,
+                        reason: $0.reason,
+                        operation: $0.operation
+                    )
+                },
+                unsupportedURIs: coreResult.unsupportedOperationURIs,
                 documents: coreResult.documents.map {
                     AttoWorkspaceEditApplyResult.Document(
                         uri: $0.uri,
@@ -269,7 +325,7 @@ extension AttoEditorAreaViewController {
                     )
                 }
                 NSSound.beep()
-                return false
+                return .stopped
             }
 
             if result.skippedURIs.isEmpty == false {
@@ -286,14 +342,15 @@ extension AttoEditorAreaViewController {
             if let activeEditorView = activeTab?.editCore.editorView {
                 view.window?.makeFirstResponder(activeEditorView)
             }
-            return true
+            return .applied
         } catch {
             NSLog(
                 "AttoEditor: core WorkspaceEdit transaction apply failed: %@",
                 String(describing: error)
             )
+            showWorkspaceEditApplyFailure(error, editorView: feedbackEditorView)
             NSSound.beep()
-            return false
+            return .stopped
         }
     }
 
@@ -301,7 +358,8 @@ extension AttoEditorAreaViewController {
         _ coreDocuments: MultiDocumentEditorUI,
         workspaceEdit: AttoWorkspaceEditParser.ParseResult,
         workspaceEditJSON: String,
-        editorView: EditorCoreSkiaView
+        editorView: EditorCoreSkiaView,
+        requestRetryOwner: AttoWorkspaceEditRequestRetryOwner? = nil
     ) throws -> AttoWorkspaceEditPreviewResolution {
         let result = try coreDocuments.previewWorkspaceEditTransaction(workspaceEditJSON)
         var preview = AttoWorkspaceEditPreview(
@@ -314,25 +372,32 @@ extension AttoEditorAreaViewController {
             textForURI: workspaceEditPreviewText(for:)
         )
         guard preview.requiresConfirmation else { return .apply }
-        return confirmWorkspaceEditPreview(preview, editorView: editorView)
+        return confirmWorkspaceEditPreview(
+            preview,
+            editorView: editorView,
+            requestRetryOwner: requestRetryOwner
+        )
     }
 
     func confirmWorkspaceEditPreview(
         _ preview: AttoWorkspaceEditPreview,
-        editorView: EditorCoreSkiaView
+        editorView: EditorCoreSkiaView,
+        requestRetryOwner: AttoWorkspaceEditRequestRetryOwner? = nil
     ) -> AttoWorkspaceEditPreviewResolution {
         if let decisionProvider = workspaceEditPreviewDecisionProviderForTesting {
             return handleWorkspaceEditPreviewDecision(
                 decisionProvider(preview),
                 preview: preview,
-                editorView: editorView
+                editorView: editorView,
+                requestRetryOwner: requestRetryOwner
             )
         }
         guard view.window != nil || editorView.window != nil else {
             return handleWorkspaceEditPreviewDecision(
                 .apply,
                 preview: preview,
-                editorView: editorView
+                editorView: editorView,
+                requestRetryOwner: requestRetryOwner
             )
         }
 
@@ -346,14 +411,16 @@ extension AttoEditorAreaViewController {
         return handleWorkspaceEditPreviewDecision(
             decision,
             preview: preview,
-            editorView: editorView
+            editorView: editorView,
+            requestRetryOwner: requestRetryOwner
         )
     }
 
     func handleWorkspaceEditPreviewDecision(
         _ decision: AttoWorkspaceEditPreviewDecision,
         preview: AttoWorkspaceEditPreview,
-        editorView: EditorCoreSkiaView
+        editorView: EditorCoreSkiaView,
+        requestRetryOwner: AttoWorkspaceEditRequestRetryOwner? = nil
     ) -> AttoWorkspaceEditPreviewResolution {
         switch decision {
         case .apply:
@@ -375,9 +442,11 @@ extension AttoEditorAreaViewController {
             discardWorkspaceEditConflictTarget(uri, editorView: editorView)
             return .stop
         case .saveAndRetry(let uri):
-            return saveWorkspaceEditConflictTarget(uri, editorView: editorView) ? .retry : .stop
+            guard saveWorkspaceEditConflictTarget(uri, editorView: editorView) else { return .stop }
+            return requestRetryOwner == nil ? .retry : .rerunRequest
         case .discardAndRetry(let uri):
-            return discardWorkspaceEditConflictTarget(uri, editorView: editorView) ? .retry : .stop
+            guard discardWorkspaceEditConflictTarget(uri, editorView: editorView) else { return .stop }
+            return requestRetryOwner == nil ? .retry : .rerunRequest
         }
     }
 
@@ -877,6 +946,31 @@ extension AttoEditorAreaViewController {
         showWorkspaceEditPopover(text: text, in: editorView)
     }
 
+    func showWorkspaceEditApplyFailure(_ error: Error, editorView: EditorCoreSkiaView) {
+        setTransientStatusText("Workspace edit failed")
+        showWorkspaceEditPopover(
+            text: Self.workspaceEditApplyFailureText(for: error),
+            in: editorView
+        )
+    }
+
+    static func workspaceEditApplyFailureText(for error: Error) -> String {
+        let detail = String(describing: error)
+        var lines = ["Workspace edit failed."]
+        if detail.localizedCaseInsensitiveContains("filesystem side effects were rolled back") {
+            lines.append("Filesystem side effects were rolled back.")
+        }
+        if detail.localizedCaseInsensitiveContains("open tab state was rolled back") {
+            lines.append("Open tab state was rolled back.")
+        }
+        if detail.localizedCaseInsensitiveContains("rollback also failed") {
+            lines.append("Rollback also failed; see logs for details.")
+        } else {
+            lines.append("No WorkspaceEdit transaction was recorded.")
+        }
+        return lines.joined(separator: "\n")
+    }
+
     func tabForDocumentURI(_ uri: String) -> AttoEditorTab? {
         guard let url = Self.fileURL(fromDocumentURI: uri) else { return nil }
         return tabForFileURL(url)
@@ -1263,13 +1357,22 @@ extension AttoEditorAreaViewController {
             return false
         }
 
-        let applied = applyWorkspaceEditToActiveTab(
+        let outcome = applyWorkspaceEditToActiveTab(
             workspaceEdit,
             workspaceEditJSON: json,
-            documentURI: context.documentURI
+            documentURI: context.documentURI,
+            requestRetryOwner: renameWorkspaceEditRequestRetryOwner(context: context)
         )
-        recordRenameResultLifecycle(json, newName: context.newName, applied: applied)
-        return applied
+        switch outcome {
+        case .applied:
+            recordRenameResultLifecycle(json, newName: context.newName, applied: true)
+            return true
+        case .requestRerunStarted:
+            return true
+        case .stopped:
+            recordRenameResultLifecycle(json, newName: context.newName, applied: false)
+            return false
+        }
     }
 
     @discardableResult
@@ -1299,13 +1402,22 @@ extension AttoEditorAreaViewController {
             return false
         }
 
-        let applied = applyWorkspaceEditToActiveTab(
+        let outcome = applyWorkspaceEditToActiveTab(
             parsed,
             workspaceEditJSON: workspaceEditJSON,
-            documentURI: context.documentURI
+            documentURI: context.documentURI,
+            requestRetryOwner: renameWorkspaceEditRequestRetryOwner(context: context)
         )
-        recordRenameResultLifecycle(workspaceEdit, newName: context.newName, applied: applied)
-        return applied
+        switch outcome {
+        case .applied:
+            recordRenameResultLifecycle(workspaceEdit, newName: context.newName, applied: true)
+            return true
+        case .requestRerunStarted:
+            return true
+        case .stopped:
+            recordRenameResultLifecycle(workspaceEdit, newName: context.newName, applied: false)
+            return false
+        }
     }
 
     func recordRenameResultLifecycle(_ json: String, newName: String, applied: Bool) {

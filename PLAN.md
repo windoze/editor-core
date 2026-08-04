@@ -219,7 +219,7 @@
   - 将 transactions 纳入 state event stream。
 - FFI / Swift：
   - 提供 typed `EcuWorkspaceEditTransactionResult`。
-  - 让 rename/code action/completion/code lens command 等主路径调用 core-owned apply。
+  - 让 rename/code action/completion/formatting/code lens command 等主路径调用 core-owned apply。
 - App：
   - WorkspaceEdit preview panel 展示跨文件影响。
   - 用户确认后由 core transaction apply。
@@ -533,6 +533,112 @@
     - `swift test --package-path swift --filter 'AttoEditorCommandTests.testWorkspaceEditPreviewSaveAndRetryDecisionAppliesAfterSavingTargetTab|AttoEditorCommandTests.testWorkspaceEditPreviewDiscardAndRetryDecisionAppliesAfterReloadingTargetTab|AttoEditorCommandTests.testWorkspaceEditPreviewSaveConflictDecisionSavesTargetTabBeforeRetry|AttoEditorCommandTests.testWorkspaceEditPreviewDiscardConflictDecisionReloadsTargetTabBeforeRetry|AttoWorkspaceEditSummaryTests.testWorkspaceEditPreviewListsTypedConflicts'`
     - `git diff --check`
 
+- 中间提交：`feat(app): rerun rename workspace edit requests`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；把 resolved-conflict retry 从“只能重新 preview/apply 同一 WorkspaceEdit JSON”推进到带请求归属的 retry 起点，使 LSP rename 在用户保存/丢弃 dirty conflict 后重新发起 `textDocument/rename`，由 server 生成新的 WorkspaceEdit payload。
+  - 提交边界：新增 App 层 `AttoWorkspaceEditApplyOutcome` 与 `AttoWorkspaceEditRequestRetryOwner`，拆到 `AttoEditorAreaViewController+WorkspaceEditRetry.swift`；`RenameRequestContext` 记录原始 logical line/column，rename result apply 路径为 preview decision 传入 request retry owner；`Save & Retry` / `Discard & Retry` 在有 owner 时重发原始 rename request，无 owner 的手工 WorkspaceEdit JSON 路径继续复用旧 payload。本提交不新增 Rust/FFI ABI，不改变 core transaction schema/apply/preview/undo/redo 语义，不覆盖 code action、completion additional edits、code lens command 或 project-level conflict owner。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testRenameWorkspaceEditSaveAndRetryRerunsRenameRequestInsteadOfOldPayload`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testWorkspaceEditPreviewSaveAndRetryDecisionAppliesAfterSavingTargetTab|AttoEditorCommandTests.testWorkspaceEditPreviewDiscardAndRetryDecisionAppliesAfterReloadingTargetTab|AttoEditorCommandTests.testRenameWorkspaceEditSaveAndRetryRerunsRenameRequestInsteadOfOldPayload'`
+    - `git diff --check`
+    - `test -z "$(git diff --no-index --check /dev/null swift/Sources/AttoEditor/AttoEditorAreaViewController+WorkspaceEditRetry.swift)"`
+
+- 中间提交：`feat(app): rerun code action workspace edit requests`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；把 code action WorkspaceEdit conflict retry 接到同一 request owner 模型，使 code action result/resolve 产生的 WorkspaceEdit 在用户保存/丢弃 dirty conflict 后重新发起原始 `textDocument/codeAction` 请求，而不是继续应用旧 action payload。
+  - 提交边界：扩展 `CodeActionRequestContext` 记录原始 selection offsets；`showCodeActionResults`、`applyCodeAction` 和 `codeAction/resolve` 路径传递 request context；`AttoEditorAreaViewController+WorkspaceEditRetry.swift` 新增 code action retry owner 和 request 重发逻辑；无 request context 的直接 apply 路径继续保持旧行为。本提交不新增 Rust/FFI ABI，不改变 core transaction schema/apply/preview/undo/redo 语义，不覆盖 completion additional edits、code lens command 或 project-level conflict owner。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testCodeActionWorkspaceEditSaveAndRetryRerunsCodeActionRequestInsteadOfOldPayload`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testWorkspaceEditPreviewSaveAndRetryDecisionAppliesAfterSavingTargetTab|AttoEditorCommandTests.testWorkspaceEditPreviewDiscardAndRetryDecisionAppliesAfterReloadingTargetTab|AttoEditorCommandTests.testRenameWorkspaceEditSaveAndRetryRerunsRenameRequestInsteadOfOldPayload|AttoEditorCommandTests.testCodeActionWorkspaceEditSaveAndRetryRerunsCodeActionRequestInsteadOfOldPayload|AttoEditorCommandTests.testEmptyCodeActionResultsUseUnifiedFeedbackStatus|AttoEditorCommandTests.testCodeActionResultRecordsLspResultEvent'`
+    - `git diff --check`
+    - `test -z "$(git diff --no-index --check /dev/null swift/Sources/AttoEditor/AttoEditorAreaViewController+WorkspaceEditRetry.swift)"`
+
+- 中间提交：`feat(app): apply completion edits through workspace transactions`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；把普通（非 snippet）completion 的 main text edit 与 `additionalTextEdits` 从直接 `EditorUI.applyTextEdits(...)` 推进到当前文档 WorkspaceEdit JSON，再复用 App 已有 core transaction apply/preview/retry 入口。
+  - 提交边界：`CompletionRequestContext` 记录原始 logical line/column；非 snippet completion application plan 会转换为当前文档 `changes` WorkspaceEdit 并传入 completion request retry owner；`Save & Retry` / `Discard & Retry` 在有 owner 时会重新发起 `textDocument/completion`；snippet completion 仍保留 `applySnippet(...)` 以维护 placeholder session。本提交不新增 Rust/FFI ABI，不改变 core transaction schema/apply/preview/undo/redo 语义，不覆盖 code lens command、project-level conflict owner 或 snippet placeholder 与 transaction 的深度合并。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testCompletionAdditionalTextEditsApplyViaWorkspaceEditTransaction|AttoEditorCommandTests.testCompletionWorkspaceEditRetryOwnerRerunsCompletionRequest'`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testWorkspaceEditPreviewSaveAndRetryDecisionAppliesAfterSavingTargetTab|AttoEditorCommandTests.testWorkspaceEditPreviewDiscardAndRetryDecisionAppliesAfterReloadingTargetTab|AttoEditorCommandTests.testRenameWorkspaceEditSaveAndRetryRerunsRenameRequestInsteadOfOldPayload|AttoEditorCommandTests.testCodeActionWorkspaceEditSaveAndRetryRerunsCodeActionRequestInsteadOfOldPayload|AttoEditorCommandTests.testCompletionAdditionalTextEditsApplyViaWorkspaceEditTransaction|AttoEditorCommandTests.testCompletionWorkspaceEditRetryOwnerRerunsCompletionRequest|AttoEditorCommandTests.testEmptyCodeActionResultsUseUnifiedFeedbackStatus|AttoEditorCommandTests.testCodeActionResultRecordsLspResultEvent|AttoEditorCommandTests.testEmptyCompletionResultUsesUnifiedFeedbackStatus|AttoEditorCommandTests.testCompletionResultRecordsLspResultEvent'`
+    - `git diff --check`
+    - `test -z "$(git diff --no-index --check /dev/null swift/Sources/AttoEditor/AttoEditorAreaViewController+WorkspaceEditRetry.swift)"`
+
+- 中间提交：`feat(app): apply execute command workspace edits`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；让 `workspace/executeCommand` result 中返回的 WorkspaceEdit 不再只显示为 HUD JSON，而是进入 AttoEditor 既有 core transaction apply/preview/retry 入口，从而覆盖 Code Lens command 触发 WorkspaceEdit 的主路径。
+  - 提交边界：`ExecuteCommandRequestContext` 保存原始 command JSON；execute-command poll tick 驱动 `pollProcessing()` 并在 result 中抽取 `WorkspaceEdit` / `{"result": WorkspaceEdit}` / transaction envelope；抽取到非空 WorkspaceEdit 时传入 execute-command request retry owner，`Save & Retry` / `Discard & Retry` 会重发 `workspace/executeCommand`。普通非 WorkspaceEdit command result 仍走原 HUD formatter。本提交不新增 Rust/FFI ABI，不改变 core transaction schema/apply/preview/undo/redo 语义，不覆盖 project-level conflict owner 或 snippet placeholder 与 transaction 的深度合并。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testCodeLensCommandWorkspaceEditResultAppliesViaCoreTransaction|AttoEditorCommandTests.testCodeLensCommandWorkspaceEditSaveAndRetryRerunsExecuteCommandInsteadOfOldPayload'`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testWorkspaceEditPreviewSaveAndRetryDecisionAppliesAfterSavingTargetTab|AttoEditorCommandTests.testWorkspaceEditPreviewDiscardAndRetryDecisionAppliesAfterReloadingTargetTab|AttoEditorCommandTests.testRenameWorkspaceEditSaveAndRetryRerunsRenameRequestInsteadOfOldPayload|AttoEditorCommandTests.testCodeActionWorkspaceEditSaveAndRetryRerunsCodeActionRequestInsteadOfOldPayload|AttoEditorCommandTests.testCompletionAdditionalTextEditsApplyViaWorkspaceEditTransaction|AttoEditorCommandTests.testCompletionWorkspaceEditRetryOwnerRerunsCompletionRequest|AttoEditorCommandTests.testCodeLensCommandWorkspaceEditResultAppliesViaCoreTransaction|AttoEditorCommandTests.testCodeLensCommandWorkspaceEditSaveAndRetryRerunsExecuteCommandInsteadOfOldPayload|AttoEditorCommandTests.testEmptyCodeActionResultsUseUnifiedFeedbackStatus|AttoEditorCommandTests.testCodeActionResultRecordsLspResultEvent|AttoEditorCommandTests.testEmptyCompletionResultUsesUnifiedFeedbackStatus|AttoEditorCommandTests.testCompletionResultRecordsLspResultEvent'`
+    - `git diff --check`
+    - `test -z "$(git diff --no-index --check /dev/null swift/Sources/AttoEditor/AttoEditorAreaViewController+WorkspaceEditRetry.swift)"`
+
+- 中间提交：`feat(app): open workspace edit history conflicts`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；把一次性 preview conflict target 入口推进到 WorkspaceEdit History panel，使已记录的 partial/rejected transaction 也能在 project-level history 面板中暴露 conflict 数量和首个 conflict target，并允许用户从历史面板打开目标文件。
+  - 提交边界：只扩展 Swift/App history panel display model、metadata、`Open Conflict` 按钮和 App 层打开目标回调；复用既有 core transaction event `conflicts` typed 字段与 `openWorkspaceEditConflictTarget(...)`，不新增 Rust/FFI ABI，不改变 transaction apply/preview/undo/redo、request retry owner、save/discard resolution 或 snippet placeholder 语义。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testWorkspaceEditHistoryPanelShowsCoreTransactionEvents|AttoEditorCommandTests.testWorkspaceEditHistoryPanelOpensConflictTarget'`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testWorkspaceEditHistoryPanelShowsCoreTransactionEvents|AttoEditorCommandTests.testWorkspaceEditHistoryPanelOpensConflictTarget|AttoEditorCommandTests.testWorkspaceEditPreviewSaveAndRetryDecisionAppliesAfterSavingTargetTab|AttoEditorCommandTests.testWorkspaceEditPreviewDiscardAndRetryDecisionAppliesAfterReloadingTargetTab|AttoEditorCommandTests.testRenameWorkspaceEditSaveAndRetryRerunsRenameRequestInsteadOfOldPayload|AttoEditorCommandTests.testCodeActionWorkspaceEditSaveAndRetryRerunsCodeActionRequestInsteadOfOldPayload|AttoEditorCommandTests.testCompletionAdditionalTextEditsApplyViaWorkspaceEditTransaction|AttoEditorCommandTests.testCompletionWorkspaceEditRetryOwnerRerunsCompletionRequest|AttoEditorCommandTests.testCodeLensCommandWorkspaceEditResultAppliesViaCoreTransaction|AttoEditorCommandTests.testCodeLensCommandWorkspaceEditSaveAndRetryRerunsExecuteCommandInsteadOfOldPayload|AttoEditorCommandTests.testEmptyCodeActionResultsUseUnifiedFeedbackStatus|AttoEditorCommandTests.testCodeActionResultRecordsLspResultEvent|AttoEditorCommandTests.testEmptyCompletionResultUsesUnifiedFeedbackStatus|AttoEditorCommandTests.testCompletionResultRecordsLspResultEvent'`
+    - `git diff --check`
+    - `test -z "$(git diff --no-index --check /dev/null swift/Sources/AttoEditor/AttoEditorAreaViewController+WorkspaceEditRetry.swift)"`
+
+- 中间提交：`feat(app): resolve workspace edit history conflicts`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；把 WorkspaceEdit History panel 的 project-level conflict owner 起点从“只能打开目标”推进到可保存/丢弃 `dirty_document` / `save_or_discard` 冲突目标，让历史记录中的 partial/rejected transaction 也能触达与 preview panel 一致的手动解决动作。
+  - 提交边界：只扩展 Swift/App history panel item model、`Save Conflict` / `Discard Conflict` 按钮、稳定 accessibility identifier 和 App 层回调；按钮只对 core event conflict 中 `resolution == "save_or_discard"` 或 `kind == "dirty_document"` 的目标启用，复用既有 `saveWorkspaceEditConflictTarget(...)` / `discardWorkspaceEditConflictTarget(...)`。本提交不新增 Rust/FFI ABI，不自动重跑请求或重新 apply，不改变 core transaction schema/apply/preview/undo/redo，也不改变 snippet placeholder 语义。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEditHistoryPanelOpensConflictTarget`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testWorkspaceEditHistoryPanelShowsCoreTransactionEvents|AttoEditorCommandTests.testWorkspaceEditHistoryPanelOpensConflictTarget|AttoEditorCommandTests.testWorkspaceEditPreviewSaveAndRetryDecisionAppliesAfterSavingTargetTab|AttoEditorCommandTests.testWorkspaceEditPreviewDiscardAndRetryDecisionAppliesAfterReloadingTargetTab|AttoEditorCommandTests.testRenameWorkspaceEditSaveAndRetryRerunsRenameRequestInsteadOfOldPayload|AttoEditorCommandTests.testCodeActionWorkspaceEditSaveAndRetryRerunsCodeActionRequestInsteadOfOldPayload|AttoEditorCommandTests.testCompletionAdditionalTextEditsApplyViaWorkspaceEditTransaction|AttoEditorCommandTests.testCompletionWorkspaceEditRetryOwnerRerunsCompletionRequest|AttoEditorCommandTests.testCodeLensCommandWorkspaceEditResultAppliesViaCoreTransaction|AttoEditorCommandTests.testCodeLensCommandWorkspaceEditSaveAndRetryRerunsExecuteCommandInsteadOfOldPayload|AttoEditorCommandTests.testEmptyCodeActionResultsUseUnifiedFeedbackStatus|AttoEditorCommandTests.testCodeActionResultRecordsLspResultEvent|AttoEditorCommandTests.testEmptyCompletionResultUsesUnifiedFeedbackStatus|AttoEditorCommandTests.testCompletionResultRecordsLspResultEvent'`
+    - `git diff --check`
+    - `test -z "$(git diff --no-index --check /dev/null swift/Sources/AttoEditor/AttoEditorAreaViewController+WorkspaceEditRetry.swift)"`
+
+- 中间提交：`feat(app): rerun inlay hint workspace edit requests`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；把 resolved inlay hint 的 `textEdits` WorkspaceEdit 接入 request retry owner，使 `Save & Retry` / `Discard & Retry` 在解决 dirty conflict 后重新发起原始 `inlayHint/resolve` 请求，而不是继续应用旧 text edit payload。
+  - 提交边界：`InlayHintResolveContext` 记录原始 hint JSON，resolved hint text edits 仍转换为当前文档 WorkspaceEdit 并走既有 core transaction apply/preview/retry 入口；有 context 时传入 inlay-hint-resolve request retry owner，无 context 的直接测试/消费路径保持旧行为。本提交不新增 Rust/FFI ABI，不改变 core transaction schema/apply/preview/undo/redo 语义，不自动重新 apply history transaction，也不处理 snippet placeholder 与 transaction 的深度合并。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testInlayHintResolveWorkspaceEditSaveAndRetryRerunsResolveRequestInsteadOfOldPayload`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testInlayHintResolveWorkspaceEditSaveAndRetryRerunsResolveRequestInsteadOfOldPayload|AttoEditorCommandTests.testWorkspaceEditHistoryPanelShowsCoreTransactionEvents|AttoEditorCommandTests.testWorkspaceEditHistoryPanelOpensConflictTarget|AttoEditorCommandTests.testWorkspaceEditPreviewSaveAndRetryDecisionAppliesAfterSavingTargetTab|AttoEditorCommandTests.testWorkspaceEditPreviewDiscardAndRetryDecisionAppliesAfterReloadingTargetTab|AttoEditorCommandTests.testRenameWorkspaceEditSaveAndRetryRerunsRenameRequestInsteadOfOldPayload|AttoEditorCommandTests.testCodeActionWorkspaceEditSaveAndRetryRerunsCodeActionRequestInsteadOfOldPayload|AttoEditorCommandTests.testCompletionAdditionalTextEditsApplyViaWorkspaceEditTransaction|AttoEditorCommandTests.testCompletionWorkspaceEditRetryOwnerRerunsCompletionRequest|AttoEditorCommandTests.testCodeLensCommandWorkspaceEditResultAppliesViaCoreTransaction|AttoEditorCommandTests.testCodeLensCommandWorkspaceEditSaveAndRetryRerunsExecuteCommandInsteadOfOldPayload|AttoEditorCommandTests.testEmptyCodeActionResultsUseUnifiedFeedbackStatus|AttoEditorCommandTests.testCodeActionResultRecordsLspResultEvent|AttoEditorCommandTests.testEmptyCompletionResultUsesUnifiedFeedbackStatus|AttoEditorCommandTests.testCompletionResultRecordsLspResultEvent'`
+    - `git diff --check`
+    - `test -z "$(git diff --no-index --check /dev/null swift/Sources/AttoEditor/AttoEditorAreaViewController+WorkspaceEditRetry.swift)"`
+
+- 中间提交：`feat(app): apply color presentations through workspace transactions`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；把 color presentation 的 `textEdit` / `additionalTextEdits` 从直接 `EditorUI.applyTextEdits(...)` 推进到当前文档 WorkspaceEdit JSON，再复用 AttoEditor 既有 core transaction apply/preview/retry 入口。
+  - 提交边界：新增小型 App 层 color presentation WorkspaceEdit builder，`finishColorPresentationResult` 会把原始 color item 作为 request context 传给自动应用和 palette action；`Save & Retry` / `Discard & Retry` 在有 owner 时会重新发起 `textDocument/colorPresentation`。无法构造 WorkspaceEdit JSON 的直接调用仍保留旧 `applyTextEdits` fallback。本提交不新增 Rust/FFI ABI，不改变 core transaction schema/apply/preview/undo/redo 语义，不自动重新 apply history transaction，也不处理 snippet placeholder 与 transaction 的深度合并。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testColorPresentationEditsApplyViaWorkspaceEditTransaction|AttoEditorCommandTests.testColorPresentationWorkspaceEditSaveAndRetryRerunsColorPresentationRequest'`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testColorPresentationEditsApplyViaWorkspaceEditTransaction|AttoEditorCommandTests.testColorPresentationWorkspaceEditSaveAndRetryRerunsColorPresentationRequest|AttoEditorCommandTests.testInlayHintResolveWorkspaceEditSaveAndRetryRerunsResolveRequestInsteadOfOldPayload|AttoEditorCommandTests.testWorkspaceEditHistoryPanelShowsCoreTransactionEvents|AttoEditorCommandTests.testWorkspaceEditHistoryPanelOpensConflictTarget|AttoEditorCommandTests.testWorkspaceEditPreviewSaveAndRetryDecisionAppliesAfterSavingTargetTab|AttoEditorCommandTests.testWorkspaceEditPreviewDiscardAndRetryDecisionAppliesAfterReloadingTargetTab|AttoEditorCommandTests.testRenameWorkspaceEditSaveAndRetryRerunsRenameRequestInsteadOfOldPayload|AttoEditorCommandTests.testCodeActionWorkspaceEditSaveAndRetryRerunsCodeActionRequestInsteadOfOldPayload|AttoEditorCommandTests.testCompletionAdditionalTextEditsApplyViaWorkspaceEditTransaction|AttoEditorCommandTests.testCompletionWorkspaceEditRetryOwnerRerunsCompletionRequest|AttoEditorCommandTests.testCodeLensCommandWorkspaceEditResultAppliesViaCoreTransaction|AttoEditorCommandTests.testCodeLensCommandWorkspaceEditSaveAndRetryRerunsExecuteCommandInsteadOfOldPayload|AttoEditorCommandTests.testEmptyCodeActionResultsUseUnifiedFeedbackStatus|AttoEditorCommandTests.testCodeActionResultRecordsLspResultEvent|AttoEditorCommandTests.testEmptyCompletionResultUsesUnifiedFeedbackStatus|AttoEditorCommandTests.testCompletionResultRecordsLspResultEvent|AttoEditorCommandTests.testDocumentColorResultsRecordLspResultEvents'`
+    - `git diff --check`
+    - `test -z "$(git diff --no-index --check /dev/null swift/Sources/AttoEditor/AttoEditorAreaViewController+WorkspaceEditRetry.swift)"`
+    - `test -z "$(git diff --no-index --check /dev/null swift/Sources/AttoEditor/AttoEditorAreaViewController+LSPColorPresentationWorkspaceEdit.swift)"`
+
+- 中间提交：`feat(app): apply formatting through workspace transactions`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；把显式 Format Document / Format Selection 从 `EditorCoreSkiaView` blocking helper 直接应用 `TextEdit`，推进到 raw `textDocument/formatting` / `textDocument/rangeFormatting` request/take JSON，再由 App 转换为当前文档 WorkspaceEdit 并复用 core transaction apply/preview/retry 入口。
+  - 提交边界：新增 Rust `Formatting` / `RangeFormatting` result slots、非阻塞 request/take API、C ABI 和 Swift wrapper；AttoEditor 显式 format 命令改为 async poll + WorkspaceEdit transaction apply，并为 `Save & Retry` / `Discard & Retry` 提供 formatting request retry owner。旧 blocking document/range/on-type formatting helper 继续保留给 format-on-save、on-type 和兼容调用。本提交不改变 core transaction schema/apply/preview/undo/redo 语义，不自动重新 apply history transaction，也不处理 snippet placeholder 与 transaction 的深度合并。
+  - 验证记录：
+    - `cargo build -p editor-core-ui-ffi`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testFormattingEditsApplyViaWorkspaceEditTransaction|AttoEditorCommandTests.testFormattingWorkspaceEditSaveAndRetryRerunsFormattingRequestInsteadOfOldPayload'`
+    - `cargo fmt`
+
+- 中间提交：`feat(app): reapply workspace edit history transactions`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；把 WorkspaceEdit transaction event 从只保留 apply/redo result 推进到可携带原始 `workspace_edit_json`，让 History panel 能显式重放历史事务，并对 rejected dirty conflict 提供 `Save & Reapply` / `Discard & Reapply` 编排。
+  - 提交边界：新增兼容 JSON 字段 `workspace_edit_json`，Swift typed event wrapper 使用 optional decode；History panel item 记录原始 payload，新增 `Reapply`、`Save & Reapply`、`Discard & Reapply` 按钮和稳定 accessibility identifier；普通 `Save Conflict` / `Discard Conflict` 行为保持手动解决，自动 save/discard-and-reapply 仅对 `Rejected` 事务启用，避免 partial transaction 重放时重复已应用 text edits。本提交不重跑原始 LSP request、不生成新的 WorkspaceEdit payload、不改变 transaction apply/preview/undo/redo 语义，也不处理 snippet placeholder 与 transaction 的深度合并。
+  - 验证记录：
+    - `cargo test -p editor-core-ui --test multi_document_ui_tests multi_document_ui_previews_and_applies_workspace_edit_transactions`
+    - `cargo test -p editor-core-ui-ffi ffi_multi_document_exposes_tab_preview_split_and_search`
+    - `cargo build -p editor-core-ui-ffi`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testWorkspaceEditHistoryPanelShowsCoreTransactionEvents|AttoEditorCommandTests.testWorkspaceEditHistoryPanelOpensConflictTarget|AttoEditorCommandTests.testWorkspaceEditHistoryPanelSaveAndReapplyRejectedTransaction'`
+    - `cargo fmt`
+
+- 中间提交：`feat(app): rerun workspace edit history requests`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；把 request retry owner 从一次性 preview conflict retry 推进到 WorkspaceEdit History panel，使 session 内由 LSP/request source 产生的历史 transaction 能显式重新发起原请求。
+  - 提交边界：AttoEditor 在成功记录 core WorkspaceEdit transaction 后按 transaction sequence 缓存 `AttoWorkspaceEditRequestRetryOwner`；History panel item 显示 request retry label，新增 `Rerun Request` 按钮，并让 request-owned rejected conflict 的 `Save & Reapply` / `Discard & Reapply` 标签和行为切换为 `Save & Rerun` / `Discard & Rerun`。该 owner 是 session-local、按当前 core history sequence 修剪，不持久化、不跨 project/session 恢复；无 owner 的历史记录继续走 reapply 旧 payload。本提交不新增 Rust/FFI ABI，不改变 transaction apply/preview/undo/redo 语义，也不处理 snippet placeholder 与 transaction 的深度合并。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testWorkspaceEditHistoryPanelRerunsRecordedRequestOwner|AttoEditorCommandTests.testWorkspaceEditHistoryPanelShowsCoreTransactionEvents|AttoEditorCommandTests.testWorkspaceEditHistoryPanelOpensConflictTarget|AttoEditorCommandTests.testWorkspaceEditHistoryPanelSaveAndReapplyRejectedTransaction'`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testRenameWorkspaceEditSaveAndRetryRerunsRenameRequestInsteadOfOldPayload|AttoEditorCommandTests.testWorkspaceEditHistoryPanelRerunsRecordedRequestOwner'`
+    - `git diff --check`
+
+- 中间提交：`feat(app): apply snippet completion additional edits through workspace transactions`
+  - 所属任务：阶段 4 的 core-owned WorkspaceEdit 跨文件事务增量；把 snippet completion 的 `additionalTextEdits` 从 `applySnippet(...)` 的 inline 附加编辑推进到当前文档 WorkspaceEdit transaction，再把 snippet 主编辑交回 core snippet engine 插入，以保留 placeholder session。
+  - 提交边界：AttoEditor 对 snippet completion 的 additional edits 先构造当前文档 WorkspaceEdit JSON 并复用 transaction apply/preview/retry 入口，按 additional edits 在 snippet range 前的 char delta 转换 snippet 主编辑范围，然后调用 `applySnippet` 只插入 snippet 主体；additional edits 为空、无法转换、彼此重叠或与 snippet range 交叠时继续回退到旧的 `applySnippet(..., additionalEdits:)` 路径。本提交不把 snippet 主体与 WorkspaceEdit transaction 合并为单一 undo 单元，不处理跨文件 snippet additional edits，不新增跨 session/project request owner，也不扩展更深层 conflict 检测/解决语义。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testSnippetCompletionAdditionalTextEditsUseWorkspaceEditTransaction|AttoEditorCommandTests.testCompletionAdditionalTextEditsApplyViaWorkspaceEditTransaction|AttoEditorCommandTests.testCompletionWorkspaceEditRetryOwnerRerunsCompletionRequest'`
+    - `git diff --check`
+
 ## 阶段 5: 多文档、tab、split、project、session 完整迁移
 
 ### 目标
@@ -815,6 +921,12 @@
   - 提交边界：只迁移 `closeTab(id:)` 的 selected-tab close fallback；关闭非选中 tab、dirty close/save/cancel、LSP close/shutdown、core close command、close callback URL 和 empty-state 语义保持不变。本提交不新增 Rust/FFI ABI，不实现 project/session ownership、tab drag/drop to split 或 pane layout tree。
   - 验证记录：
     - `swift test --package-path swift --filter 'AttoEditorCommandTests.testCloseActiveTabUsesCoreActiveFallbackProjection|AttoEditorCommandTests.testCloseTabGroupCommandsUseCoreTabProjection'`
+    - `git diff --check`
+- 中间提交：`feat(app): project lsp launch roots from core workspace`
+  - 所属任务：阶段 5 的多文档/tab/split/project/session 迁移增量；让 AttoEditor 同步 project LSP launch metadata 到 `MultiDocumentEditorUI.projectLspServers` 时，`workspace_roots` 优先消费 core workspace snapshot，而不是只使用 Swift 窗口当前 `workspaceRootURL`。
+  - 提交边界：只调整 App 层 launch metadata projection：`syncProjectLspServerConfigsToCore()` 构造 `EcuProjectLspServerConfig.workspaceRoots` 时读取 `MultiDocumentEditorUI.snapshot().workspaceRoots`，过滤空 root 并保持顺序去重；core snapshot 失败或为空时继续回退当前窗口 root。本提交不新增 Rust/FFI ABI，不改变实际 LSP server 启动/停止/restart 路径，不实现 typed lifecycle 启停、跨独立 project session 合并、完整 project/session schema 或 dashboard 产品化。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testProjectLspLaunchConfigsSyncToCoreProjectStore|AttoEditorCommandTests.testProjectLspLaunchConfigsUseCoreWorkspaceRoots'`
     - `git diff --check`
 
 ## 阶段 6: LSP workspace lifecycle 与 project-level 语言能力
@@ -1305,6 +1417,258 @@
     - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspLaunchConfigsSyncToCoreProjectStore`
     - `cargo fmt --check`
     - `git diff --check`
+- 中间提交：`feat(ui): plan project lsp auto-starts`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；在已有 project LSP launch metadata store、core workspace roots 和 tab language metadata 上，建立 core-owned project LSP typed lifecycle plan 的最小查询面。
+  - 提交边界：`MultiDocumentEditorUi` 新增 `ProjectLspStartPlanEntry` 与 `project_lsp_start_plan(_json)`，按打开 tab 的 `document_uri`、`language_id` 和 `ProjectLspServerConfig.language_ids` 生成 auto-start plan；只包含 `auto_start == true` 且有可匹配语言的 server，`workspace_roots` 优先使用 server config，缺省时回退 core workspace roots；C ABI/header 新增 `editor_core_ui_ffi_multi_document_project_lsp_start_plan_json(...)` 与 feature bit；Swift wrapper 新增 `EcuProjectLspStartPlanEntry`、`projectLspStartPlanJSON()` 和 `projectLspStartPlan()`。该提交只暴露可测试的启动计划，不实际启动/停止/restart LSP server，不改变 AttoEditor 当前启动路径，不实现 shared-session ownership、跨独立 project session 合并、typed lifecycle 执行或 dashboard 产品化。
+  - 验证记录：
+    - `cargo fmt`
+    - `cargo test -p editor-core-ui multi_document_builds_project_lsp_start_plan_from_open_tabs`
+    - `cargo test -p editor-core-ui-ffi ffi_feature_flags_include_semantic_tokens_requests`
+    - `cargo test -p editor-core-ui-ffi ffi_runtime_info_json_reports_version_and_feature_descriptors`
+    - `cargo test -p editor-core-ui-ffi ffi_multi_document_exposes_tab_preview_split_and_search`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testLoadsLibraryAndVersion`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testMultiDocumentEditorUIWrapperExposesTabsSplitsPreviewAndSearch`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): auto-start project lsp from core plan`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；让 AttoEditor 的 project/root 自动启动路径开始消费 core-owned project LSP start plan，把 open tab document/language/server 匹配从 Swift 本地控制流推进到 `MultiDocumentEditorUI.projectLspStartPlan()`。
+  - 提交边界：`startProjectLspServersForOpenTabs()` 仍使用既有 registry/env/保存 launch config 解析启动候选，但启动前会把候选 config 投影到 `MultiDocumentEditorUI.projectLspServers` 并读取 `projectLspStartPlan()`；只有 core plan 中 document URI、server key 和 tab id 均匹配的候选才会执行既有 `EditorUI.lspEnable(...)`，且 root URI 优先来自 plan entry。runtime optional capability report 同步新增 project LSP start plan 能力。该提交不新增 Rust/C ABI，不改变手动 active/project restart 或 auto-restart 路径，不把 LSP server 进程 ownership 下沉到 core，不实现 typed lifecycle 执行、shared-session ownership、跨独立 project session 合并或 dashboard 产品化。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspAutoStartUsesCoreStartPlanLanguageFilter`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceRootChangeAutoStartsConfiguredOpenTabLsp`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspLaunchConfigsSyncToCoreProjectStore`
+    - `swift test --package-path swift --filter AttoRuntimeCompatibilityTests`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(ui): record project lsp start outcomes`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；在 core-owned project LSP start plan 之后补一个 typed lifecycle outcome event stream，让 host/App 执行实际启动后可以把 started/failed 结果写回 `MultiDocumentEditorUi`，供后续 project-level lifecycle/dashboard 消费。
+  - 提交边界：`MultiDocumentEditorUi` 新增 `ProjectLspStartOutcome`、`ProjectLspLifecycleEvent`、`ProjectLspLifecycleEventsSnapshot` 和 bounded lifecycle event store，并提供 record/latest/events-after/JSON 查询面；C ABI/header 新增 start outcome record、latest sequence、events JSON 函数和 runtime feature bit；Swift wrapper 新增 `EcuProjectLspStartOutcome` / `EcuProjectLspLifecycleEvent(sSnapshot)` typed API；AttoEditor project/root 自动启动路径在既有 `EditorUI.lspEnable(...)` 成功或失败后记录 started/failed outcome。该提交不把 LSP server 进程启动/停止/restart ownership 下沉到 Rust，不改变手动 restart、auto-restart 或 explicit shutdown 路径，不实现完整 project session 合并、恢复策略执行或 dashboard UI 消费。
+  - 验证记录：
+    - `cargo fmt --check`
+    - `cargo test -p editor-core-ui multi_document_records_project_lsp_start_outcomes`
+    - `cargo test -p editor-core-ui-ffi ffi_feature_flags_include_semantic_tokens_requests`
+    - `cargo test -p editor-core-ui-ffi ffi_runtime_info_json_reports_version_and_feature_descriptors`
+    - `cargo test -p editor-core-ui-ffi ffi_multi_document_exposes_tab_preview_split_and_search`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testLoadsLibraryAndVersion`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testMultiDocumentEditorUIWrapperExposesTabsSplitsPreviewAndSearch`
+    - `swift test --package-path swift --filter AttoRuntimeCompatibilityTests`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceRootChangeAutoStartsConfiguredOpenTabLsp`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspAutoStartUsesCoreStartPlanLanguageFilter`
+    - `git diff --check`
+- 中间提交：`feat(app): show project lsp lifecycle outcomes`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；让阶段 384 新增的 core-owned project LSP lifecycle outcome stream 被 AttoEditor 的 project-level status/dashboard 路径消费，使 started/failed start outcomes 不只停留在 core 查询面。
+  - 提交边界：AttoEditor 新增 bounded `AttoProjectLspLifecycleEventStore`、core lifecycle cursor 和 drain helper；`drainProjectLspPanelLifecycleEvents()` 会读取 `MultiDocumentEditorUI.projectLspLifecycleEvents(after:)` 并缓存到 App store；Project Status Events panel 会展示 lifecycle outcome；Project Dashboard summary 增加 lifecycle event 计数并列出 lifecycle 明细。该提交不改变 core/Rust ABI，不改变 LSP 启动/停止/restart 执行路径，不把进程 ownership 或恢复策略执行下沉到 core，也不把 lifecycle outcome 持久化到 JSONL process-health log。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoLspResultLifecycleStoreTests.testProjectLspLifecycleEventStoreBoundsAndFiltersBySequence`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceRootChangeAutoStartsConfiguredOpenTabLsp`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspStatusEventsPanelShowsRecordedFailures`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspDashboardPanelShowsStatusAndHealthSnapshots`
+    - `swift test --package-path swift --filter AttoLspResultLifecycleStoreTests.testProjectLspPanelErrorEventStoreBoundsAndFiltersBySequence`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): record project lsp restart outcomes`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；把 project LSP lifecycle outcome stream 从 auto-start 结果扩展到 restart 结果，让 active-tab manual restart、project-level restart 和 auto-restart 都把 started/failed outcome 写回 core。
+  - 提交边界：`ProjectLspStartOutcome` JSON payload 增加默认 `operation` 字段，旧 payload 默认 `start`，新增支持 `restart`；Swift `EcuProjectLspStartOutcome` 同步增加 `operation` 默认值；AttoEditor active-tab restart、project restart 和 auto-restart 成功/失败后记录 `operation = "restart"`，trigger 分别为 `manual_restart`、`project_restart`、`auto_restart`。该提交不新增 C ABI 函数或 feature bit，不改变实际 restart 执行仍由 Swift/App 调用 `EditorUI.lspEnable(...)` 的现状，不实现 stop/shutdown outcome、进程 ownership 下沉、跨 project session 合并或恢复策略 core 执行。
+  - 验证记录：
+    - `cargo fmt --check`
+    - `cargo test -p editor-core-ui multi_document_records_project_lsp_start_outcomes`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testMultiDocumentEditorUIWrapperExposesTabsSplitsPreviewAndSearch`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testRestartLspServerRestartsActiveTabSession`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspProcessHealthAutoRestartsExitedConfiguredTab`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testRestartProjectLspServersRestartsConfiguredOpenTabs`
+    - `cargo test -p editor-core-ui-ffi ffi_multi_document_exposes_tab_preview_split_and_search`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceRootChangeAutoStartsConfiguredOpenTabLsp`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspStatusEventsPanelShowsRecordedFailures`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspDashboardPanelShowsStatusAndHealthSnapshots`
+    - `git diff --check`
+- 中间提交：`feat(app): record project lsp stop outcomes`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；把 project LSP lifecycle outcome stream 从 start/restart 结果扩展到用户级 stop 结果，让关闭拥有 LSP session 的 tab 和显式切换到非 LSP 语言时也把 stop outcome 写回 core。
+  - 提交边界：core lifecycle operation/status 归一化新增 `operation = "stop"` 与 `status = "stopped"`；Swift wrapper 继续复用既有 `EcuProjectLspStartOutcome` JSON payload，不新增 C ABI 函数或 feature bit；AttoEditor 仅在用户级 `tab_close` 和 `language_change` 路径、且 tab 仍打开并保留 `lspServerConfig` 时记录 stop outcome。该提交不把内部 restart 前置 `lspDisable()` 计为 stop，不改变实际 stop 执行仍由 Swift/App 调用 `EditorUI.lspDisable()` 的现状，不覆盖显式 `lspShutdown()` UI 路径，不实现 LSP 进程 ownership 下沉、跨 project session 合并或恢复策略 core 执行。
+  - 验证记录：
+    - `cargo fmt --check`
+    - `cargo test -p editor-core-ui multi_document_records_project_lsp_start_outcomes`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testClosingConfiguredProjectLspTabRecordsStopOutcome`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testPlainTextSyntaxSwitchRecordsProjectLspStopOutcome`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testMultiDocumentEditorUIWrapperExposesTabsSplitsPreviewAndSearch`
+    - `cargo test -p editor-core-ui-ffi ffi_multi_document_exposes_tab_preview_split_and_search`
+    - `git diff --check`
+- 中间提交：`feat(app): expose lsp shutdown command`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；把 host-visible `EditorUI.lspShutdown()` 产品化为 active-tab App 命令，并让显式 graceful shutdown 写入 core lifecycle outcome stream。
+  - 提交边界：AttoEditor 新增 `lsp.shutdown_server` command、Go 菜单项、`.serverShutdown` 反馈文案和 active-tab shutdown helper；成功路径调用 `EditorUI.lspShutdown()`，保留 tab 的 launch config，设置 `suppressesAutomaticLspStart = true`，同步 core launch metadata 为 `autoStart = false`，并在存在保存的 project LSP config 时记录 `operation = "stop"`、`trigger = "manual_shutdown"`、`status = "stopped"`。该提交不新增 C ABI 函数或 feature bit，不实现 project-wide shutdown，不改变 LSP 进程 ownership、shared-session 策略或实际 graceful shutdown 仍由 Swift/App 触发的现状。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoLspResultFeedbackTests`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testShutdownLspServerRequiresRunningSession`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testShutdownLspServerStopsActiveSessionAndRecordsOutcome`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): expose project lsp shutdown command`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；把 active-tab shutdown 的 App 产品入口扩展到 project-level，让用户可以一次 graceful shutdown 当前 workspace 中打开且已配置的 LSP sessions，并把结果写入 core lifecycle outcome stream。
+  - 提交边界：AttoEditor 新增 `lsp.shutdown_project_servers` command、Go 菜单项和独立 project shutdown extension；项目级 shutdown 通过 `coreProjectedTabsForWorkspaceLifecycle()` 遍历打开 tabs，仅对保留 `lspServerConfig` 且当前 `lspIsEnabled()` 的 tab 调用 `EditorUI.lspShutdown()`；成功后保留 launch config、抑制自动重启、同步 core launch metadata 为 `autoStart = false`，并记录 `operation = "stop"`、`trigger = "project_shutdown"`、`status = "stopped"`，失败路径记录 `status = "failed"`。该提交不新增 Rust/C ABI 或 feature bit，不把实际 stop/shutdown 执行下沉到 core，不实现 shared-session 去重/合并、跨独立 project session ownership 或恢复策略 core 执行。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testShutdownProjectLspServersRequiresRunningConfiguredTabs`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testShutdownProjectLspServersStopsConfiguredOpenTabsAndRecordsOutcomes`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testShutdownLspServerStopsActiveSessionAndRecordsOutcome`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(ui): plan project lsp shutdowns`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；在 project LSP start plan 之后补齐 core-owned stop/shutdown plan 查询面，让 project-level shutdown 的 document/language/server 匹配也收敛到 `MultiDocumentEditorUi`。
+  - 提交边界：`MultiDocumentEditorUi` 新增 `ProjectLspStopPlanEntry`、`project_lsp_stop_plan(_json)`，按打开 tab 的 `document_uri`、`language_id` 与 project LSP server configs 生成 stop/shutdown plan；stop plan 不受 `auto_start` 限制，以便已经手动关闭 auto-start 的 server 仍可被显式 stop/shutdown；C ABI/header 新增 `editor_core_ui_ffi_multi_document_project_lsp_stop_plan_json(...)` 和 feature bit；Swift wrapper 新增 `EcuProjectLspStopPlanEntry`、`projectLspStopPlanJSON()` 和 `projectLspStopPlan()`；AttoEditor `shutdownProjectLspServers()` 改为同步 core launch/language metadata 后消费 stop plan，只有 tab id、document URI 和 server key 均匹配的 running configured tab 才会执行既有 `EditorUI.lspShutdown()`。该提交不把实际 stop/shutdown 执行下沉到 Rust，不改变 graceful shutdown 仍由 Swift/App 触发的现状，不实现 shared-session 去重/合并、跨独立 project session ownership 或恢复策略 core 执行。
+  - 验证记录：
+    - `cargo test -p editor-core-ui multi_document_builds_project_lsp_stop_plan_from_open_tabs`
+    - `cargo test -p editor-core-ui-ffi ffi_feature_flags_include_semantic_tokens_requests`
+    - `cargo test -p editor-core-ui-ffi ffi_multi_document_exposes_tab_preview_split_and_search`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testLoadsLibraryAndVersion`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testMultiDocumentEditorUIWrapperExposesTabsSplitsPreviewAndSearch`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testShutdownProjectLspServersRequiresRunningConfiguredTabs`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testShutdownProjectLspServersStopsConfiguredOpenTabsAndRecordsOutcomes`
+    - `swift test --package-path swift --filter AttoRuntimeCompatibilityTests`
+    - `swift test --package-path swift --filter EditorCoreUIFFIRuntimeCompatibilityTests`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(ui): plan project lsp restarts`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；在 project LSP start/stop plan 之后补齐 core-owned restart plan 查询面，让 project-level restart 的 document/language/server 匹配也收敛到 `MultiDocumentEditorUi`。
+  - 提交边界：`MultiDocumentEditorUi` 新增 `ProjectLspRestartPlanEntry`、`project_lsp_restart_plan(_json)`，按打开 tab 的 `document_uri`、`language_id` 与 project LSP server configs 生成 restart plan；restart plan 不受 `auto_start` 限制，以便已经手动关闭 auto-start 的 server 仍可被显式 restart；C ABI/header 新增 `editor_core_ui_ffi_multi_document_project_lsp_restart_plan_json(...)` 和 feature bit；Swift wrapper 新增 `EcuProjectLspRestartPlanEntry`、`projectLspRestartPlanJSON()` 和 `projectLspRestartPlan()`；AttoEditor `restartProjectLspServers()` 拆到独立 project restart extension，并改为同步 core launch/language metadata 后消费 restart plan，只有 tab id、document URI 和 server key 均匹配的 configured tab 才会走既有 `EditorUI.lspDisable()` / `EditorUI.lspEnable(...)` restart pipeline，root URI 优先来自 plan entry。该提交不把实际 restart 执行下沉到 Rust，不改变 restart 仍由 Swift/App 触发的现状，不实现 shared-session 去重/合并、跨独立 project session ownership 或恢复策略 core 执行。
+  - 验证记录：
+    - `cargo test -p editor-core-ui multi_document_builds_project_lsp_restart_plan_from_open_tabs`
+    - `cargo test -p editor-core-ui-ffi ffi_feature_flags_include_semantic_tokens_requests`
+    - `cargo test -p editor-core-ui-ffi ffi_multi_document_exposes_tab_preview_split_and_search`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testLoadsLibraryAndVersion`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testMultiDocumentEditorUIWrapperExposesTabsSplitsPreviewAndSearch`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testRestartProjectLspServersRestartsConfiguredOpenTabs`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testShutdownProjectLspServersStopsConfiguredOpenTabsAndRecordsOutcomes`
+    - `swift test --package-path swift --filter AttoRuntimeCompatibilityTests`
+    - `swift test --package-path swift --filter EditorCoreUIFFIRuntimeCompatibilityTests`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): auto-restart project lsp from core plan`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；让 AttoEditor 的 failed/exited 自动恢复路径也消费阶段 391 的 core-owned project LSP restart plan，避免 auto-restart 继续只按 Swift 本地 launch config/root 执行。
+  - 提交边界：AttoEditor 新增可复用的单 tab restart plan decision helper；`attemptProjectLspAutoRestart(...)` 在 core plan 可用且成功生成时必须匹配 tab id、document URI 和 server key 后才会执行既有 `EditorUI.lspDisable()` / `EditorUI.lspEnable(...)` restart pipeline，并把 plan entry 的首个 `workspaceRoots` 作为 restart root URI；core 不可用或 plan 查询失败时保留旧 fallback，避免运行时偶发查询失败阻断恢复。本提交不新增 Rust/C ABI 或 feature bit，不把实际 restart 执行下沉到 Rust，不改变 auto-restart 退避/最大次数/preference 策略，不实现 shared-session 去重/合并、跨独立 project session ownership 或恢复策略 core 执行。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspAutoRestartUsesCoreRestartPlanRoot`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspProcessHealthAutoRestartsExitedConfiguredTab`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testRestartProjectLspServersRestartsConfiguredOpenTabs`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspAutoRestartUsesServerSpecificBackoffPolicy`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspAutoRestartUsesBackoffAndResetsAfterHealthyStatus`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): restart active lsp from core plan`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；让 active-tab 手动 LSP restart 也消费阶段 391 的 core-owned project LSP restart plan，使 active/project/auto 三条 restart 入口共享同一 document/server/root 决策来源。
+  - 提交边界：`restartLspServerInActiveTab()` 现在会先调用单 tab restart plan decision helper；core plan 可用且正常生成时，只有 tab id、document URI 和 server key 匹配的 active tab 才会执行既有 `EditorUI.lspDisable()` / `EditorUI.lspEnable(...)` restart pipeline，root URI 优先来自 plan entry。本提交不新增 Rust/C ABI 或 feature bit，不把实际 restart 执行下沉到 Rust，不改变 restart outcome 记录 schema，不实现 shared-session 去重/合并、跨独立 project session ownership 或恢复策略 core 执行。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testRestartLspServerInActiveTabUsesCoreRestartPlanRoot`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testRestartLspServerRestartsActiveTabSession`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspAutoRestartUsesCoreRestartPlanRoot`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testRestartProjectLspServersRestartsConfiguredOpenTabs`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): shutdown active lsp from core plan`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；让 active-tab 手动 LSP shutdown 也消费阶段 390 的 core-owned project LSP stop plan，使 active/project 两条显式 stop/shutdown 入口共享同一 document/server 决策来源。
+  - 提交边界：AttoEditor 新增可复用的单 tab stop plan decision helper；`shutdownLspServerInActiveTab()` 在存在保存的 project LSP launch config 时，会先读取 `MultiDocumentEditorUI.projectLspStopPlan()`，core plan 可用且正常生成时，只有 tab id、document URI 和 server key 匹配的 active tab 才会执行既有 `EditorUI.lspShutdown()` graceful shutdown。本提交不新增 Rust/C ABI 或 feature bit，不把实际 shutdown 执行下沉到 Rust，不改变 stop outcome 记录 schema，不实现 shared-session 去重/合并、跨独立 project session ownership 或恢复策略 core 执行。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testShutdownLspServerInActiveTabRequiresCoreStopPlanMatch`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testShutdownLspServerStopsActiveSessionAndRecordsOutcome`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testShutdownProjectLspServersStopsConfiguredOpenTabsAndRecordsOutcomes`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testRestartLspServerInActiveTabUsesCoreRestartPlanRoot`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): record project lsp plan skips`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；让 active-tab restart/shutdown 被 core plan gate 拒绝时也能进入 core-owned project LSP lifecycle event stream，避免 plan 不匹配只停留在 App 层 unavailable UI。
+  - 提交边界：core lifecycle status 归一化新增 `status = "skipped"`；`MultiDocumentEditorUi.record_project_lsp_start_outcome(...)` 对 skipped outcome 放宽 open-tab 校验，以便 core mirror tab 已不存在时仍能记录计划拒绝上下文；AttoEditor active-tab manual restart/shutdown 在 restart/stop plan decision 不允许时，分别写入 `operation = "restart"` / `"stop"`、`trigger = "manual_restart"` / `"manual_shutdown"`、`status = "skipped"` 和具体 error message。本提交不新增 Rust/C ABI 或 feature bit，不把实际 restart/shutdown 执行下沉到 Rust，不改变成功/失败执行路径仍要求 open tab 的校验，不实现 shared-session 去重/合并、跨独立 project session ownership 或恢复策略 core 执行。
+  - 验证记录：
+    - `cargo test -p editor-core-ui multi_document_records_project_lsp_start_outcomes`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `cargo build -p editor-core-ui-ffi`
+    - `swift package --package-path swift clean`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testShutdownLspServerInActiveTabRequiresCoreStopPlanMatch`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testRestartLspServerInActiveTabRecordsSkippedWhenCorePlanDoesNotMatch`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testShutdownLspServerStopsActiveSessionAndRecordsOutcome`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testRestartLspServerRestartsActiveTabSession`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): record project lsp execution requests`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；把 active-tab manual restart/shutdown 通过 core plan gate 后的“执行已请求”状态写入 core lifecycle stream，为后续 core-owned typed lifecycle / ownership 下沉提供开始执行的稳定状态节点。
+  - 提交边界：core lifecycle status 归一化新增 `status = "requested"`；AttoEditor active-tab manual restart/shutdown 在 core restart/stop plan decision 允许后、调用既有 Swift wrapper 执行前写入 `operation = "restart"` / `"stop"`、对应 manual trigger 和 `status = "requested"`；成功/失败后继续写入 started/stopped/failed 终态，plan gate 拒绝仍只写 skipped。本提交不新增 Rust/C ABI 或 feature bit，不把实际 LSP 进程启动、restart 或 shutdown 执行下沉到 Rust，不改变 project-level/auto-start/auto-restart 路径，不实现 shared-session 去重/合并、跨独立 project session ownership 或恢复策略 core 执行。
+  - 验证记录：
+    - `cargo test -p editor-core-ui multi_document_records_project_lsp_start_outcomes`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `cargo build -p editor-core-ui-ffi`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testShutdownLspServerStopsActiveSessionAndRecordsOutcome`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testRestartLspServerRestartsActiveTabSession`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testShutdownLspServerInActiveTabRequiresCoreStopPlanMatch`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testRestartLspServerInActiveTabRecordsSkippedWhenCorePlanDoesNotMatch`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): correlate project lsp lifecycle attempts`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；给 core project LSP lifecycle event 增加 attempt correlation，使 active-tab manual restart/shutdown 的 requested 与终态 outcome 可稳定关联，而不是只能依赖相邻事件顺序。
+  - 提交边界：`ProjectLspStartOutcome` / `ProjectLspLifecycleEvent` 新增兼容 optional `attempt_id` 字段；requested outcome 未传 `attempt_id` 时由 core 使用该事件自己的 sequence 作为 attempt id；Swift typed wrapper 新增 `attemptId` 字段；AttoEditor active-tab manual restart/shutdown 记录 requested 后读取 core latest sequence，并在 started/stopped/failed 终态 outcome 中带回同一 attempt id。plan gate skipped 事件不生成 attempt id。本提交不新增 Rust/C ABI 函数或 feature bit，不迁移实际 LSP 进程执行，不改变 project-level/auto-start/auto-restart outcome 语义，不实现 shared-session 去重/合并、跨独立 project session ownership 或恢复策略 core 执行。
+  - 验证记录：
+    - `cargo test -p editor-core-ui multi_document_records_project_lsp_start_outcomes`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `cargo build -p editor-core-ui-ffi`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testShutdownLspServerStopsActiveSessionAndRecordsOutcome`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testRestartLspServerRestartsActiveTabSession`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testShutdownLspServerInActiveTabRequiresCoreStopPlanMatch`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testRestartLspServerInActiveTabRecordsSkippedWhenCorePlanDoesNotMatch`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testMultiDocumentEditorUIWrapperExposesTabsSplitsPreviewAndSearch`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): correlate project lsp batch attempts`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；把阶段 397 的 lifecycle attempt correlation 从 active-tab manual restart/shutdown 扩展到 project-level restart/shutdown 批量入口，使每个批量目标都有可关联的 requested 与终态 outcome。
+  - 提交边界：AttoEditor `restartProjectLspServers()` / `shutdownProjectLspServers()` 对每个 core plan 命中的目标，在调用既有 Swift wrapper 执行前写入 `operation = "restart"` / `"stop"`、`trigger = "project_restart"` / `"project_shutdown"`、`status = "requested"`；对应 started/stopped/failed 终态 outcome 复用该 requested event 的 `attemptId`。无可执行目标的 unavailable 路径仍不写 lifecycle event，plan gate/skipped 语义不变。本提交不新增 Rust/C ABI 函数、feature bit 或 lifecycle schema，不迁移实际 LSP 进程执行，不改变 auto-start/auto-restart/user stop outcome 语义，不实现 shared-session 去重/合并、跨独立 project session ownership 或恢复策略 core 执行。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testShutdownProjectLspServersStopsConfiguredOpenTabsAndRecordsOutcomes`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testRestartProjectLspServersRestartsConfiguredOpenTabs`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): correlate project lsp auto restart attempts`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；把 auto-restart 恢复路径也接入 requested/attempt lifecycle，使 failed/exited 自动恢复不再只有孤立的 started/failed 终态 outcome。
+  - 提交边界：AttoEditor `attemptProjectLspAutoRestart(...)` 在 restart plan gate 允许、退避计数更新后、调用既有 restart pipeline 前写入 `operation = "restart"`、`trigger = "auto_restart"`、`status = "requested"`；对应 started/failed 终态 outcome 复用该 requested event 的 `attemptId`。禁用、退避未到、超过次数、无匹配 tab/config 或 plan gate 拒绝的路径仍不写 lifecycle event。本提交不新增 Rust/C ABI 函数、feature bit 或 lifecycle schema，不迁移实际 LSP 进程执行，不改变 auto-restart 退避/最大次数/preference 策略，不实现 shared-session 去重/合并、跨独立 project session ownership 或恢复策略 core 执行。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspProcessHealthAutoRestartsExitedConfiguredTab`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspAutoRestartUsesCoreRestartPlanRoot`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): correlate project lsp auto start attempts`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；把 project/root 自动启动路径也接入 requested/attempt lifecycle，使 auto-start 的 started/failed outcome 能和具体启动尝试稳定关联。
+  - 提交边界：AttoEditor `startProjectLspServersForOpenTabs()` 对每个 start plan 命中的目标，在调用既有 `EditorUI.lspEnable(...)` 前写入 `operation = "start"`、`trigger = "auto_start"`、`status = "requested"`；对应 started/failed 终态 outcome 复用该 requested event 的 `attemptId`。LSP 全局禁用、没有候选、tab 已启用、重复 core tab 或 core start plan 不匹配的路径仍不写 lifecycle event。本提交不新增 Rust/C ABI 函数、feature bit 或 lifecycle schema，不迁移实际 LSP 进程启动，不改变 registry/env/config 解析或 start plan 决策，不实现 shared-session 去重/合并、跨独立 project session ownership 或恢复策略 core 执行。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceRootChangeAutoStartsConfiguredOpenTabLsp`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspAutoStartUsesCoreStartPlanLanguageFilter`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): correlate user project lsp stop attempts`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；把用户级 stop outcome 的 tab close 与 language change 路径也接入 requested/attempt lifecycle，使 stop 侧不再只有孤立的 stopped 终态事件。
+  - 提交边界：关闭配置过 LSP 的 tab 时，AttoEditor 在调用既有 `EditorUI.lspDisable()` 前写入 `operation = "stop"`、`trigger = "tab_close"`、`status = "requested"`，disable 后写入同 attempt 的 `stopped`；切换 Plain Text 或强制 Tree-sitter language 时也通过同一 helper 写入 `trigger = "language_change"` 的 requested/stopped。未启用 LSP 或没有保存 launch config 的路径仍不写 lifecycle event。本提交不新增 Rust/C ABI 函数、feature bit 或 lifecycle schema，不迁移实际 stop 执行，不改变 tab close、didClose、language config 或 auto-start suppression 语义，不实现 shared-session 去重/合并、跨独立 project session ownership 或恢复策略 core 执行。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testClosingConfiguredProjectLspTabRecordsStopOutcome`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testPlainTextSyntaxSwitchRecordsProjectLspStopOutcome`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): show project lsp lifecycle attempts`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；把阶段 397-401 写入的 `attemptId` 从 typed event 数据推进到 Project Status Events panel 与 Project Dashboard 的用户可见 lifecycle 标题中，方便把 requested 与终态 outcome 关联起来排查。
+  - 提交边界：`projectLspLifecycleEventTitle(...)` 在事件包含 `attemptId` 时追加 `attempt #...` detail；Project Status Events panel 与 Project Dashboard 继续复用同一标题 formatter。没有 attempt 的旧事件或 skipped 事件保持旧显示。本提交不新增 Rust/C ABI 函数、feature bit 或 lifecycle schema，不改变事件排序、dashboard summary 计数、实际 LSP 启停/restart/stop 执行或恢复策略。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceRootChangeAutoStartsConfiguredOpenTabLsp`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): summarize project lsp lifecycle attempts`
+  - 所属任务：阶段 6 的 LSP workspace lifecycle 与 project-level 语言能力增量；在 requested/terminal 双事件成为主流后，让 Project Dashboard summary 同时展示 raw lifecycle event 数和按 `attemptId` 去重后的 lifecycle attempt 数，避免用户只能看到翻倍的事件计数。
+  - 提交边界：Project Dashboard summary 新增 `lifecycle attempts N`，其中 N 只统计当前 dashboard lifecycle events 中存在 `attemptId` 的 distinct attempt；旧事件或 skipped 事件没有 attempt 时不计入 attempts，但仍计入 lifecycle events。本提交不新增 Rust/C ABI 函数、feature bit 或 lifecycle schema，不改变 lifecycle event store、panel 行排序、单行 title、实际 LSP 启停/restart/stop 执行或恢复策略。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testProjectLspDashboardPanelShowsStatusAndHealthSnapshots`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceRootChangeAutoStartsConfiguredOpenTabLsp`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 ## 阶段 7: Result panels 与持久工作台视图
 
@@ -1467,6 +1831,189 @@
     - `swift test --package-path swift --filter 'AttoEditorCommandTests.test(LspWorkbenchPanelShowsDocumentColorLifecycleEvent|HierarchyPanelUsesLastHierarchyResults|CodeLensPanelUsesDerivedDecorations|InlayHintPanelUsesDerivedDecorations|DocumentLinkPanelUsesDerivedDecorations|LspWorkbenchPanelSummarizesResultFamilies)'`
     - `swift test --package-path swift --filter 'AttoEditorCommandTests.test(LspWorkbenchPanelShowsLifecycleStateForLocationsAndSymbols|LspWorkbenchPanelShowsDiagnosticsLifecycleState)'`
     - `swift test --package-path swift --filter AttoLspResultLifecycleStoreTests`
+    - `git diff --check`
+- 中间提交：`feat(app): summarize lsp workbench lifecycle states`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量；让统一 LSP Workbench 目录层在 metadata 中汇总当前 result family 的 stale/error 数，避免用户只能逐行扫描状态文本。
+  - 提交边界：`AttoLspWorkbenchPanelController.Item` 新增结构化 lifecycle state，Workbench 构建 active/workspace diagnostics、Locations、Symbols、Workspace Outline、Code Lens、Inlay Hints、Document Links、Document Colors 与 Hierarchy 行时传入现有 Fresh/Stale/Error 状态；panel metadata 在存在 stale/error family 时追加 `N stale` / `N error(s)`。该提交不改变各 result panel 打开/刷新行为，不新增 clear/pin/history 操作，不改变 LSP request/result 协议，也不迁移到真正内嵌 dock。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoAccessibilityIdentifierTests.testLspWorkbenchPanelMetadataSummarizesLifecycleStates`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): clear lsp workbench stale results`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量；补齐统一 LSP Workbench 的 clear stale 起点，让用户可清掉目录层 stale 标记而保留当前结果内容。
+  - 提交边界：新增 `lsp.clear_workbench_stale_results` command 和 Go 菜单项；Locations/Symbols current entry、active/workspace diagnostics stale reason、Code Lens/Inlay Hints/Document Links/Document Colors/Hierarchy event-backed latest state 在 stale 时恢复为 Fresh，并刷新已打开 Workbench。Error 状态不会被 clear stale 清除。本提交不删除 result history、不重新请求 LSP、不改变具体 result panel 打开/刷新行为、不新增 pin/history 模型，也不迁移到真正内嵌 dock。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoLspResultLifecycleStoreTests`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs|AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap'`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): pin lsp workbench current results`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量；补齐统一 LSP Workbench 的 pin result 起点，让用户可把当前 Workbench 目录中的最近结果标记为 pinned，便于和后续刷新/stale 状态区分。
+  - 提交边界：新增 session-local pinned entry/event 状态、Workbench `Item.isPinned` 与 metadata `N pinned` 汇总，并新增 `lsp.pin_workbench_current_results` command 和 Go 菜单项；Locations、Symbols、Workspace Outline、active/workspace diagnostics 通过 key-based lifecycle entry pin，Code Lens/Inlay Hints/Document Links/Document Colors/Hierarchy 通过 event-backed family pin。本提交不持久化 pinned 状态、不新增 unpin/history UI、不重新请求 LSP、不改变具体 result panel 打开/刷新行为，也不迁移到真正内嵌 dock。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoLspResultLifecycleStoreTests`
+    - `swift test --package-path swift --filter AttoAccessibilityIdentifierTests.testLspWorkbenchPanelMetadataSummarizesLifecycleStates`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs|AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap'`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): summarize lsp workbench history counts`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量；补齐统一 LSP Workbench 目录层的 history entries 可见性，让用户能看到当前 bounded result history 中仍保留了多少条结果记录。
+  - 提交边界：`AttoLspWorkbenchPanelController.Item` 新增 `historyCount`，Workbench metadata 在存在历史记录时追加 `N history entry/entries`；Locations、Symbols、Workspace Outline、active/workspace diagnostics 和 event-backed auxiliary family 均按现有 bounded history/event stream 统计。本提交不新增统一 history panel、不持久化 history、不改变各结果面板打开/刷新行为、不改变 lifecycle store 上限，也不迁移到真正内嵌 dock。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoAccessibilityIdentifierTests.testLspWorkbenchPanelMetadataSummarizesLifecycleStates`
+    - `swift test --package-path swift --filter AttoLspResultLifecycleStoreTests`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): jump from lsp workbench results`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量；补齐统一 LSP Workbench 的 jump navigation 起点，让目录层能汇总可跳转 target 数，并提供用户命令跳到当前 Workbench 中第一个可跳转结果。
+  - 提交边界：`AttoLspWorkbenchPanelController.Item` 新增 `jumpTargetCount`，Workbench metadata 在存在可跳转目标时追加 `N jump target(s)`；AttoEditor 新增 `lsp.jump_workbench_first_result` command 和 Go 菜单项，按 Locations、Symbols、Workspace Outline、Hierarchy 的当前结果优先级跳转首个 target。本提交不新增 row-level secondary action、不改变独立 result panel 的 Enter/双击行为、不覆盖 diagnostics/document-links/code-lens 的专用打开/执行语义，也不迁移到真正内嵌 dock。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testLspWorkbenchFirstJumpTargetUsesCurrentResultPriority`
+    - `swift test --package-path swift --filter AttoAccessibilityIdentifierTests.testLspWorkbenchPanelMetadataSummarizesLifecycleStates`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs|AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap'`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): refresh document colors from workbench`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量；补齐 Document Colors 的 refresh-only 用户入口，让 Colors 像 Code Lens/Inlay Hints/Document Links 一样具备独立刷新操作，并把结果同步到 Workbench lifecycle/event metadata。
+  - 提交边界：新增 `DocumentColorResultMode.refresh`、`refreshDocumentColorsInActiveTab()`、`refreshDocumentColorResultJSONInActiveTab(...)`、`lsp.refresh_document_colors` command 和 Go 菜单项；刷新成功只更新 `lastDocumentColorItems`、可见 Document Colors panel 和 Workbench，并记录 `document_colors` event `mode = "refresh"`，不主动打开 quick panel、color picker 或 panel。本提交不改变 documentColor/colorPresentation LSP 协议、不改变既有 `lsp.document_colors` / `lsp.pick_document_color` / `lsp.show_document_colors_panel` 行为，也不实现跨 tab/project Colors history。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testDocumentColorRefreshModeUpdatesWorkbenchWithoutOpeningPanel`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs|AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap'`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): refresh hierarchy panel results`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量；补齐 Hierarchy panel 的 children refresh 起点，让最近一次成功的 call/type hierarchy children 请求可以在不重新选择 root 的情况下刷新，并继续同步 Workbench lifecycle/event metadata。
+  - 提交边界：新增 session-local `HierarchyPanelRefreshRequest`、`HierarchyChildrenResultMode.refresh`、`refreshHierarchyPanelInActiveTab()`、`lsp.refresh_hierarchy_panel` command 和 Go 菜单项；真实 children 请求成功后记录可刷新 root item，刷新成功只更新 hierarchy snapshot、可见 Hierarchy panel、Workbench 和 `hierarchy` lifecycle event，不主动打开 quick result panel。本提交不改变 call/type hierarchy LSP 协议、不实现树状展开、children 按行展开/刷新、跨 tab/project Hierarchy history 或真正内嵌 dock。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testHierarchyRefreshModeUpdatesWorkbenchWithoutOpeningQuickPanel`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs|AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap'`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): unpin lsp workbench current results`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量；补齐统一 LSP Workbench pin result 的反向操作，让用户可以清除当前 Workbench 目录中 session-local pinned 标记。
+  - 提交边界：`AttoLspResultLifecycleStore` 与 `AttoLspResultEventStream` 新增按 key/family 的 unpin API；AttoEditor 新增 `unpinCurrentLspWorkbenchResults()`、`lsp.unpin_workbench_current_results` command 和 Go 菜单项，会清除 Locations、Symbols、Workspace Outline、active/workspace diagnostics 与 event-backed auxiliary family 的 Workbench pin，并刷新已打开 Workbench。本提交不删除 result history、不新增 pinned history panel、不持久化 pinned 状态、不改变各 result panel 打开/刷新行为，也不迁移到真正内嵌 dock。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testLspWorkbenchUnpinCurrentResultsClearsPinnedMetadata|AttoLspResultLifecycleStoreTests'`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs|AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap'`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): expand hierarchy workbench selection`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量；补齐 Hierarchy panel 的可展开数据与命令起点，让 call/type hierarchy children 结果行可以作为下一轮 children 请求 root 继续展开。
+  - 提交边界：`AttoLspHierarchyParser.Entry` 保留源 hierarchy item 的 `requestJSON`；`AttoHierarchyPanelController` 暴露当前选中 entry，并支持右箭头触发展开回调；AttoEditor 新增 `expandSelectedHierarchyPanelResultInActiveTab()`、`lsp.expand_hierarchy_selection` command 和 Go 菜单项，沿用最近 hierarchy children request 的 kind 继续请求选中 entry 的 children。本提交不改变 call/type hierarchy LSP 协议、不实现真正树状嵌套 UI、不持久化 expanded state、不新增跨 tab/project Hierarchy history，也不迁移到真正内嵌 dock。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testHierarchyResultEntriesRetainExpansionRequestJSON`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs|AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap'`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): show lsp workbench history panel`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量；把统一 LSP Workbench 的 history count 从 metadata 推进到可打开、可过滤的 session-local history panel 起点。
+  - 提交边界：新增 `AttoLspWorkbenchHistoryPanelController` 和稳定 AX identifiers，AttoEditor 新增 `lspWorkbenchHistoryItems()` projection、`showLspWorkbenchHistoryPanel()`、`lsp.show_workbench_history` command 和 Go 菜单项；history panel 汇总 Locations、Symbols、Workspace Outline、active/workspace diagnostics 与 event-backed Code Lens/Inlay Hints/Document Links/Document Colors/Hierarchy 的 bounded history，并展示 family、状态、result sequence、数量和 pinned 标记。本提交不持久化 result history、不新增跨 tab/project history store、不实现 history row 精确恢复/重放，也不迁移到真正内嵌 dock。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testLspWorkbenchHistoryItemsSummarizeResultEntries`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs|AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap'`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): restore lsp workbench history rows`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量；把统一 LSP Workbench history panel 的 lifecycle-backed 行从“打开当前 family”推进到可恢复选中历史 entry 的起点。
+  - 提交边界：`AttoLspWorkbenchHistoryPanelController.Item` 新增 `resultSequence`；AttoEditor 新增 `restoreLspWorkbenchHistoryCurrentEntry(_:)`，并让 history row open 优先按 sequence 恢复 Locations、Symbols、Workspace Outline 与 active/workspace diagnostics 的 session-local lifecycle entry，再打开对应持久在线 panel；diagnostics 历史 panel 复用现有 Problems panel，并按历史 snapshot 导航 active/workspace problem。event-backed Code Lens/Inlay Hints/Document Links/Document Colors/Hierarchy 仍只打开当前 family panel，因为当前 event stream 不保存完整可恢复 snapshot。本提交不持久化 result history、不新增跨 tab/project history store、不重放 LSP request、不实现辅助 family 精确恢复，也不迁移到真正内嵌 dock。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testLspWorkbenchHistoryOpenRestoresLocationAndSymbolEntries`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): restore lsp workbench auxiliary history`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量；把统一 LSP Workbench history panel 的 event-backed auxiliary 行推进到可恢复 session-local item snapshot 的起点。
+  - 提交边界：新增 `AttoLspWorkbenchAuxiliaryHistoryStore`，按 result event sequence bounded 保存 Code Lens、Inlay Hints、Document Links、Document Colors 和 Hierarchy 的 panel item/snapshot；对应成功 result event 记录点同步写入该 store；history row restore 对这些 family 会按 `resultSequence` 恢复旧 snapshot 到既有 panel controller，并在有窗口时展示恢复后的 panel 内容。本提交不改变 LSP request/result 协议、不把 snapshot 下沉到 core-owned project history、不持久化 result history、不跨 tab/project 共享，也不迁移到真正内嵌 dock。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testLspWorkbenchHistoryRestoresAuxiliarySnapshots`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): show selected lsp workbench history`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量；把统一 LSP Workbench 的 history 入口从全量 history panel 推进到当前选中 result family 的二级操作入口。
+  - 提交边界：`AttoLspWorkbenchPanelController` 暴露稳定选中项状态和 programmatic selection，并在右箭头二级操作中打开该行对应 family 的 history；AttoEditor 新增 `showSelectedLspWorkbenchHistory()`、`lsp.show_workbench_selected_history` command 和 Go 菜单项；`showLspWorkbenchHistoryPanel(family:)` / `lspWorkbenchHistoryItems(family:)` 支持按 Workbench family 过滤历史行。本提交不改变 result history 存储模型、不持久化 history、不新增跨 tab/project history store、不重放 LSP request，也不迁移到真正内嵌 dock。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testLspWorkbenchSelectedHistoryFiltersToSelectedFamily`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs|AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap'`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testLspWorkbenchHistoryItemsSummarizeResultEntries|AttoEditorCommandTests.testLspWorkbenchHistoryOpenRestoresLocationAndSymbolEntries|AttoEditorCommandTests.testLspWorkbenchHistoryRestoresAuxiliarySnapshots|AttoEditorCommandTests.testLspWorkbenchSelectedHistoryFiltersToSelectedFamily'`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): jump selected lsp workbench result`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量；把统一 LSP Workbench 的 jump navigation 从固定优先级首个结果推进到当前选中 result family 的跳转入口。
+  - 提交边界：AttoEditor 新增 `lspWorkbenchJumpTarget(family:)` 和 `jumpToSelectedLspWorkbenchResult()`，全局首个结果跳转复用同一 family target helper；新增 `lsp.jump_workbench_selected_result` command 和 Go 菜单项，按 Workbench 当前选中行跳转 Locations、Symbols、Workspace Outline 或 Hierarchy 的首个 target，无 target 时给出 transient status。本提交不改变 diagnostics/document-links/code-lens 的专用打开/执行语义，不新增 result history/store，不持久化或跨 tab/project 共享，也不迁移到真正内嵌 dock。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testLspWorkbenchFirstJumpTargetUsesCurrentResultPriority|AttoEditorCommandTests.testLspWorkbenchSelectedJumpTargetUsesSelectedFamily'`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs|AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap'`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): refresh selected lsp workbench result`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量；把统一 LSP Workbench 的 refresh 操作从分散的 family-specific 菜单推进到当前选中 result family 的统一入口。
+  - 提交边界：AttoEditor 新增 `lspWorkbenchCanRefresh(family:)`、`refreshLspWorkbenchResult(family:)` 和 `refreshSelectedLspWorkbenchResult()`；新增 `lsp.refresh_workbench_selected_result` command 和 Go 菜单项，按 Workbench 当前选中行分发到 Workspace Problems、Code Lens、Inlay Hints、Document Links、Document Colors 或 Hierarchy 的既有刷新入口，Locations/Symbols/Workspace Outline 等没有 request context 的 family 保持不可刷新并给出 transient status。本提交不改变各 LSP request/result 协议、不新增 result store/history、不伪造 Locations/Symbols refresh context、不持久化或跨 tab/project 共享，也不迁移到真正内嵌 dock。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testLspWorkbenchSelectedRefreshDispatchesSupportedFamilies|AttoEditorCommandTests.testLspWorkbenchSelectedJumpTargetUsesSelectedFamily|AttoEditorCommandTests.testLspWorkbenchFirstJumpTargetUsesCurrentResultPriority'`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs|AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap'`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): pin selected lsp workbench result`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量；把统一 LSP Workbench 的 pin/unpin 操作从“全部当前结果”推进到当前选中 result family 的行级入口。
+  - 提交边界：AttoEditor 新增 family 级 `pinLspWorkbenchResult(family:)` / `unpinLspWorkbenchResult(family:)`，现有全量 pin/unpin 改为复用同一 helper；新增 `pinSelectedLspWorkbenchResult()` / `unpinSelectedLspWorkbenchResult()`、`lsp.pin_workbench_selected_result` / `lsp.unpin_workbench_selected_result` command 和 Go 菜单项。selected pin/unpin 支持 Locations、Symbols、Workspace Outline、active/workspace diagnostics 与 event-backed Code Lens/Inlay Hints/Document Links/Document Colors/Hierarchy 的现有 session-local pinned 状态。本提交不改变 pinned 状态存储模型、不持久化 pinned 状态、不新增跨 tab/project sharing、不删除 history、不重新请求 LSP，也不迁移到真正内嵌 dock。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testLspWorkbenchSelectedPinAndUnpinAffectOnlySelectedFamily|AttoEditorCommandTests.testLspWorkbenchUnpinCurrentResultsClearsPinnedMetadata|AttoEditorCommandTests.testLspWorkbenchSelectedRefreshDispatchesSupportedFamilies'`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs|AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap'`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): clear selected lsp workbench stale result`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量；把统一 LSP Workbench 的 clear stale 操作从“全部 stale 结果”推进到当前选中 result family 的行级入口。
+  - 提交边界：`AttoLspResultLifecycleStore` 支持按指定 lifecycle entry 清除 stale 状态，并同步 current/history/pinned entry；AttoEditor 新增 family 级 `clearLspWorkbenchStaleResult(family:)` 和 `clearSelectedLspWorkbenchStaleResult()`，现有全量 clear stale 改为复用同一 helper；新增 `lsp.clear_workbench_selected_stale_result` command 和 Go 菜单项。selected clear stale 支持 Locations、Symbols、Workspace Outline、active/workspace diagnostics 与 event-backed Code Lens/Inlay Hints/Document Links/Document Colors/Hierarchy 的现有 session-local stale 状态。本提交不删除 result 内容、不清理 history、不持久化 stale 状态、不重新请求 LSP，也不迁移到真正内嵌 dock。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testLspWorkbenchSelectedClearStaleAffectsOnlySelectedFamily|AttoEditorCommandTests.testLspWorkbenchSelectedPinAndUnpinAffectOnlySelectedFamily|AttoEditorCommandTests.testLspWorkbenchSelectedRefreshDispatchesSupportedFamilies|AttoLspResultLifecycleStoreTests.testClearStaleStateForHistoryEntryLeavesCurrentEntryUntouched'`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs|AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap'`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): show pinned lsp workbench results`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量；把统一 LSP Workbench 的 session-local pinned 标记从 metadata 推进到可打开、可过滤、可恢复的 pinned results 列表入口。
+  - 提交边界：AttoEditor 新增 pinned-only history projection 和 `showLspWorkbenchPinnedResultsPanel()`，复用现有 LSP Workbench History panel 与 history row restore 逻辑展示已 pinned 的 Locations、Symbols、Workspace Outline、active/workspace diagnostics 与 event-backed auxiliary family；新增 `lsp.show_workbench_pinned_results` command 和 Go 菜单项；可见 history panel 刷新时会保留当前 family filter 与 pinned-only 模式。本提交不改变 pinned 状态存储模型、不持久化 pinned 状态、不新增跨 tab/project sharing、不新增独立 pinned store，也不迁移到真正内嵌 dock。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testLspWorkbenchPinnedResultsFiltersHistoryToPinnedEntries|AttoEditorCommandTests.testLspWorkbenchSelectedPinAndUnpinAffectOnlySelectedFamily|AttoEditorCommandTests.testLspWorkbenchSelectedClearStaleAffectsOnlySelectedFamily'`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs|AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap'`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`fix(app): retain pinned lsp workbench history entries`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量；修正 pinned result 已被 session-local pinned store 保留、但因 bounded history 淘汰而无法在 Workbench History / Pinned Results 列表中看到或恢复的边界。
+  - 提交边界：`lspWorkbenchHistoryItems(...)` 现在会把仍保留在 `pinnedEntriesByKey` / `pinnedEventsByFamily` 中、但已不在普通 bounded history/events 内的 pinned entries 补回 projection；Locations、Symbols、Workspace Outline 和 active/workspace diagnostics 的 history restore 也会在普通 history miss 时回退到 pinned entry。本提交不扩大 pinned 状态持久化范围，不改变 history retention 上限，不新增跨 tab/project store；event-backed auxiliary family 仍只在已有 auxiliary snapshot 时精确恢复，否则沿用现有 family panel fallback。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testLspWorkbenchPinnedResultsRetainEntriesAfterHistoryBounds|AttoEditorCommandTests.testLspWorkbenchPinnedResultsFiltersHistoryToPinnedEntries|AttoLspResultLifecycleStoreTests.testPinCurrentResultRetainsEntryAfterHistoryBounds'`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`fix(app): retain pinned lsp workbench auxiliary snapshots`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量；修正 event-backed auxiliary pinned result 只保留 lifecycle event metadata，而对应 panel snapshot 被 auxiliary history 上限淘汰后无法精确恢复的边界。
+  - 提交边界：`AttoLspWorkbenchAuxiliaryHistoryStore` 新增按 family 的 pinned snapshot retention，`entry(eventSequence:)` 会在普通 bounded store miss 时回退到 pinned snapshot；Workbench event-backed `pinLspWorkbenchResult(family:)` / `unpinLspWorkbenchResult(family:)` 同步 pin/unpin 该 snapshot store；Document Colors/Code Lens/Inlay Hints/Document Links/Hierarchy 等 auxiliary family 的 pinned results 在普通 auxiliary history 淘汰后仍可通过 Workbench History / Pinned Results 精确恢复。本提交不持久化 snapshots，不新增跨 tab/project store，不改变 auxiliary history retention 上限，也不改变各 family 的 LSP request/result 协议。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testLspWorkbenchPinnedAuxiliaryResultsRetainSnapshotsAfterHistoryBounds|AttoEditorCommandTests.testLspWorkbenchHistoryRestoresAuxiliarySnapshots|AttoEditorCommandTests.testLspWorkbenchPinnedResultsRetainEntriesAfterHistoryBounds'`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testLspWorkbenchSelectedPinAndUnpinAffectOnlySelectedFamily|AttoEditorCommandTests.testLspWorkbenchPinnedResultsFiltersHistoryToPinnedEntries'`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`test(app): split lsp workbench retention tests`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量，以及本计划的 Swift 文件长度/结构维护约束；把最近新增的 LSP Workbench pinned/history retention 回归从超大的 `AttoEditorCommandTests` 拆到独立测试类，避免后续 Workbench 回归继续堆在命令测试文件里。
+  - 提交边界：新增 `AttoEditorLspWorkbenchTests` 和最小 `makeEditorArea` / temporary workspace helper，迁移 pinned-only history projection、bounded history 后 pinned entry restore、bounded auxiliary snapshot 后 pinned restore 三条回归；`AttoEditorCommandTests` 保留 command/menu、selected action 和其他既有 Workbench 行为测试。本提交不改变运行时代码、不新增产品行为、不重排旧 Workbench 大块测试。
+  - 验证记录：
+    - `swift test --disable-sandbox --package-path swift --scratch-path /tmp/stage424-swift-build --filter 'AttoEditorLspWorkbenchTests.testLspWorkbenchPinnedResultsFiltersHistoryToPinnedEntries|AttoEditorLspWorkbenchTests.testLspWorkbenchPinnedResultsRetainEntriesAfterHistoryBounds|AttoEditorLspWorkbenchTests.testLspWorkbenchPinnedAuxiliaryResultsRetainSnapshotsAfterHistoryBounds'`
+    - `swift test --disable-sandbox --package-path swift --scratch-path /tmp/stage424-swift-build --filter 'AttoEditorCommandTests.testLspWorkbenchSelectedPinAndUnpinAffectOnlySelectedFamily'`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`test(app): split lsp workbench projection tests`
+  - 所属任务：阶段 7 的 Result panels 与持久工作台视图增量，以及本计划的 Swift 文件长度/结构维护约束；继续把不依赖真实 AppKit window 的 LSP Workbench projection/action/history 回归从超大的 `AttoEditorCommandTests` 迁到独立 `AttoEditorLspWorkbenchTests`。
+  - 提交边界：迁移 Workbench jump、selected refresh、selected clear stale、selected pin/unpin、unpin current、history summary、history restore、selected history filter 和 Document Colors refresh-only Workbench projection 等测试；`AttoEditorCommandTests` 继续保留需要真实 child window、panel content view 或 `EditorCoreSkiaView` 的 Workbench UI 展示测试。本提交不改变运行时代码、不修改 Workbench 产品行为、不迁移依赖真实 window 的 panel snapshot/AX 测试。
+  - 验证记录：
+    - `swift test --disable-sandbox --package-path swift --scratch-path /tmp/stage425-swift-build --filter AttoEditorLspWorkbenchTests`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`test(app): split command macro tests`
+  - 所属任务：阶段 8 的 Command、menu、keymap、palette 与 Sublime 行为矩阵，以及本计划的 Swift 文件长度/结构维护约束；把 command macro 的 record/replay、named macro、delete history、import/export 回归从超大的 `AttoEditorCommandTests` 拆到独立测试类，给后续宏与 Sublime 行为矩阵回归提供更窄的落点。
+  - 提交边界：新增 `AttoEditorCommandMacroTests`，迁移 command macro 录制/回放、last/named macro 持久化、rename/delete/batch delete、delete undo/history panel、history remove/clear、Sublime macro import/export 和 native file selection provider 测试；`AttoEditorCommandTests` 继续保留 command registry、菜单、palette 和 typed command argument 等相邻命令系统测试。`AttoAppDelegate` 的测试 initializer 新增默认值不变的 `sessionManager` 注入点，让 window 测试可使用临时 session file；默认运行路径和宏产品行为不变，不重排阶段 8 其余命令测试。
+  - 验证记录：
+    - `swift test --disable-sandbox --package-path swift --scratch-path /tmp/stage426-swift-build --filter 'AttoEditorCommandMacroTests.testCommandMacroBatchDeletesNamedSublimeMacroFiles|AttoEditorCommandMacroTests.testCommandMacroUndoDeleteUsesMultiLevelHistory|AttoEditorCommandMacroTests.testCommandMacroUndoDeleteHistoryPersistsAcrossDelegates|AttoEditorCommandMacroTests.testCommandMacroDeleteHistoryWithoutWindowDoesNotRestoreEntry|AttoEditorCommandMacroTests.testCommandMacroClearDeleteHistoryClearsPersistentUndoStack|AttoEditorCommandMacroTests.testCommandMacroRemoveDeleteHistoryEntryRemovesPersistentSelectedRecord|AttoEditorCommandMacroTests.testCommandMacroRemoveDeleteHistoryEntriesRemovesPersistentSelectedRecords|AttoEditorCommandMacroTests.testCommandMacroImportsAndExportsSublimeMacroFiles|AttoEditorCommandMacroTests.testCommandMacroImportExportUsesNativeFileSelectionProviders'`
+    - `swift test --disable-sandbox --package-path swift --scratch-path /tmp/stage426-swift-build --filter 'AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs'`
+    - 当前环境尝试 `swift test --disable-sandbox --package-path swift --scratch-path /tmp/stage426-swift-build --filter AttoEditorCommandMacroTests` 和 `AttoEditorCommandTests.testCommandPaletteOrdersRecentCommandsFirst` 未完整通过：需要 `EditorCoreSkiaView` / AppKit panel 的测试遇到 `metalUnavailable` 或 `xctest` signal 11。
+    - `cargo fmt --check`
     - `git diff --check`
 
 ## 阶段 8: Command、menu、keymap、palette 与 Sublime 行为矩阵
@@ -1797,6 +2344,56 @@
     - `swift test --package-path swift --filter AttoConfigurationSettingsTests`
     - `swift test --package-path swift --filter AttoPreferencesTests`
     - `swift test --package-path swift --filter AttoEditorPreferencesApplicationTests`
+    - `git diff --check`
+- 中间提交：`feat(app): describe settings schema fields`
+  - 所属任务：阶段 9 的配置、偏好与 capability DTO 完整性增量；为后续 schema-aware settings UI 建立 typed field schema 目录，让 UI/校验/补全可以消费同一份字段路径、类型、choice 和 scoped 支持元数据。
+  - 提交边界：新增 `AttoConfigurationSettingsSchema`、field schema DTO、value kind 和 choice DTO；schema 覆盖当前 `AttoConfigurationSettings` 已支持的 editor/rendering/language/workspace 字段，并标记 workspace 字段不支持 `scoped_settings` 文档 selector。该提交不改变 settings 解析/合并/保存语义，不实现表单 UI、补全、运行时 override 持久化、跨 schema 字段语义迁移或完整 core/headless capability negotiation。
+  - 验证记录：
+    - `swift test --disable-sandbox --package-path swift --scratch-path /tmp/stage427-swift-build --filter AttoConfigurationSettingsTests`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): validate settings schema fields`
+  - 所属任务：阶段 9 的配置、偏好与 capability DTO 完整性增量；在 typed field schema 基础上补可复用 settings validation 起点，让后续 schema-aware settings UI、补全和保存前校验可以共享同一套 choice、数值边界和 scoped selector issue 模型。
+  - 提交边界：新增 `AttoConfigurationSettingsValidation`，为 `AttoConfigurationSettingsSchemaDescriptor` 提供 validation result/issue DTO 和 `validate(...)`；覆盖 wrap mode、wrap indent、Find in Files scope、font size、LSP auto-restart attempt/delay 的范围校验，以及 scoped settings selector 空值检查。该提交不改变 settings 文件加载/保存/合并语义，不阻止当前 App 读取无效 settings，不实现表单 UI、runtime override 持久化、跨 schema 字段语义迁移或完整 core/headless capability negotiation。
+  - 验证记录：
+    - `swift test --disable-sandbox --package-path swift --scratch-path /tmp/stage428-swift-build --filter AttoConfigurationSettingsTests`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): validate settings files from commands`
+  - 所属任务：阶段 9 的配置、偏好与 capability DTO 完整性增量；把 settings schema validation 起点接到用户可触达的命令/菜单入口，让 user/workspace settings JSON 可以显式校验并获得状态反馈。
+  - 提交边界：新增非破坏性的 `AttoConfigurationSettingsFileValidation` 文件校验 helper，`settings.validate_user_settings` / `settings.validate_workspace_settings` command 和主菜单入口；校验命令读取现有 settings 文件、复用 typed schema validation，并把 valid/invalid/missing/decode failure 汇总到 transient status。该提交不自动创建 settings 文件、不调用 settings store 的损坏备份/迁移写盘路径，不实现完整 schema-aware 表单 UI、补全 UI、runtime override 持久化、跨 schema 字段语义迁移或完整 core/headless capability negotiation。
+  - 验证记录：
+    - `swift test --disable-sandbox --package-path swift --scratch-path /tmp/stage429-settings-model-build --filter AttoConfigurationSettingsTests`
+    - `swift test --disable-sandbox --package-path swift --scratch-path /tmp/stage429-settings-command-build --filter AttoEditorSettingsCommandTests`
+    - `swift test --disable-sandbox --package-path swift --scratch-path /tmp/stage429-swift-build --filter AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): show settings validation issues`
+  - 所属任务：阶段 9 的配置、偏好与 capability DTO 完整性增量；把 settings validation 命令的状态摘要推进到可扫描的 schema-aware issues panel，让 user/workspace settings 中的 key path、message、severity 和 scope 可见。
+  - 提交边界：新增 `AttoSettingsValidationPanelController` 和 settings validation panel accessibility identifiers；`settings.validate_user_settings` / `settings.validate_workspace_settings` 在 validation result 含 issue 时打开/刷新 panel，valid 结果会隐藏旧 panel，missing/decode failure 仍只显示 transient status。该提交不实现完整表单编辑器、补全 UI、issue 跳转到 JSON 行列、settings 自动修复、runtime override 持久化、跨 schema 字段语义迁移或完整 core/headless capability negotiation。
+  - 验证记录：
+    - `swift test --disable-sandbox --package-path swift --scratch-path /tmp/stage430-settings-command-build --filter AttoEditorSettingsCommandTests`
+    - `swift test --disable-sandbox --package-path swift --scratch-path /tmp/stage430-settings-model-build --filter AttoConfigurationSettingsTests`
+    - `swift test --disable-sandbox --package-path swift --scratch-path /tmp/stage430-menu-command-build --filter AttoEditorCommandTests.testMainMenuItemsUseCommandIDsAndResolvedKeymap`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): locate settings validation issues`
+  - 所属任务：阶段 9 的配置、偏好与 capability DTO 完整性增量；为 settings validation issue panel 补 schema-aware JSON source location projection，让 key path、数组下标和字典 key issue 能映射到 settings JSON 的 1-based line/column。
+  - 提交边界：新增 `AttoConfigurationSettingsJSONLocation` 轻量 JSON location index；`AttoConfigurationSettingsFileValidationReport` 现在携带 issue key path 到 source location 的映射；settings validation panel item 在有位置时把 line/column 显示在 status 中。该提交不实现完整表单编辑器、补全 UI、真实 editor jump/open action、JSON parser 诊断恢复、settings 自动修复、runtime override 持久化、完整 Sublime selector grammar、跨 schema 字段语义迁移或完整 core/headless capability negotiation。
+  - 验证记录：
+    - `swift test --disable-sandbox --package-path swift --scratch-path /tmp/stage431-settings-location-build --filter AttoConfigurationSettingsJSONLocationTests`
+    - `swift test --disable-sandbox --package-path swift --scratch-path /tmp/stage431-settings-command-build --filter AttoEditorSettingsCommandTests`
+    - `swift test --disable-sandbox --package-path swift --scratch-path /tmp/stage431-settings-model-build --filter AttoConfigurationSettingsTests`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`feat(app): jump to settings validation issues`
+  - 所属任务：阶段 9 的配置、偏好与 capability DTO 完整性增量；把 settings validation issue panel 的 source location projection 接到用户动作，让 Enter / double-click 可以打开 settings JSON 并跳到对应 line/column。
+  - 提交边界：`AttoSettingsValidationPanelController` 新增 selected item、keyboard navigation、Enter/double-click open callback 和 source URL 投影；`AttoAppDelegate` 的 settings validation panel 回调复用既有 `openFile(url:mode:location:)` / `AttoCommandLine.FileLocation` 打开 settings 文件并定位 issue。该提交不实现完整表单编辑器、补全 UI、settings 自动修复、JSON parser 诊断恢复、runtime override 持久化、完整 Sublime selector grammar、跨 schema 字段语义迁移或完整 core/headless capability negotiation。
+  - 验证记录：
+    - `swift test --disable-sandbox --package-path swift --scratch-path /tmp/stage432-settings-command-build --filter AttoEditorSettingsCommandTests`
+    - `swift test --disable-sandbox --package-path swift --scratch-path /tmp/stage432-settings-location-build --filter AttoConfigurationSettingsJSONLocationTests`
+    - `swift test --disable-sandbox --package-path swift --scratch-path /tmp/stage432-settings-model-build --filter AttoConfigurationSettingsTests`
+    - `cargo fmt --check`
     - `git diff --check`
 
 ## 阶段 10: ABI 版本、错误模型与兼容性门禁
@@ -2199,6 +2796,125 @@
     - `cargo fmt --check`
     - `git diff --check`
 
+- 中间提交：`feat(ffi): envelope project lsp lifecycle`
+  - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；把 MultiDocument project LSP start/stop/restart plan 与 lifecycle event snapshot 从裸 JSON 查询推进到统一 `{ ok, operation, status, value, error, version }` envelope 面，延续已有 project LSP server config envelope 的错误模型。
+  - 提交边界：新增 UI FFI `editor_core_ui_ffi_multi_document_project_lsp_lifecycle_envelope_json`、`multi_document_project_lsp_lifecycle_envelope` feature flag/runtime descriptor 和 Swift `EcuProjectLspLifecycleEnvelope` typed wrapper；operation 覆盖 `start_plan`、`stop_plan`、`restart_plan`、`lifecycle_events`，无效 operation/null multi 等错误返回 envelope 而不是空指针。旧裸 JSON API 保留兼容。本提交不移除旧 API，不实现跨 host capability negotiation 策略，不改变 project LSP plan/event 生成语义，也不处理 App 层逐面板降级 UI。
+  - 验证记录：
+    - `cargo test -p editor-core-ui-ffi ffi_project_lsp_lifecycle_envelope_json_reports_success_and_errors`
+    - `cargo test -p editor-core-ui-ffi ffi_feature_flags_include_semantic_tokens_requests`
+    - `cargo test -p editor-core-ui-ffi ffi_runtime_info_json_reports_version_and_feature_descriptors`
+    - `cargo test -p editor-core-ui-ffi`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `cargo fmt --check`
+    - `git diff --check`
+    - 受限未完成：`swift test --disable-sandbox --package-path swift --scratch-path /tmp/stage433-swift-build --filter 'EditorCoreUIFFITests/testProjectLspLifecycleEnvelope|EditorCoreUIFFITests/testRuntimeInfoAndFeatureFlags|EditorCoreUIFFIRuntimeCompatibilityTests'` 已编译到 Swift 新 wrapper，但链接时 SwiftPM plugin 的 `libeditor_core_ui_ffi.a` 缓存缺少新 symbol；尝试重建 plugin `cargo-target` 时 `skia-bindings` 需要访问 GitHub，提升权限请求被审批层拒绝。
+
+- 中间提交：`docs(abi): document host capability negotiation`
+  - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；把 runtime feature probing、envelope 优先级、legacy fallback、未知 feature/status 的前向兼容处理和字符串释放约束写入 ABI 草案与 UI FFI README。
+  - 提交边界：`docs/abi-v1-draft.md` 新增 Runtime Capability Negotiation 流程，并把 `ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_LIFECYCLE_ENVELOPE` 纳入当前 envelope feature 清单；`crates/editor-core-ui-ffi/README.md` 新增 runtime capability host gating 说明和 MultiDocument project LSP lifecycle envelope 的 operation/成功/错误示例。本提交不新增 C ABI symbol，不改变 envelope JSON runtime 行为，不解决 SwiftPM plugin staticlib 缓存/联网重建阻碍，也不实现 App 层逐面板降级 UI。
+  - 验证记录：
+    - `cargo fmt --check`
+    - `git diff --check`
+
+- 中间提交：`feat(ffi): envelope headless lsp edit helpers`
+  - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；把上一轮 headless LSP helper envelope 未覆盖的状态变更、semantic tokens interval、processing edit 和 completion item edit/apply helper 纳入统一结构化 envelope。
+  - 提交边界：新增 `ECF_FEATURE_LSP_EDIT_HELPER_ENVELOPE` feature bit/runtime descriptor 和一组 headless C ABI envelope：on-type formatting params、apply text edits、semantic tokens to intervals、document highlights/inlay hints/document links/code lens/document symbols/diagnostics to processing edits、completion item to text edits、apply completion item；旧裸 JSON/null+last_error 或 bool+last_error API 保留兼容。Swift `LSPBridge` 新增 extension wrapper 并复用 `EcfLSPHelperEnvelope` schema。该提交不新增 UI FFI symbol，不切换 App 主路径，不覆盖 Sublime/Tree-sitter processor JSON result 面，也不解决 SwiftPM UI plugin staticlib 缓存阻碍。
+  - 验证记录：
+    - `cargo test -p editor-core-ffi --test abi_v1 lsp_edit_helper_envelope_json_reports_success_and_errors`
+    - `cargo test -p editor-core-ffi --test abi_v1 feature_flags_and_alias_work`
+    - `cargo test -p editor-core-ffi --test abi_v1 public_abi_scalar_signatures_are_fixed_width`
+    - `cargo test -p editor-core-ffi --test abi_v1 runtime_info_json_reports_version_and_feature_descriptors`
+    - `cargo test -p editor-core-ffi --test abi_v1`
+    - `cargo build -p editor-core-ffi --release`
+    - `cargo fmt --check`
+    - `git diff --check`
+    - 受限未完成：Swift wrapper 定向测试未作为完成门禁运行；当前 Swift package 仍可能在链接阶段碰到前序 UI FFI `libeditor_core_ui_ffi.a` plugin 缓存缺少 project LSP lifecycle symbol 的阻碍，重建该 UI plugin target 需要 `skia-bindings` 联网下载且此前提升权限被审批层拒绝。
+- 中间提交：`feat(ffi): envelope lsp derived-state application`
+  - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；把 per-`EditorUi` LSP diagnostics、document symbols、document highlights、folding ranges、inlay hints、code lens 和 document links apply helper 的 status-code/last-error 面纳入统一结构化 envelope。
+  - 提交边界：新增 `ECU_FEATURE_LSP_DERIVED_STATE_APPLICATION_ENVELOPE` feature bit/runtime descriptor 和七个 UI FFI C ABI envelope：`editor_core_ui_ffi_editor_ui_lsp_apply_diagnostics_envelope_json(...)`、`editor_core_ui_ffi_editor_ui_lsp_apply_inlay_hints_envelope_json(...)`、`editor_core_ui_ffi_editor_ui_lsp_apply_code_lens_envelope_json(...)`、`editor_core_ui_ffi_editor_ui_lsp_apply_document_links_envelope_json(...)`、`editor_core_ui_ffi_editor_ui_lsp_apply_document_highlights_envelope_json(...)`、`editor_core_ui_ffi_editor_ui_lsp_apply_document_symbols_envelope_json(...)`、`editor_core_ui_ffi_editor_ui_lsp_apply_folding_ranges_envelope_json(...)`；旧 `c_int` + `last_error` API 保留兼容。Swift `EditorUI` 新增 typed wrapper 与 `EcuLspDerivedStateApplicationEnvelope`，runtime compatibility 和 Atto optional capability report 同步新增该能力。该提交不切换 App LSP derived-state apply 主路径，不改变 apply payload schema，不覆盖 semantic tokens raw buffer apply，不移除 legacy status-code API，也不解决 SwiftPM UI plugin staticlib 缓存阻碍。
+  - 验证记录：
+    - `cargo test -p editor-core-ui-ffi ffi_lsp_derived_state_application_envelope_json_reports_success_and_errors`
+    - `cargo test -p editor-core-ui-ffi ffi_feature_flags_include_semantic_tokens_requests`
+    - `cargo test -p editor-core-ui-ffi ffi_runtime_info_json_reports_version_and_feature_descriptors`
+    - `cargo test -p editor-core-ui-ffi`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFITests/testLspDerivedStateApplicationEnvelopeDecodesFutureFieldsAndUnknownStatus'`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFITests/testLspDerivedStateApplicationEnvelopeReportsSuccessAndError|EditorCoreUIFFITests/testLoadsLibraryAndVersion|EditorCoreUIFFIRuntimeCompatibilityTests/testReportsMissingRequiredFeatures|AttoRuntimeCompatibilityTests/testMissingOptionalFeaturesDoNotBlockLaunchCompatibility'`
+    - `cargo fmt --check`
+    - `git diff --check`
+
+- 中间提交：`feat(ffi): envelope headless processor results`
+  - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；把 headless Sublime / Tree-sitter processor 和 Tree-sitter indenter JSON result 面纳入统一结构化 envelope。
+  - 提交边界：新增 `ECF_FEATURE_PROCESSOR_RESULT_ENVELOPE` feature bit/runtime descriptor 和五个 headless C ABI envelope：`editor_core_ffi_sublime_processor_process_envelope_json(...)`、`editor_core_ffi_sublime_processor_scope_for_style_id_envelope_json(...)`、`editor_core_ffi_treesitter_processor_process_envelope_json(...)`、`editor_core_ffi_treesitter_processor_last_update_mode_envelope_json(...)`、`editor_core_ffi_treesitter_indenter_reindent_line_envelope_json(...)`；旧裸 JSON/null+last_error API 保留兼容。Swift `SublimeProcessor` / `TreeSitterProcessor` 新增 raw/typed envelope wrapper，并以 `EcfProcessorResultEnvelope` 复用 operation/value/error schema。该提交不新增 UI FFI symbol，不切换 App syntax/Tree-sitter 主路径，不新增 Swift `TreeSitterIndenter` 类型，不改变 processor payload JSON schema，也不完成完整外部 capability negotiation protocol。
+  - 验证记录：
+    - `cargo test -p editor-core-ffi processor_result_envelope_json_reports_success_and_errors`
+    - `cargo test -p editor-core-ffi --test abi_v1`
+    - `cargo test -p editor-core-ffi`
+    - `swift test --package-path swift --filter 'SublimeProcessorTests/testSublimeProcessorProcessApplyScopesAndFoldPreservation|TreeSitterProcessorTests/testTreeSitterHighlightsFoldsAndUpdateMode|FFILibrarySmokeTests/testLoadsLibraryAndVersion|EditorCoreFFIRuntimeCompatibilityTests/testReportsMissingRequiredFeatures'`
+    - `swift test --package-path swift --filter 'SublimeProcessorTests|TreeSitterProcessorTests|FFILibrarySmokeTests|EditorCoreFFIRuntimeCompatibilityTests'`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`test(ffi): cover processor envelope compatibility`
+  - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；补齐 headless processor result envelope 的 Swift future-compat decode 回归，保证 host wrapper 对未来 processor operation/status/value metadata 和未知 numeric error status 保持兼容。
+  - 提交边界：只新增 `EcfProcessorResultEnvelope` 解码测试，覆盖 unknown operation、unknown status、raw value 保留未知字段、未来 top-level/error metadata 和未知 numeric error status 解码为 `nil`。本提交不改变 Rust/C ABI、不新增 feature bit、不改变 Sublime/Tree-sitter processor runtime 行为，也不新增 Swift `TreeSitterIndenter` 类型。
+  - 验证记录：
+    - `swift test --package-path swift --filter SublimeProcessorTests.testProcessorResultEnvelopeDecodesFutureFieldsAndUnknownStatus`
+    - `swift test --package-path swift --filter 'SublimeProcessorTests.testProcessorResultEnvelopeDecodesFutureFieldsAndUnknownStatus|SublimeProcessorTests.testSublimeProcessorProcessApplyScopesAndFoldPreservation'`
+    - `git diff --check`
+
+- 中间提交：`feat(ffi): envelope semantic tokens apply`
+  - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；把 per-`EditorUi` LSP semantic tokens raw `uint32_t` buffer apply 的 status-code/last-error 面纳入统一结构化 envelope。
+  - 提交边界：新增 `ECU_FEATURE_LSP_SEMANTIC_TOKENS_APPLICATION_ENVELOPE` feature bit/runtime descriptor 和 UI FFI C ABI envelope：`editor_core_ui_ffi_editor_ui_lsp_apply_semantic_tokens_envelope_json(EditorUi*, const uint32_t*, uint32_t)`；旧 `editor_core_ui_ffi_editor_ui_lsp_apply_semantic_tokens(...)` status-code API 保留兼容。Swift `EditorUI` 新增 typed/raw envelope wrapper，并复用 `EcuLspDerivedStateApplicationEnvelope` schema，额外解码 `value.dataLen`。runtime compatibility 和 Atto optional capability report 同步新增该能力。该提交不切换 App typed semantic tokens apply 主路径，不改变 semantic tokens payload/delta baseline schema，不移除 legacy status-code API，也不解决 SwiftPM UI plugin staticlib 缓存阻碍。
+  - 验证记录：
+    - `cargo test -p editor-core-ui-ffi ffi_lsp_semantic_tokens_application_envelope_json_reports_success_and_errors`
+    - `cargo test -p editor-core-ui-ffi ffi_feature_flags_include_semantic_tokens_requests`
+    - `cargo test -p editor-core-ui-ffi ffi_runtime_info_json_reports_version_and_feature_descriptors`
+    - `cargo test -p editor-core-ui-ffi`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFITests/testLspSemanticTokensApplicationEnvelopeReportsSuccessAndError|EditorCoreUIFFITests/testLoadsLibraryAndVersion|EditorCoreUIFFIRuntimeCompatibilityTests/testReportsMissingRequiredFeatures|AttoRuntimeCompatibilityTests/testMissingOptionalFeaturesDoNotBlockLaunchCompatibility'`
+    - `cargo fmt --check`
+    - `git diff --check`
+- 中间提交：`test(ffi): cover semantic tokens envelope compatibility`
+  - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；补齐 LSP semantic tokens application envelope 的 Swift future-compat decode 回归，保证 host wrapper 对未来 status、未来 value/error metadata 和未知 numeric error status 保持兼容。
+  - 提交边界：新增 `EcuLspSemanticTokensApplicationEnvelope` 解码测试，覆盖 `value.data_len`、raw value 保留未知字段、未知 envelope status 解码为 `.unknown(...)`、未知 numeric error status 解码为 `nil`；同时让 shared derived-state application value decoder 同时兼容默认 `data_len` 和 snake-case-converting `dataLen` 解码策略。本提交不改变 Rust/C ABI、不新增 feature bit、不改变 semantic tokens apply runtime 行为，也不切换 App typed semantic tokens apply 主路径。
+  - 验证记录：
+    - `swift test --package-path swift --filter EditorCoreUIFFITests.testLspSemanticTokensApplicationEnvelopeDecodesFutureFieldsAndUnknownStatus`
+    - `swift test --package-path swift --filter 'EditorCoreUIFFITests.testLspSemanticTokensApplicationEnvelopeReportsSuccessAndError|EditorCoreUIFFITests.testLspSemanticTokensApplicationEnvelopeDecodesFutureFieldsAndUnknownStatus'`
+    - `git diff --check`
+- 中间提交：`test(ffi): cover runtime info load diagnostics`
+  - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；补齐 headless/UI Swift runtime compatibility report 在 runtime info 读取失败时的诊断回归，固定 load failure 优先于 missing feature 列表的用户可见错误面。
+  - 提交边界：只新增 `EditorCoreFFIRuntimeCompatibilityReport` 与 `EditorCoreUIFFIRuntimeCompatibilityReport` 的 load-error 测试，覆盖 `isCompatible == false`、保留 required/optional feature 详情、诊断包含底层读取错误且不混入 missing feature 文案。本提交不改变 Rust/C ABI、不新增 feature bit、不改 runtime probing API，也不实现完整第三方 host capability negotiation policy。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'EditorCoreFFIRuntimeCompatibilityTests.testReportsRuntimeInfoLoadFailure|EditorCoreUIFFIRuntimeCompatibilityTests.testReportsRuntimeInfoLoadFailure'`
+- 中间提交：`test(ffi): cover runtime descriptor feature alignment`
+  - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；补齐 headless/UI Swift runtime JSON feature descriptor 与 Swift `knownFeatures` 的动态对齐回归，避免新增 feature bit 时只同步 Swift required list 或只同步 Rust descriptor 造成 host capability negotiation 诊断漂移。
+  - 提交边界：新增 `FFILibrarySmokeTests.testRuntimeInfoJSONDescriptorsCoverKnownFeatures` 与 `EditorCoreUIFFITests.testRuntimeInfoJSONDescriptorsCoverKnownFeatures`，按 feature flag 验证 runtime JSON `features[]` 覆盖每个 Swift `knownFeatures` 项、descriptor bit 与 flag 一致，并要求 descriptor name/description 非空。本提交不改变 Rust/C ABI、不新增 feature bit、不改变 runtime JSON schema，也不实现完整第三方 host capability negotiation policy。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'FFILibrarySmokeTests.testRuntimeInfoJSONDescriptorsCoverKnownFeatures|EditorCoreUIFFITests.testRuntimeInfoJSONDescriptorsCoverKnownFeatures'`
+    - `swift test --package-path swift --filter 'FFILibrarySmokeTests|EditorCoreUIFFITests.testLoadsLibraryAndVersion|EditorCoreUIFFITests.testRuntimeInfoJSONDescriptorsCoverKnownFeatures'`
+    - `git diff --check`
+- 中间提交：`test(ffi): cover combined runtime mismatch diagnostics`
+  - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；补齐 headless/UI Swift runtime compatibility 在 ABI 过旧、required feature 缺失和 optional feature 缺失同时发生时的组合诊断回归，保证 host 启动诊断不会只报告其中一个原因。
+  - 提交边界：新增 `EditorCoreFFIRuntimeCompatibilityTests.testReportsOlderABIAndFeatureMismatchesTogether` 与 `EditorCoreUIFFIRuntimeCompatibilityTests.testReportsOlderABIAndFeatureMismatchesTogether`，覆盖 `isCompatible == false`、load error 为空、required/optional missing feature 列表保留，以及诊断同时包含 ABI mismatch、required feature missing 和 optional feature unavailable 文案。本提交不改变 Rust/C ABI、不新增 feature bit、不改 runtime probing API，也不实现完整第三方 host capability negotiation policy。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'EditorCoreFFIRuntimeCompatibilityTests.testReportsOlderABIAndFeatureMismatchesTogether|EditorCoreUIFFIRuntimeCompatibilityTests.testReportsOlderABIAndFeatureMismatchesTogether'`
+    - `swift test --package-path swift --filter 'EditorCoreFFIRuntimeCompatibilityTests|EditorCoreUIFFIRuntimeCompatibilityTests'`
+    - `git diff --check`
+- 中间提交：`feat(swift): decode runtime capability snapshots`
+  - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；让 headless/UI Swift wrapper 能类型化消费 `runtime_info_json()` 的 capability snapshot 和 feature descriptor，避免 Swift host 只能拿原始 JSON 字符串后自行解析 descriptor。
+  - 提交边界：新增 `EditorCoreFFIRuntimeCapabilitySnapshot` / `EditorCoreUIFFIRuntimeCapabilitySnapshot`、对应 `RuntimeFeatureDescriptor` 类型，以及 `EditorCoreFFILibrary.runtimeCapabilitySnapshot()` / `EditorCoreUIFFILibrary.runtimeCapabilitySnapshot()`；snapshot 暴露 `kind`、`abiVersion`、`version`、`featureFlags`、`features`、`runtimeInfo` 投影和 `supports(...)` helper。该提交不改变 Rust/C ABI、不新增 feature bit、不改变 runtime JSON schema、不切换现有 runtime compatibility 主路径，也不实现完整第三方 host capability negotiation policy。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'FFILibrarySmokeTests.testRuntimeCapabilitySnapshotDecodesFeatureDescriptors|EditorCoreUIFFITests.testRuntimeCapabilitySnapshotDecodesFeatureDescriptors'`
+    - `swift test --package-path swift --filter 'FFILibrarySmokeTests|EditorCoreUIFFITests.testLoadsLibraryAndVersion|EditorCoreUIFFITests.testRuntimeInfoJSONDescriptorsCoverKnownFeatures|EditorCoreUIFFITests.testRuntimeCapabilitySnapshotDecodesFeatureDescriptors'`
+    - `git diff --check`
+- 中间提交：`feat(swift): evaluate runtime capability snapshots`
+  - 所属任务：阶段 10 的 ABI 版本、错误模型与兼容性门禁增量；让 headless/UI Swift runtime compatibility evaluator 能直接消费上一提交的 typed capability snapshot，减少 host 手动投影 `snapshot.runtimeInfo` 的样板代码。
+  - 提交边界：新增 `EditorCoreFFIRuntimeCompatibility.evaluate(capabilitySnapshot:...)` 与 `EditorCoreUIFFIRuntimeCompatibility.evaluate(capabilitySnapshot:...)`，复用既有 `runtimeInfo` evaluator 逻辑；新增测试覆盖真实 runtime snapshot 兼容和构造的缺 feature snapshot。该提交不改变 Rust/C ABI、不新增 feature bit、不改变 runtime JSON schema、不改变 `evaluate(library:)` 行为，也不实现完整第三方 host capability negotiation policy。
+  - 验证记录：
+    - `swift test --package-path swift --filter 'EditorCoreFFIRuntimeCompatibilityTests.testEvaluatesCapabilitySnapshot|EditorCoreFFIRuntimeCompatibilityTests.testCapabilitySnapshotReportsMissingFeatures|EditorCoreUIFFIRuntimeCompatibilityTests.testEvaluatesCapabilitySnapshot|EditorCoreUIFFIRuntimeCompatibilityTests.testCapabilitySnapshotReportsMissingFeatures'`
+    - `swift test --package-path swift --filter 'EditorCoreFFIRuntimeCompatibilityTests|EditorCoreUIFFIRuntimeCompatibilityTests'`
+    - `git diff --check`
+
 ## 阶段 11: Tree-sitter 与 LSP 主路线产品化
 
 ### 目标
@@ -2312,6 +3028,183 @@
 - AppKit tests 覆盖 Find in Files panel、open result、replace preview。
 
 ### 提交
+
+- [已完成] `feat(workspace): search workspace files from core`
+  - 所属任务：阶段 12 的 Workspace search 起点；让 `MultiDocumentEditorUi` 在 core workspace roots 下搜索本地项目文件，并让 AttoEditor Find in Files 的 Folder/workspace scope 优先消费 core 搜索结果。
+  - 提交边界：新增 `WorkspaceFileSearchOptions` / `WorkspaceFileSearchResult` 和 `MultiDocumentEditorUi::search_workspace_files(...)`，搜索使用现有 core `CompiledSearch` 语义覆盖 case/regex/whole-word，并支持 include/exclude glob 与 bounded results；UI FFI 新增 raw/envelope C ABI、feature bit 和 Swift wrapper；AttoEditor workspace scope 新增 core-search provider，失败或 runtime 不可用时保留现有 Swift workspace file index fallback。该提交不实现 replace-in-files preview/apply，不新增 streaming result cursor，不改变 recent/project/session restore，也不下沉 project index 持久化。
+  - 验证：
+    - `cargo test -p editor-core-ui multi_document_ui_searches_workspace_files_with_globs`
+    - `cargo test -p editor-core-ui-ffi ffi_multi_document_workspace_file_search_reports_success_and_errors`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests/testMultiDocumentWorkspaceFileSearchUsesWorkspaceRootsAndGlobs`
+    - `swift test --package-path swift --filter AttoEditorCommandTests/testFindInWorkspaceFilesUsesCoreWorkspaceSearch`
+    - `swift test --package-path swift --filter EditorCoreUIFFIRuntimeCompatibilityTests`
+    - `swift test --package-path swift --filter AttoRuntimeCompatibilityTests`
+    - `cargo fmt --check`
+    - `git diff --check`
+
+- [已完成] `feat(workspace): build replace-in-files workspace edits`
+  - 所属任务：阶段 12 的 replace-in-files 起点；让 `MultiDocumentEditorUi` 基于 core workspace roots 和 workspace file search 匹配生成标准 WorkspaceEdit JSON，再复用现有 WorkspaceEdit transaction preview/apply/undo 路径完成替换。
+  - 提交边界：新增 `WorkspaceFileReplacementOptions` 和 `MultiDocumentEditorUi::workspace_file_replacement_workspace_edit_json(...)`，支持 include/exclude glob、case/regex/whole-word、bounded results、regex capture replacement expansion 以及 `partial` / `atomic` apply mode envelope；UI FFI 新增 `editor_core_ui_ffi_multi_document_workspace_file_replacement_workspace_edit_json(...)`、feature bit 和 Swift wrapper，runtime compatibility / Atto optional capability 同步记录该能力。该提交不新增 Find in Files 替换 UI、不实现替换 preview panel 操作接线、不新增 streaming result cursor、不实现 persistent project index，也不改变 recent/project/session restore 下沉计划。
+  - 验证：
+    - `cargo test -p editor-core-ui multi_document_ui_builds_workspace_file_replacement_workspace_edit`
+    - `cargo test -p editor-core-ui-ffi ffi_multi_document_workspace_file_replacement_builds_workspace_edit`
+    - `cargo test -p editor-core-ui`
+    - `cargo test -p editor-core-ui-ffi`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests/testMultiDocumentWorkspaceFileReplacementBuildsWorkspaceEdit`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests/testLoadsLibraryAndVersion`
+    - `swift test --package-path swift --filter EditorCoreUIFFIRuntimeCompatibilityTests`
+    - `swift test --package-path swift --filter AttoRuntimeCompatibilityTests`
+    - `cargo fmt --check`
+    - `git diff --check`
+
+- [已完成] `feat(app): replace workspace file matches from core`
+  - 所属任务：阶段 12 的 Find in Files replace-in-files App 接线起点；让 Find in Files sidebar 的 Folder scope 暴露 replacement 输入和 Replace All 操作，调用 core workspace file replacement WorkspaceEdit 生成器，并复用既有 WorkspaceEdit transaction preview/apply/undo 主路径。
+  - 提交边界：新增 Find in Files replacement field / Replace All button 和稳定 accessibility id；`AttoWindowContext` 在 runtime 支持 `multi_document_workspace_file_replacement` 时启用 replacement provider；`AttoEditorAreaViewController.replaceInWorkspaceFiles(...)` 生成 atomic WorkspaceEdit 并走 `applyWorkspaceEditJSONToActiveTab(...)`；Rust transaction text-edit target 匹配补齐本地 `file://` canonical path 等价，避免 macOS `/var` / `/private/var` URI 分歧导致打开 tab 被当作未打开文件。该提交只覆盖 Folder/workspace scope 的 Replace All；不实现 Opened scope 替换、不新增替换结果树/专用 preview 面板操作、不改变 search option UI、不新增 streaming result cursor、不实现 persistent project index、recent/project/session restore 下沉。
+  - 验证：
+    - `cargo test -p editor-core-ui multi_document_ui_workspace_file_replacement_matches_open_tab_by_canonical_file_uri`
+    - `cargo test -p editor-core-ui multi_document_ui_builds_workspace_file_replacement_workspace_edit`
+    - `cargo test -p editor-core-ui`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter AttoEditorCommandTests/testFindInFilesWorkspaceReplaceUsesCoreWorkspaceEditTransaction`
+    - `swift test --package-path swift --filter AttoAccessibilityIdentifierTests/testSidebarAndSearchPanelsExposeStableIdentifiers`
+    - `swift test --package-path swift --filter AttoEditorCommandTests/testFindInWorkspaceFilesUsesCoreWorkspaceSearch`
+    - `cargo fmt --check`
+    - `git diff --check`
+
+- [已完成] `feat(app): expose find-in-files search options`
+  - 所属任务：阶段 12 的 Find in Files 搜索选项 App 接线；让侧栏 Find in Files 面板暴露 Aa / Word / Regex 选项，并把 resolved configuration 的默认 Find 选项同步到 opened files、workspace files 和 workspace Replace All 三条路径。
+  - 提交边界：`AttoFindInFilesViewController` 新增 case-sensitive / whole-word / regex 控件和稳定 accessibility id，搜索 provider 与 replacement provider 统一接收 `SearchOptions`；`AttoWindowContext` 在窗口创建和偏好重应用时同步默认选项；`AttoEditorAreaViewController.findInOpenTabs(...)`、`findInWorkspaceFiles(...)` 和 `replaceInWorkspaceFiles(...)` 将选项转换为 `EcuSearchOptions` 传给 core；Swift fallback 文件搜索也按同一组选项匹配。该提交不新增 Opened scope 替换、不实现替换结果树/专用 preview 面板操作、不新增 streaming result cursor、不实现 persistent project index、不新增自定义 word-boundary UI，也不改变 recent/project/session restore 下沉。
+  - 验证：
+    - `swift test --package-path swift --filter AttoEditorCommandTests/testFindInOpenTabsUsesCoreSearchOptions`
+    - `swift test --package-path swift --filter AttoEditorCommandTests/testFindInWorkspaceFilesUsesCoreWorkspaceSearch`
+    - `swift test --package-path swift --filter AttoEditorCommandTests/testFindInFilesWorkspaceReplaceUsesCoreWorkspaceEditTransaction`
+    - `swift test --package-path swift --filter AttoEditorPreferencesApplicationTests/testScopedConfigurationSettingsLoadForAppWindowsAndPreferenceReapply`
+    - `swift test --package-path swift --filter AttoAccessibilityIdentifierTests/testSidebarAndSearchPanelsExposeStableIdentifiers`
+    - `cargo fmt --check`
+    - `git diff --check`
+
+- [已完成] `feat(workspace): track recent files in core multi-document state`
+  - 所属任务：阶段 12 的 recent/session 迁移增量；让 `MultiDocumentEditorUi` 拥有 recent file URI 列表，并让 AttoEditor Quick Open 与 session snapshot 优先消费 core recent state。
+  - 提交边界：新增 core recent file store，负责 trim/去重/MRU/20 上限和 workspace roots 变化清理；UI FFI 新增 `multi_document_recent_files` feature bit、C ABI、snapshot `recent_files` 字段和 Swift typed wrapper；AttoWindowContext 在 remember/restore/snapshot/Quick Open 时同步或优先读取 core recent files，同时保留 Swift fallback。该提交不实现 recent projects、project root persistence、persistent project index、跨窗口共享 recent store、磁盘存在性由 core 校验，也不完成完整 session restore 下沉。
+  - 验证：
+    - `cargo test -p editor-core-ui recent_files`
+    - `cargo test -p editor-core-ui multi_document_tracks_recent_file_uris`
+    - `cargo test -p editor-core-ui-ffi ffi_multi_document_recent_files_round_trips_through_snapshot`
+    - `cargo test -p editor-core-ui-ffi ffi_feature_flags_include_semantic_tokens_requests`
+    - `cargo test -p editor-core-ui-ffi ffi_runtime_info_json_reports_version_and_feature_descriptors`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests/testMultiDocumentEditorUIWrapperExposesTabsSplitsPreviewAndSearch`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests/testLoadsLibraryAndVersion`
+    - `swift test --package-path swift --filter EditorCoreUIFFIRuntimeCompatibilityTests`
+    - `swift test --package-path swift --filter AttoRuntimeCompatibilityTests`
+    - `swift test --package-path swift --filter AttoEditorCommandTests/testWindowRecentFilesUseCoreMultiDocumentStoreForSessionSnapshot`
+    - `cargo fmt --check`
+    - `git diff --check`
+
+- [已完成] `feat(workspace): list project files from core workspace roots`
+  - 所属任务：阶段 12 的 project files / Quick Open 迁移增量；让 `MultiDocumentEditorUi` 基于 core workspace roots 枚举本地项目文件，并让 AttoEditor Quick Open 与 Find in Files 空查询项目文件枚举优先消费 core 文件列表。
+  - 提交边界：新增 core workspace file list 模块和 `WorkspaceFileEntry` / `WorkspaceFileListOptions`，复用 workspace search 的 include/exclude glob、隐藏目录/`target`/`.build` 跳过和 bounded result 语义；UI FFI 新增 `multi_document_workspace_file_list` feature bit、C ABI 和 Swift typed wrapper；AttoWindowContext 新增 `workspaceFileEntries()`，core 可用时 Quick Open / project file provider 走 core list，旧 runtime 或失败时继续回退 `AttoWorkspaceFileIndex`。该提交不实现 persistent project index、增量 file watcher、recent projects、project root persistence、跨窗口共享 project file cache，也不完成完整 session restore 下沉。
+  - 验证：
+    - `cargo test -p editor-core-ui --test multi_document_ui_tests multi_document_ui_lists_workspace_files_with_globs`
+    - `cargo test -p editor-core-ui-ffi ffi_multi_document_workspace_file_list_reports_files_and_errors`
+    - `cargo test -p editor-core-ui-ffi ffi_feature_flags_include_semantic_tokens_requests`
+    - `cargo test -p editor-core-ui-ffi ffi_runtime_info_json_reports_version_and_feature_descriptors`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests/testMultiDocumentWorkspaceFileListUsesWorkspaceRootsAndGlobs`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests/testLoadsLibraryAndVersion`
+    - `swift test --package-path swift --filter EditorCoreUIFFIRuntimeCompatibilityTests`
+    - `swift test --package-path swift --filter AttoRuntimeCompatibilityTests`
+    - `swift test --package-path swift --filter AttoEditorCommandTests/testQuickOpenUsesCoreWorkspaceFileListWhenAvailable`
+    - `cargo fmt --check`
+    - `git diff --check`
+
+- [已完成] `feat(session): persist workspace root uris from core`
+  - 所属任务：阶段 12 的 project root persistence / session restore 迁移增量；让 AttoEditor session window snapshot 保存 core workspace root URI，并在恢复时优先使用 URI 而不是只依赖 legacy path。
+  - 提交边界：`AttoWindowSnapshot` 新增可选 `workspaceRootURI` 且保留 `workspaceRootPath` 兼容旧 session；新增 `validatedWorkspaceRootURL(...)` 统一执行 URI-first、path-fallback、目录存在性校验；`AttoWindowContext.makeSessionSnapshot()` 保存时优先读取 `MultiDocumentEditorUI.snapshot().workspaceRoots` 首个本地 file URI，失败时回退 Swift `workspaceRootURL`；session restore 改用该统一 helper。该提交不提升 schema version、不改变 tab restore 语义、不实现 full core session snapshot/restore、不恢复 unsaved buffers、不实现 recent projects、persistent project index 或跨窗口共享 project root history。
+  - 验证：
+    - `swift test --package-path swift --filter AttoSessionStoreTests`
+    - `swift test --package-path swift --filter AttoEditorCommandTests/testWindowSessionSnapshotUsesCoreWorkspaceRootURIWhenAvailable`
+    - `cargo fmt --check`
+    - `git diff --check`
+
+- [已完成] `feat(workspace): track recent projects in core multi-document state`
+  - 所属任务：阶段 12 的 recent/session/project root 迁移增量；让 `MultiDocumentEditorUi` 拥有 recent project/workspace root URI 列表，并让 AttoEditor 在窗口 workspace root 创建/切换时记录到 core。
+  - 提交边界：新增 core recent project store，负责 trim/去重/MRU/20 上限；UI FFI 新增 `multi_document_recent_projects` feature bit、C ABI、snapshot `recent_projects` 字段和 Swift typed wrapper；AttoWindowContext 在 `setWorkspaceRootURL(...)` 时同步 core recent projects，并提供内部读取 helper 供测试和后续 UI 消费。该提交不实现跨窗口共享 recent project history、不新增 recent-project UI、不写入磁盘持久化项目列表、不实现 persistent project index，也不完成 full core session snapshot/restore 或 unsaved buffer restore。
+  - 验证：
+    - `cargo test -p editor-core-ui recent_projects`
+    - `cargo test -p editor-core-ui multi_document_tracks_recent_project_uris`
+    - `cargo test -p editor-core-ui-ffi ffi_multi_document_recent_projects_round_trips_through_snapshot`
+    - `cargo test -p editor-core-ui-ffi ffi_feature_flags_include_semantic_tokens_requests`
+    - `cargo test -p editor-core-ui-ffi ffi_runtime_info_json_reports_version_and_feature_descriptors`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests/testMultiDocumentEditorUIWrapperExposesTabsSplitsPreviewAndSearch`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests/testLoadsLibraryAndVersion`
+    - `swift test --package-path swift --filter EditorCoreUIFFIRuntimeCompatibilityTests`
+    - `swift test --package-path swift --filter AttoRuntimeCompatibilityTests`
+    - `swift test --package-path swift --filter AttoEditorCommandTests/testWindowWorkspaceRootsUseCoreRecentProjectsStore`
+    - `cargo fmt --check`
+    - `git diff --check`
+
+- [已完成] `feat(workspace): cache project file index in core`
+  - 所属任务：阶段 12 的 project index 迁移增量；让 `MultiDocumentEditorUi` 拥有 core-owned project file index snapshot，AttoEditor Quick Open / project file provider 优先刷新并读取 core index。
+  - 提交边界：新增 core project file index store，复用 workspace file list 的 workspace root trust boundary、隐藏目录/`target`/`.build` 跳过、稳定排序和 bounded result 语义；UI FFI 新增 `multi_document_project_file_index` feature bit、refresh/snapshot/clear C ABI 和 Swift typed wrapper；AttoWindowContext 的 `workspaceFileEntries()` 优先刷新 core project file index，旧 runtime 或失败时继续回退 core on-demand list 和 Swift `AttoWorkspaceFileIndex`。该提交不实现增量 file watcher、不把 index 持久化到磁盘、不实现跨窗口共享 project file cache、不新增 project index UI，也不完成 full core session snapshot/restore 或 unsaved buffer restore。
+  - 验证：
+    - `cargo test -p editor-core-ui multi_document_project_file_index_caches_workspace_files`
+    - `cargo test -p editor-core-ui-ffi ffi_multi_document_project_file_index_refreshes_and_snapshots_files`
+    - `cargo test -p editor-core-ui-ffi ffi_feature_flags_include_semantic_tokens_requests`
+    - `cargo test -p editor-core-ui-ffi ffi_runtime_info_json_reports_version_and_feature_descriptors`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests/testMultiDocumentProjectFileIndexRefreshesWorkspaceFiles`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests/testLoadsLibraryAndVersion`
+    - `swift test --package-path swift --filter EditorCoreUIFFIRuntimeCompatibilityTests`
+    - `swift test --package-path swift --filter AttoRuntimeCompatibilityTests`
+    - `swift test --package-path swift --filter AttoEditorCommandTests/testQuickOpenUsesCoreWorkspaceFileListWhenAvailable`
+    - `cargo fmt --check`
+    - `git diff --check`
+
+- [已完成] `feat(workspace): query project file index from core`
+  - 所属任务：阶段 12 的 project index 迁移增量；让 Quick Open 查询路径消费 core-owned project file index，而不是只在 Swift 层过滤项目文件列表。
+  - 提交边界：新增 core project file index fuzzy path query，基于最后一次 refresh 的 snapshot 做 case-insensitive subsequence scoring；UI FFI 新增 `multi_document_project_file_index_query` feature bit 和 query C ABI，Swift wrapper 暴露 typed query result；AttoEditor Quick Open 输入变化时刷新命令并优先使用 core query，旧 runtime 或失败时继续回退既有 core list / Swift index 过滤。该提交不实现增量 file watcher、不实现磁盘持久化 index、不实现跨窗口共享 project file cache、不新增 Quick Open UI 重设计，也不完成 full core session snapshot/restore 或 unsaved buffer restore。
+  - 验证：
+    - `cargo test -p editor-core-ui multi_document_project_file_index_queries_cached_files`
+    - `cargo test -p editor-core-ui-ffi ffi_multi_document_project_file_index_refreshes_and_snapshots_files`
+    - `cargo test -p editor-core-ui-ffi ffi_feature_flags_include_semantic_tokens_requests`
+    - `cargo test -p editor-core-ui-ffi ffi_runtime_info_json_reports_version_and_feature_descriptors`
+    - `cargo build -p editor-core-ui-ffi --release`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests/testMultiDocumentProjectFileIndexRefreshesWorkspaceFiles`
+    - `swift test --package-path swift --filter EditorCoreUIFFITests/testLoadsLibraryAndVersion`
+    - `swift test --package-path swift --filter EditorCoreUIFFIRuntimeCompatibilityTests`
+    - `swift test --package-path swift --filter AttoRuntimeCompatibilityTests`
+    - `swift test --package-path swift --filter AttoEditorCommandTests/testQuickOpenUsesCoreWorkspaceFileListWhenAvailable`
+    - `cargo fmt --check`
+    - `git diff --check`
+
+- [已完成] `feat(session): persist recent project uris in session`
+  - 所属任务：阶段 12 的 recent projects / session restore 迁移增量；把 core recent project/workspace root URI 列表接入 Atto session 磁盘快照。
+  - 提交边界：`AttoSessionSnapshot` 新增向后兼容的 `recentProjectURIs` 顶层字段，旧 session JSON 缺字段时按空列表加载；session 保存时按 active window 优先聚合各窗口 core recent projects，并补入窗口 workspace root URI 作为兜底；session restore 创建窗口后把持久化 recent project URIs 过滤为仍存在的本地目录并恢复到 core recent projects store。该提交不新增 recent-project UI、不实现跨进程共享 recent project history、不把 project file index 持久化到磁盘，也不实现 full core session snapshot/restore 或 unsaved buffer restore。
+  - 验证：
+    - `swift test --package-path swift --filter AttoSessionStoreTests`
+    - `swift test --package-path swift --filter AttoEditorCommandTests/testWindowWorkspaceRootsUseCoreRecentProjectsStore`
+    - `cargo fmt --check`
+    - `git diff --check`
+
+- [已完成] `feat(app): open recent projects from core history`
+  - 所属任务：阶段 12 的 recent projects / session restore UI 增量；让已下沉到 core/session 的 recent project history 能通过 App 命令入口重新打开。
+  - 提交边界：新增 `file.open_recent_project` command palette / menu 命令；命令打开 recent project quick panel，数据源优先消费窗口 core recent projects store，并按 active window 优先、目录存在性过滤和去重生成可执行项目列表；执行条目会创建并聚焦对应 workspace window。该提交不新增持久 recent-project sidebar，不实现跨进程共享 history，不改变 session restore 自动行为，也不把 project file index 持久化到磁盘。
+  - 验证：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests/testDefaultCommandPaletteIncludesCoreEditorCommandIDs|AttoEditorCommandTests/testCommandRegistryCarriesMetadataAndAvailability|AttoEditorCommandTests/testCommandRegistryCarriesParameterSchemasAndMacroPolicies|AttoEditorCommandTests/testMainMenuItemsUseCommandIDsAndResolvedKeymap|AttoEditorCommandTests/testWindowWorkspaceRootsUseCoreRecentProjectsStore'`
+    - `cargo fmt --check`
+    - `git diff --check`
+
+- [已完成] `feat(session): restore unsaved untitled buffers`
+  - 所属任务：阶段 12 的 session restore / unsaved buffer handling 增量；让 Atto session snapshot 能保存并恢复 New File 产生的 untitled 内存 buffer。
+  - 提交边界：`AttoTabSnapshot` 新增向后兼容的 `isUntitled` / `unsavedText` 可选字段；session snapshot 只在 tab 仍为 untitled 时写入当前 editor 文本；session restore 对 untitled tab 不再要求磁盘文件存在，并恢复文本、dirty 状态和 core multi-document mirror。该提交不持久化普通磁盘文件的未保存编辑、不新增 full core session snapshot/restore ABI、不引入跨窗口 unsaved buffer store，也不改变 Save/Save As、dirty close prompt 或 recent-project UI 行为。
+  - 验证：
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests/testSessionSnapshotRestoresUnsavedUntitledBuffers|AttoSessionStoreTests/testLoadAcceptsLegacyTabSnapshotWithoutPaneLayout|AttoSessionStoreTests/testSessionSnapshotRoundTripsUntitledTabText'`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests/testSessionSnapshotRestoresUnsavedUntitledBuffers|AttoEditorCommandTests/testSessionSnapshotUsesCoreTabProjectionWhenAvailable|AttoEditorCommandTests/testSessionRestoreRestoresSplitPanesIntoCoreMirror|AttoEditorCommandTests/testSessionRestorePrefersPaneLayoutSnapshotOverLegacyPaneCount|AttoSessionStoreTests'`
+    - `cargo fmt --check`
+    - `git diff --check`
 
 - `feat(workspace): add core project search and session`
 
@@ -2624,6 +3517,59 @@
     - `swift test --package-path swift --filter 'AttoEditorCommandTests.testWorkspaceEditHistoryPanelShowsCoreTransactionEvents|AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures'`
     - `swift test --package-path swift --filter 'AttoEditorCommandTests.testDefaultCommandPaletteIncludesCoreEditorCommandIDs|AttoEditorCommandTests.testCommandRegistryCarriesMetadataAndAvailability|AttoEditorCommandTests.testWorkspaceEditHistoryPanelShowsCoreTransactionEvents'`
     - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
+    - `git diff --check`
+- 中间提交：`test(app): harden visual baseline runner preflight`
+  - 所属任务：阶段 13 的 visual baseline 合入前置硬化；让本地/CI runner 在无 Metal 或 SwiftPM sandbox/cache 受限时有明确诊断与可配置入口，避免 record/strict 工作流以 xctest crash 或用户目录 cache 权限错误失败。
+  - 提交边界：`AttoEditorVisualBaselineManifestTests` 在 capture/record/strict 路径前检查 Metal；普通 smoke 无 Metal 时 skip pixel capture，record/strict 无 Metal 时早失败并输出诊断；`swift/scripts/visual-baseline-common.sh` 抽出 shared SwiftPM 参数 helper，`check-visual-baselines.sh` 和 `update-visual-baselines.sh` 支持 `ATTO_VISUAL_SWIFTPM_*` scratch/cache/config/security/sandbox 参数；VisualBaselines README 记录受限 runner 用法。该提交不提交 PNG golden baseline、不把 strict comparison 改成默认 PR 门禁、不改变 manifest case schema 或产品渲染代码。
+  - 验证记录：
+    - `bash -n swift/scripts/visual-baseline-common.sh`
+    - `bash -n swift/scripts/update-visual-baselines.sh`
+    - `bash -n swift/scripts/check-visual-baselines.sh`
+    - `swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures`
+    - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
+    - `swift/scripts/update-visual-baselines.sh --baseline-root /tmp/atto-visual-baselines-probe-default --artifact-dir /tmp/atto-visual-artifacts-probe-default`（当前沙箱下预期暴露用户 module cache 写权限限制）
+    - `CLANG_MODULE_CACHE_PATH=/tmp/atto-clang-module-cache ATTO_VISUAL_SWIFTPM_DISABLE_SANDBOX=1 ATTO_VISUAL_SWIFTPM_MANIFEST_CACHE=local ATTO_VISUAL_SWIFTPM_CACHE_PATH=/tmp/atto-swiftpm-cache ATTO_VISUAL_SWIFTPM_CONFIG_PATH=/tmp/atto-swiftpm-config ATTO_VISUAL_SWIFTPM_SECURITY_PATH=/tmp/atto-swiftpm-security ATTO_VISUAL_SWIFTPM_SCRATCH_PATH=/tmp/atto-swiftpm-scratch swift/scripts/update-visual-baselines.sh --baseline-root /tmp/atto-visual-baselines-probe --artifact-dir /tmp/atto-visual-artifacts-probe`（当前隔离 runner 下预期早失败并输出 Metal 诊断，不再 signal 11）
+- 中间提交：`ci(app): arm strict visual baseline gate`
+  - 所属任务：阶段 13 的 PNG baseline 合入前置门禁；让 visual-baselines workflow 在 PR 上检测是否已有 checked-in golden PNG，并在首批 PNG 合入后自动从 smoke artifact capture 切换到 strict PNG comparison。
+  - 提交边界：`.github/workflows/visual-baselines.yml` 新增 checked-in `VisualBaselines/*.png` 探测步骤，并让 PR 默认进入同一个 macOS visual-baselines job；无 PNG 时继续跑 smoke，有 PNG 时自动跑 `swift/scripts/check-visual-baselines.sh`；VisualBaselines README 记录合入后自动 strict gate 策略。该提交不提交 PNG golden baseline、不改变 manifest/test harness schema、不改变产品 UI 或渲染代码，也不强制没有 PNG 的 PR 运行 strict comparison。
+  - 验证记录：
+    - `bash -n swift/scripts/visual-baseline-common.sh`
+    - `bash -n swift/scripts/check-visual-baselines.sh`
+    - `bash -n swift/scripts/update-visual-baselines.sh`
+    - `bash -n swift/scripts/write-visual-ci-environment.sh`
+    - `ruby -e 'require "yaml"; YAML.load_file(".github/workflows/visual-baselines.yml"); puts "yaml ok"'`
+    - `find swift/Tests/AttoEditorTests/Resources/VisualBaselines -type f -name '*.png' -print -quit`（当前无输出，确认本提交仍未引入 checked-in PNG）
+    - `swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures`
+    - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
+    - `git diff --check`
+- 中间提交：`feat(app): surface workspace edit runtime rollback failures`
+  - 所属任务：阶段 13 的 WorkspaceEdit failure/rollback visual coverage 增量；把 core transaction apply 抛出的 runtime rollback failure 从仅 log/beep 推进到稳定用户可见 popover，并把 resource operation rollback failure 纳入 visual manifest。
+  - 提交边界：`applyWorkspaceEditWithCoreTransaction(...)` 的 catch 分支复用 WorkspaceEdit popover 展示稳定失败摘要，避免把临时路径写入视觉 baseline；visual harness 的 `workspaceEditJSONApplySummary` 新增 `expectedMissingFilesAfterApply` / `expectedMissingFilesAfterUndo` 断言；manifest 新增 dark resource operation runtime rollback failure artifact case，真实执行 create + overwrite rename + failing create 后验证 rollback 文件状态并捕获 failure popover。该提交不提交 PNG golden baseline、不改变 core transaction schema/apply 语义、不新增 manifest 产品 API，也不覆盖 rollback secondary failure 本身再次失败的极端路径。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEditRuntimeResourceFailureShowsRollbackPopover`
+    - `swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures`
+    - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
+    - `swift test --package-path swift --filter 'AttoEditorCommandTests.testWorkspaceEditRuntimeResourceFailureShowsRollbackPopover|AttoEditorVisualBaselineManifestTests'`
+    - `git diff --check`
+- 中间提交：`feat(app): summarize unsupported workspace edit operations`
+  - 所属任务：阶段 13 的 WorkspaceEdit failure boundary visual coverage 增量；让 core transaction result 中的 `unsupportedOperationURIs` 进入 App WorkspaceEdit apply summary，避免“文本编辑已应用但 resource operation 被 core 拒绝”时没有用户可见提示。
+  - 提交边界：`AttoWorkspaceEditApplyResult` 新增 unsupported URI summary 支持并保留旧构造兼容；core transaction apply 路径传入 `coreResult.unsupportedOperationURIs`；新增 AppKit command regression，覆盖 workspace 内 text edit 成功 + workspace 外 rename unsupported 的 partial summary；visual manifest 新增 dark unsupported resource operation partial summary artifact case，并让测试 harness resource operation payload 可声明 raw URI。该提交不提交 PNG golden baseline、不改变 core transaction schema/apply/preview 语义、不改变 Swift fallback apply 行为，也不把测试 manifest schema 暴露为产品 API。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoWorkspaceEditSummaryTests.testWorkspaceEditSummaryListsUnsupportedResourceOperations`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEditUnsupportedResourceOperationShowsPartialSummary`
+    - `swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures`
+    - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
+    - `swift test --package-path swift --filter 'AttoWorkspaceEditSummaryTests.testWorkspaceEditSummaryListsUnsupportedResourceOperations|AttoEditorCommandTests.testWorkspaceEditUnsupportedResourceOperationShowsPartialSummary|AttoEditorVisualBaselineManifestTests'`
+    - `git diff --check`
+- 中间提交：`feat(app): show workspace edit skipped reasons`
+  - 所属任务：阶段 13 的 WorkspaceEdit failure boundary visual coverage 增量；让 core transaction result 中的 `skippedDetails` 进入 App WorkspaceEdit apply summary，使 version mismatch 等跳过原因直接出现在失败 popover 和既有视觉覆盖路径中。
+  - 提交边界：`AttoWorkspaceEditApplyResult` 新增 apply summary skipped detail 支持并继续兼容旧构造；core transaction apply 路径传入 `coreResult.skippedDetails`；新增 summary unit regression，并扩展 AppKit version preflight regression 断言 popover 显示 `text_edit: version_mismatch`。该提交不提交 PNG golden baseline、不改变 core transaction schema/apply/preview 语义、不改变 Swift fallback apply 行为，也不新增 manifest 产品 API。
+  - 验证记录：
+    - `swift test --package-path swift --filter AttoWorkspaceEditSummaryTests.testWorkspaceEditSummaryListsSkippedDetailReasons`
+    - `swift test --package-path swift --filter AttoEditorCommandTests.testWorkspaceEditApplicationUsesCoreVersionPreflight`
+    - `swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests.testVisualBaselineManifestDeclaresRunnableFixtures`
+    - `swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'`
+    - `swift test --package-path swift --filter 'AttoWorkspaceEditSummaryTests.testWorkspaceEditSummaryListsSkippedDetailReasons|AttoEditorCommandTests.testWorkspaceEditApplicationUsesCoreVersionPreflight|AttoEditorVisualBaselineManifestTests'`
     - `git diff --check`
 
 ## 阶段 14: 外观、布局与 Sublime-like 操作打磨

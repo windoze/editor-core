@@ -450,6 +450,8 @@ extension AttoEditorAreaViewController {
                     status: event.stateEvent.lspStatus
                 )
             }
+
+            try drainCoreProjectLspLifecycleEvents(coreDocuments)
         } catch {
             NSLog("AttoEditor: project LSP panel lifecycle event drain failed: %@", String(describing: error))
         }
@@ -460,7 +462,8 @@ extension AttoEditorAreaViewController {
         drainProjectLspPanelLifecycleEvents()
 
         let events = Array(projectLspPanelErrorEventStore.events.reversed())
-        guard events.isEmpty == false else {
+        let lifecycleEvents = Array(projectLspLifecycleEventStore.events.reversed())
+        guard events.isEmpty == false || lifecycleEvents.isEmpty == false else {
             NSSound.beep()
             return false
         }
@@ -472,6 +475,11 @@ extension AttoEditorAreaViewController {
             AttoCommandPaletteCommand(
                 id: "lsp.project_status_event.\(idx)",
                 title: Self.projectLspStatusEventTitle(event)
+            ) {}
+        } + lifecycleEvents.enumerated().map { idx, event in
+            AttoCommandPaletteCommand(
+                id: "lsp.project_lifecycle_event.\(idx)",
+                title: Self.projectLspLifecycleEventTitle(event)
             ) {}
         }
         let controller = AttoCommandPaletteController(
@@ -613,6 +621,7 @@ extension AttoEditorAreaViewController {
         var commands: [AttoCommandPaletteCommand] = []
 
         let statusEvents = Array(projectLspPanelErrorEventStore.events.reversed())
+        let lifecycleEvents = Array(projectLspLifecycleEventStore.events.reversed())
         let healthEvents = Array(projectLspProcessHealthEventStore.events.reversed())
         let persistedEntries = Array(projectLspProcessHealthLogStore.queryRecent(
             workspaceRootURL: workspaceRootURL,
@@ -622,6 +631,7 @@ extension AttoEditorAreaViewController {
         let activeRecoveryCount = projectLspAutoRestartStatesByTabID.values.filter { $0.attempts > 0 }.count
 
         guard statusEvents.isEmpty == false
+            || lifecycleEvents.isEmpty == false
             || healthEvents.isEmpty == false
             || persistedEntries.isEmpty == false
             || activeRecoveryCount > 0
@@ -633,6 +643,8 @@ extension AttoEditorAreaViewController {
             id: "lsp.project_dashboard.summary",
             title: projectLspDashboardSummaryTitle(
                 statusFailureCount: statusEvents.count,
+                lifecycleEventCount: lifecycleEvents.count,
+                lifecycleAttemptCount: Self.projectLspLifecycleAttemptCount(lifecycleEvents),
                 healthEventCount: healthEvents.count,
                 persistedLogCount: persistedEntries.count
             )
@@ -675,6 +687,13 @@ extension AttoEditorAreaViewController {
             ) {}
         })
 
+        commands.append(contentsOf: lifecycleEvents.enumerated().map { idx, event in
+            AttoCommandPaletteCommand(
+                id: "lsp.project_dashboard.lifecycle.\(idx)",
+                title: "Lifecycle - \(Self.projectLspLifecycleEventTitle(event))"
+            ) {}
+        })
+
         if healthEvents.isEmpty == false {
             commands.append(contentsOf: healthEvents.enumerated().map { idx, event in
                 AttoCommandPaletteCommand(
@@ -696,6 +715,8 @@ extension AttoEditorAreaViewController {
 
     private func projectLspDashboardSummaryTitle(
         statusFailureCount: Int,
+        lifecycleEventCount: Int,
+        lifecycleAttemptCount: Int,
         healthEventCount: Int,
         persistedLogCount: Int
     ) -> String {
@@ -708,7 +729,11 @@ extension AttoEditorAreaViewController {
         } else {
             retrySummary = "recovery retries \(recovery.reduce(0, +)) across \(recovery.count) tab(s)"
         }
-        return "Summary - status failures \(statusFailureCount), health events \(healthEventCount), persisted logs \(persistedLogCount), \(retrySummary)"
+        return "Summary - status failures \(statusFailureCount), lifecycle events \(lifecycleEventCount), lifecycle attempts \(lifecycleAttemptCount), health events \(healthEventCount), persisted logs \(persistedLogCount), \(retrySummary)"
+    }
+
+    private static func projectLspLifecycleAttemptCount(_ events: [EcuProjectLspLifecycleEvent]) -> Int {
+        Set(events.compactMap(\.attemptId)).count
     }
 
     private func projectLspDashboardRecoveryPolicyTitle() -> String {
@@ -1586,7 +1611,7 @@ extension AttoEditorAreaViewController {
 
         // "Plain Text" => disable all syntax engines.
         if languageId == nil {
-            tab.editCore.editor.lspDisable()
+            stopLspSessionForLanguageChange(tab)
             tab.editCore.editor.treeSitterDisable()
             tab.editCore.editor.sublimeDisable()
             tab.lspServerConfig = nil
@@ -1614,7 +1639,7 @@ extension AttoEditorAreaViewController {
             try? tab.editCore.editor.treeSitterSetRegistryJSON(registryJSON)
         }
 
-        tab.editCore.editor.lspDisable()
+        stopLspSessionForLanguageChange(tab)
         tab.editCore.editor.sublimeDisable()
         tab.lspServerConfig = nil
         tab.suppressesAutomaticLspStart = true
@@ -1638,6 +1663,33 @@ extension AttoEditorAreaViewController {
                 String(describing: error)
             )
             updateStatusBar()
+        }
+    }
+
+    private func stopLspSessionForLanguageChange(_ tab: AttoEditorTab) {
+        guard (try? tab.editCore.editor.lspIsEnabled()) == true else { return }
+        let documentURL = projectedFileURL(for: tab)
+        let config = tab.lspServerConfig
+        let stopAttemptId: UInt64? = {
+            guard let config else { return nil }
+            return recordProjectLspStopOutcome(
+                for: tab,
+                documentURL: documentURL,
+                config: config,
+                trigger: "language_change",
+                status: "requested"
+            )
+        }()
+        tab.editCore.editor.lspDisable()
+        if let config {
+            recordProjectLspStopOutcome(
+                for: tab,
+                documentURL: documentURL,
+                config: config,
+                trigger: "language_change",
+                status: "stopped",
+                attemptId: stopAttemptId
+            )
         }
     }
 

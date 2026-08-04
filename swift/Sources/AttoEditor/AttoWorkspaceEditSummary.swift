@@ -932,10 +932,18 @@ struct AttoWorkspaceEditApplyResult: Equatable {
         let hasOverlappingEdits: Bool
     }
 
+    struct SkippedDetail: Equatable {
+        let uri: String
+        let reason: String
+        let operation: String?
+    }
+
     let applied: Bool
     let appliedURI: String?
     let appliedEditCount: Int
     let skippedURIs: [String]
+    let skippedDetails: [SkippedDetail]
+    let unsupportedURIs: [String]
     let documents: [Document]
 
     init(
@@ -943,12 +951,16 @@ struct AttoWorkspaceEditApplyResult: Equatable {
         appliedURI: String?,
         appliedEditCount: Int,
         skippedURIs: [String],
+        skippedDetails: [SkippedDetail] = [],
+        unsupportedURIs: [String] = [],
         documents: [Document]
     ) {
         self.applied = applied
         self.appliedURI = appliedURI
         self.appliedEditCount = appliedEditCount
         self.skippedURIs = skippedURIs
+        self.skippedDetails = skippedDetails
+        self.unsupportedURIs = unsupportedURIs
         self.documents = documents
     }
 
@@ -960,6 +972,8 @@ struct AttoWorkspaceEditApplyResult: Equatable {
             appliedURI = nil
             appliedEditCount = 0
             skippedURIs = []
+            skippedDetails = []
+            unsupportedURIs = []
             documents = []
             return
         }
@@ -968,6 +982,15 @@ struct AttoWorkspaceEditApplyResult: Equatable {
         appliedURI = obj["applied_uri"] as? String
         appliedEditCount = Self.intValue(obj["applied_edit_count"]) ?? 0
         skippedURIs = obj["skipped_uris"] as? [String] ?? []
+        skippedDetails = (obj["skipped_details"] as? [[String: Any]] ?? []).compactMap { detail in
+            guard let uri = detail["uri"] as? String else { return nil }
+            return SkippedDetail(
+                uri: uri,
+                reason: detail["reason"] as? String ?? "",
+                operation: detail["operation"] as? String
+            )
+        }
+        unsupportedURIs = obj["unsupported_operation_uris"] as? [String] ?? []
         documents = (obj["documents"] as? [[String: Any]] ?? []).compactMap { doc in
             guard let uri = doc["uri"] as? String else { return nil }
             return Document(
@@ -979,17 +1002,23 @@ struct AttoWorkspaceEditApplyResult: Equatable {
     }
 
     var skippedDocuments: [Document] {
-        let skipped = Set(skippedURIs)
-        return documents.filter { skipped.contains($0.uri) }
+        let notApplied = notAppliedURISet
+        return documents.filter { notApplied.contains($0.uri) }
     }
 
     var appliedDocuments: [Document] {
-        let skipped = Set(skippedURIs)
-        return documents.filter { skipped.contains($0.uri) == false && $0.editCount > 0 }
+        let notApplied = notAppliedURISet
+        return documents.filter { notApplied.contains($0.uri) == false && $0.editCount > 0 }
     }
 
     var needsUserSummary: Bool {
-        skippedURIs.isEmpty == false
+        skippedURIs.isEmpty == false || skippedDetails.isEmpty == false || unsupportedURIs.isEmpty == false
+    }
+
+    private var notAppliedURISet: Set<String> {
+        Set(skippedURIs)
+            .union(skippedDetails.map(\.uri))
+            .union(unsupportedURIs)
     }
 
     static func displayText(for result: AttoWorkspaceEditApplyResult) -> String? {
@@ -1010,21 +1039,45 @@ struct AttoWorkspaceEditApplyResult: Equatable {
             lines.append("Affected documents:")
         }
 
+        let notAppliedURIs = Array(result.notAppliedURISet).sorted()
         let docs = result.skippedDocuments.isEmpty
-            ? result.skippedURIs.map {
+            ? notAppliedURIs.map {
                 Document(uri: $0, editCount: 0, hasOverlappingEdits: false)
             }
             : result.skippedDocuments
 
+        let unsupported = Set(result.unsupportedURIs)
         for doc in docs.sorted(by: { displayName(for: $0.uri) < displayName(for: $1.uri) }) {
             var suffix = doc.editCount > 0 ? " (\(editCountText(doc.editCount)))" : ""
             if doc.hasOverlappingEdits {
                 suffix += " [overlapping edits]"
             }
+            if unsupported.contains(doc.uri) {
+                suffix += " [unsupported operation]"
+            }
+            for skippedDetail in result.skippedDetailSuffixes(for: doc.uri) {
+                suffix += " [\(skippedDetail)]"
+            }
             lines.append("- \(displayName(for: doc.uri))\(suffix)")
         }
 
         return lines.joined(separator: "\n")
+    }
+
+    private func skippedDetailSuffixes(for uri: String) -> [String] {
+        skippedDetails
+            .filter { $0.uri == uri }
+            .compactMap { detail in
+                let operation = detail.operation?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let reason = detail.reason.trimmingCharacters(in: .whitespacesAndNewlines)
+                if operation.isEmpty {
+                    return reason.isEmpty ? nil : reason
+                }
+                if reason.isEmpty {
+                    return operation
+                }
+                return "\(operation): \(reason)"
+            }
     }
 
     private static func editCountText(_ count: Int) -> String {

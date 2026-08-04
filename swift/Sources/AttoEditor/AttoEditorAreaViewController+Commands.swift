@@ -1057,6 +1057,11 @@ extension AttoEditorAreaViewController {
     }
 
     @discardableResult
+    func refreshDocumentColorsInActiveTab(showFeedback: Bool = true) -> Bool {
+        requestDocumentColorsInActiveTab(mode: .refresh, showFeedback: showFeedback)
+    }
+
+    @discardableResult
     func requestDocumentColorsInActiveTab(
         mode: DocumentColorResultMode,
         showFeedback: Bool
@@ -1129,6 +1134,11 @@ extension AttoEditorAreaViewController {
     }
 
     @discardableResult
+    func refreshDocumentColorResultJSONInActiveTab(_ json: String, showFeedback: Bool = false) -> Bool {
+        handleDocumentColorResultJSON(json, mode: .refresh, showFeedback: showFeedback)
+    }
+
+    @discardableResult
     func handleDocumentColorResultJSON(
         _ json: String,
         mode: DocumentColorResultMode,
@@ -1192,6 +1202,19 @@ extension AttoEditorAreaViewController {
             showDocumentColorPickerResults(items, tabID: tab.id)
         case .panel:
             showDocumentColorPanel(items, tabID: tab.id)
+        case .refresh:
+            updateVisibleDocumentColorPanel(items: items)
+            if showFeedback {
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.refreshed(
+                        .documentColors,
+                        count: items.count,
+                        singular: "color",
+                        plural: "colors"
+                    ),
+                    in: tab.editCore.editorView
+                )
+            }
         }
         updateVisibleLspWorkbenchPanel()
         return true
@@ -1201,10 +1224,14 @@ extension AttoEditorAreaViewController {
         items: [AttoLspDocumentColorParser.Item],
         mode: DocumentColorResultMode
     ) {
-        lspResultEventStream.record(
+        let event = lspResultEventStream.record(
             family: "document_colors",
             title: items.count == 1 ? "Document Colors: 1 color" : "Document Colors: \(items.count) colors",
             payload: .documentColors(mode: mode.lifecycleMode, itemCount: items.count)
+        )
+        lspWorkbenchAuxiliaryHistoryStore.record(
+            event: event,
+            payload: .documentColors(items)
         )
     }
 
@@ -1633,18 +1660,36 @@ extension AttoEditorAreaViewController {
         }
 
         recordColorPresentationResultLifecycle(presentations: presentations)
+        let requestContext = ColorPresentationRequestContext(
+            tabID: tab.id,
+            item: item,
+            showFeedback: showFeedback
+        )
         guard let window = view.window else {
-            return applyColorPresentationToActiveTab(presentations[0], showFeedback: showFeedback)
+            return applyColorPresentationToActiveTab(
+                presentations[0],
+                showFeedback: showFeedback,
+                requestContext: requestContext
+            )
         }
 
         let commands = presentations.enumerated().map { idx, presentation in
-            AttoCommandPaletteCommand(
+            let commandRequestContext = ColorPresentationRequestContext(
+                tabID: tab.id,
+                item: item,
+                showFeedback: true
+            )
+            return AttoCommandPaletteCommand(
                 id: "lsp.color_presentation.\(idx)",
                 title: AttoLspDocumentColorParser.displayTitle(for: presentation),
                 swatchColor: nsColor(for: item.color),
                 isEnabled: presentation.isApplicable
             ) { [weak self] in
-                _ = self?.applyColorPresentationToActiveTab(presentation, showFeedback: true)
+                _ = self?.applyColorPresentationToActiveTab(
+                    presentation,
+                    showFeedback: true,
+                    requestContext: commandRequestContext
+                )
             }
         }
 
@@ -1676,7 +1721,8 @@ extension AttoEditorAreaViewController {
     @discardableResult
     func applyColorPresentationToActiveTab(
         _ presentation: AttoLspDocumentColorParser.Presentation,
-        showFeedback: Bool = true
+        showFeedback: Bool = true,
+        requestContext: ColorPresentationRequestContext? = nil
     ) -> Bool {
         guard let tab = activeTab else {
             NSSound.beep()
@@ -1694,6 +1740,14 @@ extension AttoEditorAreaViewController {
             }
             NSSound.beep()
             return false
+        }
+
+        if let outcome = applyColorPresentationWithWorkspaceEdit(
+            presentation,
+            tab: tab,
+            requestContext: requestContext
+        ) {
+            return outcome.accepted
         }
 
         do {
@@ -1761,15 +1815,7 @@ extension AttoEditorAreaViewController {
 
     @discardableResult
     func formatDocumentWithLspInActiveTab() -> Bool {
-        guard let tab = activeTab else {
-            NSSound.beep()
-            return false
-        }
-        let result = tab.editCore.editorView.formatDocumentWithLSPResult()
-        if result.didApply {
-            updateStatusBar()
-        }
-        return handleFormattingResult(result, feature: .formatDocument, editorView: tab.editCore.editorView)
+        requestFormattingWithLspInActiveTab(kind: .document, showFeedback: true)
     }
 
     @discardableResult
@@ -1789,14 +1835,10 @@ extension AttoEditorAreaViewController {
                 return false
             }
 
-            let result = tab.editCore.editorView.formatRangeWithLSPResult(
-                startOffset: startOffset,
-                endOffset: endOffset
+            return requestFormattingWithLspInActiveTab(
+                kind: .selection(startOffset: startOffset, endOffset: endOffset),
+                showFeedback: true
             )
-            if result.didApply {
-                updateStatusBar()
-            }
-            return handleFormattingResult(result, feature: .formatSelection, editorView: tab.editCore.editorView)
         } catch {
             presentLspResultFeedback(
                 AttoLspResultFeedback.failed(.formatSelection, errorDescription: error.localizedDescription),

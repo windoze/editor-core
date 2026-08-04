@@ -5,6 +5,8 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SWIFT_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 REPO_ROOT="$(cd -- "$SWIFT_DIR/.." && pwd)"
 
+source "$SCRIPT_DIR/visual-baseline-common.sh"
+
 BASELINE_ROOT="${ATTO_VISUAL_BASELINE_DIR:-"$SWIFT_DIR/Tests/AttoEditorTests/Resources"}"
 ARTIFACT_DIR="${ATTO_VISUAL_ARTIFACT_DIR:-"$REPO_ROOT/target/atto-visual-artifacts"}"
 
@@ -41,9 +43,11 @@ mkdir -p "$ARTIFACT_DIR"
 
 cd "$REPO_ROOT"
 
+atto_visual_configure_swiftpm_args
+
 ATTO_VISUAL_BASELINE_DIR="$BASELINE_ROOT" \
 ATTO_VISUAL_ARTIFACT_DIR="$ARTIFACT_DIR" \
-swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'
+atto_visual_run_manifest_tests
 
 printf 'Compared visual baselines under %s\n' "$BASELINE_ROOT"
 printf 'Wrote visual review artifacts under %s\n' "$ARTIFACT_DIR"

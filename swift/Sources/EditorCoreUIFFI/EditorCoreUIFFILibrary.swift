@@ -47,6 +47,11 @@ public final class EditorCoreUIFFILibrary {
         return String(cString: ptr)
     }
 
+    public func runtimeCapabilitySnapshot() throws -> EditorCoreUIFFIRuntimeCapabilitySnapshot {
+        let data = Data(try runtimeInfoJSON().utf8)
+        return try JSONDecoder().decode(EditorCoreUIFFIRuntimeCapabilitySnapshot.self, from: data)
+    }
+
     func lastErrorMessageString() -> String {
         guard let ptr = editor_core_ui_ffi_last_error_message() else {
             return ""
@@ -114,6 +119,20 @@ public struct EditorCoreUIFFIFeatures: OptionSet, Equatable, Sendable {
     public static let editorUIMinimapEnvelope = Self(rawValue: 1 << 39)
     public static let multiDocumentWorkspaceEditTransactionRedo = Self(rawValue: 1 << 40)
     public static let editorUIViewPointPayloadEnvelope = Self(rawValue: 1 << 41)
+    public static let multiDocumentProjectLSPStartPlan = Self(rawValue: 1 << 42)
+    public static let multiDocumentProjectLSPLifecycleEvents = Self(rawValue: 1 << 43)
+    public static let multiDocumentProjectLSPStopPlan = Self(rawValue: 1 << 44)
+    public static let multiDocumentProjectLSPRestartPlan = Self(rawValue: 1 << 45)
+    public static let multiDocumentProjectLSPLifecycleEnvelope = Self(rawValue: 1 << 46)
+    public static let lspDerivedStateApplicationEnvelope = Self(rawValue: 1 << 47)
+    public static let lspSemanticTokensApplicationEnvelope = Self(rawValue: 1 << 48)
+    public static let multiDocumentWorkspaceFileSearch = Self(rawValue: 1 << 49)
+    public static let multiDocumentWorkspaceFileReplacement = Self(rawValue: 1 << 50)
+    public static let multiDocumentRecentFiles = Self(rawValue: 1 << 51)
+    public static let multiDocumentWorkspaceFileList = Self(rawValue: 1 << 52)
+    public static let multiDocumentRecentProjects = Self(rawValue: 1 << 53)
+    public static let multiDocumentProjectFileIndex = Self(rawValue: 1 << 54)
+    public static let multiDocumentProjectFileIndexQuery = Self(rawValue: 1 << 55)
 }
 
 public struct EditorCoreUIFFIRuntimeInfo: Equatable, Sendable {
@@ -129,5 +148,74 @@ public struct EditorCoreUIFFIRuntimeInfo: Equatable, Sendable {
 
     public func supports(_ feature: EditorCoreUIFFIFeatures) -> Bool {
         features.contains(feature)
+    }
+}
+
+public struct EditorCoreUIFFIRuntimeFeatureDescriptor: Equatable, Sendable, Decodable {
+    public let bit: UInt8
+    public let flag: UInt64
+    public let name: String
+    public let description: String
+
+    public init(bit: UInt8, flag: UInt64, name: String, description: String) {
+        self.bit = bit
+        self.flag = flag
+        self.name = name
+        self.description = description
+    }
+
+    public var feature: EditorCoreUIFFIFeatures {
+        EditorCoreUIFFIFeatures(rawValue: flag)
+    }
+}
+
+public struct EditorCoreUIFFIRuntimeCapabilitySnapshot: Equatable, Sendable, Decodable {
+    public let kind: String
+    public let abiVersion: UInt32
+    public let version: String
+    public let featureFlags: EditorCoreUIFFIFeatures
+    public let features: [EditorCoreUIFFIRuntimeFeatureDescriptor]
+
+    public init(
+        kind: String,
+        abiVersion: UInt32,
+        version: String,
+        featureFlags: EditorCoreUIFFIFeatures,
+        features: [EditorCoreUIFFIRuntimeFeatureDescriptor]
+    ) {
+        self.kind = kind
+        self.abiVersion = abiVersion
+        self.version = version
+        self.featureFlags = featureFlags
+        self.features = features
+    }
+
+    public var runtimeInfo: EditorCoreUIFFIRuntimeInfo {
+        EditorCoreUIFFIRuntimeInfo(
+            abiVersion: abiVersion,
+            version: version,
+            features: featureFlags
+        )
+    }
+
+    public func supports(_ feature: EditorCoreUIFFIFeatures) -> Bool {
+        featureFlags.contains(feature)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case kind
+        case abiVersion = "abi_version"
+        case version
+        case featureFlags = "feature_flags"
+        case features
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try container.decode(String.self, forKey: .kind)
+        abiVersion = try container.decode(UInt32.self, forKey: .abiVersion)
+        version = try container.decode(String.self, forKey: .version)
+        featureFlags = EditorCoreUIFFIFeatures(rawValue: try container.decode(UInt64.self, forKey: .featureFlags))
+        features = try container.decode([EditorCoreUIFFIRuntimeFeatureDescriptor].self, forKey: .features)
     }
 }

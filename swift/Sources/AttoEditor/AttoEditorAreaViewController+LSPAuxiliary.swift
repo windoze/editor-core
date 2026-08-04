@@ -277,14 +277,15 @@ extension AttoEditorAreaViewController {
                 return
             }
 
-            self.recordAuxiliaryResultEvent(kind: kind, itemCount: summary.count)
             tab.editCore.layoutSubtreeIfNeeded()
             tab.editCore.editorView.needsDisplay = true
             tab.editCore.needsDisplay = true
             self.derivedStateStore.refreshActive(editor: tab.editCore.editor)
             if kind == .inlayHints {
+                self.recordInlayHintResultEvent(items: self.currentInlayHintItems(in: tab))
                 self.updateVisibleInlayHintPanel(for: tab)
             } else if kind == .documentLinks {
+                self.recordDocumentLinkResultEvent(items: self.currentDocumentLinkItems(in: tab))
                 self.updateVisibleDocumentLinkPanel(for: tab)
             }
             self.updateStatusBar()
@@ -367,7 +368,11 @@ extension AttoEditorAreaViewController {
             return false
         }
 
-        inlayHintResolveContext = InlayHintResolveContext(tabID: tabID, showFeedback: showFeedback)
+        inlayHintResolveContext = InlayHintResolveContext(
+            tabID: tabID,
+            hintJSON: json,
+            showFeedback: showFeedback
+        )
         editorView.kickProcessingPoll()
         updateStatusBar()
         startInlayHintResolvePollTimer(tabID: tabID, editorView: editorView)
@@ -422,7 +427,12 @@ extension AttoEditorAreaViewController {
 
             let showFeedback = ctx.showFeedback
             self.cancelInlayHintResolveUI()
-            guard self.consumeResolvedInlayHint(result, in: editorView, showFeedback: showFeedback) else {
+            guard self.consumeResolvedInlayHint(
+                result,
+                in: editorView,
+                showFeedback: showFeedback,
+                requestContext: ctx
+            ) else {
                 if showFeedback {
                     self.presentLspResultFeedback(AttoLspResultFeedback.empty(.inlayHintResolve), in: editorView)
                 }
@@ -439,7 +449,8 @@ extension AttoEditorAreaViewController {
     func consumeResolvedInlayHint(
         _ hint: EcuLspInlayHint,
         in editorView: EditorCoreSkiaView,
-        showFeedback: Bool
+        showFeedback: Bool,
+        requestContext: InlayHintResolveContext? = nil
     ) -> Bool {
         var didHandle = false
         var attemptedEdit = false
@@ -453,8 +464,11 @@ extension AttoEditorAreaViewController {
                 attemptedEdit = true
                 didHandle = applyWorkspaceEditJSONToActiveTab(
                     workspaceEditJSON,
-                    documentURI: documentURI
-                ) || didHandle
+                    documentURI: documentURI,
+                    requestRetryOwner: requestContext.map {
+                        inlayHintResolveWorkspaceEditRequestRetryOwner(context: $0)
+                    }
+                ).accepted || didHandle
             }
         }
 
@@ -587,12 +601,12 @@ extension AttoEditorAreaViewController {
         timer.resume()
     }
 
-    private func currentInlayHintItems(in tab: AttoEditorTab) -> [AttoLspInlayHintParser.Item] {
+    func currentInlayHintItems(in tab: AttoEditorTab) -> [AttoLspInlayHintParser.Item] {
         derivedStateStore.refreshActive(editor: tab.editCore.editor)
         return AttoLspInlayHintParser.items(fromDecorationsSnapshot: derivedStateStore.active.decorations)
     }
 
-    private func makeInlayHintPanelController() -> AttoInlayHintPanelController {
+    func makeInlayHintPanelController() -> AttoInlayHintPanelController {
         AttoInlayHintPanelController(
             titleForItem: { [weak self] item in
                 guard let self, let tab = self.activeTab else { return item.title }
@@ -646,30 +660,47 @@ extension AttoEditorAreaViewController {
         tab.editCore.needsDisplay = true
         derivedStateStore.refreshActive(editor: tab.editCore.editor)
 
-        let count: Int
         switch kind {
         case .inlayHints:
-            count = currentInlayHintItems(in: tab).count
-            recordAuxiliaryResultEvent(kind: kind, itemCount: count)
+            let items = currentInlayHintItems(in: tab)
+            recordInlayHintResultEvent(items: items)
             updateVisibleInlayHintPanel(for: tab)
         case .documentLinks:
-            count = currentDocumentLinkItems(in: tab).count
-            recordAuxiliaryResultEvent(kind: kind, itemCount: count)
+            let items = currentDocumentLinkItems(in: tab)
+            recordDocumentLinkResultEvent(items: items)
             updateVisibleDocumentLinkPanel(for: tab)
         }
         updateStatusBar()
         return true
     }
 
-    private func recordAuxiliaryResultEvent(kind: AuxiliaryRefreshKind, itemCount: Int) {
-        lspResultEventStream.record(
+    private func recordInlayHintResultEvent(items: [AttoLspInlayHintParser.Item]) {
+        let kind = AuxiliaryRefreshKind.inlayHints
+        let event = lspResultEventStream.record(
             family: kind.resultEventFamily,
-            title: kind.resultEventTitle(count: itemCount),
-            payload: kind.resultEventPayload(count: itemCount)
+            title: kind.resultEventTitle(count: items.count),
+            payload: kind.resultEventPayload(count: items.count)
+        )
+        lspWorkbenchAuxiliaryHistoryStore.record(
+            event: event,
+            payload: .inlayHints(items)
         )
     }
 
-    private func resolveInlayHintPanelItem(_ item: AttoLspInlayHintParser.Item) -> Bool {
+    private func recordDocumentLinkResultEvent(items: [AttoLspDocumentLinkParser.Item]) {
+        let kind = AuxiliaryRefreshKind.documentLinks
+        let event = lspResultEventStream.record(
+            family: kind.resultEventFamily,
+            title: kind.resultEventTitle(count: items.count),
+            payload: kind.resultEventPayload(count: items.count)
+        )
+        lspWorkbenchAuxiliaryHistoryStore.record(
+            event: event,
+            payload: .documentLinks(items)
+        )
+    }
+
+    func resolveInlayHintPanelItem(_ item: AttoLspInlayHintParser.Item) -> Bool {
         guard let tab = activeTab else {
             NSSound.beep()
             return false
@@ -688,12 +719,12 @@ extension AttoEditorAreaViewController {
         updateVisibleLspWorkbenchPanel()
     }
 
-    private func currentDocumentLinkItems(in tab: AttoEditorTab) -> [AttoLspDocumentLinkParser.Item] {
+    func currentDocumentLinkItems(in tab: AttoEditorTab) -> [AttoLspDocumentLinkParser.Item] {
         derivedStateStore.refreshActive(editor: tab.editCore.editor)
         return AttoLspDocumentLinkParser.items(fromDecorationsSnapshot: derivedStateStore.active.decorations)
     }
 
-    private func makeDocumentLinkPanelController() -> AttoDocumentLinkPanelController {
+    func makeDocumentLinkPanelController() -> AttoDocumentLinkPanelController {
         AttoDocumentLinkPanelController(
             titleForItem: { [weak self] item in
                 guard let self, let tab = self.activeTab else { return item.title }
@@ -718,7 +749,7 @@ extension AttoEditorAreaViewController {
         return AttoLspDocumentLinkParser.displayTitle(for: item, location: location)
     }
 
-    private func openDocumentLinkPanelItem(_ item: AttoLspDocumentLinkParser.Item) -> Bool {
+    func openDocumentLinkPanelItem(_ item: AttoLspDocumentLinkParser.Item) -> Bool {
         guard let tab = activeTab else {
             NSSound.beep()
             return false

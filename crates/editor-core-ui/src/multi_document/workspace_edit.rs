@@ -79,6 +79,8 @@ pub struct WorkspaceEditTransactionResult {
 pub struct WorkspaceEditTransactionEvent {
     pub sequence: u64,
     pub operation: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_edit_json: Option<String>,
     pub result: WorkspaceEditTransactionResult,
 }
 
@@ -107,6 +109,7 @@ impl WorkspaceEditTransactionEventStore {
     pub(crate) fn record(
         &mut self,
         operation: impl Into<String>,
+        workspace_edit_json: Option<String>,
         result: WorkspaceEditTransactionResult,
     ) {
         if self.next_sequence == 0 {
@@ -117,6 +120,7 @@ impl WorkspaceEditTransactionEventStore {
         self.events.push_back(WorkspaceEditTransactionEvent {
             sequence,
             operation: operation.into(),
+            workspace_edit_json,
             result,
         });
 
@@ -1403,10 +1407,13 @@ fn transaction_plan(
         .documents
         .into_iter()
         .map(|doc| {
-            let open_tab_id = open_tabs_by_uri
-                .get(doc.uri.as_str())
-                .or_else(|| initial_open_tabs_by_uri.get(doc.uri.as_str()))
-                .copied();
+            let open_tab_id = tab_id_for_uri_from_maps(
+                tabs,
+                tab_order,
+                &open_tabs_by_uri,
+                &initial_open_tabs_by_uri,
+                doc.uri.as_str(),
+            );
             let expected_version = expected_versions.get(doc.uri.as_str()).copied();
             let actual_version =
                 open_tab_id.and_then(|tab_id| tab_text_version(tabs, tab_id));
@@ -1519,7 +1526,7 @@ fn transaction_plan(
 
     for uri in &unsupported_operation_uris {
         if !documents.iter().any(|doc| doc.uri == *uri) {
-            let tab_id = open_tabs_by_uri.get(uri).copied();
+            let tab_id = tab_id_for_uri(tabs, tab_order, uri);
             documents.push(WorkspaceEditTransactionDocument {
                 uri: uri.clone(),
                 edit_count: 0,
@@ -1539,7 +1546,7 @@ fn transaction_plan(
         }
         for uri in operation.op.affected_uris() {
             if !documents.iter().any(|doc| doc.uri == uri) {
-                let tab_id = open_tabs_by_uri.get(uri.as_str()).copied();
+                let tab_id = tab_id_for_uri(tabs, tab_order, uri.as_str());
                 documents.push(WorkspaceEditTransactionDocument {
                     edit_count: 0,
                     has_overlapping_edits: false,
@@ -1860,11 +1867,57 @@ fn tab_id_for_uri(
     tab_order: &[TabId],
     uri: &str,
 ) -> Option<TabId> {
-    tab_order.iter().copied().find(|tab_id| {
+    if let Some(tab_id) = tab_order.iter().copied().find(|tab_id| {
         tabs.get(tab_id)
             .and_then(|tab| tab.document_uri.as_deref())
             .is_some_and(|document_uri| document_uri == uri)
+    }) {
+        return Some(tab_id);
+    }
+
+    tab_order.iter().copied().find(|tab_id| {
+        tabs.get(tab_id)
+            .and_then(|tab| tab.document_uri.as_deref())
+            .is_some_and(|document_uri| file_uris_refer_to_same_path(document_uri, uri))
     })
+}
+
+fn tab_id_for_uri_from_maps(
+    tabs: &BTreeMap<TabId, TabEntry>,
+    tab_order: &[TabId],
+    current_open_tabs_by_uri: &BTreeMap<String, TabId>,
+    initial_open_tabs_by_uri: &BTreeMap<String, TabId>,
+    uri: &str,
+) -> Option<TabId> {
+    current_open_tabs_by_uri
+        .get(uri)
+        .or_else(|| initial_open_tabs_by_uri.get(uri))
+        .copied()
+        .or_else(|| tab_id_for_uri(tabs, tab_order, uri))
+}
+
+fn file_uris_refer_to_same_path(left: &str, right: &str) -> bool {
+    if left == right {
+        return true;
+    }
+
+    let Some(left_path) = file_uri_to_path(left) else {
+        return false;
+    };
+    let Some(right_path) = file_uri_to_path(right) else {
+        return false;
+    };
+    if left_path == right_path {
+        return true;
+    }
+
+    let Ok(left_canonical) = fs::canonicalize(left_path) else {
+        return false;
+    };
+    let Ok(right_canonical) = fs::canonicalize(right_path) else {
+        return false;
+    };
+    left_canonical == right_canonical
 }
 
 fn tab_text_version(tabs: &BTreeMap<TabId, TabEntry>, tab_id: TabId) -> Option<u64> {

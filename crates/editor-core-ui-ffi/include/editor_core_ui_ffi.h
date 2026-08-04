@@ -178,6 +178,20 @@ uint32_t editor_core_ui_ffi_abi_version(void);
 #define ECU_FEATURE_EDITOR_UI_MINIMAP_ENVELOPE (1ull << 39)
 #define ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_EDIT_TRANSACTION_REDO (1ull << 40)
 #define ECU_FEATURE_EDITOR_UI_VIEW_POINT_PAYLOAD_ENVELOPE (1ull << 41)
+#define ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_START_PLAN (1ull << 42)
+#define ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_LIFECYCLE_EVENTS (1ull << 43)
+#define ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_STOP_PLAN (1ull << 44)
+#define ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_RESTART_PLAN (1ull << 45)
+#define ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_LIFECYCLE_ENVELOPE (1ull << 46)
+#define ECU_FEATURE_LSP_DERIVED_STATE_APPLICATION_ENVELOPE (1ull << 47)
+#define ECU_FEATURE_LSP_SEMANTIC_TOKENS_APPLICATION_ENVELOPE (1ull << 48)
+#define ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_SEARCH (1ull << 49)
+#define ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_REPLACEMENT (1ull << 50)
+#define ECU_FEATURE_MULTI_DOCUMENT_RECENT_FILES (1ull << 51)
+#define ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_LIST (1ull << 52)
+#define ECU_FEATURE_MULTI_DOCUMENT_RECENT_PROJECTS (1ull << 53)
+#define ECU_FEATURE_MULTI_DOCUMENT_PROJECT_FILE_INDEX (1ull << 54)
+#define ECU_FEATURE_MULTI_DOCUMENT_PROJECT_FILE_INDEX_QUERY (1ull << 55)
 uint64_t editor_core_ui_ffi_feature_flags(void);
 char* editor_core_ui_ffi_runtime_info_json(void);
 
@@ -196,6 +210,32 @@ int32_t editor_core_ui_ffi_multi_document_active_tab_id(MultiDocumentEditorUi* m
                                                         uint64_t* out_tab_id);
 char* editor_core_ui_ffi_multi_document_snapshot_json(MultiDocumentEditorUi* multi);
 char* editor_core_ui_ffi_multi_document_snapshot_envelope_json(MultiDocumentEditorUi* multi);
+int32_t editor_core_ui_ffi_multi_document_remember_recent_file_uri(
+    MultiDocumentEditorUi* multi,
+    const char* uri_utf8);
+int32_t editor_core_ui_ffi_multi_document_restore_recent_files_json(
+    MultiDocumentEditorUi* multi,
+    const char* uris_json_utf8);
+int32_t editor_core_ui_ffi_multi_document_clear_recent_files(MultiDocumentEditorUi* multi);
+char* editor_core_ui_ffi_multi_document_recent_files_json(MultiDocumentEditorUi* multi);
+int32_t editor_core_ui_ffi_multi_document_remember_recent_project_uri(
+    MultiDocumentEditorUi* multi,
+    const char* uri_utf8);
+int32_t editor_core_ui_ffi_multi_document_restore_recent_projects_json(
+    MultiDocumentEditorUi* multi,
+    const char* uris_json_utf8);
+int32_t editor_core_ui_ffi_multi_document_clear_recent_projects(MultiDocumentEditorUi* multi);
+char* editor_core_ui_ffi_multi_document_recent_projects_json(MultiDocumentEditorUi* multi);
+char* editor_core_ui_ffi_multi_document_refresh_project_file_index_json(
+    MultiDocumentEditorUi* multi,
+    uint32_t max_results);
+char* editor_core_ui_ffi_multi_document_project_file_index_snapshot_json(
+    MultiDocumentEditorUi* multi);
+int32_t editor_core_ui_ffi_multi_document_clear_project_file_index(MultiDocumentEditorUi* multi);
+char* editor_core_ui_ffi_multi_document_query_project_file_index_json(
+    MultiDocumentEditorUi* multi,
+    const char* query_utf8,
+    uint32_t max_results);
 int32_t editor_core_ui_ffi_multi_document_set_active_tab(MultiDocumentEditorUi* multi,
                                                          uint64_t tab_id);
 int32_t editor_core_ui_ffi_multi_document_set_tab_title(MultiDocumentEditorUi* multi,
@@ -226,6 +266,22 @@ int32_t editor_core_ui_ffi_multi_document_set_project_lsp_servers_json(
     MultiDocumentEditorUi* multi,
     const char* configs_json_utf8);
 char* editor_core_ui_ffi_multi_document_project_lsp_servers_json(MultiDocumentEditorUi* multi);
+char* editor_core_ui_ffi_multi_document_project_lsp_start_plan_json(MultiDocumentEditorUi* multi);
+char* editor_core_ui_ffi_multi_document_project_lsp_stop_plan_json(MultiDocumentEditorUi* multi);
+char* editor_core_ui_ffi_multi_document_project_lsp_restart_plan_json(MultiDocumentEditorUi* multi);
+int32_t editor_core_ui_ffi_multi_document_record_project_lsp_start_outcome_json(
+    MultiDocumentEditorUi* multi,
+    const char* outcome_json_utf8);
+int32_t editor_core_ui_ffi_multi_document_project_lsp_lifecycle_events_latest_sequence(
+    MultiDocumentEditorUi* multi,
+    uint64_t* out_sequence);
+char* editor_core_ui_ffi_multi_document_project_lsp_lifecycle_events_json(
+    MultiDocumentEditorUi* multi,
+    uint64_t after_sequence);
+char* editor_core_ui_ffi_multi_document_project_lsp_lifecycle_envelope_json(
+    MultiDocumentEditorUi* multi,
+    const char* operation_utf8,
+    uint64_t after_sequence);
 char* editor_core_ui_ffi_multi_document_project_lsp_servers_envelope_json(
     MultiDocumentEditorUi* multi);
 int32_t editor_core_ui_ffi_multi_document_is_preview_tab(MultiDocumentEditorUi* multi,
@@ -286,6 +342,40 @@ char* editor_core_ui_ffi_multi_document_search_all_tabs_envelope_json(MultiDocum
                                                                       uint8_t case_sensitive,
                                                                       uint8_t whole_word,
                                                                       uint8_t regex);
+char* editor_core_ui_ffi_multi_document_list_workspace_files_json(
+    MultiDocumentEditorUi* multi,
+    const char* include_globs_json_utf8,
+    const char* exclude_globs_json_utf8,
+    uint32_t max_results);
+char* editor_core_ui_ffi_multi_document_search_workspace_files_json(
+    MultiDocumentEditorUi* multi,
+    const char* query_utf8,
+    const char* include_globs_json_utf8,
+    const char* exclude_globs_json_utf8,
+    uint8_t case_sensitive,
+    uint8_t whole_word,
+    uint8_t regex,
+    uint32_t max_results);
+char* editor_core_ui_ffi_multi_document_search_workspace_files_envelope_json(
+    MultiDocumentEditorUi* multi,
+    const char* query_utf8,
+    const char* include_globs_json_utf8,
+    const char* exclude_globs_json_utf8,
+    uint8_t case_sensitive,
+    uint8_t whole_word,
+    uint8_t regex,
+    uint32_t max_results);
+char* editor_core_ui_ffi_multi_document_workspace_file_replacement_workspace_edit_json(
+    MultiDocumentEditorUi* multi,
+    const char* query_utf8,
+    const char* replacement_utf8,
+    const char* include_globs_json_utf8,
+    const char* exclude_globs_json_utf8,
+    const char* apply_mode_utf8,
+    uint8_t case_sensitive,
+    uint8_t whole_word,
+    uint8_t regex,
+    uint32_t max_results);
 char* editor_core_ui_ffi_multi_document_workspace_outline_snapshot_json(
     MultiDocumentEditorUi* multi);
 char* editor_core_ui_ffi_multi_document_workspace_outline_snapshot_envelope_json(
@@ -719,6 +809,28 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_request_workspace_symbols(EditorUi* ui,
 int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_workspace_symbols_json(EditorUi* ui,
                                                                           uint8_t* out_has_result,
                                                                           char** out_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_formatting(
+    EditorUi* ui,
+    const char* formatting_options_json_utf8, // nullable
+    uint64_t* out_request_id
+);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_formatting_json(
+    EditorUi* ui,
+    uint8_t* out_has_result,
+    char** out_result_json_utf8
+);
+int32_t editor_core_ui_ffi_editor_ui_lsp_request_range_formatting(
+    EditorUi* ui,
+    uint32_t start_offset,
+    uint32_t end_offset,
+    const char* formatting_options_json_utf8, // nullable
+    uint64_t* out_request_id
+);
+int32_t editor_core_ui_ffi_editor_ui_lsp_take_last_range_formatting_json(
+    EditorUi* ui,
+    uint8_t* out_has_result,
+    char** out_result_json_utf8
+);
 
 // LSP "turnkey" helpers (blocking user actions).
 int32_t editor_core_ui_ffi_editor_ui_lsp_format_document(
@@ -750,7 +862,15 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_apply_diagnostics_json(
     EditorUi* ui,
     const char* publish_diagnostics_json_utf8
 );
+char* editor_core_ui_ffi_editor_ui_lsp_apply_diagnostics_envelope_json(
+    EditorUi* ui,
+    const char* publish_diagnostics_json_utf8
+);
 int32_t editor_core_ui_ffi_editor_ui_lsp_apply_inlay_hints_json(
+    EditorUi* ui,
+    const char* inlay_hints_result_json_utf8
+);
+char* editor_core_ui_ffi_editor_ui_lsp_apply_inlay_hints_envelope_json(
     EditorUi* ui,
     const char* inlay_hints_result_json_utf8
 );
@@ -758,7 +878,15 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_apply_code_lens_json(
     EditorUi* ui,
     const char* code_lens_result_json_utf8
 );
+char* editor_core_ui_ffi_editor_ui_lsp_apply_code_lens_envelope_json(
+    EditorUi* ui,
+    const char* code_lens_result_json_utf8
+);
 int32_t editor_core_ui_ffi_editor_ui_lsp_apply_document_links_json(
+    EditorUi* ui,
+    const char* document_links_result_json_utf8
+);
+char* editor_core_ui_ffi_editor_ui_lsp_apply_document_links_envelope_json(
     EditorUi* ui,
     const char* document_links_result_json_utf8
 );
@@ -766,11 +894,23 @@ int32_t editor_core_ui_ffi_editor_ui_lsp_apply_document_highlights_json(
     EditorUi* ui,
     const char* document_highlights_result_json_utf8
 );
+char* editor_core_ui_ffi_editor_ui_lsp_apply_document_highlights_envelope_json(
+    EditorUi* ui,
+    const char* document_highlights_result_json_utf8
+);
 int32_t editor_core_ui_ffi_editor_ui_lsp_apply_document_symbols_json(
     EditorUi* ui,
     const char* document_symbols_result_json_utf8
 );
+char* editor_core_ui_ffi_editor_ui_lsp_apply_document_symbols_envelope_json(
+    EditorUi* ui,
+    const char* document_symbols_result_json_utf8
+);
 int32_t editor_core_ui_ffi_editor_ui_lsp_apply_folding_ranges_json(
+    EditorUi* ui,
+    const char* folding_ranges_result_json_utf8
+);
+char* editor_core_ui_ffi_editor_ui_lsp_apply_folding_ranges_envelope_json(
     EditorUi* ui,
     const char* folding_ranges_result_json_utf8
 );
@@ -794,6 +934,9 @@ char* editor_core_ui_ffi_editor_ui_lsp_apply_workspace_edit_envelope_json(
 int32_t editor_core_ui_ffi_editor_ui_lsp_apply_semantic_tokens(EditorUi* ui,
                                                                const uint32_t* data,
                                                                uint32_t data_len);
+char* editor_core_ui_ffi_editor_ui_lsp_apply_semantic_tokens_envelope_json(EditorUi* ui,
+                                                                           const uint32_t* data,
+                                                                           uint32_t data_len);
 
 int32_t editor_core_ui_ffi_editor_ui_set_render_metrics(EditorUi* ui,
                                                        float font_size,

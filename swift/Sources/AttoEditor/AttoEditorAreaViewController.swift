@@ -271,8 +271,25 @@ final class AttoEditorAreaViewController: NSViewController {
         hierarchyPanelController?.isVisible == true
     }
 
+    func _hierarchyPanelSnapshotForTesting() -> AttoHierarchyPanelController.Snapshot? {
+        hierarchyPanelSnapshot
+    }
+
+    func _hierarchyPanelRefreshRequestForTesting() -> HierarchyPanelRefreshRequest? {
+        hierarchyPanelRefreshRequest
+    }
+
     func _lspWorkbenchPanelItemsForTesting() -> [AttoLspWorkbenchPanelController.Item] {
         lspWorkbenchPanelController?.currentItems ?? []
+    }
+
+    func _lspWorkbenchPanelSelectedItemForTesting() -> AttoLspWorkbenchPanelController.Item? {
+        lspWorkbenchPanelController?.selectedItem
+    }
+
+    @discardableResult
+    func _selectLspWorkbenchPanelItemForTesting(id: String) -> Bool {
+        lspWorkbenchPanelController?.selectItem(id: id) ?? false
     }
 
     func _lspWorkbenchPanelRowCountForTesting() -> Int {
@@ -281,6 +298,18 @@ final class AttoEditorAreaViewController: NSViewController {
 
     func _lspWorkbenchPanelIsVisibleForTesting() -> Bool {
         lspWorkbenchPanelController?.isVisible == true
+    }
+
+    func _lspWorkbenchHistoryPanelItemsForTesting() -> [AttoLspWorkbenchHistoryPanelController.Item] {
+        lspWorkbenchHistoryPanelController?.currentItems ?? []
+    }
+
+    func _lspWorkbenchHistoryPanelRowCountForTesting() -> Int {
+        lspWorkbenchHistoryPanelController?.rowCount ?? 0
+    }
+
+    func _lspWorkbenchHistoryPanelIsVisibleForTesting() -> Bool {
+        lspWorkbenchHistoryPanelController?.isVisible == true
     }
 
     func _workspaceOutlineSnapshotForTesting() -> AttoWorkspaceOutlineSnapshot {
@@ -335,6 +364,18 @@ final class AttoEditorAreaViewController: NSViewController {
 
     func _latestProjectLspProcessHealthEventSequenceForTesting() -> UInt64 {
         projectLspProcessHealthEventStore.latestSequence
+    }
+
+    func _projectLspLifecycleEventsForTesting(after sequence: UInt64) -> [EcuProjectLspLifecycleEvent] {
+        projectLspLifecycleEventStore.entries(after: sequence)
+    }
+
+    func _latestProjectLspLifecycleEventSequenceForTesting() -> UInt64 {
+        projectLspLifecycleEventStore.latestSequence
+    }
+
+    func _drainProjectLspPanelLifecycleEventsForTesting() {
+        drainProjectLspPanelLifecycleEvents()
     }
 
     @discardableResult
@@ -396,11 +437,20 @@ final class AttoEditorAreaViewController: NSViewController {
         onlyKinds: [String] = [],
         showFeedback: Bool = true
     ) -> Bool {
+        let requestContext = codeActionRequestContextForCurrentSelection(
+            onlyKinds: onlyKinds,
+            showFeedback: showFeedback
+        )
         let items = AttoLspCodeActionParser.filteredItems(
             AttoLspCodeActionParser.items(fromCodeActionResultJSON: json),
             onlyKinds: onlyKinds
         )
-        return showCodeActionResults(items, onlyKinds: onlyKinds, showFeedback: showFeedback)
+        return showCodeActionResults(
+            items,
+            onlyKinds: onlyKinds,
+            showFeedback: showFeedback,
+            requestContext: requestContext
+        )
     }
 
     func _showCompletionResultJSONForTesting(_ json: String) -> Bool {
@@ -418,9 +468,13 @@ final class AttoEditorAreaViewController: NSViewController {
 
     func _applyRenameResultJSONForTesting(_ json: String, newName: String, showFeedback: Bool = true) -> Bool {
         guard let tab = activeTab else { return false }
+        let offsets = try? tab.editCore.editor.selectionOffsets()
+        let position = try? tab.editCore.editor.charOffsetToLogicalPosition(offset: offsets?.end ?? 0)
         let context = RenameRequestContext(
             tabID: tab.id,
             documentURI: projectedFileURL(for: tab).absoluteString,
+            logicalLine: position?.line ?? 0,
+            logicalColumn: position?.column ?? 0,
             newName: newName,
             showFeedback: showFeedback
         )
@@ -512,6 +566,16 @@ final class AttoEditorAreaViewController: NSViewController {
 
     func _coreProjectLspServerConfigsForTesting() throws -> [EcuProjectLspServerConfig] {
         try coreDocuments?.projectLspServers() ?? []
+    }
+
+    func _coreProjectLspStartPlanForTesting() throws -> [EcuProjectLspStartPlanEntry] {
+        try coreDocuments?.projectLspStartPlan() ?? []
+    }
+
+    func _coreProjectLspLifecycleEventsForTesting(
+        after sequence: UInt64 = 0
+    ) throws -> EcuProjectLspLifecycleEventsSnapshot? {
+        try coreDocuments?.projectLspLifecycleEvents(after: sequence)
     }
 
     func _coreWorkspaceEditTransactionLatestSequenceForTesting() throws -> UInt64? {
@@ -767,7 +831,7 @@ final class AttoEditorAreaViewController: NSViewController {
         let placeholder: String
     }
 
-    enum LspHierarchyRequestKind {
+    enum LspHierarchyRequestKind: Equatable {
         case callIncoming
         case callOutgoing
         case typeSupertypes
@@ -833,7 +897,20 @@ final class AttoEditorAreaViewController: NSViewController {
     struct HierarchyChildrenContext {
         let tabID: UUID
         let kind: LspHierarchyRequestKind
+        let item: AttoLspHierarchyParser.Item
         let showFeedback: Bool
+        let resultMode: HierarchyChildrenResultMode
+    }
+
+    enum HierarchyChildrenResultMode {
+        case interactive
+        case refresh
+    }
+
+    struct HierarchyPanelRefreshRequest: Equatable {
+        let tabID: UUID
+        let kind: LspHierarchyRequestKind
+        let item: AttoLspHierarchyParser.Item
     }
 
     struct SignatureHelpRequestContext {
@@ -843,6 +920,8 @@ final class AttoEditorAreaViewController: NSViewController {
 
     struct CompletionRequestContext {
         let tabID: UUID
+        let logicalLine: UInt32
+        let logicalColumn: UInt32
         let fallbackStart: UInt32
         let fallbackEnd: UInt32
         let beepOnFailure: Bool
@@ -855,9 +934,40 @@ final class AttoEditorAreaViewController: NSViewController {
         let commitCharacter: String?
     }
 
+    enum FormattingRequestKind {
+        case document
+        case selection(startOffset: UInt32, endOffset: UInt32)
+
+        var feedbackFeature: AttoLspResultFeedback.Feature {
+            switch self {
+            case .document:
+                return .formatDocument
+            case .selection:
+                return .formatSelection
+            }
+        }
+
+        var retryLabel: String {
+            switch self {
+            case .document:
+                return "Format Document"
+            case .selection:
+                return "Format Selection"
+            }
+        }
+    }
+
+    struct FormattingRequestContext {
+        let tabID: UUID
+        let kind: FormattingRequestKind
+        let showFeedback: Bool
+    }
+
     struct RenameRequestContext {
         let tabID: UUID
         let documentURI: String
+        let logicalLine: UInt32
+        let logicalColumn: UInt32
         let newName: String
         let showFeedback: Bool
     }
@@ -870,6 +980,8 @@ final class AttoEditorAreaViewController: NSViewController {
 
     struct CodeActionRequestContext {
         let tabID: UUID
+        let startOffset: UInt32
+        let endOffset: UInt32
         let onlyKinds: [String]
         let showFeedback: Bool
     }
@@ -877,6 +989,7 @@ final class AttoEditorAreaViewController: NSViewController {
     struct CodeActionResolveContext {
         let tabID: UUID
         let item: AttoLspCodeActionParser.Item
+        let requestContext: CodeActionRequestContext?
         let showFeedback: Bool
     }
 
@@ -958,6 +1071,7 @@ final class AttoEditorAreaViewController: NSViewController {
 
     struct InlayHintResolveContext {
         let tabID: UUID
+        let hintJSON: String
         let showFeedback: Bool
     }
 
@@ -969,6 +1083,7 @@ final class AttoEditorAreaViewController: NSViewController {
     struct ExecuteCommandRequestContext {
         let tabID: UUID
         let commandTitle: String
+        let commandJSON: String
     }
 
     struct FoldingRangesRequestContext {
@@ -996,6 +1111,7 @@ final class AttoEditorAreaViewController: NSViewController {
         case presentations
         case picker
         case panel
+        case refresh
 
         var lifecycleMode: String {
             switch self {
@@ -1005,6 +1121,8 @@ final class AttoEditorAreaViewController: NSViewController {
                 return "picker"
             case .panel:
                 return "panel"
+            case .refresh:
+                return "refresh"
             }
         }
     }
@@ -1051,6 +1169,7 @@ final class AttoEditorAreaViewController: NSViewController {
     var workspaceEditPreviewPanelController: AttoWorkspaceEditPreviewPanelController?
     var workspaceEditHistoryPanelController: AttoWorkspaceEditHistoryPanelController?
     var workspaceEditConsumedUndoSequences: Set<UInt64> = []
+    var workspaceEditRequestRetryOwnersByTransactionSequence: [UInt64: AttoWorkspaceEditRequestRetryOwner] = [:]
     var workspaceEditPreviewDecisionProviderForTesting: ((AttoWorkspaceEditPreview) -> AttoWorkspaceEditPreviewDecision)?
 
     var definitionContext: DefinitionRequestContext?
@@ -1081,8 +1200,12 @@ final class AttoEditorAreaViewController: NSViewController {
     var hierarchyChildrenPollTimer: DispatchSourceTimer?
     var hierarchyResultsController: AttoCommandPaletteController?
     var hierarchyPanelSnapshot: AttoHierarchyPanelController.Snapshot?
+    var hierarchyPanelRefreshRequest: HierarchyPanelRefreshRequest?
     var hierarchyPanelController: AttoHierarchyPanelController?
     var lspWorkbenchPanelController: AttoLspWorkbenchPanelController?
+    var lspWorkbenchHistoryPanelController: AttoLspWorkbenchHistoryPanelController?
+    var lspWorkbenchHistoryPanelFamilyFilter: String?
+    var lspWorkbenchHistoryPanelPinnedOnly = false
     var problemsResultsController: AttoCommandPaletteController?
     var problemsPanelController: AttoProblemsPanelController?
     let diagnosticsLifecycleStore = AttoLspResultLifecycleStore<AttoDiagnosticsLifecycleSnapshot>(
@@ -1091,10 +1214,16 @@ final class AttoEditorAreaViewController: NSViewController {
     let lspResultEventStream = AttoLspResultEventStream(
         maxHistoryEntries: maxLspResultEventHistoryEntries
     )
+    let lspWorkbenchAuxiliaryHistoryStore = AttoLspWorkbenchAuxiliaryHistoryStore(
+        maxHistoryEntries: maxLspResultEventHistoryEntries
+    )
     let projectLspPanelErrorEventStore = AttoProjectLspPanelErrorEventStore(
         maxHistoryEntries: maxLspResultEventHistoryEntries
     )
     let projectLspProcessHealthEventStore = AttoProjectLspProcessHealthEventStore(
+        maxHistoryEntries: maxLspResultEventHistoryEntries
+    )
+    let projectLspLifecycleEventStore = AttoProjectLspLifecycleEventStore(
         maxHistoryEntries: maxLspResultEventHistoryEntries
     )
     let projectLspProcessHealthLogStore: AttoProjectLspProcessHealthLogStore
@@ -1107,6 +1236,7 @@ final class AttoEditorAreaViewController: NSViewController {
     var coreLspRequestEventCursor: UInt64 = 0
     var coreLspResultEventCursor: UInt64 = 0
     var coreLspStateEventCursor: UInt64 = 0
+    var coreProjectLspLifecycleEventCursor: UInt64 = 0
     var activeDiagnosticsTextFingerprintsByTabID: [UUID: DiagnosticsTextFingerprint] = [:]
     var activeDiagnosticsBaselinesByTabID: [UUID: [EcuDiagnostic]] = [:]
     var activeDiagnosticsStaleReasonsByTabID: [UUID: AttoDiagnosticsStaleReason] = [:]
@@ -1131,6 +1261,9 @@ final class AttoEditorAreaViewController: NSViewController {
     var completionListController: AttoCompletionListController?
     var completionListContext: CompletionRequestContext?
     var shouldPreserveCompletionUIForCurrentTextMutation = false
+
+    var formattingContext: FormattingRequestContext?
+    var formattingPollTimer: DispatchSourceTimer?
 
     var renameContext: RenameRequestContext?
     var renamePollTimer: DispatchSourceTimer?

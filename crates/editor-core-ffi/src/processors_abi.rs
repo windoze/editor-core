@@ -157,16 +157,25 @@ pub extern "C" fn editor_core_ffi_sublime_processor_process_json(
     state: *const EcfEditorState,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
-        let processor = require_mut(processor, "processor")?;
-        let state = require_ref(state, "state")?;
-        let edits = processor
-            .inner
-            .process(&state.inner)
-            .map_err(|err| format!("sublime process failed: {err}"))?;
-        Ok(json!({
-            "edits": edits.iter().map(value_processing_edit).collect::<Vec<_>>()
-        }))
+        sublime_processor_process_value(processor, state).map_err(|(_, message)| message)
     })
+}
+
+pub(crate) fn sublime_processor_process_value(
+    processor: *mut EcfSublimeProcessor,
+    state: *const EcfEditorState,
+) -> Result<Value, (EcfStatus, String)> {
+    let processor = require_mut_status(processor, "processor")?;
+    let state = require_ref_status(state, "state")?;
+    let edits = processor.inner.process(&state.inner).map_err(|err| {
+        (
+            EcfStatus::Internal,
+            format!("sublime process failed: {err}"),
+        )
+    })?;
+    Ok(json!({
+        "edits": edits.iter().map(value_processing_edit).collect::<Vec<_>>()
+    }))
 }
 
 /// Run Sublime processor and apply edits to state.
@@ -193,11 +202,19 @@ pub extern "C" fn editor_core_ffi_sublime_processor_scope_for_style_id(
     style_id: u32,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
-        let processor = require_ref(processor, "processor")?;
-        Ok(json!({
-            "scope": processor.inner.scope_mapper.scope_for_style_id(style_id)
-        }))
+        sublime_processor_scope_for_style_id_value(processor, style_id)
+            .map_err(|(_, message)| message)
     })
+}
+
+pub(crate) fn sublime_processor_scope_for_style_id_value(
+    processor: *const EcfSublimeProcessor,
+    style_id: u32,
+) -> Result<Value, (EcfStatus, String)> {
+    let processor = require_ref_status(processor, "processor")?;
+    Ok(json!({
+        "scope": processor.inner.scope_mapper.scope_for_style_id(style_id)
+    }))
 }
 
 /// Tree-sitter language function pointer type expected by this FFI.
@@ -332,16 +349,25 @@ pub extern "C" fn editor_core_ffi_treesitter_processor_process_json(
     state: *const EcfEditorState,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
-        let processor = require_mut(processor, "processor")?;
-        let state = require_ref(state, "state")?;
-        let edits = processor
-            .inner
-            .process(&state.inner)
-            .map_err(|err| format!("tree-sitter process failed: {err}"))?;
-        Ok(json!({
-            "edits": edits.iter().map(value_processing_edit).collect::<Vec<_>>()
-        }))
+        treesitter_processor_process_value(processor, state).map_err(|(_, message)| message)
     })
+}
+
+pub(crate) fn treesitter_processor_process_value(
+    processor: *mut EcfTreeSitterProcessor,
+    state: *const EcfEditorState,
+) -> Result<Value, (EcfStatus, String)> {
+    let processor = require_mut_status(processor, "processor")?;
+    let state = require_ref_status(state, "state")?;
+    let edits = processor.inner.process(&state.inner).map_err(|err| {
+        (
+            EcfStatus::Internal,
+            format!("tree-sitter process failed: {err}"),
+        )
+    })?;
+    Ok(json!({
+        "edits": edits.iter().map(value_processing_edit).collect::<Vec<_>>()
+    }))
 }
 
 /// Run Tree-sitter processor and apply edits to state.
@@ -367,15 +393,21 @@ pub extern "C" fn editor_core_ffi_treesitter_processor_last_update_mode_json(
     processor: *const EcfTreeSitterProcessor,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
-        let processor = require_ref(processor, "processor")?;
-        let mode = match processor.inner.last_update_mode() {
-            TreeSitterUpdateMode::Initial => "initial",
-            TreeSitterUpdateMode::Incremental => "incremental",
-            TreeSitterUpdateMode::FullReparse => "full_reparse",
-            TreeSitterUpdateMode::Skipped => "skipped",
-        };
-        Ok(json!({ "mode": mode }))
+        treesitter_processor_last_update_mode_value(processor).map_err(|(_, message)| message)
     })
+}
+
+pub(crate) fn treesitter_processor_last_update_mode_value(
+    processor: *const EcfTreeSitterProcessor,
+) -> Result<Value, (EcfStatus, String)> {
+    let processor = require_ref_status(processor, "processor")?;
+    let mode = match processor.inner.last_update_mode() {
+        TreeSitterUpdateMode::Initial => "initial",
+        TreeSitterUpdateMode::Incremental => "incremental",
+        TreeSitterUpdateMode::FullReparse => "full_reparse",
+        TreeSitterUpdateMode::Skipped => "skipped",
+    };
+    Ok(json!({ "mode": mode }))
 }
 
 /// Create a Tree-sitter indenter from a native grammar function.
@@ -463,32 +495,47 @@ pub extern "C" fn editor_core_ffi_treesitter_indenter_reindent_line_json(
     indentation_config_json: *const c_char,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
-        let indenter = require_mut(indenter, "indenter")?;
-        let state = require_ref(state, "state")?;
-        let line = usize_from_u32(line, "line")?;
-
-        let cfg = if let Some(json_text) =
-            optional_string(indentation_config_json, "indentation_config_json")?
-        {
-            let parsed: FfiIndentationConfig = parse_json(&json_text, "indentation config")?;
-            IndentationConfig::from(parsed)
-        } else {
-            IndentationConfig::default()
-        };
-
-        let text = state.inner.editor().get_text();
-        indenter
-            .inner
-            .sync_to_text(state.inner.version(), &text)
-            .map_err(|err| format!("treesitter indenter sync failed: {err}"))?;
-
-        let edit = indenter
-            .inner
-            .reindent_text_edit_for_line(line, cfg.style.clone());
-
-        Ok(json!({
-            "has_edit": edit.is_some(),
-            "edit": edit.map(|e| json!({ "start": e.start, "end": e.end, "text": e.text })),
-        }))
+        treesitter_indenter_reindent_line_value(indenter, state, line, indentation_config_json)
+            .map_err(|(_, message)| message)
     })
+}
+
+pub(crate) fn treesitter_indenter_reindent_line_value(
+    indenter: *mut EcfTreeSitterIndenter,
+    state: *const EcfEditorState,
+    line: u32,
+    indentation_config_json: *const c_char,
+) -> Result<Value, (EcfStatus, String)> {
+    let indenter = require_mut_status(indenter, "indenter")?;
+    let state = require_ref_status(state, "state")?;
+    let line = status_usize_from_u32(line, "line")?;
+
+    let cfg = if let Some(json_text) =
+        optional_string_status(indentation_config_json, "indentation_config_json")?
+    {
+        let parsed: FfiIndentationConfig = parse_json_status(&json_text, "indentation config")?;
+        IndentationConfig::from(parsed)
+    } else {
+        IndentationConfig::default()
+    };
+
+    let text = state.inner.editor().get_text();
+    indenter
+        .inner
+        .sync_to_text(state.inner.version(), &text)
+        .map_err(|err| {
+            (
+                EcfStatus::Internal,
+                format!("treesitter indenter sync failed: {err}"),
+            )
+        })?;
+
+    let edit = indenter
+        .inner
+        .reindent_text_edit_for_line(line, cfg.style.clone());
+
+    Ok(json!({
+        "has_edit": edit.is_some(),
+        "edit": edit.map(|e| json!({ "start": e.start, "end": e.end, "text": e.text })),
+    }))
 }

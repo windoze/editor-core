@@ -144,6 +144,8 @@ void editor_core_ffi_string_free(char* ptr);
 #define ECF_FEATURE_WORKSPACE_LIFECYCLE_ENVELOPE (1ull << 13)
 #define ECF_FEATURE_EDITOR_STATE_QUERY_ENVELOPE (1ull << 14)
 #define ECF_FEATURE_LSP_HELPER_ENVELOPE        (1ull << 15)
+#define ECF_FEATURE_LSP_EDIT_HELPER_ENVELOPE   (1ull << 16)
+#define ECF_FEATURE_PROCESSOR_RESULT_ENVELOPE  (1ull << 17)
 uint64_t editor_core_ffi_feature_flags(void);
 char* editor_core_ffi_runtime_info_json(void);
 
@@ -272,22 +274,33 @@ char* editor_core_ffi_lsp_formatting_options_envelope_json(uint32_t tab_size, bo
 char* editor_core_ffi_lsp_formatting_options_for_indentation_config_json(const char* indentation_config_json, uint32_t tab_width);
 char* editor_core_ffi_lsp_formatting_options_for_indentation_config_envelope_json(const char* indentation_config_json, uint32_t tab_width);
 char* editor_core_ffi_lsp_on_type_formatting_params_json(const EcfEditorState* state, const char* uri, const char* ch, const char* options_json);
+char* editor_core_ffi_lsp_on_type_formatting_params_envelope_json(const EcfEditorState* state, const char* uri, const char* ch, const char* options_json);
 char* editor_core_ffi_lsp_apply_text_edits_json(EcfEditorState* state, const char* edits_json);
+char* editor_core_ffi_lsp_apply_text_edits_envelope_json(EcfEditorState* state, const char* edits_json);
 char* editor_core_ffi_lsp_semantic_tokens_to_intervals_json(const EcfEditorState* state, const char* data_json);
+char* editor_core_ffi_lsp_semantic_tokens_to_intervals_envelope_json(const EcfEditorState* state, const char* data_json);
 char* editor_core_ffi_lsp_decode_semantic_style_id(uint32_t style_id);
 char* editor_core_ffi_lsp_decode_semantic_style_id_envelope_json(uint32_t style_id);
 char* editor_core_ffi_lsp_document_highlights_to_processing_edit_json(const EcfEditorState* state, const char* result_json);
+char* editor_core_ffi_lsp_document_highlights_to_processing_edit_envelope_json(const EcfEditorState* state, const char* result_json);
 char* editor_core_ffi_lsp_inlay_hints_to_processing_edit_json(const EcfEditorState* state, const char* result_json);
+char* editor_core_ffi_lsp_inlay_hints_to_processing_edit_envelope_json(const EcfEditorState* state, const char* result_json);
 char* editor_core_ffi_lsp_document_links_to_processing_edit_json(const EcfEditorState* state, const char* result_json);
+char* editor_core_ffi_lsp_document_links_to_processing_edit_envelope_json(const EcfEditorState* state, const char* result_json);
 char* editor_core_ffi_lsp_code_lens_to_processing_edit_json(const EcfEditorState* state, const char* result_json);
+char* editor_core_ffi_lsp_code_lens_to_processing_edit_envelope_json(const EcfEditorState* state, const char* result_json);
 char* editor_core_ffi_lsp_document_symbols_to_processing_edit_json(const EcfEditorState* state, const char* result_json);
+char* editor_core_ffi_lsp_document_symbols_to_processing_edit_envelope_json(const EcfEditorState* state, const char* result_json);
 char* editor_core_ffi_lsp_diagnostics_to_processing_edits_json(const EcfEditorState* state, const char* publish_diagnostics_params_json);
+char* editor_core_ffi_lsp_diagnostics_to_processing_edits_envelope_json(const EcfEditorState* state, const char* publish_diagnostics_params_json);
 char* editor_core_ffi_lsp_workspace_symbols_json(const char* result_json);
 char* editor_core_ffi_lsp_workspace_symbols_envelope_json(const char* result_json);
 char* editor_core_ffi_lsp_locations_json(const char* result_json);
 char* editor_core_ffi_lsp_locations_envelope_json(const char* result_json);
 char* editor_core_ffi_lsp_completion_item_to_text_edits_json(const EcfEditorState* state, const char* completion_item_json, const char* mode, uint64_t fallback_start, uint64_t fallback_end, bool has_fallback);
+char* editor_core_ffi_lsp_completion_item_to_text_edits_envelope_json(const EcfEditorState* state, const char* completion_item_json, const char* mode, uint64_t fallback_start, uint64_t fallback_end, bool has_fallback);
 bool editor_core_ffi_lsp_apply_completion_item_json(EcfEditorState* state, const char* completion_item_json, const char* mode);
+char* editor_core_ffi_lsp_apply_completion_item_envelope_json(EcfEditorState* state, const char* completion_item_json, const char* mode);
 uint32_t editor_core_ffi_lsp_encode_semantic_style_id(uint32_t token_type, uint32_t token_modifiers);
 
 EcfSublimeProcessor* editor_core_ffi_sublime_processor_new_from_yaml(const char* yaml);
@@ -299,8 +312,10 @@ bool editor_core_ffi_sublime_processor_load_syntax_from_path(EcfSublimeProcessor
 bool editor_core_ffi_sublime_processor_set_active_syntax_by_reference(EcfSublimeProcessor* processor, const char* reference);
 bool editor_core_ffi_sublime_processor_set_preserve_collapsed_folds(EcfSublimeProcessor* processor, bool preserve);
 char* editor_core_ffi_sublime_processor_process_json(EcfSublimeProcessor* processor, const EcfEditorState* state);
+char* editor_core_ffi_sublime_processor_process_envelope_json(EcfSublimeProcessor* processor, const EcfEditorState* state);
 bool editor_core_ffi_sublime_processor_apply(EcfSublimeProcessor* processor, EcfEditorState* state);
 char* editor_core_ffi_sublime_processor_scope_for_style_id(const EcfSublimeProcessor* processor, uint32_t style_id);
+char* editor_core_ffi_sublime_processor_scope_for_style_id_envelope_json(const EcfSublimeProcessor* processor, uint32_t style_id);
 
 EcfTreeSitterProcessor* editor_core_ffi_treesitter_processor_new(
     EcfTreeSitterLanguageFn language_fn,
@@ -321,8 +336,10 @@ EcfTreeSitterProcessor* editor_core_ffi_treesitter_processor_new_wasm_from_path(
 
 void editor_core_ffi_treesitter_processor_free(EcfTreeSitterProcessor* processor);
 char* editor_core_ffi_treesitter_processor_process_json(EcfTreeSitterProcessor* processor, const EcfEditorState* state);
+char* editor_core_ffi_treesitter_processor_process_envelope_json(EcfTreeSitterProcessor* processor, const EcfEditorState* state);
 bool editor_core_ffi_treesitter_processor_apply(EcfTreeSitterProcessor* processor, EcfEditorState* state);
 char* editor_core_ffi_treesitter_processor_last_update_mode_json(const EcfTreeSitterProcessor* processor);
+char* editor_core_ffi_treesitter_processor_last_update_mode_envelope_json(const EcfTreeSitterProcessor* processor);
 
 EcfTreeSitterIndenter* editor_core_ffi_treesitter_indenter_new(
     EcfTreeSitterLanguageFn language_fn,
@@ -335,6 +352,11 @@ EcfTreeSitterIndenter* editor_core_ffi_treesitter_indenter_new_wasm_from_path(
 
 void editor_core_ffi_treesitter_indenter_free(EcfTreeSitterIndenter* indenter);
 char* editor_core_ffi_treesitter_indenter_reindent_line_json(
+    EcfTreeSitterIndenter* indenter,
+    const EcfEditorState* state,
+    uint32_t line,
+    const char* indentation_config_json);
+char* editor_core_ffi_treesitter_indenter_reindent_line_envelope_json(
     EcfTreeSitterIndenter* indenter,
     const EcfEditorState* state,
     uint32_t line,

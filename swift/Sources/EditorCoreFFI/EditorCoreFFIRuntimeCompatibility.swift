@@ -158,6 +158,16 @@ public enum EditorCoreFFIRuntimeCompatibility {
             name: "LSP helper envelope",
             reason: "Swift LSP helper envelope APIs require structured URI, formatting, and result-normalization helper results and errors."
         ),
+        EditorCoreFFIRuntimeFeature(
+            feature: .lspEditHelperEnvelope,
+            name: "LSP edit helper envelope",
+            reason: "Swift LSP edit helper envelope APIs require structured text edit, completion item, semantic token, and processing edit helper results and errors."
+        ),
+        EditorCoreFFIRuntimeFeature(
+            feature: .processorResultEnvelope,
+            name: "processor result envelope",
+            reason: "Swift processor envelope APIs require structured Sublime and Tree-sitter process/scope/update-mode results and errors."
+        ),
     ]
 
     public static let requiredFeatures: [EditorCoreFFIRuntimeFeature] = knownFeatures
@@ -200,6 +210,20 @@ public enum EditorCoreFFIRuntimeCompatibility {
             missingRequiredFeatures: missingRequired,
             missingOptionalFeatures: missingOptional,
             loadError: nil
+        )
+    }
+
+    public static func evaluate(
+        capabilitySnapshot: EditorCoreFFIRuntimeCapabilitySnapshot,
+        minimumABIVersion: UInt32 = EditorCoreFFIRuntimeCompatibility.minimumABIVersion,
+        requiredFeatures: [EditorCoreFFIRuntimeFeature] = EditorCoreFFIRuntimeCompatibility.requiredFeatures,
+        optionalFeatures: [EditorCoreFFIRuntimeFeature] = []
+    ) -> EditorCoreFFIRuntimeCompatibilityReport {
+        evaluate(
+            runtimeInfo: capabilitySnapshot.runtimeInfo,
+            minimumABIVersion: minimumABIVersion,
+            requiredFeatures: requiredFeatures,
+            optionalFeatures: optionalFeatures
         )
     }
 }

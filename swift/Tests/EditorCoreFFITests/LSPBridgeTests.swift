@@ -387,6 +387,134 @@ final class LSPBridgeTests: XCTestCase {
         XCTAssertEqual(invalidSymbols.value, .null)
     }
 
+    func testLSPEditHelperEnvelopes() throws {
+        let library = try EditorCoreFFITestSupport.shared.loadLibrary()
+        let bridge = LSPBridge(library: library)
+        let state = try EditorState(library: library, initialText: "abc\n", viewportWidth: 80)
+
+        let onType = try bridge.onTypeFormattingParamsEnvelope(
+            state: state,
+            uri: "file:///demo.rs",
+            ch: "}",
+            optionsJSON: #"{"tabSize":4,"insertSpaces":true}"#
+        )
+        XCTAssertTrue(onType.ok)
+        XCTAssertEqual(onType.operation, "on_type_formatting_params")
+        let onTypeValue = try requireObject(onType.value)
+        let params = try requireObject(onTypeValue["params"])
+        XCTAssertEqual(try requireString(try requireObject(params["textDocument"])["uri"]), "file:///demo.rs")
+        XCTAssertEqual(try requireString(params["ch"]), "}")
+
+        let editsJSON = """
+        [
+          {
+            "range": {
+              "start": { "line": 0, "character": 1 },
+              "end": { "line": 0, "character": 2 }
+            },
+            "newText": "Z"
+          }
+        ]
+        """
+        let apply = try bridge.applyTextEditsEnvelope(state: state, editsJSON: editsJSON)
+        XCTAssertTrue(apply.ok)
+        XCTAssertEqual(apply.operation, "apply_text_edits")
+        let applyValue = try requireObject(apply.value)
+        XCTAssertEqual(try requireArray(applyValue["changed_ranges"]).count, 1)
+
+        let semantic = try bridge.semanticTokensToIntervalsEnvelope(state: state, dataJSON: "[0,0,3,1,2]")
+        XCTAssertTrue(semantic.ok)
+        XCTAssertEqual(semantic.operation, "semantic_tokens_to_intervals")
+        let semanticValue = try requireObject(semantic.value)
+        XCTAssertEqual(try requireArray(semanticValue["intervals"]).count, 1)
+
+        let highlights = try bridge.documentHighlightsToProcessingEditEnvelope(
+            state: state,
+            resultJSON: """
+            [
+              {
+                "range": {
+                  "start": { "line": 0, "character": 0 },
+                  "end": { "line": 0, "character": 1 }
+                },
+                "kind": 3
+              }
+            ]
+            """
+        )
+        XCTAssertTrue(highlights.ok)
+        XCTAssertEqual(highlights.operation, "document_highlights_to_processing_edit")
+        XCTAssertNotNil(highlights.value)
+
+        let diagnostics = try bridge.diagnosticsToProcessingEditsEnvelope(
+            state: state,
+            publishDiagnosticsParamsJSON: """
+            {
+              "uri": "file:///demo.rs",
+              "diagnostics": [
+                {
+                  "range": {
+                    "start": { "line": 0, "character": 0 },
+                    "end": { "line": 0, "character": 1 }
+                  },
+                  "severity": 2,
+                  "message": "oops"
+                }
+              ]
+            }
+            """
+        )
+        XCTAssertTrue(diagnostics.ok)
+        XCTAssertEqual(diagnostics.operation, "diagnostics_to_processing_edits")
+        let diagnosticsValue = try requireObject(diagnostics.value)
+        XCTAssertFalse(try requireArray(diagnosticsValue["edits"]).isEmpty)
+
+        let completionItem = """
+        {
+          "label": "bar",
+          "textEdit": {
+            "range": {
+              "start": { "line": 0, "character": 0 },
+              "end": { "line": 0, "character": 3 }
+            },
+            "newText": "bar"
+          }
+        }
+        """
+        let completion = try bridge.completionItemToTextEditsEnvelope(
+            state: state,
+            completionItemJSON: completionItem,
+            mode: "replace",
+            fallback: nil
+        )
+        XCTAssertTrue(completion.ok)
+        XCTAssertEqual(completion.operation, "completion_item_to_text_edits")
+        let completionValue = try requireObject(completion.value)
+        XCTAssertEqual(try requireArray(completionValue["edits"]).count, 1)
+
+        let appliedCompletion = try bridge.applyCompletionItemEnvelope(
+            state: state,
+            completionItemJSON: #"{"label":"XYZ"}"#,
+            mode: "insert"
+        )
+        XCTAssertTrue(appliedCompletion.ok)
+        XCTAssertEqual(appliedCompletion.operation, "apply_completion_item")
+        let appliedValue = try requireObject(appliedCompletion.value)
+        XCTAssertEqual(appliedValue["applied"], .bool(true))
+
+        let invalidMode = try bridge.completionItemToTextEditsEnvelope(
+            state: state,
+            completionItemJSON: completionItem,
+            mode: "future",
+            fallback: nil
+        )
+        XCTAssertFalse(invalidMode.ok)
+        XCTAssertEqual(invalidMode.operation, "completion_item_to_text_edits")
+        XCTAssertEqual(invalidMode.error?.code, "invalid_argument")
+        XCTAssertEqual(invalidMode.error?.status, .invalidArgument)
+        XCTAssertEqual(invalidMode.value, .null)
+    }
+
     func testLSPHelperEnvelopeDecodesFutureFieldsAndUnknownStatus() throws {
         let success = try JSONTestHelpers.decode(EcfLSPHelperEnvelope.self, from: """
         {

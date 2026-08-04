@@ -57,6 +57,53 @@ extension AttoEditorAreaViewController {
         return controller.show(relativeTo: window, snapshot: snapshot)
     }
 
+    @discardableResult
+    func refreshHierarchyPanelInActiveTab(showFeedback: Bool = true) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+        guard let request = hierarchyPanelRefreshRequest, request.tabID == tab.id else {
+            NSSound.beep()
+            return false
+        }
+
+        return requestHierarchyChildren(
+            for: request.item,
+            kind: request.kind,
+            tab: tab,
+            showFeedback: showFeedback,
+            resultMode: .refresh
+        )
+    }
+
+    @discardableResult
+    func expandSelectedHierarchyPanelResultInActiveTab(showFeedback: Bool = true) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+        guard let request = hierarchyPanelRefreshRequest, request.tabID == tab.id else {
+            setTransientStatusText("Hierarchy expand: no refresh context")
+            NSSound.beep()
+            return false
+        }
+        guard let entry = hierarchyPanelController?.selectedEntry ?? hierarchyPanelSnapshot?.entries.first,
+              let item = hierarchyExpansionItem(from: entry)
+        else {
+            setTransientStatusText("Hierarchy expand: no expandable result")
+            NSSound.beep()
+            return false
+        }
+
+        return requestHierarchyChildren(
+            for: item,
+            kind: request.kind,
+            tab: tab,
+            showFeedback: showFeedback
+        )
+    }
+
     func requestLspHierarchyAtPrimaryCaret(
         kind: LspHierarchyRequestKind,
         showFeedback: Bool = true
@@ -274,7 +321,8 @@ extension AttoEditorAreaViewController {
         for item: AttoLspHierarchyParser.Item,
         kind: LspHierarchyRequestKind,
         tab: AttoEditorTab,
-        showFeedback: Bool
+        showFeedback: Bool,
+        resultMode: HierarchyChildrenResultMode = .interactive
     ) -> Bool {
         hierarchyResultsController?.hide()
         hierarchyResultsController = nil
@@ -307,7 +355,9 @@ extension AttoEditorAreaViewController {
         hierarchyChildrenContext = HierarchyChildrenContext(
             tabID: tab.id,
             kind: kind,
-            showFeedback: showFeedback
+            item: item,
+            showFeedback: showFeedback,
+            resultMode: resultMode
         )
         startHierarchyChildrenPollTimer(tabID: tab.id, editorView: tab.editCore.editorView)
         return true
@@ -386,12 +436,29 @@ extension AttoEditorAreaViewController {
             self.hierarchyChildrenPollTimer?.cancel()
             self.hierarchyChildrenPollTimer = nil
             self.hierarchyChildrenContext = nil
-            _ = self.showHierarchyResults(
-                entries,
-                placeholder: ctx.kind.resultPlaceholder,
-                feedbackFeature: ctx.kind.feedbackFeature,
-                showFeedback: ctx.showFeedback
+            let refreshRequest = HierarchyPanelRefreshRequest(
+                tabID: ctx.tabID,
+                kind: ctx.kind,
+                item: ctx.item
             )
+            switch ctx.resultMode {
+            case .interactive:
+                _ = self.showHierarchyResults(
+                    entries,
+                    placeholder: ctx.kind.resultPlaceholder,
+                    feedbackFeature: ctx.kind.feedbackFeature,
+                    showFeedback: ctx.showFeedback,
+                    refreshRequest: refreshRequest
+                )
+            case .refresh:
+                _ = self.finishHierarchyRefresh(
+                    entries,
+                    kind: ctx.kind,
+                    refreshRequest: refreshRequest,
+                    showFeedback: ctx.showFeedback,
+                    editorView: editorView
+                )
+            }
             timer.cancel()
         }
 
@@ -404,7 +471,8 @@ extension AttoEditorAreaViewController {
         _ entries: [AttoLspHierarchyParser.Entry],
         placeholder: String,
         feedbackFeature: AttoLspResultFeedback.Feature,
-        showFeedback: Bool
+        showFeedback: Bool,
+        refreshRequest: HierarchyPanelRefreshRequest? = nil
     ) -> Bool {
         guard entries.isEmpty == false else {
             if showFeedback, let editorView = activeTab?.editCore.editorView {
@@ -416,7 +484,8 @@ extension AttoEditorAreaViewController {
 
         recordHierarchyPanelSnapshot(
             entries: entries,
-            title: hierarchyPanelTitle(placeholder: placeholder, feedbackFeature: feedbackFeature)
+            title: hierarchyPanelTitle(placeholder: placeholder, feedbackFeature: feedbackFeature),
+            refreshRequest: refreshRequest
         )
 
         guard let window = view.window else {
@@ -442,13 +511,61 @@ extension AttoEditorAreaViewController {
         return true
     }
 
-    func recordHierarchyPanelSnapshot(entries: [AttoLspHierarchyParser.Entry], title: String) {
+    @discardableResult
+    func finishHierarchyRefresh(
+        _ entries: [AttoLspHierarchyParser.Entry],
+        kind: LspHierarchyRequestKind,
+        refreshRequest: HierarchyPanelRefreshRequest?,
+        showFeedback: Bool,
+        editorView: EditorCoreSkiaView?
+    ) -> Bool {
+        guard entries.isEmpty == false else {
+            if showFeedback, let editorView {
+                presentLspResultFeedback(AttoLspResultFeedback.empty(kind.feedbackFeature), in: editorView)
+            }
+            NSSound.beep()
+            return false
+        }
+
+        recordHierarchyPanelSnapshot(
+            entries: entries,
+            title: hierarchyPanelTitle(
+                placeholder: kind.resultPlaceholder,
+                feedbackFeature: kind.feedbackFeature
+            ),
+            refreshRequest: refreshRequest
+        )
+
+        if showFeedback, let editorView {
+            presentLspResultFeedback(
+                AttoLspResultFeedback.refreshed(
+                    kind.feedbackFeature,
+                    count: entries.count,
+                    singular: "result",
+                    plural: "results"
+                ),
+                in: editorView
+            )
+        }
+        return true
+    }
+
+    func recordHierarchyPanelSnapshot(
+        entries: [AttoLspHierarchyParser.Entry],
+        title: String,
+        refreshRequest: HierarchyPanelRefreshRequest? = nil
+    ) {
         let snapshot = AttoHierarchyPanelController.Snapshot(title: title, entries: entries)
         hierarchyPanelSnapshot = snapshot
-        lspResultEventStream.record(
+        hierarchyPanelRefreshRequest = refreshRequest
+        let event = lspResultEventStream.record(
             family: "hierarchy",
             title: title,
             payload: .hierarchy(title: title, itemCount: entries.count)
+        )
+        lspWorkbenchAuxiliaryHistoryStore.record(
+            event: event,
+            payload: .hierarchy(snapshot)
         )
         if hierarchyPanelController?.isVisible == true {
             hierarchyPanelController?.update(snapshot: snapshot)
@@ -463,7 +580,40 @@ extension AttoEditorAreaViewController {
             },
             onOpen: { [weak self] entry in
                 self?.navigateToLspTarget(entry.target)
+            },
+            onExpand: { [weak self] entry in
+                _ = self?.expandHierarchyPanelEntry(entry)
             }
+        )
+    }
+
+    @discardableResult
+    func expandHierarchyPanelEntry(_ entry: AttoLspHierarchyParser.Entry) -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+        guard let request = hierarchyPanelRefreshRequest, request.tabID == tab.id else {
+            setTransientStatusText("Hierarchy expand: no refresh context")
+            NSSound.beep()
+            return false
+        }
+        guard let item = hierarchyExpansionItem(from: entry) else {
+            setTransientStatusText("Hierarchy expand: no expandable result")
+            NSSound.beep()
+            return false
+        }
+        return requestHierarchyChildren(for: item, kind: request.kind, tab: tab, showFeedback: true)
+    }
+
+    func hierarchyExpansionItem(from entry: AttoLspHierarchyParser.Entry) -> AttoLspHierarchyParser.Item? {
+        guard let requestJSON = entry.requestJSON else { return nil }
+        return AttoLspHierarchyParser.Item(
+            name: entry.name,
+            detail: entry.detail,
+            kindLabel: entry.kindLabel,
+            target: entry.target,
+            requestJSON: requestJSON
         )
     }
 

@@ -36,6 +36,7 @@ enum AttoLspResultFeedback {
         case codeLensRefresh
         case workspaceDiagnostics
         case serverRestart
+        case serverShutdown
 
         var statusTitle: String {
             switch self {
@@ -97,6 +98,8 @@ enum AttoLspResultFeedback {
                 return "Workspace diagnostics"
             case .serverRestart:
                 return "LSP server restart"
+            case .serverShutdown:
+                return "LSP server shutdown"
             }
         }
 
@@ -178,6 +181,8 @@ enum AttoLspResultFeedback {
                 return "Workspace diagnostics are unavailable."
             case .serverRestart:
                 return "LSP server restart is unavailable."
+            case .serverShutdown:
+                return "LSP server shutdown is unavailable."
             }
         }
 
@@ -241,6 +246,8 @@ enum AttoLspResultFeedback {
                 return "No workspace diagnostics are available."
             case .serverRestart:
                 return "No LSP server restart result is available."
+            case .serverShutdown:
+                return "No LSP server shutdown result is available."
             }
         }
     }

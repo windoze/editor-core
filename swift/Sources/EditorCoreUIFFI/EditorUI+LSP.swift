@@ -1273,6 +1273,66 @@ extension EditorUI {
         )
     }
 
+    /// Request document formatting via LSP (`textDocument/formatting`) without applying edits.
+    @discardableResult
+    public func lspRequestFormatting(formattingOptionsJSON: String? = nil) throws -> UInt64 {
+        var out: UInt64 = 0
+        let status: Int32
+        if let formattingOptionsJSON {
+            status = formattingOptionsJSON.withCString { cstr in
+                editor_core_ui_ffi_editor_ui_lsp_request_formatting(handle, cstr, &out)
+            }
+        } else {
+            status = editor_core_ui_ffi_editor_ui_lsp_request_formatting(handle, nil, &out)
+        }
+        try library.ensureStatus(status, context: "editor_ui_lsp_request_formatting")
+        return out
+    }
+
+    public func lspTakeLastFormattingResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_formatting_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_formatting_json(handle, has, ptr)
+        }
+    }
+
+    /// Request range formatting via LSP (`textDocument/rangeFormatting`) without applying edits.
+    @discardableResult
+    public func lspRequestRangeFormatting(
+        startOffset: UInt32,
+        endOffset: UInt32,
+        formattingOptionsJSON: String? = nil
+    ) throws -> UInt64 {
+        var out: UInt64 = 0
+        let status: Int32
+        if let formattingOptionsJSON {
+            status = formattingOptionsJSON.withCString { cstr in
+                editor_core_ui_ffi_editor_ui_lsp_request_range_formatting(
+                    handle,
+                    startOffset,
+                    endOffset,
+                    cstr,
+                    &out
+                )
+            }
+        } else {
+            status = editor_core_ui_ffi_editor_ui_lsp_request_range_formatting(
+                handle,
+                startOffset,
+                endOffset,
+                nil,
+                &out
+            )
+        }
+        try library.ensureStatus(status, context: "editor_ui_lsp_request_range_formatting")
+        return out
+    }
+
+    public func lspTakeLastRangeFormattingResultJSON() throws -> String? {
+        try lspTakeLastResultJSON(context: "editor_ui_lsp_take_last_range_formatting_json") { has, ptr in
+            editor_core_ui_ffi_editor_ui_lsp_take_last_range_formatting_json(handle, has, ptr)
+        }
+    }
+
     /// Format the current document via LSP (`textDocument/formatting`) and apply edits locally.
     ///
     /// Notes:

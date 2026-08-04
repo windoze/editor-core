@@ -58,21 +58,23 @@ extension AttoEditorAreaViewController {
         cancelCodeActionUI()
 
         do {
-            let offsets = try tab.editCore.editor.selectionOffsets()
-            let start = min(offsets.start, offsets.end)
-            let end = max(offsets.start, offsets.end)
+            let context = try codeActionRequestContext(
+                tab: tab,
+                onlyKinds: onlyKinds,
+                showFeedback: true
+            )
             let contextJSON = codeActionContextJSON(
                 editor: tab.editCore.editor,
-                startOffset: start,
-                endOffset: end,
+                startOffset: context.startOffset,
+                endOffset: context.endOffset,
                 onlyKinds: onlyKinds
             )
             _ = try tab.editCore.editor.lspRequestCodeAction(
-                startOffset: start,
-                endOffset: end,
+                startOffset: context.startOffset,
+                endOffset: context.endOffset,
                 contextJSON: contextJSON
             )
-            codeActionContext = CodeActionRequestContext(tabID: tab.id, onlyKinds: onlyKinds, showFeedback: true)
+            codeActionContext = context
             startCodeActionPollTimer(tabID: tab.id, editorView: tab.editCore.editorView)
             return true
         } catch {
@@ -84,6 +86,33 @@ extension AttoEditorAreaViewController {
             NSSound.beep()
             return false
         }
+    }
+
+    func codeActionRequestContextForCurrentSelection(
+        onlyKinds: [String],
+        showFeedback: Bool
+    ) -> CodeActionRequestContext? {
+        guard let tab = activeTab else { return nil }
+        return try? codeActionRequestContext(
+            tab: tab,
+            onlyKinds: onlyKinds,
+            showFeedback: showFeedback
+        )
+    }
+
+    func codeActionRequestContext(
+        tab: AttoEditorTab,
+        onlyKinds: [String],
+        showFeedback: Bool
+    ) throws -> CodeActionRequestContext {
+        let offsets = try tab.editCore.editor.selectionOffsets()
+        return CodeActionRequestContext(
+            tabID: tab.id,
+            startOffset: min(offsets.start, offsets.end),
+            endOffset: max(offsets.start, offsets.end),
+            onlyKinds: onlyKinds,
+            showFeedback: showFeedback
+        )
     }
 
     func codeActionContextJSON(
@@ -156,7 +185,12 @@ extension AttoEditorAreaViewController {
             self.codeActionPollTimer?.cancel()
             self.codeActionPollTimer = nil
             self.codeActionContext = nil
-            _ = self.showCodeActionResults(items, onlyKinds: ctx.onlyKinds, showFeedback: ctx.showFeedback)
+            _ = self.showCodeActionResults(
+                items,
+                onlyKinds: ctx.onlyKinds,
+                showFeedback: ctx.showFeedback,
+                requestContext: ctx
+            )
             timer.cancel()
         }
 
@@ -168,7 +202,8 @@ extension AttoEditorAreaViewController {
     func showCodeActionResults(
         _ items: [AttoLspCodeActionParser.Item],
         onlyKinds: [String],
-        showFeedback: Bool = true
+        showFeedback: Bool = true,
+        requestContext: CodeActionRequestContext? = nil
     ) -> Bool {
         guard items.isEmpty == false else {
             cancelCodeActionUI()
@@ -181,7 +216,7 @@ extension AttoEditorAreaViewController {
 
         recordCodeActionResultLifecycle(items: items, onlyKinds: onlyKinds)
         guard let window = view.window else {
-            _ = applyCodeAction(items[0], showFeedback: showFeedback)
+            _ = applyCodeAction(items[0], showFeedback: showFeedback, requestContext: requestContext)
             return true
         }
 
@@ -190,7 +225,7 @@ extension AttoEditorAreaViewController {
                 id: "lsp.code_action.\(idx)",
                 title: AttoLspCodeActionParser.displayTitle(for: item)
             ) { [weak self] in
-                _ = self?.applyCodeAction(item)
+                _ = self?.applyCodeAction(item, requestContext: requestContext)
             }
         }
 
@@ -228,7 +263,8 @@ extension AttoEditorAreaViewController {
     func applyCodeAction(
         _ item: AttoLspCodeActionParser.Item,
         allowResolve: Bool = true,
-        showFeedback: Bool = true
+        showFeedback: Bool = true,
+        requestContext: CodeActionRequestContext? = nil
     ) -> Bool {
         guard item.disabledReason == nil else {
             if showFeedback, let editorView = activeTab?.editCore.editorView {
@@ -245,13 +281,27 @@ extension AttoEditorAreaViewController {
         var didApply = false
         var attemptedWorkspaceEdit = false
         if let workspaceEdit = AttoLspCodeActionParser.workspaceEdit(for: item),
-           workspaceEdit.rawJSONString != nil
+           let workspaceEditJSON = workspaceEdit.rawJSONString
         {
             attemptedWorkspaceEdit = true
-            didApply = applyWorkspaceEditToActiveTab(workspaceEdit) || didApply
+            let outcome = applyWorkspaceEditToActiveTab(
+                AttoWorkspaceEditParser.parse(workspaceEdit),
+                workspaceEditJSON: workspaceEditJSON,
+                requestRetryOwner: codeActionWorkspaceEditRequestRetryOwner(context: requestContext)
+            )
+            didApply = outcome.accepted || didApply
         } else if let editJSON = AttoLspCodeActionParser.editJSON(for: item) {
             attemptedWorkspaceEdit = true
-            didApply = applyWorkspaceEditJSONToActiveTab(editJSON) || didApply
+            if let parsed = AttoWorkspaceEditParser.parse(editJSON) {
+                let outcome = applyWorkspaceEditToActiveTab(
+                    parsed,
+                    workspaceEditJSON: editJSON,
+                    requestRetryOwner: codeActionWorkspaceEditRequestRetryOwner(context: requestContext)
+                )
+                didApply = outcome.accepted || didApply
+            } else {
+                didApply = applyWorkspaceEditJSONToActiveTab(editJSON) || didApply
+            }
         }
 
         if let command = item.command {
@@ -272,10 +322,14 @@ extension AttoEditorAreaViewController {
             NSSound.beep()
             return false
         }
-        return requestCodeActionResolve(item, showFeedback: showFeedback)
+        return requestCodeActionResolve(item, showFeedback: showFeedback, requestContext: requestContext)
     }
 
-    func requestCodeActionResolve(_ item: AttoLspCodeActionParser.Item, showFeedback: Bool) -> Bool {
+    func requestCodeActionResolve(
+        _ item: AttoLspCodeActionParser.Item,
+        showFeedback: Bool,
+        requestContext: CodeActionRequestContext? = nil
+    ) -> Bool {
         guard let tab = activeTab else {
             NSSound.beep()
             return false
@@ -299,6 +353,7 @@ extension AttoEditorAreaViewController {
             codeActionResolveContext = CodeActionResolveContext(
                 tabID: tab.id,
                 item: item,
+                requestContext: requestContext,
                 showFeedback: showFeedback
             )
             codeActionResultsController?.hide()
@@ -373,7 +428,12 @@ extension AttoEditorAreaViewController {
             self.codeActionResolvePollTimer = nil
             self.codeActionResolveContext = nil
             let resolved = AttoLspCodeActionParser.item(fromCodeAction: result) ?? ctx.item
-            _ = self.applyCodeAction(resolved, allowResolve: false, showFeedback: ctx.showFeedback)
+            _ = self.applyCodeAction(
+                resolved,
+                allowResolve: false,
+                showFeedback: ctx.showFeedback,
+                requestContext: ctx.requestContext
+            )
             timer.cancel()
         }
 
@@ -397,11 +457,16 @@ extension AttoEditorAreaViewController {
 
         do {
             _ = try tab.editCore.editor.lspRequestExecuteCommand(commandJSON: commandJSON)
-            executeCommandContext = ExecuteCommandRequestContext(tabID: tab.id, commandTitle: commandTitle)
+            executeCommandContext = ExecuteCommandRequestContext(
+                tabID: tab.id,
+                commandTitle: commandTitle,
+                commandJSON: commandJSON
+            )
             codeActionResultsController?.hide()
             codeActionResultsController = nil
             codeLensResultsController?.hide()
             codeLensResultsController = nil
+            tab.editCore.editorView.kickProcessingPoll()
             startExecuteCommandPollTimer(tabID: tab.id, editorView: tab.editCore.editorView)
             return true
         } catch {
@@ -441,6 +506,18 @@ extension AttoEditorAreaViewController {
                 return
             }
 
+            do {
+                _ = try tab.editCore.editor.pollProcessing()
+            } catch {
+                self.showWorkspaceEditPopover(
+                    text: "Command result could not be processed.",
+                    in: editorView
+                )
+                self.cancelExecuteCommandUI()
+                timer.cancel()
+                return
+            }
+
             let json: String?
             do {
                 json = try tab.editCore.editor.lspTakeLastExecuteCommandResultJSON()
@@ -455,18 +532,87 @@ extension AttoEditorAreaViewController {
             }
             guard let json else { return }
 
-            self.showWorkspaceEditPopover(
-                text: AttoLspExecuteCommandFormatter.displayText(
-                    forResultJSON: json,
-                    commandTitle: ctx.commandTitle
-                ),
-                in: editorView
-            )
+            if let outcome = self.applyExecuteCommandWorkspaceEditResultJSON(json, context: ctx) {
+                switch outcome {
+                case .applied:
+                    self.showWorkspaceEditPopover(
+                        text: "Command completed.\nCommand: \(ctx.commandTitle)\n\nWorkspace edit applied.",
+                        in: editorView
+                    )
+                case .requestRerunStarted:
+                    timer.cancel()
+                    return
+                case .stopped:
+                    self.showWorkspaceEditPopover(
+                        text: "Command completed.\nCommand: \(ctx.commandTitle)\n\nWorkspace edit was not applied.",
+                        in: editorView
+                    )
+                }
+            } else {
+                self.showWorkspaceEditPopover(
+                    text: AttoLspExecuteCommandFormatter.displayText(
+                        forResultJSON: json,
+                        commandTitle: ctx.commandTitle
+                    ),
+                    in: editorView
+                )
+            }
             self.cancelExecuteCommandUI()
             timer.cancel()
         }
 
         executeCommandPollTimer = timer
         timer.resume()
+    }
+
+    func applyExecuteCommandWorkspaceEditResultJSON(
+        _ json: String,
+        context: ExecuteCommandRequestContext
+    ) -> AttoWorkspaceEditApplyOutcome? {
+        guard let workspaceEditJSON = executeCommandWorkspaceEditJSON(fromResultJSON: json),
+              let parsed = AttoWorkspaceEditParser.parse(workspaceEditJSON),
+              parsed.isEmpty == false
+        else {
+            return nil
+        }
+
+        return applyWorkspaceEditToActiveTab(
+            parsed,
+            workspaceEditJSON: workspaceEditJSON,
+            requestRetryOwner: executeCommandWorkspaceEditRequestRetryOwner(context: context)
+        )
+    }
+
+    func executeCommandWorkspaceEditJSON(fromResultJSON json: String) -> String? {
+        guard let data = json.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
+        else {
+            return nil
+        }
+
+        if let object = root as? [String: Any], object.keys.contains("result") {
+            guard let result = object["result"], (result is NSNull) == false else { return nil }
+            return workspaceEditJSONCandidate(from: result)
+        }
+        return workspaceEditJSONCandidate(from: root)
+    }
+
+    func workspaceEditJSONCandidate(from value: Any) -> String? {
+        if let string = value as? String,
+           let parsed = AttoWorkspaceEditParser.parse(string),
+           parsed.isEmpty == false
+        {
+            return string
+        }
+
+        guard JSONSerialization.isValidJSONObject(value),
+              let data = try? JSONSerialization.data(withJSONObject: value, options: []),
+              let json = String(data: data, encoding: .utf8),
+              let parsed = AttoWorkspaceEditParser.parse(json),
+              parsed.isEmpty == false
+        else {
+            return nil
+        }
+        return json
     }
 }

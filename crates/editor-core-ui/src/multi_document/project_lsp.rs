@@ -16,6 +16,56 @@ pub struct ProjectLspServerConfig {
     pub auto_start: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectLspStartPlanEntry {
+    pub tab_id: u64,
+    pub active_view_index: usize,
+    pub document_uri: String,
+    pub language_id: String,
+    pub server_key: String,
+    pub command: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub workspace_roots: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectLspStopPlanEntry {
+    pub tab_id: u64,
+    pub active_view_index: usize,
+    pub document_uri: String,
+    pub language_id: String,
+    pub server_key: String,
+    pub command: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub workspace_roots: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectLspRestartPlanEntry {
+    pub tab_id: u64,
+    pub active_view_index: usize,
+    pub document_uri: String,
+    pub language_id: String,
+    pub server_key: String,
+    pub command: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub workspace_roots: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ProjectLspOpenDocument {
+    pub tab_id: u64,
+    pub active_view_index: usize,
+    pub document_uri: Option<String>,
+    pub language_id: Option<String>,
+}
+
 fn default_auto_start() -> bool {
     true
 }
@@ -29,6 +79,131 @@ pub(crate) fn normalize_project_lsp_servers(
         out.insert(normalized.key.clone(), normalized);
     }
     Ok(out)
+}
+
+pub(crate) fn project_lsp_start_plan(
+    configs: &BTreeMap<String, ProjectLspServerConfig>,
+    workspace_roots: &[String],
+    documents: impl IntoIterator<Item = ProjectLspOpenDocument>,
+) -> Vec<ProjectLspStartPlanEntry> {
+    let fallback_workspace_roots = normalize_project_lsp_workspace_roots(workspace_roots.to_vec());
+    let mut entries = Vec::new();
+
+    for document in documents {
+        let Some(document_uri) = normalize_non_empty(document.document_uri.as_deref()) else {
+            continue;
+        };
+        let Some(language_id) = normalize_non_empty(document.language_id.as_deref()) else {
+            continue;
+        };
+
+        for config in configs.values() {
+            if config.auto_start == false
+                || config.language_id.eq_ignore_ascii_case(&language_id) == false
+            {
+                continue;
+            }
+            let workspace_roots = if config.workspace_roots.is_empty() {
+                fallback_workspace_roots.clone()
+            } else {
+                config.workspace_roots.clone()
+            };
+            entries.push(ProjectLspStartPlanEntry {
+                tab_id: document.tab_id,
+                active_view_index: document.active_view_index,
+                document_uri: document_uri.clone(),
+                language_id: language_id.clone(),
+                server_key: config.key.clone(),
+                command: config.command.clone(),
+                args: config.args.clone(),
+                workspace_roots,
+            });
+        }
+    }
+
+    entries
+}
+
+pub(crate) fn project_lsp_stop_plan(
+    configs: &BTreeMap<String, ProjectLspServerConfig>,
+    workspace_roots: &[String],
+    documents: impl IntoIterator<Item = ProjectLspOpenDocument>,
+) -> Vec<ProjectLspStopPlanEntry> {
+    let fallback_workspace_roots = normalize_project_lsp_workspace_roots(workspace_roots.to_vec());
+    let mut entries = Vec::new();
+
+    for document in documents {
+        let Some(document_uri) = normalize_non_empty(document.document_uri.as_deref()) else {
+            continue;
+        };
+        let Some(language_id) = normalize_non_empty(document.language_id.as_deref()) else {
+            continue;
+        };
+
+        for config in configs.values() {
+            if config.language_id.eq_ignore_ascii_case(&language_id) == false {
+                continue;
+            }
+            let workspace_roots = if config.workspace_roots.is_empty() {
+                fallback_workspace_roots.clone()
+            } else {
+                config.workspace_roots.clone()
+            };
+            entries.push(ProjectLspStopPlanEntry {
+                tab_id: document.tab_id,
+                active_view_index: document.active_view_index,
+                document_uri: document_uri.clone(),
+                language_id: language_id.clone(),
+                server_key: config.key.clone(),
+                command: config.command.clone(),
+                args: config.args.clone(),
+                workspace_roots,
+            });
+        }
+    }
+
+    entries
+}
+
+pub(crate) fn project_lsp_restart_plan(
+    configs: &BTreeMap<String, ProjectLspServerConfig>,
+    workspace_roots: &[String],
+    documents: impl IntoIterator<Item = ProjectLspOpenDocument>,
+) -> Vec<ProjectLspRestartPlanEntry> {
+    let fallback_workspace_roots = normalize_project_lsp_workspace_roots(workspace_roots.to_vec());
+    let mut entries = Vec::new();
+
+    for document in documents {
+        let Some(document_uri) = normalize_non_empty(document.document_uri.as_deref()) else {
+            continue;
+        };
+        let Some(language_id) = normalize_non_empty(document.language_id.as_deref()) else {
+            continue;
+        };
+
+        for config in configs.values() {
+            if config.language_id.eq_ignore_ascii_case(&language_id) == false {
+                continue;
+            }
+            let workspace_roots = if config.workspace_roots.is_empty() {
+                fallback_workspace_roots.clone()
+            } else {
+                config.workspace_roots.clone()
+            };
+            entries.push(ProjectLspRestartPlanEntry {
+                tab_id: document.tab_id,
+                active_view_index: document.active_view_index,
+                document_uri: document_uri.clone(),
+                language_id: language_id.clone(),
+                server_key: config.key.clone(),
+                command: config.command.clone(),
+                args: config.args.clone(),
+                workspace_roots,
+            });
+        }
+    }
+
+    entries
 }
 
 fn normalize_project_lsp_server(
@@ -59,6 +234,13 @@ fn normalize_project_lsp_server(
         workspace_roots,
         auto_start: config.auto_start,
     })
+}
+
+fn normalize_non_empty(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
 }
 
 fn normalize_project_lsp_server_key(

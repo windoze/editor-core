@@ -129,6 +129,16 @@ public enum EditorCoreUIFFIRuntimeCompatibility {
             reason: "Swift hosts can apply LSP WorkspaceEdit payloads through structured result envelopes."
         ),
         EditorCoreUIFFIRuntimeFeature(
+            feature: .lspDerivedStateApplicationEnvelope,
+            name: "LSP derived-state application envelope",
+            reason: "Swift hosts can apply LSP diagnostics, symbols, folding ranges, highlights, inlay hints, code lens, and document links through structured result envelopes."
+        ),
+        EditorCoreUIFFIRuntimeFeature(
+            feature: .lspSemanticTokensApplicationEnvelope,
+            name: "LSP semantic tokens application envelope",
+            reason: "Swift hosts can apply raw LSP semantic token buffers through structured result envelopes."
+        ),
+        EditorCoreUIFFIRuntimeFeature(
             feature: .multiDocumentUI,
             name: "multi-document UI",
             reason: "Swift hosts can mirror tabs, split views, and project-level state into the core-owned multi-document UI model."
@@ -144,6 +154,41 @@ public enum EditorCoreUIFFIRuntimeCompatibility {
             reason: "Swift hosts can read all-tabs search results through structured result envelopes."
         ),
         EditorCoreUIFFIRuntimeFeature(
+            feature: .multiDocumentWorkspaceFileSearch,
+            name: "multi-document workspace file search",
+            reason: "Swift hosts can search local project files under core-owned workspace roots."
+        ),
+        EditorCoreUIFFIRuntimeFeature(
+            feature: .multiDocumentWorkspaceFileList,
+            name: "multi-document workspace file list",
+            reason: "Swift hosts can list project files under core-owned workspace roots."
+        ),
+        EditorCoreUIFFIRuntimeFeature(
+            feature: .multiDocumentProjectFileIndex,
+            name: "multi-document project file index",
+            reason: "Swift hosts can refresh and read core-owned project file index snapshots."
+        ),
+        EditorCoreUIFFIRuntimeFeature(
+            feature: .multiDocumentProjectFileIndexQuery,
+            name: "multi-document project file index query",
+            reason: "Swift hosts can query core-owned project file indexes with fuzzy path matching."
+        ),
+        EditorCoreUIFFIRuntimeFeature(
+            feature: .multiDocumentWorkspaceFileReplacement,
+            name: "multi-document workspace file replacement",
+            reason: "Swift hosts can generate WorkspaceEdit payloads for replacing local project file search matches."
+        ),
+        EditorCoreUIFFIRuntimeFeature(
+            feature: .multiDocumentRecentFiles,
+            name: "multi-document recent files",
+            reason: "Swift hosts can store recent project file URIs in the core-owned multi-document workspace model."
+        ),
+        EditorCoreUIFFIRuntimeFeature(
+            feature: .multiDocumentRecentProjects,
+            name: "multi-document recent projects",
+            reason: "Swift hosts can store recent project/workspace root URIs in the core-owned multi-document workspace model."
+        ),
+        EditorCoreUIFFIRuntimeFeature(
             feature: .multiDocumentWorkspaceRootsChangeEnvelope,
             name: "multi-document workspace roots change envelope",
             reason: "Swift hosts can update workspace roots and read folder diffs through structured result envelopes."
@@ -152,6 +197,11 @@ public enum EditorCoreUIFFIRuntimeCompatibility {
             feature: .multiDocumentProjectLSPServersEnvelope,
             name: "multi-document project LSP servers envelope",
             reason: "Swift hosts can read project LSP server launch metadata through structured result envelopes."
+        ),
+        EditorCoreUIFFIRuntimeFeature(
+            feature: .multiDocumentProjectLSPLifecycleEnvelope,
+            name: "multi-document project LSP lifecycle envelope",
+            reason: "Swift hosts can read project LSP lifecycle plans and events through structured result envelopes."
         ),
         EditorCoreUIFFIRuntimeFeature(
             feature: .workspaceDiagnosticsStore,
@@ -330,6 +380,20 @@ public enum EditorCoreUIFFIRuntimeCompatibility {
             missingRequiredFeatures: missingRequired,
             missingOptionalFeatures: missingOptional,
             loadError: nil
+        )
+    }
+
+    public static func evaluate(
+        capabilitySnapshot: EditorCoreUIFFIRuntimeCapabilitySnapshot,
+        minimumABIVersion: UInt32 = EditorCoreUIFFIRuntimeCompatibility.minimumABIVersion,
+        requiredFeatures: [EditorCoreUIFFIRuntimeFeature] = EditorCoreUIFFIRuntimeCompatibility.requiredFeatures,
+        optionalFeatures: [EditorCoreUIFFIRuntimeFeature] = []
+    ) -> EditorCoreUIFFIRuntimeCompatibilityReport {
+        evaluate(
+            runtimeInfo: capabilitySnapshot.runtimeInfo,
+            minimumABIVersion: minimumABIVersion,
+            requiredFeatures: requiredFeatures,
+            optionalFeatures: optionalFeatures
         )
     }
 }

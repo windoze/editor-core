@@ -170,6 +170,56 @@ fn ffi_feature_flags_include_semantic_tokens_requests() {
         editor_core_ui_ffi_feature_flags() & ECU_FEATURE_EDITOR_UI_VIEW_POINT_PAYLOAD_ENVELOPE,
         0
     );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags() & ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_START_PLAN,
+        0
+    );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags()
+            & ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_LIFECYCLE_EVENTS,
+        0
+    );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags()
+            & ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_LIFECYCLE_ENVELOPE,
+        0
+    );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags() & ECU_FEATURE_LSP_DERIVED_STATE_APPLICATION_ENVELOPE,
+        0
+    );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags() & ECU_FEATURE_LSP_SEMANTIC_TOKENS_APPLICATION_ENVELOPE,
+        0
+    );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags() & ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_SEARCH,
+        0
+    );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags() & ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_REPLACEMENT,
+        0
+    );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags() & ECU_FEATURE_MULTI_DOCUMENT_RECENT_FILES,
+        0
+    );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags() & ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_LIST,
+        0
+    );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags() & ECU_FEATURE_MULTI_DOCUMENT_RECENT_PROJECTS,
+        0
+    );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags() & ECU_FEATURE_MULTI_DOCUMENT_PROJECT_FILE_INDEX,
+        0
+    );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags() & ECU_FEATURE_MULTI_DOCUMENT_PROJECT_FILE_INDEX_QUERY,
+        0
+    );
 }
 
 #[test]
@@ -267,6 +317,76 @@ fn ffi_runtime_info_json_reports_version_and_feature_descriptors() {
         feature["name"] == "editor_ui_view_point_payload_envelope"
             && feature["bit"] == 41
             && feature["flag"] == ECU_FEATURE_EDITOR_UI_VIEW_POINT_PAYLOAD_ENVELOPE
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "multi_document_project_lsp_start_plan"
+            && feature["bit"] == 42
+            && feature["flag"] == ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_START_PLAN
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "multi_document_project_lsp_lifecycle_events"
+            && feature["bit"] == 43
+            && feature["flag"] == ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_LIFECYCLE_EVENTS
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "multi_document_project_lsp_stop_plan"
+            && feature["bit"] == 44
+            && feature["flag"] == ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_STOP_PLAN
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "multi_document_project_lsp_restart_plan"
+            && feature["bit"] == 45
+            && feature["flag"] == ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_RESTART_PLAN
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "multi_document_project_lsp_lifecycle_envelope"
+            && feature["bit"] == 46
+            && feature["flag"] == ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_LIFECYCLE_ENVELOPE
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "lsp_derived_state_application_envelope"
+            && feature["bit"] == 47
+            && feature["flag"] == ECU_FEATURE_LSP_DERIVED_STATE_APPLICATION_ENVELOPE
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "lsp_semantic_tokens_application_envelope"
+            && feature["bit"] == 48
+            && feature["flag"] == ECU_FEATURE_LSP_SEMANTIC_TOKENS_APPLICATION_ENVELOPE
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "multi_document_workspace_file_search"
+            && feature["bit"] == 49
+            && feature["flag"] == ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_SEARCH
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "multi_document_workspace_file_replacement"
+            && feature["bit"] == 50
+            && feature["flag"] == ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_REPLACEMENT
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "multi_document_recent_files"
+            && feature["bit"] == 51
+            && feature["flag"] == ECU_FEATURE_MULTI_DOCUMENT_RECENT_FILES
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "multi_document_workspace_file_list"
+            && feature["bit"] == 52
+            && feature["flag"] == ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_LIST
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "multi_document_recent_projects"
+            && feature["bit"] == 53
+            && feature["flag"] == ECU_FEATURE_MULTI_DOCUMENT_RECENT_PROJECTS
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "multi_document_project_file_index"
+            && feature["bit"] == 54
+            && feature["flag"] == ECU_FEATURE_MULTI_DOCUMENT_PROJECT_FILE_INDEX
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "multi_document_project_file_index_query"
+            && feature["bit"] == 55
+            && feature["flag"] == ECU_FEATURE_MULTI_DOCUMENT_PROJECT_FILE_INDEX_QUERY
     }));
     assert!(features.iter().any(|feature| {
         feature["name"] == "multi_document_workspace_edit_transaction"
@@ -723,6 +843,454 @@ fn ffi_multi_document_search_envelope_json_reports_success_and_errors() {
 }
 
 #[test]
+fn ffi_multi_document_workspace_file_search_reports_success_and_errors() {
+    let mut root = std::env::temp_dir();
+    root.push(format!(
+        "editor_core_ui_ffi_workspace_file_search_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    std::fs::write(
+        root.join("src").join("lib.rs"),
+        "pub fn demo() {\n    let needle = 1;\n}\n",
+    )
+    .unwrap();
+    std::fs::write(root.join("notes.txt"), "needle outside include\n").unwrap();
+
+    let multi = editor_core_ui_ffi_multi_document_new();
+    assert!(!multi.is_null());
+
+    let roots =
+        CString::new(serde_json::json!([format!("file://{}", root.to_string_lossy())]).to_string())
+            .unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_set_workspace_roots_json(multi, roots.as_ptr()),
+        ECU_OK
+    );
+
+    let query = CString::new("needle").unwrap();
+    let include = CString::new(r#"["*.rs"]"#).unwrap();
+    let exclude = CString::new(r#"[]"#).unwrap();
+    let json = take_owned_string(
+        editor_core_ui_ffi_multi_document_search_workspace_files_json(
+            multi,
+            query.as_ptr(),
+            include.as_ptr(),
+            exclude.as_ptr(),
+            0,
+            0,
+            0,
+            10,
+        ),
+    );
+    let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    let results = value["results"].as_array().unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["relative_path"], "src/lib.rs");
+    assert_eq!(results[0]["line1"], 2);
+    assert_eq!(results[0]["column1"], 9);
+    assert_eq!(results[0]["line_text"], "let needle = 1;");
+
+    let invalid_globs = CString::new("{}").unwrap();
+    let error_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_search_workspace_files_envelope_json(
+            multi,
+            query.as_ptr(),
+            invalid_globs.as_ptr(),
+            exclude.as_ptr(),
+            0,
+            0,
+            0,
+            10,
+        ),
+    );
+    let error: serde_json::Value = serde_json::from_str(&error_json).unwrap();
+    assert_eq!(error["ok"], false);
+    assert_eq!(error["status"], "error");
+    assert_eq!(error["error"]["code"], "invalid_argument");
+    assert!(
+        error["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("include_globs_json_utf8 must be a JSON string array")
+    );
+
+    unsafe { editor_core_ui_ffi_multi_document_free(multi) };
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn ffi_multi_document_workspace_file_list_reports_files_and_errors() {
+    let mut root = std::env::temp_dir();
+    root.push(format!(
+        "editor_core_ui_ffi_workspace_file_list_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    std::fs::create_dir_all(root.join("target")).unwrap();
+    std::fs::write(root.join("src").join("lib.rs"), "pub fn demo() {}\n").unwrap();
+    std::fs::write(root.join("src").join("App.swift"), "let value = 1\n").unwrap();
+    std::fs::write(root.join("README.md"), "# docs\n").unwrap();
+    std::fs::write(root.join("target").join("generated.rs"), "ignored\n").unwrap();
+
+    let multi = editor_core_ui_ffi_multi_document_new();
+    assert!(!multi.is_null());
+
+    let roots =
+        CString::new(serde_json::json!([format!("file://{}", root.to_string_lossy())]).to_string())
+            .unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_set_workspace_roots_json(multi, roots.as_ptr()),
+        ECU_OK
+    );
+
+    let include = CString::new(r#"["src/**"]"#).unwrap();
+    let exclude = CString::new(r#"["*.swift"]"#).unwrap();
+    let json = take_owned_string(editor_core_ui_ffi_multi_document_list_workspace_files_json(
+        multi,
+        include.as_ptr(),
+        exclude.as_ptr(),
+        10,
+    ));
+    let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    let files = value["files"].as_array().unwrap();
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0]["relative_path"], "src/lib.rs");
+    assert_eq!(
+        files[0]["path"].as_str().unwrap(),
+        root.join("src").join("lib.rs").to_string_lossy()
+    );
+
+    let invalid_globs = CString::new("{}").unwrap();
+    let invalid = editor_core_ui_ffi_multi_document_list_workspace_files_json(
+        multi,
+        invalid_globs.as_ptr(),
+        exclude.as_ptr(),
+        10,
+    );
+    assert!(invalid.is_null());
+    let last_error = take_owned_string(editor_core_ui_ffi_last_error_message());
+    assert!(last_error.contains("include_globs_json_utf8 must be a JSON string array"));
+
+    unsafe { editor_core_ui_ffi_multi_document_free(multi) };
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn ffi_multi_document_project_file_index_refreshes_and_snapshots_files() {
+    let mut root = std::env::temp_dir();
+    root.push(format!(
+        "editor_core_ui_ffi_project_file_index_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    std::fs::write(root.join("src").join("lib.rs"), "pub fn demo() {}\n").unwrap();
+    std::fs::write(root.join("src").join("core_model.rs"), "pub fn core() {}\n").unwrap();
+
+    let multi = editor_core_ui_ffi_multi_document_new();
+    assert!(!multi.is_null());
+
+    let roots =
+        CString::new(serde_json::json!([format!("file://{}", root.to_string_lossy())]).to_string())
+            .unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_set_workspace_roots_json(multi, roots.as_ptr()),
+        ECU_OK
+    );
+
+    let snapshot_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_project_file_index_snapshot_json(multi),
+    );
+    let snapshot: serde_json::Value = serde_json::from_str(&snapshot_json).unwrap();
+    assert_eq!(snapshot["is_built"], false);
+    assert_eq!(snapshot["files"], serde_json::json!([]));
+
+    let query = CString::new("cm").unwrap();
+    let query_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_query_project_file_index_json(multi, query.as_ptr(), 10),
+    );
+    let query_value: serde_json::Value = serde_json::from_str(&query_json).unwrap();
+    assert_eq!(query_value["results"], serde_json::json!([]));
+
+    let refreshed_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_refresh_project_file_index_json(multi, 10),
+    );
+    let refreshed: serde_json::Value = serde_json::from_str(&refreshed_json).unwrap();
+    assert_eq!(refreshed["is_built"], true);
+    assert_eq!(refreshed["max_results"], 10);
+    assert_eq!(refreshed["files"].as_array().unwrap().len(), 2);
+    assert_eq!(refreshed["files"][0]["relative_path"], "src/core_model.rs");
+
+    let query_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_query_project_file_index_json(multi, query.as_ptr(), 10),
+    );
+    let query_value: serde_json::Value = serde_json::from_str(&query_json).unwrap();
+    assert_eq!(query_value["results"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        query_value["results"][0]["relative_path"],
+        "src/core_model.rs"
+    );
+    assert!(query_value["results"][0]["score"].as_i64().unwrap() > 0);
+
+    std::fs::write(root.join("src").join("main.rs"), "fn main() {}\n").unwrap();
+    let snapshot_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_project_file_index_snapshot_json(multi),
+    );
+    let snapshot: serde_json::Value = serde_json::from_str(&snapshot_json).unwrap();
+    assert_eq!(snapshot["files"].as_array().unwrap().len(), 2);
+
+    let refreshed_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_refresh_project_file_index_json(multi, 10),
+    );
+    let refreshed: serde_json::Value = serde_json::from_str(&refreshed_json).unwrap();
+    assert_eq!(
+        refreshed["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|file| file["relative_path"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["src/core_model.rs", "src/lib.rs", "src/main.rs"]
+    );
+
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_clear_project_file_index(multi),
+        ECU_OK
+    );
+    let snapshot_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_project_file_index_snapshot_json(multi),
+    );
+    let snapshot: serde_json::Value = serde_json::from_str(&snapshot_json).unwrap();
+    assert_eq!(snapshot["is_built"], false);
+    assert_eq!(snapshot["files"], serde_json::json!([]));
+
+    unsafe { editor_core_ui_ffi_multi_document_free(multi) };
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn ffi_multi_document_recent_files_round_trips_through_snapshot() {
+    let multi = editor_core_ui_ffi_multi_document_new();
+    assert!(!multi.is_null());
+
+    let roots = CString::new(r#"["file:///workspace"]"#).unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_set_workspace_roots_json(multi, roots.as_ptr()),
+        ECU_OK
+    );
+
+    let a = CString::new(" file:///workspace/a.rs ").unwrap();
+    let b = CString::new("file:///workspace/b.rs").unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_remember_recent_file_uri(multi, a.as_ptr()),
+        ECU_OK
+    );
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_remember_recent_file_uri(multi, b.as_ptr()),
+        ECU_OK
+    );
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_remember_recent_file_uri(multi, a.as_ptr()),
+        ECU_OK
+    );
+
+    let recent_json = take_owned_string(editor_core_ui_ffi_multi_document_recent_files_json(multi));
+    let recent: serde_json::Value = serde_json::from_str(&recent_json).unwrap();
+    assert_eq!(
+        recent,
+        serde_json::json!([
+            { "uri": "file:///workspace/a.rs" },
+            { "uri": "file:///workspace/b.rs" }
+        ])
+    );
+
+    let snapshot_json = take_owned_string(editor_core_ui_ffi_multi_document_snapshot_json(multi));
+    let snapshot: serde_json::Value = serde_json::from_str(&snapshot_json).unwrap();
+    assert_eq!(snapshot["recent_files"], recent);
+
+    let restored =
+        CString::new(r#"["file:///workspace/restored.rs","file:///workspace/a.rs"]"#).unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_restore_recent_files_json(multi, restored.as_ptr()),
+        ECU_OK
+    );
+    let recent_json = take_owned_string(editor_core_ui_ffi_multi_document_recent_files_json(multi));
+    let recent: serde_json::Value = serde_json::from_str(&recent_json).unwrap();
+    assert_eq!(
+        recent,
+        serde_json::json!([
+            { "uri": "file:///workspace/restored.rs" },
+            { "uri": "file:///workspace/a.rs" }
+        ])
+    );
+
+    let next_roots = CString::new(r#"["file:///other"]"#).unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_set_workspace_roots_json(multi, next_roots.as_ptr()),
+        ECU_OK
+    );
+    let cleared_json =
+        take_owned_string(editor_core_ui_ffi_multi_document_recent_files_json(multi));
+    let cleared: serde_json::Value = serde_json::from_str(&cleared_json).unwrap();
+    assert_eq!(cleared, serde_json::json!([]));
+
+    unsafe { editor_core_ui_ffi_multi_document_free(multi) };
+}
+
+#[test]
+fn ffi_multi_document_recent_projects_round_trips_through_snapshot() {
+    let multi = editor_core_ui_ffi_multi_document_new();
+    assert!(!multi.is_null());
+
+    let a = CString::new(" file:///workspace/a ").unwrap();
+    let b = CString::new("file:///workspace/b").unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_remember_recent_project_uri(multi, a.as_ptr()),
+        ECU_OK
+    );
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_remember_recent_project_uri(multi, b.as_ptr()),
+        ECU_OK
+    );
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_remember_recent_project_uri(multi, a.as_ptr()),
+        ECU_OK
+    );
+
+    let recent_json = take_owned_string(editor_core_ui_ffi_multi_document_recent_projects_json(
+        multi,
+    ));
+    let recent: serde_json::Value = serde_json::from_str(&recent_json).unwrap();
+    assert_eq!(
+        recent,
+        serde_json::json!([
+            { "uri": "file:///workspace/a" },
+            { "uri": "file:///workspace/b" }
+        ])
+    );
+
+    let snapshot_json = take_owned_string(editor_core_ui_ffi_multi_document_snapshot_json(multi));
+    let snapshot: serde_json::Value = serde_json::from_str(&snapshot_json).unwrap();
+    assert_eq!(snapshot["recent_projects"], recent);
+
+    let restored = CString::new(r#"["file:///workspace/restored","file:///workspace/a"]"#).unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_restore_recent_projects_json(multi, restored.as_ptr()),
+        ECU_OK
+    );
+    let recent_json = take_owned_string(editor_core_ui_ffi_multi_document_recent_projects_json(
+        multi,
+    ));
+    let recent: serde_json::Value = serde_json::from_str(&recent_json).unwrap();
+    assert_eq!(
+        recent,
+        serde_json::json!([
+            { "uri": "file:///workspace/restored" },
+            { "uri": "file:///workspace/a" }
+        ])
+    );
+
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_clear_recent_projects(multi),
+        ECU_OK
+    );
+    let cleared_json = take_owned_string(editor_core_ui_ffi_multi_document_recent_projects_json(
+        multi,
+    ));
+    let cleared: serde_json::Value = serde_json::from_str(&cleared_json).unwrap();
+    assert_eq!(cleared, serde_json::json!([]));
+
+    unsafe { editor_core_ui_ffi_multi_document_free(multi) };
+}
+
+#[test]
+fn ffi_multi_document_workspace_file_replacement_builds_workspace_edit() {
+    let mut root = std::env::temp_dir();
+    root.push(format!(
+        "editor_core_ui_ffi_workspace_file_replacement_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    std::fs::write(root.join("src").join("lib.rs"), "👋 alpha1\nalpha2\n").unwrap();
+    std::fs::write(root.join("notes.txt"), "alpha3\n").unwrap();
+
+    let multi = editor_core_ui_ffi_multi_document_new();
+    assert!(!multi.is_null());
+
+    let roots =
+        CString::new(serde_json::json!([format!("file://{}", root.to_string_lossy())]).to_string())
+            .unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_set_workspace_roots_json(multi, roots.as_ptr()),
+        ECU_OK
+    );
+
+    let query = CString::new(r"alpha(\d)").unwrap();
+    let replacement = CString::new("beta$1").unwrap();
+    let include = CString::new(r#"["*.rs"]"#).unwrap();
+    let exclude = CString::new(r#"[]"#).unwrap();
+    let apply_mode = CString::new("atomic").unwrap();
+    let workspace_edit = take_owned_string(
+        editor_core_ui_ffi_multi_document_workspace_file_replacement_workspace_edit_json(
+            multi,
+            query.as_ptr(),
+            replacement.as_ptr(),
+            include.as_ptr(),
+            exclude.as_ptr(),
+            apply_mode.as_ptr(),
+            1,
+            0,
+            1,
+            10,
+        ),
+    );
+    let value: serde_json::Value = serde_json::from_str(&workspace_edit).unwrap();
+    let document_changes = value["workspaceEdit"]["documentChanges"]
+        .as_array()
+        .unwrap();
+    assert_eq!(document_changes.len(), 1);
+    assert_eq!(document_changes[0]["edits"].as_array().unwrap().len(), 2);
+
+    let workspace_edit_c = CString::new(workspace_edit).unwrap();
+    let applied_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_apply_workspace_edit_transaction_json(
+            multi,
+            workspace_edit_c.as_ptr(),
+        ),
+    );
+    let applied: serde_json::Value = serde_json::from_str(&applied_json).unwrap();
+    assert_eq!(applied["applied"], true);
+    assert_eq!(applied["applied_edit_count"], 2);
+    assert_eq!(
+        std::fs::read_to_string(root.join("src").join("lib.rs")).unwrap(),
+        "👋 beta1\nbeta2\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("notes.txt")).unwrap(),
+        "alpha3\n"
+    );
+
+    unsafe { editor_core_ui_ffi_multi_document_free(multi) };
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn ffi_workspace_roots_change_envelope_json_reports_success_and_errors() {
     let multi = editor_core_ui_ffi_multi_document_new();
     assert!(!multi.is_null());
@@ -855,6 +1423,173 @@ fn ffi_project_lsp_servers_envelope_json_reports_success_and_errors() {
     assert_eq!(error["error"]["status"], ECU_ERR_INVALID_ARGUMENT);
     assert_eq!(error["error"]["message"], "multi is null");
     assert_eq!(error["version"], ECU_ABI_VERSION);
+
+    unsafe { editor_core_ui_ffi_multi_document_free(multi) };
+}
+
+#[test]
+fn ffi_project_lsp_lifecycle_envelope_json_reports_success_and_errors() {
+    let multi = editor_core_ui_ffi_multi_document_new();
+    assert!(!multi.is_null());
+
+    let text = CString::new("fn main() {}\n").unwrap();
+    let mut tab_id = 0u64;
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_open_tab(multi, text.as_ptr(), 80, &mut tab_id),
+        ECU_OK
+    );
+    let uri = CString::new("file:///project/main.rs").unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_set_tab_document_uri(multi, tab_id, uri.as_ptr()),
+        ECU_OK
+    );
+    let language_id = CString::new("rust").unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_set_tab_language_id(multi, tab_id, language_id.as_ptr()),
+        ECU_OK
+    );
+    let roots = CString::new(r#"["file:///project"]"#).unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_set_workspace_roots_json(multi, roots.as_ptr()),
+        ECU_OK
+    );
+    let configs = CString::new(
+        r#"[
+          {
+            "key": "rust",
+            "command": "/bin/rust-analyzer",
+            "args": ["--stdio"],
+            "language_id": "rust"
+          }
+        ]"#,
+    )
+    .unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_set_project_lsp_servers_json(multi, configs.as_ptr()),
+        ECU_OK
+    );
+
+    let start = CString::new("start_plan").unwrap();
+    let start_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_project_lsp_lifecycle_envelope_json(
+            multi,
+            start.as_ptr(),
+            0,
+        ),
+    );
+    let start_envelope: serde_json::Value = serde_json::from_str(&start_json).unwrap();
+    assert_eq!(start_envelope["ok"], true);
+    assert_eq!(start_envelope["operation"], "start_plan");
+    assert_eq!(start_envelope["status"], "success");
+    assert_eq!(start_envelope["version"], ECU_ABI_VERSION);
+    assert_eq!(start_envelope["value"][0]["tab_id"], tab_id);
+    assert_eq!(
+        start_envelope["value"][0]["document_uri"],
+        "file:///project/main.rs"
+    );
+    assert_eq!(start_envelope["value"][0]["server_key"], "rust");
+
+    let stop = CString::new("stop_plan").unwrap();
+    let stop_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_project_lsp_lifecycle_envelope_json(
+            multi,
+            stop.as_ptr(),
+            0,
+        ),
+    );
+    let stop_envelope: serde_json::Value = serde_json::from_str(&stop_json).unwrap();
+    assert_eq!(stop_envelope["ok"], true);
+    assert_eq!(stop_envelope["operation"], "stop_plan");
+    assert_eq!(stop_envelope["value"][0]["server_key"], "rust");
+
+    let restart = CString::new("restart_plan").unwrap();
+    let restart_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_project_lsp_lifecycle_envelope_json(
+            multi,
+            restart.as_ptr(),
+            0,
+        ),
+    );
+    let restart_envelope: serde_json::Value = serde_json::from_str(&restart_json).unwrap();
+    assert_eq!(restart_envelope["ok"], true);
+    assert_eq!(restart_envelope["operation"], "restart_plan");
+    assert_eq!(restart_envelope["value"][0]["server_key"], "rust");
+
+    let lifecycle_outcome = CString::new(
+        serde_json::json!({
+            "tab_id": tab_id,
+            "active_view_index": 0,
+            "document_uri": "file:///project/main.rs",
+            "language_id": "rust",
+            "server_key": "rust",
+            "command": "/bin/rust-analyzer",
+            "args": ["--stdio"],
+            "workspace_roots": ["file:///project"],
+            "trigger": "auto_start",
+            "status": "started"
+        })
+        .to_string(),
+    )
+    .unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_record_project_lsp_start_outcome_json(
+            multi,
+            lifecycle_outcome.as_ptr()
+        ),
+        ECU_OK
+    );
+
+    let lifecycle = CString::new("lifecycle_events").unwrap();
+    let events_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_project_lsp_lifecycle_envelope_json(
+            multi,
+            lifecycle.as_ptr(),
+            0,
+        ),
+    );
+    let events_envelope: serde_json::Value = serde_json::from_str(&events_json).unwrap();
+    assert_eq!(events_envelope["ok"], true);
+    assert_eq!(events_envelope["operation"], "lifecycle_events");
+    assert_eq!(events_envelope["value"]["latest_sequence"], 1);
+    assert_eq!(events_envelope["value"]["events"][0]["operation"], "start");
+    assert_eq!(events_envelope["value"]["events"][0]["status"], "started");
+
+    let unknown = CString::new("future_operation").unwrap();
+    let unknown_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_project_lsp_lifecycle_envelope_json(
+            multi,
+            unknown.as_ptr(),
+            0,
+        ),
+    );
+    let unknown_envelope: serde_json::Value = serde_json::from_str(&unknown_json).unwrap();
+    assert_eq!(unknown_envelope["ok"], false);
+    assert_eq!(unknown_envelope["operation"], "future_operation");
+    assert_eq!(unknown_envelope["status"], "error");
+    assert_eq!(unknown_envelope["error"]["code"], "invalid_argument");
+    assert_eq!(
+        unknown_envelope["error"]["status"],
+        ECU_ERR_INVALID_ARGUMENT
+    );
+    assert!(
+        unknown_envelope["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("unknown project LSP lifecycle operation")
+    );
+
+    let null_multi_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_project_lsp_lifecycle_envelope_json(
+            ptr::null_mut(),
+            start.as_ptr(),
+            0,
+        ),
+    );
+    let null_multi: serde_json::Value = serde_json::from_str(&null_multi_json).unwrap();
+    assert_eq!(null_multi["ok"], false);
+    assert_eq!(null_multi["operation"], "start_plan");
+    assert_eq!(null_multi["error"]["code"], "invalid_argument");
+    assert_eq!(null_multi["error"]["message"], "multi is null");
 
     unsafe { editor_core_ui_ffi_multi_document_free(multi) };
 }
@@ -1194,6 +1929,21 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
     );
     assert_ne!(alpha_id, beta_id);
 
+    let alpha_uri = CString::new("file:///project/main.rs").unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_set_tab_document_uri(multi, alpha_id, alpha_uri.as_ptr(),),
+        ECU_OK
+    );
+    let alpha_language = CString::new("rust").unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_set_tab_language_id(
+            multi,
+            alpha_id,
+            alpha_language.as_ptr(),
+        ),
+        ECU_OK
+    );
+
     let title = CString::new("Beta").unwrap();
     assert_eq!(
         editor_core_ui_ffi_multi_document_set_tab_title(multi, beta_id, title.as_ptr()),
@@ -1340,6 +2090,150 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                 "auto_start": false
             }
         ])
+    );
+
+    let lsp_start_plan_ptr = editor_core_ui_ffi_multi_document_project_lsp_start_plan_json(multi);
+    assert!(!lsp_start_plan_ptr.is_null());
+    let lsp_start_plan_json = unsafe { std::ffi::CStr::from_ptr(lsp_start_plan_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(lsp_start_plan_ptr) };
+    let lsp_start_plan_value: serde_json::Value =
+        serde_json::from_str(&lsp_start_plan_json).unwrap();
+    assert_eq!(
+        lsp_start_plan_value,
+        serde_json::json!([
+            {
+                "tab_id": alpha_id,
+                "active_view_index": 0,
+                "document_uri": "file:///project/main.rs",
+                "language_id": "rust",
+                "server_key": "rust",
+                "command": "/bin/rust-analyzer",
+                "args": ["--stdio"],
+                "workspace_roots": ["file:///new", "file:///other"]
+            }
+        ])
+    );
+
+    let lsp_stop_plan_ptr = editor_core_ui_ffi_multi_document_project_lsp_stop_plan_json(multi);
+    assert!(!lsp_stop_plan_ptr.is_null());
+    let lsp_stop_plan_json = unsafe { std::ffi::CStr::from_ptr(lsp_stop_plan_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(lsp_stop_plan_ptr) };
+    let lsp_stop_plan_value: serde_json::Value = serde_json::from_str(&lsp_stop_plan_json).unwrap();
+    assert_eq!(
+        lsp_stop_plan_value,
+        serde_json::json!([
+            {
+                "tab_id": alpha_id,
+                "active_view_index": 0,
+                "document_uri": "file:///project/main.rs",
+                "language_id": "rust",
+                "server_key": "rust",
+                "command": "/bin/rust-analyzer",
+                "args": ["--stdio"],
+                "workspace_roots": ["file:///new", "file:///other"]
+            },
+            {
+                "tab_id": beta_id,
+                "active_view_index": 0,
+                "document_uri": "file:///project/Beta.swift",
+                "language_id": "swift",
+                "server_key": "swift",
+                "command": "/bin/sourcekit-lsp",
+                "args": [],
+                "workspace_roots": ["file:///new", "file:///other"]
+            }
+        ])
+    );
+
+    let lsp_restart_plan_ptr =
+        editor_core_ui_ffi_multi_document_project_lsp_restart_plan_json(multi);
+    assert!(!lsp_restart_plan_ptr.is_null());
+    let lsp_restart_plan_json = unsafe { std::ffi::CStr::from_ptr(lsp_restart_plan_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(lsp_restart_plan_ptr) };
+    let lsp_restart_plan_value: serde_json::Value =
+        serde_json::from_str(&lsp_restart_plan_json).unwrap();
+    assert_eq!(
+        lsp_restart_plan_value,
+        serde_json::json!([
+            {
+                "tab_id": alpha_id,
+                "active_view_index": 0,
+                "document_uri": "file:///project/main.rs",
+                "language_id": "rust",
+                "server_key": "rust",
+                "command": "/bin/rust-analyzer",
+                "args": ["--stdio"],
+                "workspace_roots": ["file:///new", "file:///other"]
+            },
+            {
+                "tab_id": beta_id,
+                "active_view_index": 0,
+                "document_uri": "file:///project/Beta.swift",
+                "language_id": "swift",
+                "server_key": "swift",
+                "command": "/bin/sourcekit-lsp",
+                "args": [],
+                "workspace_roots": ["file:///new", "file:///other"]
+            }
+        ])
+    );
+
+    let lifecycle_outcome = CString::new(
+        serde_json::json!({
+            "tab_id": alpha_id,
+            "active_view_index": 0,
+            "document_uri": "file:///project/main.rs",
+            "language_id": "rust",
+            "server_key": "rust",
+            "command": "/bin/rust-analyzer",
+            "args": ["--stdio"],
+            "workspace_roots": ["file:///new", "file:///other"],
+            "trigger": "auto_start",
+            "status": "started"
+        })
+        .to_string(),
+    )
+    .unwrap();
+    assert_eq!(
+        editor_core_ui_ffi_multi_document_record_project_lsp_start_outcome_json(
+            multi,
+            lifecycle_outcome.as_ptr()
+        ),
+        ECU_OK
+    );
+    let mut lifecycle_sequence = 0;
+    assert_eq!(
+        unsafe {
+            editor_core_ui_ffi_multi_document_project_lsp_lifecycle_events_latest_sequence(
+                multi,
+                &mut lifecycle_sequence,
+            )
+        },
+        ECU_OK
+    );
+    assert_eq!(lifecycle_sequence, 1);
+    let lifecycle_events_ptr =
+        editor_core_ui_ffi_multi_document_project_lsp_lifecycle_events_json(multi, 0);
+    assert!(!lifecycle_events_ptr.is_null());
+    let lifecycle_events_json = unsafe { std::ffi::CStr::from_ptr(lifecycle_events_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(lifecycle_events_ptr) };
+    let lifecycle_events_value: serde_json::Value =
+        serde_json::from_str(&lifecycle_events_json).unwrap();
+    assert_eq!(lifecycle_events_value["latest_sequence"], 1);
+    assert_eq!(lifecycle_events_value["events"][0]["operation"], "start");
+    assert_eq!(lifecycle_events_value["events"][0]["status"], "started");
+    assert_eq!(lifecycle_events_value["events"][0]["tab_id"], alpha_id);
+    assert_eq!(
+        lifecycle_events_value["events"][0]["document_uri"],
+        "file:///project/main.rs"
     );
 
     let mut has_active: u8 = 0;
@@ -1576,6 +2470,10 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
         serde_json::from_str(&transaction_events_json).unwrap();
     assert_eq!(transaction_events_value["latest_sequence"], 1);
     assert_eq!(transaction_events_value["events"][0]["operation"], "apply");
+    assert_eq!(
+        transaction_events_value["events"][0]["workspace_edit_json"],
+        workspace_edit.to_string_lossy().as_ref()
+    );
     assert_eq!(
         transaction_events_value["events"][0]["result"]["applied_uris"][0],
         "file:///project/Beta.swift"
@@ -5617,6 +6515,187 @@ fn ffi_lsp_workspace_edit_application_envelope_json_reports_success_and_errors()
             .contains("EOF while parsing")
     );
     assert_eq!(error["version"], ECU_ABI_VERSION);
+
+    unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
+}
+
+#[test]
+fn ffi_lsp_derived_state_application_envelope_json_reports_success_and_errors() {
+    let initial = CString::new("fn main() {}\n").unwrap();
+    let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+    assert!(!ui.is_null());
+
+    let diagnostics = CString::new(
+        r#"{"uri":"file:///test.rs","diagnostics":[{"range":{"start":{"line":0,"character":3},"end":{"line":0,"character":7}},"severity":1,"message":"demo"}]}"#,
+    )
+    .unwrap();
+    let inlay_hints =
+        CString::new(r#"[{"position":{"line":0,"character":3},"label":": i32"}]"#).unwrap();
+    let code_lens = CString::new(r#"[{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":2}},"command":{"title":"run","command":"demo.run"}}]"#)
+        .unwrap();
+    let document_links = CString::new(
+        r#"[{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":2}},"target":"file:///target.rs"}]"#,
+    )
+    .unwrap();
+    let document_highlights = CString::new(
+        r#"[{"range":{"start":{"line":0,"character":3},"end":{"line":0,"character":7}},"kind":1}]"#,
+    )
+    .unwrap();
+    let document_symbols = CString::new(
+        r#"[{"name":"main","kind":12,"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":12}},"selectionRange":{"start":{"line":0,"character":3},"end":{"line":0,"character":7}}}]"#,
+    )
+    .unwrap();
+    let folding_ranges =
+        CString::new(r#"[{"startLine":0,"startCharacter":0,"endLine":0,"endCharacter":12}]"#)
+            .unwrap();
+
+    let cases: &[(&str, *mut c_char)] = &[
+        (
+            "apply_diagnostics",
+            editor_core_ui_ffi_editor_ui_lsp_apply_diagnostics_envelope_json(
+                ui,
+                diagnostics.as_ptr(),
+            ),
+        ),
+        (
+            "apply_inlay_hints",
+            editor_core_ui_ffi_editor_ui_lsp_apply_inlay_hints_envelope_json(
+                ui,
+                inlay_hints.as_ptr(),
+            ),
+        ),
+        (
+            "apply_code_lens",
+            editor_core_ui_ffi_editor_ui_lsp_apply_code_lens_envelope_json(ui, code_lens.as_ptr()),
+        ),
+        (
+            "apply_document_links",
+            editor_core_ui_ffi_editor_ui_lsp_apply_document_links_envelope_json(
+                ui,
+                document_links.as_ptr(),
+            ),
+        ),
+        (
+            "apply_document_highlights",
+            editor_core_ui_ffi_editor_ui_lsp_apply_document_highlights_envelope_json(
+                ui,
+                document_highlights.as_ptr(),
+            ),
+        ),
+        (
+            "apply_document_symbols",
+            editor_core_ui_ffi_editor_ui_lsp_apply_document_symbols_envelope_json(
+                ui,
+                document_symbols.as_ptr(),
+            ),
+        ),
+        (
+            "apply_folding_ranges",
+            editor_core_ui_ffi_editor_ui_lsp_apply_folding_ranges_envelope_json(
+                ui,
+                folding_ranges.as_ptr(),
+            ),
+        ),
+    ];
+
+    for (operation, ptr) in cases {
+        let json = take_owned_string(*ptr);
+        let envelope: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(envelope["ok"], true, "{operation}");
+        assert_eq!(envelope["operation"], *operation);
+        assert_eq!(envelope["status"], "success");
+        assert_eq!(envelope["value"]["applied"], true);
+        assert!(envelope["error"].is_null());
+        assert_eq!(envelope["version"], ECU_ABI_VERSION);
+    }
+
+    let invalid = CString::new("{").unwrap();
+    let error_json = take_owned_string(
+        editor_core_ui_ffi_editor_ui_lsp_apply_inlay_hints_envelope_json(ui, invalid.as_ptr()),
+    );
+    let error: serde_json::Value = serde_json::from_str(&error_json).unwrap();
+    assert_eq!(error["ok"], false);
+    assert_eq!(error["operation"], "apply_inlay_hints");
+    assert_eq!(error["status"], "error");
+    assert_eq!(error["value"], serde_json::Value::Null);
+    assert_eq!(error["error"]["code"], "internal");
+    assert!(
+        error["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("EOF while parsing")
+    );
+    assert_eq!(error["version"], ECU_ABI_VERSION);
+
+    let null_json = take_owned_string(
+        editor_core_ui_ffi_editor_ui_lsp_apply_diagnostics_envelope_json(ui, ptr::null()),
+    );
+    let null_error: serde_json::Value = serde_json::from_str(&null_json).unwrap();
+    assert_eq!(null_error["ok"], false);
+    assert_eq!(null_error["operation"], "apply_diagnostics");
+    assert_eq!(null_error["error"]["code"], "invalid_argument");
+    assert_eq!(
+        null_error["error"]["message"],
+        "publish_diagnostics_json_utf8 is null"
+    );
+
+    unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
+}
+
+#[test]
+fn ffi_lsp_semantic_tokens_application_envelope_json_reports_success_and_errors() {
+    let initial = CString::new("a c\n").unwrap();
+    let ui = editor_core_ui_ffi_editor_ui_new(initial.as_ptr(), 80);
+    assert!(!ui.is_null());
+
+    let data = [0_u32, 1, 1, 7, 0];
+    let ok_json = take_owned_string(unsafe {
+        editor_core_ui_ffi_editor_ui_lsp_apply_semantic_tokens_envelope_json(
+            ui,
+            data.as_ptr(),
+            data.len() as u32,
+        )
+    });
+    let ok: serde_json::Value = serde_json::from_str(&ok_json).unwrap();
+    assert_eq!(ok["ok"], true);
+    assert_eq!(ok["operation"], "apply_semantic_tokens");
+    assert_eq!(ok["status"], "success");
+    assert_eq!(ok["value"]["applied"], true);
+    assert_eq!(ok["value"]["data_len"], 5);
+    assert!(ok["error"].is_null());
+    assert_eq!(ok["version"], ECU_ABI_VERSION);
+
+    let malformed = [0_u32];
+    let error_json = take_owned_string(unsafe {
+        editor_core_ui_ffi_editor_ui_lsp_apply_semantic_tokens_envelope_json(
+            ui,
+            malformed.as_ptr(),
+            malformed.len() as u32,
+        )
+    });
+    let error: serde_json::Value = serde_json::from_str(&error_json).unwrap();
+    assert_eq!(error["ok"], false);
+    assert_eq!(error["operation"], "apply_semantic_tokens");
+    assert_eq!(error["status"], "error");
+    assert_eq!(error["value"], serde_json::Value::Null);
+    assert_eq!(error["error"]["code"], "internal");
+    let message = error["error"]["message"].as_str().unwrap().to_lowercase();
+    assert!(message.contains("semantic tokens data length"));
+    assert!(message.contains("multiple of 5"));
+    assert_eq!(error["version"], ECU_ABI_VERSION);
+
+    let null_json = take_owned_string(unsafe {
+        editor_core_ui_ffi_editor_ui_lsp_apply_semantic_tokens_envelope_json(
+            ui,
+            ptr::null(),
+            data.len() as u32,
+        )
+    });
+    let null_error: serde_json::Value = serde_json::from_str(&null_json).unwrap();
+    assert_eq!(null_error["ok"], false);
+    assert_eq!(null_error["operation"], "apply_semantic_tokens");
+    assert_eq!(null_error["error"]["code"], "invalid_argument");
+    assert_eq!(null_error["error"]["message"], "data is null");
 
     unsafe { editor_core_ui_ffi_editor_ui_free(ui) };
 }

@@ -6,6 +6,13 @@ enum AttoLspResultLifecycleState: Equatable {
     case stale(reason: String)
     case error(message: String)
 
+    var isStale: Bool {
+        if case .stale = self {
+            return true
+        }
+        return false
+    }
+
     var displayText: String {
         switch self {
         case .fresh:
@@ -34,6 +41,8 @@ final class AttoLspResultLifecycleStore<Snapshot> {
     private var nextSequence: UInt64 = 1
     private(set) var currentEntry: AttoLspResultLifecycleEntry<Snapshot>?
     private(set) var historyEntries: [AttoLspResultLifecycleEntry<Snapshot>] = []
+    private(set) var pinnedEntry: AttoLspResultLifecycleEntry<Snapshot>?
+    private(set) var pinnedEntriesByKey: [String: AttoLspResultLifecycleEntry<Snapshot>] = [:]
 
     var current: Snapshot? {
         currentEntry?.snapshot
@@ -90,21 +99,91 @@ final class AttoLspResultLifecycleStore<Snapshot> {
         _ state: AttoLspResultLifecycleState
     ) -> AttoLspResultLifecycleEntry<Snapshot>? {
         guard let currentEntry else { return nil }
-        guard currentEntry.state != state else { return currentEntry }
+        return updateState(for: currentEntry, state)
+    }
+
+    @discardableResult
+    func updateState(
+        for entry: AttoLspResultLifecycleEntry<Snapshot>,
+        _ state: AttoLspResultLifecycleState
+    ) -> AttoLspResultLifecycleEntry<Snapshot>? {
+        guard let existing = matchingEntry(for: entry) else { return nil }
+        guard existing.state != state else { return existing }
 
         let updated = AttoLspResultLifecycleEntry(
-            sequence: currentEntry.sequence,
-            family: currentEntry.family,
-            title: currentEntry.title,
-            recordedAt: currentEntry.recordedAt,
+            sequence: existing.sequence,
+            family: existing.family,
+            title: existing.title,
+            recordedAt: existing.recordedAt,
             state: state,
-            snapshot: currentEntry.snapshot
+            snapshot: existing.snapshot
         )
-        self.currentEntry = updated
+        if currentEntry?.sequence == updated.sequence,
+           currentEntry?.family == updated.family {
+            self.currentEntry = updated
+        }
         if let index = historyEntries.lastIndex(where: { $0.sequence == updated.sequence }) {
             historyEntries[index] = updated
         }
+        if pinnedEntry?.sequence == updated.sequence {
+            pinnedEntry = updated
+        }
+        for key in Array(pinnedEntriesByKey.keys) where pinnedEntriesByKey[key]?.sequence == updated.sequence {
+            pinnedEntriesByKey[key] = updated
+        }
         return updated
+    }
+
+    @discardableResult
+    func clearCurrentStaleState() -> AttoLspResultLifecycleEntry<Snapshot>? {
+        guard currentEntry?.state.isStale == true else { return nil }
+        return updateCurrentState(.fresh)
+    }
+
+    @discardableResult
+    func clearStaleState(
+        for entry: AttoLspResultLifecycleEntry<Snapshot>
+    ) -> AttoLspResultLifecycleEntry<Snapshot>? {
+        guard entry.state.isStale else { return nil }
+        return updateState(for: entry, .fresh)
+    }
+
+    @discardableResult
+    func pinCurrent() -> AttoLspResultLifecycleEntry<Snapshot>? {
+        guard let currentEntry else { return nil }
+        return pin(currentEntry)
+    }
+
+    @discardableResult
+    func pinLatest(family: String) -> AttoLspResultLifecycleEntry<Snapshot>? {
+        let currentCandidate = currentEntry?.family == family ? currentEntry : nil
+        let historyCandidate = historyEntries.reversed().first { $0.family == family }
+        let entry = [currentCandidate, historyCandidate]
+            .compactMap { $0 }
+            .max { $0.sequence < $1.sequence }
+        guard let entry else { return nil }
+        return pin(entry, key: family)
+    }
+
+    @discardableResult
+    func pin(
+        _ entry: AttoLspResultLifecycleEntry<Snapshot>,
+        key: String? = nil
+    ) -> AttoLspResultLifecycleEntry<Snapshot> {
+        pinnedEntry = entry
+        pinnedEntriesByKey[key ?? entry.family] = entry
+        return entry
+    }
+
+    @discardableResult
+    func unpin(key: String) -> AttoLspResultLifecycleEntry<Snapshot>? {
+        guard let removed = pinnedEntriesByKey.removeValue(forKey: key) else { return nil }
+        if pinnedEntry?.sequence == removed.sequence, pinnedEntry?.family == removed.family {
+            pinnedEntry = pinnedEntriesByKey.values.max { lhs, rhs in
+                lhs.sequence < rhs.sequence
+            }
+        }
+        return removed
     }
 
     func entries(after sequence: UInt64) -> [AttoLspResultLifecycleEntry<Snapshot>] {
@@ -113,8 +192,23 @@ final class AttoLspResultLifecycleStore<Snapshot> {
 
     func clear() {
         currentEntry = nil
+        pinnedEntry = nil
+        pinnedEntriesByKey.removeAll()
         historyEntries.removeAll()
         nextSequence = 1
+    }
+
+    private func matchingEntry(
+        for entry: AttoLspResultLifecycleEntry<Snapshot>
+    ) -> AttoLspResultLifecycleEntry<Snapshot>? {
+        if let currentEntry,
+           currentEntry.sequence == entry.sequence,
+           currentEntry.family == entry.family {
+            return currentEntry
+        }
+        return historyEntries.last {
+            $0.sequence == entry.sequence && $0.family == entry.family
+        }
     }
 
     private func makeEntry(
@@ -188,6 +282,7 @@ final class AttoLspResultEventStream {
     private let maxHistoryEntries: Int
     private var nextSequence: UInt64 = 1
     private(set) var events: [AttoLspResultLifecycleEvent] = []
+    private(set) var pinnedEventsByFamily: [String: AttoLspResultLifecycleEvent] = [:]
 
     var latestSequence: UInt64 {
         events.last?.sequence ?? 0
@@ -245,6 +340,9 @@ final class AttoLspResultEventStream {
                 payload: event.payload
             )
             events[index] = replacement
+            if pinnedEventsByFamily[event.family]?.sequence == event.sequence {
+                pinnedEventsByFamily[event.family] = replacement
+            }
             updated.append(replacement)
             remaining.remove(event.family)
             if remaining.isEmpty {
@@ -255,12 +353,65 @@ final class AttoLspResultEventStream {
         return updated.reversed()
     }
 
+    @discardableResult
+    func clearLatestStaleStates(
+        families: Set<String>
+    ) -> [AttoLspResultLifecycleEvent] {
+        var remaining = families
+        var updated: [AttoLspResultLifecycleEvent] = []
+
+        for index in events.indices.reversed() {
+            let event = events[index]
+            guard remaining.contains(event.family) else { continue }
+            remaining.remove(event.family)
+            guard event.state.isStale else {
+                if remaining.isEmpty {
+                    break
+                }
+                continue
+            }
+
+            let replacement = AttoLspResultLifecycleEvent(
+                sequence: event.sequence,
+                family: event.family,
+                title: event.title,
+                recordedAt: event.recordedAt,
+                sourceSequence: event.sourceSequence,
+                state: .fresh,
+                payload: event.payload
+            )
+            events[index] = replacement
+            if pinnedEventsByFamily[event.family]?.sequence == event.sequence {
+                pinnedEventsByFamily[event.family] = replacement
+            }
+            updated.append(replacement)
+            if remaining.isEmpty {
+                break
+            }
+        }
+
+        return updated.reversed()
+    }
+
+    @discardableResult
+    func pinLatest(family: String) -> AttoLspResultLifecycleEvent? {
+        guard let event = events.reversed().first(where: { $0.family == family }) else { return nil }
+        pinnedEventsByFamily[family] = event
+        return event
+    }
+
+    @discardableResult
+    func unpin(family: String) -> AttoLspResultLifecycleEvent? {
+        pinnedEventsByFamily.removeValue(forKey: family)
+    }
+
     func entries(after sequence: UInt64) -> [AttoLspResultLifecycleEvent] {
         events.filter { $0.sequence > sequence }
     }
 
     func clear() {
         events.removeAll()
+        pinnedEventsByFamily.removeAll()
         nextSequence = 1
     }
 }
@@ -416,5 +567,39 @@ final class AttoProjectLspProcessHealthEventStore {
     func clear() {
         events.removeAll()
         nextSequence = 1
+    }
+}
+
+final class AttoProjectLspLifecycleEventStore {
+    private let maxHistoryEntries: Int
+    private(set) var events: [EcuProjectLspLifecycleEvent] = []
+
+    var latestSequence: UInt64 {
+        events.last?.sequence ?? 0
+    }
+
+    init(maxHistoryEntries: Int) {
+        self.maxHistoryEntries = max(1, maxHistoryEntries)
+    }
+
+    func record(_ event: EcuProjectLspLifecycleEvent) {
+        events.append(event)
+        if events.count > maxHistoryEntries {
+            events.removeFirst(events.count - maxHistoryEntries)
+        }
+    }
+
+    func record(contentsOf newEvents: [EcuProjectLspLifecycleEvent]) {
+        for event in newEvents {
+            record(event)
+        }
+    }
+
+    func entries(after sequence: UInt64) -> [EcuProjectLspLifecycleEvent] {
+        events.filter { $0.sequence > sequence }
+    }
+
+    func clear() {
+        events.removeAll()
     }
 }

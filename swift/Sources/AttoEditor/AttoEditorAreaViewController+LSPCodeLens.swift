@@ -366,15 +366,16 @@ extension AttoEditorAreaViewController {
             guard let result else { return }
 
             let errorMessage = Self.codeLensResultErrorMessage(result)
-            let count = Self.codeLensResultCount(result)
             let showFeedback = ctx.showFeedback
             self.cancelCodeLensUI()
             tab.editCore.layoutSubtreeIfNeeded()
             tab.editCore.editorView.needsDisplay = true
             tab.editCore.needsDisplay = true
             self.derivedStateStore.refreshActive(editor: tab.editCore.editor)
+            let items = self.currentCodeLensItems(in: tab)
+            let count = items.count
             if errorMessage == nil {
-                self.recordCodeLensResultEvent(itemCount: count)
+                self.recordCodeLensResultEvent(items: items)
             }
             self.updateVisibleCodeLensPanel(for: tab)
             self.updateStatusBar()
@@ -463,28 +464,32 @@ extension AttoEditorAreaViewController {
         tab.editCore.editorView.needsDisplay = true
         tab.editCore.needsDisplay = true
         derivedStateStore.refreshActive(editor: tab.editCore.editor)
-        let count = currentCodeLensItems(in: tab).count
-        recordCodeLensResultEvent(itemCount: count)
+        recordCodeLensResultEvent(items: currentCodeLensItems(in: tab))
         updateVisibleCodeLensPanel(for: tab)
         updateStatusBar()
         return true
     }
 
-    private func recordCodeLensResultEvent(itemCount: Int) {
+    private func recordCodeLensResultEvent(items: [AttoLspCodeLensParser.Item]) {
+        let itemCount = items.count
         let countText = itemCount == 1 ? "1 action" : "\(itemCount) actions"
-        lspResultEventStream.record(
+        let event = lspResultEventStream.record(
             family: "code_lens",
             title: "Code Lens: \(countText)",
             payload: .codeLens(itemCount: itemCount)
         )
+        lspWorkbenchAuxiliaryHistoryStore.record(
+            event: event,
+            payload: .codeLens(items)
+        )
     }
 
-    private func currentCodeLensItems(in tab: AttoEditorTab) -> [AttoLspCodeLensParser.Item] {
+    func currentCodeLensItems(in tab: AttoEditorTab) -> [AttoLspCodeLensParser.Item] {
         derivedStateStore.refreshActive(editor: tab.editCore.editor)
         return AttoLspCodeLensParser.items(fromDecorationsSnapshot: derivedStateStore.active.decorations)
     }
 
-    private func makeCodeLensPanelController() -> AttoCodeLensPanelController {
+    func makeCodeLensPanelController() -> AttoCodeLensPanelController {
         AttoCodeLensPanelController(
             titleForItem: { [weak self] item in
                 guard let self, let tab = self.activeTab else { return item.title }

@@ -14,6 +14,49 @@ final class EditorCoreUIFFIRuntimeCompatibilityTests: XCTestCase {
         XCTAssertTrue(report.diagnosticMessage.contains("compatible"))
     }
 
+    func testEvaluatesCapabilitySnapshot() throws {
+        let library = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let snapshot = try library.runtimeCapabilitySnapshot()
+        let report = EditorCoreUIFFIRuntimeCompatibility.evaluate(capabilitySnapshot: snapshot)
+
+        XCTAssertTrue(report.isCompatible, report.diagnosticMessage)
+        XCTAssertEqual(report.runtimeInfo, snapshot.runtimeInfo)
+        XCTAssertTrue(report.missingRequiredFeatures.isEmpty)
+        XCTAssertTrue(report.missingOptionalFeatures.isEmpty)
+        XCTAssertNil(report.loadError)
+    }
+
+    func testCapabilitySnapshotReportsMissingFeatures() throws {
+        let required = try feature(.jsonCommandEnvelope)
+        let optional = try feature(.lspSemanticTokensApplicationEnvelope)
+        let snapshot = EditorCoreUIFFIRuntimeCapabilitySnapshot(
+            kind: "editor-core-ui-ffi",
+            abiVersion: EditorCoreUIFFIRuntimeCompatibility.minimumABIVersion,
+            version: "test-runtime",
+            featureFlags: [.jsonCommandDispatch],
+            features: [
+                EditorCoreUIFFIRuntimeFeatureDescriptor(
+                    bit: 0,
+                    flag: EditorCoreUIFFIFeatures.jsonCommandDispatch.rawValue,
+                    name: "json_command_dispatch",
+                    description: "test descriptor"
+                ),
+            ]
+        )
+
+        let report = EditorCoreUIFFIRuntimeCompatibility.evaluate(
+            capabilitySnapshot: snapshot,
+            requiredFeatures: [required],
+            optionalFeatures: [optional]
+        )
+
+        XCTAssertFalse(report.isCompatible)
+        XCTAssertEqual(report.runtimeInfo, snapshot.runtimeInfo)
+        XCTAssertEqual(report.missingRequiredFeatures, [required])
+        XCTAssertEqual(report.missingOptionalFeatures, [optional])
+        XCTAssertNil(report.loadError)
+    }
+
     func testRejectsOlderABI() throws {
         let report = EditorCoreUIFFIRuntimeCompatibility.evaluate(
             runtimeInfo: EditorCoreUIFFIRuntimeInfo(
@@ -27,6 +70,35 @@ final class EditorCoreUIFFIRuntimeCompatibilityTests: XCTestCase {
         XCTAssertTrue(report.missingRequiredFeatures.isEmpty)
         XCTAssertTrue(report.missingOptionalFeatures.isEmpty)
         XCTAssertTrue(report.diagnosticMessage.contains("older than required ABI"))
+    }
+
+    func testReportsRuntimeInfoLoadFailure() {
+        let required = EditorCoreUIFFIRuntimeFeature(
+            feature: .jsonCommandEnvelope,
+            name: "JSON command envelope",
+            reason: "required by the test host"
+        )
+        let optional = EditorCoreUIFFIRuntimeFeature(
+            feature: .lspSemanticTokensApplicationEnvelope,
+            name: "LSP semantic tokens application envelope",
+            reason: "optional by the test host"
+        )
+        let report = EditorCoreUIFFIRuntimeCompatibilityReport(
+            runtimeInfo: nil,
+            minimumABIVersion: EditorCoreUIFFIRuntimeCompatibility.minimumABIVersion,
+            missingRequiredFeatures: [required],
+            missingOptionalFeatures: [optional],
+            loadError: "runtime_info_json returned null"
+        )
+
+        XCTAssertFalse(report.isCompatible)
+        XCTAssertNil(report.runtimeInfo)
+        XCTAssertEqual(report.loadError, "runtime_info_json returned null")
+        XCTAssertEqual(report.missingRequiredFeatures, [required])
+        XCTAssertEqual(report.missingOptionalFeatures, [optional])
+        XCTAssertTrue(report.diagnosticMessage.contains("Failed to read UI FFI runtime information"))
+        XCTAssertTrue(report.diagnosticMessage.contains("runtime_info_json returned null"))
+        XCTAssertFalse(report.diagnosticMessage.contains("Missing UI FFI features"))
     }
 
     func testReportsMissingRequiredFeatures() throws {
@@ -54,8 +126,21 @@ final class EditorCoreUIFFIRuntimeCompatibilityTests: XCTestCase {
         XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .workspaceDiagnosticsEnvelope })
         XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .workspaceOutlineSnapshotEnvelope })
         XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .multiDocumentSearchEnvelope })
+        XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .multiDocumentWorkspaceFileSearch })
+        XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .multiDocumentWorkspaceFileReplacement })
+        XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .multiDocumentRecentFiles })
+        XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .multiDocumentWorkspaceFileList })
+        XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .multiDocumentRecentProjects })
+        XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .multiDocumentProjectFileIndex })
+        XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .multiDocumentProjectFileIndexQuery })
         XCTAssertTrue(report.missingRequiredFeatures.contains {
             $0.feature == .lspWorkspaceEditApplicationEnvelope
+        })
+        XCTAssertTrue(report.missingRequiredFeatures.contains {
+            $0.feature == .lspDerivedStateApplicationEnvelope
+        })
+        XCTAssertTrue(report.missingRequiredFeatures.contains {
+            $0.feature == .lspSemanticTokensApplicationEnvelope
         })
         XCTAssertTrue(report.missingRequiredFeatures.contains {
             $0.feature == .multiDocumentWorkspaceRootsChangeEnvelope
@@ -63,7 +148,32 @@ final class EditorCoreUIFFIRuntimeCompatibilityTests: XCTestCase {
         XCTAssertTrue(report.missingRequiredFeatures.contains {
             $0.feature == .multiDocumentProjectLSPServersEnvelope
         })
+        XCTAssertTrue(report.missingRequiredFeatures.contains {
+            $0.feature == .multiDocumentProjectLSPLifecycleEnvelope
+        })
         XCTAssertTrue(report.diagnosticMessage.contains("Missing UI FFI features"))
+    }
+
+    func testReportsOlderABIAndFeatureMismatchesTogether() throws {
+        let required = try feature(.jsonCommandEnvelope)
+        let optional = try feature(.lspSemanticTokensApplicationEnvelope)
+        let report = EditorCoreUIFFIRuntimeCompatibility.evaluate(
+            runtimeInfo: EditorCoreUIFFIRuntimeInfo(
+                abiVersion: 0,
+                version: "test-runtime",
+                features: []
+            ),
+            requiredFeatures: [required],
+            optionalFeatures: [optional]
+        )
+
+        XCTAssertFalse(report.isCompatible)
+        XCTAssertNil(report.loadError)
+        XCTAssertEqual(report.missingRequiredFeatures, [required])
+        XCTAssertEqual(report.missingOptionalFeatures, [optional])
+        XCTAssertTrue(report.diagnosticMessage.contains("older than required ABI"))
+        XCTAssertTrue(report.diagnosticMessage.contains("Missing UI FFI features: JSON command envelope"))
+        XCTAssertTrue(report.diagnosticMessage.contains("Unavailable optional UI FFI features: LSP semantic tokens application envelope"))
     }
 
     func testMissingOptionalFeaturesDoNotBlockCompatibility() throws {

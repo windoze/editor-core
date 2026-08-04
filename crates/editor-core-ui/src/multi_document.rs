@@ -4,16 +4,31 @@ use std::collections::{BTreeMap, VecDeque};
 
 mod lsp_request_events;
 mod lsp_result_events;
+mod project_file_index;
 mod project_lsp;
+mod project_lsp_lifecycle;
+mod recent_files;
+mod recent_projects;
 mod state_events;
 mod workspace_diagnostics;
 mod workspace_edit;
+mod workspace_files;
 mod workspace_outline;
 mod workspace_roots;
+mod workspace_search;
 
 pub use lsp_request_events::{MultiDocumentLspRequestEvent, MultiDocumentLspRequestEventsSnapshot};
 pub use lsp_result_events::{MultiDocumentLspResultEvent, MultiDocumentLspResultEventsSnapshot};
-pub use project_lsp::ProjectLspServerConfig;
+pub use project_file_index::{ProjectFileIndexQueryResult, ProjectFileIndexSnapshot};
+pub use project_lsp::{
+    ProjectLspRestartPlanEntry, ProjectLspServerConfig, ProjectLspStartPlanEntry,
+    ProjectLspStopPlanEntry,
+};
+pub use project_lsp_lifecycle::{
+    ProjectLspLifecycleEvent, ProjectLspLifecycleEventsSnapshot, ProjectLspStartOutcome,
+};
+pub use recent_files::RecentFileEntry;
+pub use recent_projects::RecentProjectEntry;
 pub use state_events::{MultiDocumentStateEvent, MultiDocumentStateEventsSnapshot};
 pub use workspace_diagnostics::{
     WorkspaceDiagnostic, WorkspaceDiagnosticDocumentReport, WorkspaceDiagnosticMarker,
@@ -26,8 +41,12 @@ pub use workspace_edit::{
     WorkspaceEditTransactionResourceOperation, WorkspaceEditTransactionResult,
     WorkspaceEditTransactionSkippedDetail, WorkspaceEditTransactionUndoResult,
 };
+pub use workspace_files::{WorkspaceFileEntry, WorkspaceFileListOptions};
 pub use workspace_outline::{WorkspaceOutlineDocument, WorkspaceOutlineSnapshot};
 pub use workspace_roots::{WorkspaceFolder, WorkspaceRootsChange};
+pub use workspace_search::{
+    WorkspaceFileReplacementOptions, WorkspaceFileSearchOptions, WorkspaceFileSearchResult,
+};
 
 const MAX_WORKSPACE_EDIT_UNDO_RECORDS: usize = 64;
 
@@ -84,6 +103,9 @@ impl TabEntry {
 pub struct MultiDocumentEditorUi {
     next_tab_id: u64,
     workspace_roots: Vec<String>,
+    recent_files: recent_files::RecentFilesStore,
+    recent_projects: recent_projects::RecentProjectsStore,
+    project_file_index: project_file_index::ProjectFileIndexStore,
     tabs: BTreeMap<TabId, TabEntry>,
     tab_order: Vec<TabId>,
     active_tab: Option<TabId>,
@@ -92,6 +114,7 @@ pub struct MultiDocumentEditorUi {
     lsp_result_events: lsp_result_events::MultiDocumentLspResultEventStore,
     lsp_request_events: lsp_request_events::MultiDocumentLspRequestEventStore,
     project_lsp_servers: BTreeMap<String, ProjectLspServerConfig>,
+    project_lsp_lifecycle_events: project_lsp_lifecycle::ProjectLspLifecycleEventStore,
     state_events: state_events::MultiDocumentStateEventStore,
     workspace_edit_transactions: workspace_edit::WorkspaceEditTransactionEventStore,
     workspace_edit_undo_stack: VecDeque<workspace_edit::WorkspaceEditTransactionUndoRecord>,
@@ -121,6 +144,10 @@ impl MultiDocumentEditorUi {
     {
         let next = workspace_roots::normalize_workspace_roots(roots);
         let change = workspace_roots::workspace_roots_change(&self.workspace_roots, &next);
+        if next != self.workspace_roots {
+            self.recent_files.clear();
+            self.project_file_index.clear();
+        }
         self.workspace_roots = next;
         change
     }
@@ -128,6 +155,64 @@ impl MultiDocumentEditorUi {
     /// Return the workspace root URIs currently owned by this model.
     pub fn workspace_roots(&self) -> &[String] {
         &self.workspace_roots
+    }
+
+    /// Remember a recently opened file URI, keeping most-recent first.
+    pub fn remember_recent_file_uri(&mut self, uri: impl Into<String>) {
+        self.recent_files.remember(uri);
+    }
+
+    /// Restore recent file URIs from a session snapshot.
+    pub fn restore_recent_file_uris<I, S>(&mut self, uris: I)
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.recent_files.restore(uris);
+    }
+
+    /// Clear all recent file URIs.
+    pub fn clear_recent_file_uris(&mut self) {
+        self.recent_files.clear();
+    }
+
+    /// Return recent file URIs, most-recent first.
+    pub fn recent_file_uris(&self) -> &[String] {
+        self.recent_files.entries()
+    }
+
+    /// Return recent file entries with stable JSON field names.
+    pub fn recent_file_entries(&self) -> Vec<RecentFileEntry> {
+        recent_files::recent_file_entries(self.recent_file_uris())
+    }
+
+    /// Remember a recently opened project/workspace root URI, keeping most-recent first.
+    pub fn remember_recent_project_uri(&mut self, uri: impl Into<String>) {
+        self.recent_projects.remember(uri);
+    }
+
+    /// Restore recent project/workspace root URIs from a session snapshot.
+    pub fn restore_recent_project_uris<I, S>(&mut self, uris: I)
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.recent_projects.restore(uris);
+    }
+
+    /// Clear all recent project/workspace root URIs.
+    pub fn clear_recent_project_uris(&mut self) {
+        self.recent_projects.clear();
+    }
+
+    /// Return recent project/workspace root URIs, most-recent first.
+    pub fn recent_project_uris(&self) -> &[String] {
+        self.recent_projects.entries()
+    }
+
+    /// Return recent project/workspace root entries with stable JSON field names.
+    pub fn recent_project_entries(&self) -> Vec<RecentProjectEntry> {
+        recent_projects::recent_project_entries(self.recent_project_uris())
     }
 
     /// Replace the project-level LSP server configs owned by this model.
@@ -149,6 +234,131 @@ impl MultiDocumentEditorUi {
         self.project_lsp_servers
             .get(key.trim().to_ascii_lowercase().as_str())
             .cloned()
+    }
+
+    /// Build the current auto-start plan by matching open document language ids to project servers.
+    pub fn project_lsp_start_plan(&self) -> Vec<ProjectLspStartPlanEntry> {
+        let documents = self.tab_order.iter().filter_map(|tab_id| {
+            self.tabs
+                .get(tab_id)
+                .map(|tab| project_lsp::ProjectLspOpenDocument {
+                    tab_id: tab_id.get(),
+                    active_view_index: tab.active_view,
+                    document_uri: tab.document_uri.clone(),
+                    language_id: tab.language_id.clone(),
+                })
+        });
+        project_lsp::project_lsp_start_plan(
+            &self.project_lsp_servers,
+            &self.workspace_roots,
+            documents,
+        )
+    }
+
+    /// Return the project LSP auto-start plan as JSON.
+    pub fn project_lsp_start_plan_json(&self) -> Result<String, UiError> {
+        serde_json::to_string(&self.project_lsp_start_plan()).map_err(|err| {
+            UiError::Processor(format!("failed to encode project LSP start plan: {err}"))
+        })
+    }
+
+    /// Build the current stop/shutdown plan by matching open document language ids to project servers.
+    pub fn project_lsp_stop_plan(&self) -> Vec<ProjectLspStopPlanEntry> {
+        let documents = self.tab_order.iter().filter_map(|tab_id| {
+            self.tabs
+                .get(tab_id)
+                .map(|tab| project_lsp::ProjectLspOpenDocument {
+                    tab_id: tab_id.get(),
+                    active_view_index: tab.active_view,
+                    document_uri: tab.document_uri.clone(),
+                    language_id: tab.language_id.clone(),
+                })
+        });
+        project_lsp::project_lsp_stop_plan(
+            &self.project_lsp_servers,
+            &self.workspace_roots,
+            documents,
+        )
+    }
+
+    /// Return the project LSP stop/shutdown plan as JSON.
+    pub fn project_lsp_stop_plan_json(&self) -> Result<String, UiError> {
+        serde_json::to_string(&self.project_lsp_stop_plan()).map_err(|err| {
+            UiError::Processor(format!("failed to encode project LSP stop plan: {err}"))
+        })
+    }
+
+    /// Build the current restart plan by matching open document language ids to project servers.
+    pub fn project_lsp_restart_plan(&self) -> Vec<ProjectLspRestartPlanEntry> {
+        let documents = self.tab_order.iter().filter_map(|tab_id| {
+            self.tabs
+                .get(tab_id)
+                .map(|tab| project_lsp::ProjectLspOpenDocument {
+                    tab_id: tab_id.get(),
+                    active_view_index: tab.active_view,
+                    document_uri: tab.document_uri.clone(),
+                    language_id: tab.language_id.clone(),
+                })
+        });
+        project_lsp::project_lsp_restart_plan(
+            &self.project_lsp_servers,
+            &self.workspace_roots,
+            documents,
+        )
+    }
+
+    /// Return the project LSP restart plan as JSON.
+    pub fn project_lsp_restart_plan_json(&self) -> Result<String, UiError> {
+        serde_json::to_string(&self.project_lsp_restart_plan()).map_err(|err| {
+            UiError::Processor(format!("failed to encode project LSP restart plan: {err}"))
+        })
+    }
+
+    /// Record the outcome of executing a project LSP start plan entry.
+    pub fn record_project_lsp_start_outcome(
+        &mut self,
+        outcome: ProjectLspStartOutcome,
+    ) -> Result<ProjectLspLifecycleEvent, UiError> {
+        if !is_project_lsp_skipped_outcome(&outcome) {
+            let tab_id = TabId::from_raw(outcome.tab_id);
+            let Some(tab) = self.tabs.get(&tab_id) else {
+                return Err(UiError::Processor(format!(
+                    "project LSP start outcome tab_id {} is not open",
+                    outcome.tab_id
+                )));
+            };
+            if outcome.active_view_index >= tab.views.len() {
+                return Err(UiError::Processor(format!(
+                    "project LSP start outcome active_view_index {} is out of range for tab_id {}",
+                    outcome.active_view_index, outcome.tab_id
+                )));
+            }
+        }
+        self.project_lsp_lifecycle_events
+            .record_start_outcome(outcome)
+    }
+
+    /// Return latest project LSP lifecycle event sequence.
+    pub fn project_lsp_lifecycle_events_latest_sequence(&self) -> u64 {
+        self.project_lsp_lifecycle_events.latest_sequence()
+    }
+
+    /// Return project LSP lifecycle events newer than `after_sequence`.
+    pub fn project_lsp_lifecycle_events_after(
+        &self,
+        after_sequence: u64,
+    ) -> ProjectLspLifecycleEventsSnapshot {
+        self.project_lsp_lifecycle_events
+            .events_after(after_sequence)
+    }
+
+    /// Return project LSP lifecycle events newer than `after_sequence` as JSON.
+    pub fn project_lsp_lifecycle_events_json(
+        &self,
+        after_sequence: u64,
+    ) -> Result<String, UiError> {
+        self.project_lsp_lifecycle_events
+            .events_after_json(after_sequence)
     }
 
     /// Return the active tab id (if any).
@@ -653,6 +863,74 @@ impl MultiDocumentEditorUi {
         Ok(out)
     }
 
+    /// Search regular local files under configured workspace roots.
+    pub fn search_workspace_files(
+        &self,
+        query: &str,
+        options: SearchOptions,
+        file_options: WorkspaceFileSearchOptions,
+    ) -> Result<Vec<WorkspaceFileSearchResult>, UiError> {
+        workspace_search::search_workspace_files(
+            &self.workspace_roots,
+            query,
+            options,
+            file_options,
+        )
+    }
+
+    /// List regular local files under configured workspace roots.
+    pub fn list_workspace_files(
+        &self,
+        options: WorkspaceFileListOptions,
+    ) -> Result<Vec<WorkspaceFileEntry>, UiError> {
+        workspace_files::list_workspace_files(&self.workspace_roots, options)
+    }
+
+    /// Refresh the core-owned project file index from the current workspace roots.
+    pub fn refresh_project_file_index(
+        &mut self,
+        options: WorkspaceFileListOptions,
+    ) -> Result<ProjectFileIndexSnapshot, UiError> {
+        self.project_file_index
+            .refresh(&self.workspace_roots, options)
+    }
+
+    /// Return the last core-owned project file index snapshot.
+    pub fn project_file_index_snapshot(&self) -> ProjectFileIndexSnapshot {
+        self.project_file_index.snapshot(&self.workspace_roots)
+    }
+
+    /// Clear the core-owned project file index.
+    pub fn clear_project_file_index(&mut self) {
+        self.project_file_index.clear();
+    }
+
+    /// Query the last core-owned project file index snapshot with fuzzy path matching.
+    pub fn query_project_file_index(
+        &self,
+        query: &str,
+        max_results: usize,
+    ) -> Vec<ProjectFileIndexQueryResult> {
+        self.project_file_index.query(query, max_results)
+    }
+
+    /// Build a WorkspaceEdit JSON envelope that replaces workspace file search matches.
+    pub fn workspace_file_replacement_workspace_edit_json(
+        &self,
+        query: &str,
+        replacement: &str,
+        options: SearchOptions,
+        replacement_options: WorkspaceFileReplacementOptions,
+    ) -> Result<String, UiError> {
+        workspace_search::workspace_file_replacement_workspace_edit_json(
+            &self.workspace_roots,
+            query,
+            replacement,
+            options,
+            replacement_options,
+        )
+    }
+
     /// Return the current workspace outline aggregated from each tab's active view.
     pub fn workspace_outline_snapshot(&self) -> Result<WorkspaceOutlineSnapshot, UiError> {
         workspace_outline::snapshot(&self.tabs, &self.tab_order)
@@ -736,8 +1014,11 @@ impl MultiDocumentEditorUi {
         if let Some(record) = apply_result.undo_record {
             self.push_workspace_edit_undo_record(record);
         }
-        self.workspace_edit_transactions
-            .record(operation, result.clone());
+        self.workspace_edit_transactions.record(
+            operation,
+            Some(workspace_edit_json.to_string()),
+            result.clone(),
+        );
         Ok(result)
     }
 
@@ -993,4 +1274,8 @@ impl MultiDocumentEditorUi {
             .events_after_json(after_sequence)
             .map_err(|err| UiError::Processor(err.to_string()))
     }
+}
+
+fn is_project_lsp_skipped_outcome(outcome: &ProjectLspStartOutcome) -> bool {
+    outcome.status.trim().eq_ignore_ascii_case("skipped")
 }

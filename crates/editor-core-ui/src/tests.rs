@@ -1894,6 +1894,593 @@ fn multi_document_tracks_project_lsp_server_configs() {
 }
 
 #[test]
+fn multi_document_tracks_recent_file_uris() {
+    let mut multi = MultiDocumentEditorUi::new();
+    multi.set_workspace_roots(["file:///workspace"]);
+
+    multi.remember_recent_file_uri(" file:///workspace/a.rs ");
+    multi.remember_recent_file_uri("file:///workspace/b.rs");
+    multi.remember_recent_file_uri("file:///workspace/a.rs");
+    multi.remember_recent_file_uri("");
+
+    assert_eq!(
+        multi.recent_file_uris(),
+        &[
+            "file:///workspace/a.rs".to_string(),
+            "file:///workspace/b.rs".to_string()
+        ]
+    );
+    assert_eq!(
+        multi
+            .recent_file_entries()
+            .into_iter()
+            .map(|entry| entry.uri)
+            .collect::<Vec<_>>(),
+        vec!["file:///workspace/a.rs", "file:///workspace/b.rs"]
+    );
+
+    multi.restore_recent_file_uris([
+        "file:///workspace/restored.rs",
+        "file:///workspace/a.rs",
+        "file:///workspace/restored.rs",
+    ]);
+    assert_eq!(
+        multi.recent_file_uris(),
+        &[
+            "file:///workspace/restored.rs".to_string(),
+            "file:///workspace/a.rs".to_string()
+        ]
+    );
+
+    multi.set_workspace_roots(["file:///other"]);
+    assert!(multi.recent_file_uris().is_empty());
+}
+
+#[test]
+fn multi_document_tracks_recent_project_uris() {
+    let mut multi = MultiDocumentEditorUi::new();
+
+    multi.remember_recent_project_uri(" file:///workspace/a ");
+    multi.remember_recent_project_uri("file:///workspace/b");
+    multi.remember_recent_project_uri("file:///workspace/a");
+    multi.remember_recent_project_uri("");
+
+    assert_eq!(
+        multi.recent_project_uris(),
+        &[
+            "file:///workspace/a".to_string(),
+            "file:///workspace/b".to_string()
+        ]
+    );
+    assert_eq!(
+        multi
+            .recent_project_entries()
+            .into_iter()
+            .map(|entry| entry.uri)
+            .collect::<Vec<_>>(),
+        vec!["file:///workspace/a", "file:///workspace/b"]
+    );
+
+    multi.restore_recent_project_uris([
+        "file:///workspace/restored",
+        "file:///workspace/a",
+        "file:///workspace/restored",
+    ]);
+    assert_eq!(
+        multi.recent_project_uris(),
+        &[
+            "file:///workspace/restored".to_string(),
+            "file:///workspace/a".to_string()
+        ]
+    );
+
+    multi.clear_recent_project_uris();
+    assert!(multi.recent_project_uris().is_empty());
+}
+
+#[test]
+fn multi_document_project_file_index_caches_workspace_files() {
+    let mut root = std::env::temp_dir();
+    root.push(format!(
+        "editor_core_ui_project_file_index_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    std::fs::write(root.join("src").join("lib.rs"), "pub fn demo() {}\n").unwrap();
+
+    let mut multi = MultiDocumentEditorUi::new();
+    multi.set_workspace_roots([editor_core_lsp::path_to_file_uri(&root)]);
+
+    let initial = multi.project_file_index_snapshot();
+    assert!(!initial.is_built);
+    assert!(initial.files.is_empty());
+
+    let refreshed = multi
+        .refresh_project_file_index(WorkspaceFileListOptions::default())
+        .unwrap();
+    assert!(refreshed.is_built);
+    assert_eq!(refreshed.files.len(), 1);
+    assert_eq!(refreshed.files[0].relative_path, "src/lib.rs");
+
+    std::fs::write(root.join("src").join("main.rs"), "fn main() {}\n").unwrap();
+    let cached = multi.project_file_index_snapshot();
+    assert_eq!(
+        cached
+            .files
+            .iter()
+            .map(|file| file.relative_path.as_str())
+            .collect::<Vec<_>>(),
+        vec!["src/lib.rs"]
+    );
+
+    let refreshed = multi
+        .refresh_project_file_index(WorkspaceFileListOptions::default())
+        .unwrap();
+    assert_eq!(
+        refreshed
+            .files
+            .iter()
+            .map(|file| file.relative_path.as_str())
+            .collect::<Vec<_>>(),
+        vec!["src/lib.rs", "src/main.rs"]
+    );
+
+    multi.set_workspace_roots(["file:///other"]);
+    let cleared = multi.project_file_index_snapshot();
+    assert!(!cleared.is_built);
+    assert!(cleared.files.is_empty());
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn multi_document_project_file_index_queries_cached_files() {
+    let mut root = std::env::temp_dir();
+    root.push(format!(
+        "editor_core_ui_project_file_index_query_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    std::fs::create_dir_all(root.join("docs")).unwrap();
+    std::fs::write(root.join("src").join("core_model.rs"), "pub fn demo() {}\n").unwrap();
+    std::fs::write(root.join("src").join("main.rs"), "fn main() {}\n").unwrap();
+    std::fs::write(root.join("docs").join("manual.md"), "# docs\n").unwrap();
+
+    let mut multi = MultiDocumentEditorUi::new();
+    multi.set_workspace_roots([editor_core_lsp::path_to_file_uri(&root)]);
+    assert!(multi.query_project_file_index("cm", 10).is_empty());
+
+    multi
+        .refresh_project_file_index(WorkspaceFileListOptions::default())
+        .unwrap();
+
+    assert_eq!(
+        multi
+            .query_project_file_index("", 2)
+            .into_iter()
+            .map(|file| file.relative_path)
+            .collect::<Vec<_>>(),
+        vec!["docs/manual.md", "src/core_model.rs"]
+    );
+
+    let matches = multi.query_project_file_index("c_m", 10);
+    assert_eq!(
+        matches
+            .iter()
+            .map(|file| file.relative_path.as_str())
+            .collect::<Vec<_>>(),
+        vec!["src/core_model.rs"]
+    );
+    assert!(matches[0].score > 0);
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn multi_document_builds_project_lsp_start_plan_from_open_tabs() {
+    let mut multi = MultiDocumentEditorUi::new();
+    multi.set_workspace_roots(["file:///workspace"]);
+    let rust_tab = multi.open_tab("fn main() {}\n", 80);
+    let swift_tab = multi.open_tab("print(\"hello\")\n", 80);
+    let unknown_tab = multi.open_tab("plain\n", 80);
+    multi
+        .set_tab_document_uri(rust_tab, Some("file:///workspace/main.rs".to_string()))
+        .unwrap();
+    multi
+        .set_tab_language_id(rust_tab, Some(" rust ".to_string()))
+        .unwrap();
+    multi
+        .set_tab_document_uri(swift_tab, Some("file:///workspace/App.swift".to_string()))
+        .unwrap();
+    multi
+        .set_tab_language_id(swift_tab, Some("swift".to_string()))
+        .unwrap();
+    multi
+        .set_tab_language_id(unknown_tab, Some("rust".to_string()))
+        .unwrap();
+
+    multi
+        .set_project_lsp_server_configs(vec![
+            ProjectLspServerConfig {
+                key: "rust".to_string(),
+                command: "/bin/rust-analyzer".to_string(),
+                args: vec!["--stdio".to_string()],
+                language_id: "rust".to_string(),
+                workspace_roots: vec![],
+                auto_start: true,
+            },
+            ProjectLspServerConfig {
+                key: "swift".to_string(),
+                command: "/bin/sourcekit-lsp".to_string(),
+                args: vec![],
+                language_id: "swift".to_string(),
+                workspace_roots: vec!["file:///swift-root".to_string()],
+                auto_start: false,
+            },
+        ])
+        .unwrap();
+
+    let plan = multi.project_lsp_start_plan();
+    assert_eq!(plan.len(), 1);
+    assert_eq!(plan[0].tab_id, rust_tab.get());
+    assert_eq!(plan[0].active_view_index, 0);
+    assert_eq!(plan[0].document_uri, "file:///workspace/main.rs");
+    assert_eq!(plan[0].language_id, "rust");
+    assert_eq!(plan[0].server_key, "rust");
+    assert_eq!(plan[0].command, "/bin/rust-analyzer");
+    assert_eq!(plan[0].args, vec!["--stdio"]);
+    assert_eq!(plan[0].workspace_roots, vec!["file:///workspace"]);
+
+    let json: serde_json::Value =
+        serde_json::from_str(&multi.project_lsp_start_plan_json().unwrap()).unwrap();
+    assert_eq!(json[0]["server_key"], "rust");
+}
+
+#[test]
+fn multi_document_builds_project_lsp_stop_plan_from_open_tabs() {
+    let mut multi = MultiDocumentEditorUi::new();
+    multi.set_workspace_roots(["file:///workspace"]);
+    let rust_tab = multi.open_tab("fn main() {}\n", 80);
+    let swift_tab = multi.open_tab("print(\"hello\")\n", 80);
+    let missing_uri_tab = multi.open_tab("plain\n", 80);
+    multi
+        .set_tab_document_uri(rust_tab, Some("file:///workspace/main.rs".to_string()))
+        .unwrap();
+    multi
+        .set_tab_language_id(rust_tab, Some("rust".to_string()))
+        .unwrap();
+    multi
+        .set_tab_document_uri(swift_tab, Some("file:///workspace/App.swift".to_string()))
+        .unwrap();
+    multi
+        .set_tab_language_id(swift_tab, Some(" swift ".to_string()))
+        .unwrap();
+    multi
+        .set_tab_language_id(missing_uri_tab, Some("swift".to_string()))
+        .unwrap();
+
+    multi
+        .set_project_lsp_server_configs(vec![
+            ProjectLspServerConfig {
+                key: "rust".to_string(),
+                command: "/bin/rust-analyzer".to_string(),
+                args: vec!["--stdio".to_string()],
+                language_id: "rust".to_string(),
+                workspace_roots: vec![],
+                auto_start: true,
+            },
+            ProjectLspServerConfig {
+                key: "swift".to_string(),
+                command: "/bin/sourcekit-lsp".to_string(),
+                args: vec![],
+                language_id: "swift".to_string(),
+                workspace_roots: vec!["file:///swift-root".to_string()],
+                auto_start: false,
+            },
+        ])
+        .unwrap();
+
+    let plan = multi.project_lsp_stop_plan();
+    assert_eq!(plan.len(), 2);
+    assert_eq!(plan[0].tab_id, rust_tab.get());
+    assert_eq!(plan[0].document_uri, "file:///workspace/main.rs");
+    assert_eq!(plan[0].server_key, "rust");
+    assert_eq!(plan[0].workspace_roots, vec!["file:///workspace"]);
+    assert_eq!(plan[1].tab_id, swift_tab.get());
+    assert_eq!(plan[1].document_uri, "file:///workspace/App.swift");
+    assert_eq!(plan[1].server_key, "swift");
+    assert_eq!(plan[1].workspace_roots, vec!["file:///swift-root"]);
+
+    let json: serde_json::Value =
+        serde_json::from_str(&multi.project_lsp_stop_plan_json().unwrap()).unwrap();
+    assert_eq!(json[1]["command"], "/bin/sourcekit-lsp");
+}
+
+#[test]
+fn multi_document_builds_project_lsp_restart_plan_from_open_tabs() {
+    let mut multi = MultiDocumentEditorUi::new();
+    multi.set_workspace_roots(["file:///workspace"]);
+    let rust_tab = multi.open_tab("fn main() {}\n", 80);
+    let swift_tab = multi.open_tab("print(\"hello\")\n", 80);
+    let missing_uri_tab = multi.open_tab("plain\n", 80);
+    multi
+        .set_tab_document_uri(rust_tab, Some("file:///workspace/main.rs".to_string()))
+        .unwrap();
+    multi
+        .set_tab_language_id(rust_tab, Some(" rust ".to_string()))
+        .unwrap();
+    multi
+        .set_tab_document_uri(swift_tab, Some("file:///workspace/App.swift".to_string()))
+        .unwrap();
+    multi
+        .set_tab_language_id(swift_tab, Some("swift".to_string()))
+        .unwrap();
+    multi
+        .set_tab_language_id(missing_uri_tab, Some("rust".to_string()))
+        .unwrap();
+
+    multi
+        .set_project_lsp_server_configs(vec![
+            ProjectLspServerConfig {
+                key: "rust".to_string(),
+                command: "/bin/rust-analyzer".to_string(),
+                args: vec!["--stdio".to_string()],
+                language_id: "rust".to_string(),
+                workspace_roots: vec![],
+                auto_start: true,
+            },
+            ProjectLspServerConfig {
+                key: "swift".to_string(),
+                command: "/bin/sourcekit-lsp".to_string(),
+                args: vec![],
+                language_id: "swift".to_string(),
+                workspace_roots: vec!["file:///swift-root".to_string()],
+                auto_start: false,
+            },
+        ])
+        .unwrap();
+
+    let plan = multi.project_lsp_restart_plan();
+    assert_eq!(plan.len(), 2);
+    assert_eq!(plan[0].tab_id, rust_tab.get());
+    assert_eq!(plan[0].document_uri, "file:///workspace/main.rs");
+    assert_eq!(plan[0].server_key, "rust");
+    assert_eq!(plan[0].workspace_roots, vec!["file:///workspace"]);
+    assert_eq!(plan[1].tab_id, swift_tab.get());
+    assert_eq!(plan[1].document_uri, "file:///workspace/App.swift");
+    assert_eq!(plan[1].server_key, "swift");
+    assert_eq!(plan[1].workspace_roots, vec!["file:///swift-root"]);
+
+    let json: serde_json::Value =
+        serde_json::from_str(&multi.project_lsp_restart_plan_json().unwrap()).unwrap();
+    assert_eq!(json[1]["command"], "/bin/sourcekit-lsp");
+}
+
+#[test]
+fn multi_document_records_project_lsp_start_outcomes() {
+    let mut multi = MultiDocumentEditorUi::new();
+    let tab_id = multi.open_tab("fn main() {}\n", 80);
+    multi
+        .set_tab_document_uri(tab_id, Some("file:///workspace/main.rs".to_string()))
+        .unwrap();
+    multi
+        .set_tab_language_id(tab_id, Some("rust".to_string()))
+        .unwrap();
+
+    let started = multi
+        .record_project_lsp_start_outcome(ProjectLspStartOutcome {
+            tab_id: tab_id.get(),
+            active_view_index: 0,
+            operation: "start".to_string(),
+            document_uri: "file:///workspace/main.rs".to_string(),
+            language_id: "rust".to_string(),
+            server_key: "rust".to_string(),
+            command: "/bin/rust-analyzer".to_string(),
+            args: vec!["--stdio".to_string()],
+            workspace_roots: vec!["file:///workspace".to_string()],
+            trigger: " auto_start ".to_string(),
+            attempt_id: None,
+            status: " started ".to_string(),
+            error_message: None,
+        })
+        .unwrap();
+    assert_eq!(started.sequence, 1);
+    assert_eq!(started.operation, "start");
+    assert_eq!(started.status, "started");
+    assert_eq!(started.tab_id, tab_id.get());
+
+    let restarted = multi
+        .record_project_lsp_start_outcome(ProjectLspStartOutcome {
+            tab_id: tab_id.get(),
+            active_view_index: 0,
+            operation: " restart ".to_string(),
+            document_uri: "file:///workspace/main.rs".to_string(),
+            language_id: "rust".to_string(),
+            server_key: "rust".to_string(),
+            command: "/bin/rust-analyzer".to_string(),
+            args: vec![],
+            workspace_roots: vec![],
+            trigger: "manual_restart".to_string(),
+            attempt_id: None,
+            status: "started".to_string(),
+            error_message: None,
+        })
+        .unwrap();
+    assert_eq!(restarted.sequence, 2);
+    assert_eq!(restarted.operation, "restart");
+    assert_eq!(restarted.trigger, "manual_restart");
+    assert_eq!(restarted.status, "started");
+
+    let stopped = multi
+        .record_project_lsp_start_outcome(ProjectLspStartOutcome {
+            tab_id: tab_id.get(),
+            active_view_index: 0,
+            operation: " stop ".to_string(),
+            document_uri: "file:///workspace/main.rs".to_string(),
+            language_id: "rust".to_string(),
+            server_key: "rust".to_string(),
+            command: "/bin/rust-analyzer".to_string(),
+            args: vec![],
+            workspace_roots: vec![],
+            trigger: "tab_close".to_string(),
+            attempt_id: None,
+            status: " stopped ".to_string(),
+            error_message: None,
+        })
+        .unwrap();
+    assert_eq!(stopped.sequence, 3);
+    assert_eq!(stopped.operation, "stop");
+    assert_eq!(stopped.trigger, "tab_close");
+    assert_eq!(stopped.status, "stopped");
+
+    let requested = multi
+        .record_project_lsp_start_outcome(ProjectLspStartOutcome {
+            tab_id: tab_id.get(),
+            active_view_index: 0,
+            operation: "restart".to_string(),
+            document_uri: "file:///workspace/main.rs".to_string(),
+            language_id: "rust".to_string(),
+            server_key: "rust".to_string(),
+            command: "/bin/rust-analyzer".to_string(),
+            args: vec![],
+            workspace_roots: vec!["file:///workspace".to_string()],
+            trigger: "manual_restart".to_string(),
+            attempt_id: None,
+            status: " requested ".to_string(),
+            error_message: None,
+        })
+        .unwrap();
+    assert_eq!(requested.sequence, 4);
+    assert_eq!(requested.operation, "restart");
+    assert_eq!(requested.trigger, "manual_restart");
+    assert_eq!(requested.status, "requested");
+    assert_eq!(requested.attempt_id, Some(requested.sequence));
+
+    let requested_started = multi
+        .record_project_lsp_start_outcome(ProjectLspStartOutcome {
+            tab_id: tab_id.get(),
+            active_view_index: 0,
+            operation: "restart".to_string(),
+            document_uri: "file:///workspace/main.rs".to_string(),
+            language_id: "rust".to_string(),
+            server_key: "rust".to_string(),
+            command: "/bin/rust-analyzer".to_string(),
+            args: vec![],
+            workspace_roots: vec!["file:///workspace".to_string()],
+            trigger: "manual_restart".to_string(),
+            attempt_id: requested.attempt_id,
+            status: "started".to_string(),
+            error_message: None,
+        })
+        .unwrap();
+    assert_eq!(requested_started.sequence, 5);
+    assert_eq!(requested_started.operation, "restart");
+    assert_eq!(requested_started.trigger, "manual_restart");
+    assert_eq!(requested_started.status, "started");
+    assert_eq!(requested_started.attempt_id, requested.attempt_id);
+
+    let skipped = multi
+        .record_project_lsp_start_outcome(ProjectLspStartOutcome {
+            tab_id: tab_id.get(),
+            active_view_index: 0,
+            operation: " restart ".to_string(),
+            document_uri: "file:///workspace/main.rs".to_string(),
+            language_id: "rust".to_string(),
+            server_key: "rust".to_string(),
+            command: "/bin/rust-analyzer".to_string(),
+            args: vec![],
+            workspace_roots: vec![],
+            trigger: "manual_restart".to_string(),
+            attempt_id: None,
+            status: " skipped ".to_string(),
+            error_message: Some("plan did not match".to_string()),
+        })
+        .unwrap();
+    assert_eq!(skipped.sequence, 6);
+    assert_eq!(skipped.operation, "restart");
+    assert_eq!(skipped.trigger, "manual_restart");
+    assert_eq!(skipped.status, "skipped");
+
+    let snapshot = multi.project_lsp_lifecycle_events_after(2);
+    assert_eq!(snapshot.latest_sequence, 6);
+    assert_eq!(
+        snapshot.events,
+        vec![
+            stopped.clone(),
+            requested.clone(),
+            requested_started.clone(),
+            skipped.clone()
+        ]
+    );
+
+    let json: serde_json::Value =
+        serde_json::from_str(&multi.project_lsp_lifecycle_events_json(0).unwrap()).unwrap();
+    assert_eq!(json["latest_sequence"], 6);
+    assert_eq!(json["events"][0]["status"], "started");
+    assert_eq!(json["events"][1]["operation"], "restart");
+    assert_eq!(json["events"][2]["operation"], "stop");
+    assert_eq!(json["events"][2]["status"], "stopped");
+    assert_eq!(json["events"][3]["status"], "requested");
+    assert_eq!(json["events"][3]["attempt_id"], requested.sequence);
+    assert_eq!(json["events"][4]["status"], "started");
+    assert_eq!(json["events"][4]["attempt_id"], requested.sequence);
+    assert_eq!(json["events"][5]["status"], "skipped");
+    assert_eq!(json["events"][5].get("attempt_id"), None);
+
+    let missing_tab_skipped = multi
+        .record_project_lsp_start_outcome(ProjectLspStartOutcome {
+            tab_id: 999,
+            active_view_index: 0,
+            operation: "stop".to_string(),
+            document_uri: "file:///workspace/missing.rs".to_string(),
+            language_id: "rust".to_string(),
+            server_key: "rust".to_string(),
+            command: "/bin/rust-analyzer".to_string(),
+            args: vec![],
+            workspace_roots: vec!["file:///workspace".to_string()],
+            trigger: "manual_shutdown".to_string(),
+            attempt_id: None,
+            status: "skipped".to_string(),
+            error_message: Some("plan did not match".to_string()),
+        })
+        .unwrap();
+    assert_eq!(missing_tab_skipped.sequence, 7);
+    assert_eq!(missing_tab_skipped.operation, "stop");
+    assert_eq!(missing_tab_skipped.trigger, "manual_shutdown");
+    assert_eq!(missing_tab_skipped.status, "skipped");
+    assert_eq!(missing_tab_skipped.tab_id, 999);
+    assert_eq!(multi.project_lsp_lifecycle_events_latest_sequence(), 7);
+
+    assert!(
+        multi
+            .record_project_lsp_start_outcome(ProjectLspStartOutcome {
+                tab_id: 999,
+                active_view_index: 0,
+                operation: "start".to_string(),
+                document_uri: "file:///workspace/main.rs".to_string(),
+                language_id: "rust".to_string(),
+                server_key: "rust".to_string(),
+                command: "/bin/rust-analyzer".to_string(),
+                args: vec![],
+                workspace_roots: vec![],
+                trigger: "auto_start".to_string(),
+                attempt_id: None,
+                status: "started".to_string(),
+                error_message: None,
+            })
+            .is_err()
+    );
+}
+
+#[test]
 fn multi_document_tracks_tab_language_metadata() {
     let mut multi = MultiDocumentEditorUi::new();
     let tab_id = multi.open_tab("fn main() {}\n", 80);

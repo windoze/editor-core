@@ -55,15 +55,20 @@ pub use lsp_result_events::{EditorLspResultEvent, EditorLspResultEventsSnapshot}
 pub use multi_document::{
     MultiDocumentEditorUi, MultiDocumentLspRequestEvent, MultiDocumentLspRequestEventsSnapshot,
     MultiDocumentLspResultEvent, MultiDocumentLspResultEventsSnapshot, MultiDocumentStateEvent,
-    MultiDocumentStateEventsSnapshot, ProjectLspServerConfig, TabId, TabSearchResult,
+    MultiDocumentStateEventsSnapshot, ProjectFileIndexQueryResult, ProjectFileIndexSnapshot,
+    ProjectLspLifecycleEvent, ProjectLspLifecycleEventsSnapshot, ProjectLspRestartPlanEntry,
+    ProjectLspServerConfig, ProjectLspStartOutcome, ProjectLspStartPlanEntry,
+    ProjectLspStopPlanEntry, RecentFileEntry, RecentProjectEntry, TabId, TabSearchResult,
     WorkspaceDiagnostic, WorkspaceDiagnosticDocumentReport, WorkspaceDiagnosticMarker,
     WorkspaceDiagnosticMarkersSnapshot, WorkspaceDiagnosticTarget, WorkspaceDiagnosticsEvent,
     WorkspaceDiagnosticsEventsSnapshot, WorkspaceDiagnosticsSnapshot, WorkspaceDiagnosticsStore,
     WorkspaceEditTransactionConflict, WorkspaceEditTransactionDocument,
     WorkspaceEditTransactionEvent, WorkspaceEditTransactionEventsSnapshot,
     WorkspaceEditTransactionResourceOperation, WorkspaceEditTransactionResult,
-    WorkspaceEditTransactionSkippedDetail, WorkspaceEditTransactionUndoResult, WorkspaceFolder,
-    WorkspaceOutlineDocument, WorkspaceOutlineSnapshot, WorkspaceRootsChange,
+    WorkspaceEditTransactionSkippedDetail, WorkspaceEditTransactionUndoResult, WorkspaceFileEntry,
+    WorkspaceFileListOptions, WorkspaceFileReplacementOptions, WorkspaceFileSearchOptions,
+    WorkspaceFileSearchResult, WorkspaceFolder, WorkspaceOutlineDocument, WorkspaceOutlineSnapshot,
+    WorkspaceRootsChange,
 };
 pub use state::EditorUi;
 pub use state_events::{

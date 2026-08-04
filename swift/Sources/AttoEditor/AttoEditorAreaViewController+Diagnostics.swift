@@ -96,6 +96,65 @@ extension AttoEditorAreaViewController {
         return controller.show(relativeTo: window, problems: problems)
     }
 
+    @discardableResult
+    func showDiagnosticsLifecycleEntryPanel(
+        _ entry: AttoLspResultLifecycleEntry<AttoDiagnosticsLifecycleSnapshot>
+    ) -> Bool {
+        let problems = entry.snapshot.problems
+        guard problems.isEmpty == false else {
+            NSSound.beep()
+            return false
+        }
+
+        diagnosticsLifecycleStore.makeCurrent(entry)
+        updateVisibleLspWorkbenchPanel()
+        updateVisibleLspWorkbenchHistoryPanel()
+
+        guard let window = view.window else {
+            navigateToDiagnosticLifecycleProblem(problems[0], snapshot: entry.snapshot)
+            return true
+        }
+
+        switch entry.snapshot.scope {
+        case .activeTab:
+            let controller = problemsPanelController ?? AttoProblemsPanelController(
+                titleForProblem: { [weak self] problem in
+                    guard let self, let tab = self.activeTab else { return problem.message }
+                    return self.displayTitle(for: problem, in: tab)
+                },
+                onOpen: { [weak self] problem in
+                    self?.navigateToDiagnosticLifecycleProblem(problem, snapshot: entry.snapshot)
+                }
+            )
+            problemsPanelController = controller
+            return controller.show(
+                relativeTo: window,
+                problems: problems,
+                title: entry.title.isEmpty ? "Problems" : entry.title,
+                placeholder: "Filter problems history..."
+            )
+
+        case .workspace:
+            let controller = workspaceProblemsPanelController ?? AttoProblemsPanelController(
+                titleForProblem: { [weak self] problem in
+                    guard let self else { return problem.message }
+                    return self.displayTitle(for: problem)
+                },
+                onOpen: { [weak self] problem in
+                    self?.navigateToDiagnosticLifecycleProblem(problem, snapshot: entry.snapshot)
+                },
+                accessibilityIDs: .workspaceProblems
+            )
+            workspaceProblemsPanelController = controller
+            return controller.show(
+                relativeTo: window,
+                problems: problems,
+                title: entry.title.isEmpty ? "Workspace Problems" : entry.title,
+                placeholder: "Filter workspace problems history..."
+            )
+        }
+    }
+
     func displayTitle(for diagnostic: EcuDiagnostic, in tab: AttoEditorTab) -> String {
         let documentURL = projectedFileURL(for: tab)
         let location: String = {
@@ -140,6 +199,27 @@ extension AttoEditorAreaViewController {
             navigateToDiagnostic(diagnostic, in: tab)
         case let .workspace(diagnostic):
             navigateToLspTarget(diagnostic.target)
+        }
+    }
+
+    func navigateToDiagnosticLifecycleProblem(
+        _ problem: AttoUnifiedDiagnosticProblem,
+        snapshot: AttoDiagnosticsLifecycleSnapshot
+    ) {
+        switch problem.target {
+        case let .active(diagnostic):
+            if case let .activeTab(tabID, _) = snapshot.scope,
+               let tab = tabs.first(where: { $0.id == tabID }) {
+                if selectedTabID != tab.id {
+                    selectTab(id: tab.id)
+                }
+                navigateToDiagnostic(diagnostic, in: tab)
+                return
+            }
+            navigateToDiagnosticProblem(problem)
+
+        case .workspace:
+            navigateToDiagnosticProblem(problem)
         }
     }
 

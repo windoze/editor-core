@@ -2,6 +2,7 @@ import AppKit
 @testable import AttoEditor
 import EditorCoreUI
 import EditorCoreUIFFI
+import Metal
 import XCTest
 
 @MainActor
@@ -64,9 +65,27 @@ final class AttoEditorVisualBaselineManifestTests: XCTestCase {
     }
 
     func testVisualBaselineFixturesCaptureReviewArtifactsAndCanCompareExternalBaselines() throws {
+        try requireMetalForVisualBaselineCapture()
         let manifest = try AttoVisualBaselineManifest.load()
         for visualCase in manifest.cases {
             try runVisualBaselineCase(visualCase)
+        }
+    }
+
+    private func requireMetalForVisualBaselineCapture() throws {
+        guard MTLCreateSystemDefaultDevice() != nil else {
+            let message = """
+            Visual baseline capture requires a Metal device. Run smoke artifact capture, record mode, \
+            and strict comparison on a macOS runner with Metal available.
+            """
+            let hasExternalBaseline = externalBaselineRootURL() != nil
+            let hasRecordBaseline = try recordBaselineRootURL() != nil
+            let requiresPixelOutput = hasExternalBaseline || hasRecordBaseline
+            if requiresPixelOutput {
+                throw AttoVisualBaselineEnvironmentError(message)
+            }
+
+            throw XCTSkip(message)
         }
     }
 
@@ -607,6 +626,14 @@ private struct AttoVisualRuntimeConfig: Decodable {
             return nil
         }
         return URL(fileURLWithPath: path, isDirectory: true)
+    }
+}
+
+private struct AttoVisualBaselineEnvironmentError: Error, CustomStringConvertible {
+    let description: String
+
+    init(_ description: String) {
+        self.description = description
     }
 }
 
@@ -1778,6 +1805,8 @@ private struct AttoVisualWorkspaceEditJSONApplySummary: Decodable, Equatable {
     let expectedActiveTextAfterUndo: String?
     let expectedFileContentsAfterApply: [AttoVisualWorkspaceEditExpectedFileContent]
     let expectedFileContentsAfterUndo: [AttoVisualWorkspaceEditExpectedFileContent]
+    let expectedMissingFilesAfterApply: [String]
+    let expectedMissingFilesAfterUndo: [String]
     let documents: [AttoVisualWorkspaceEditJSONDocument]
     let resourceOperations: [AttoVisualWorkspaceEditJSONResourceOperation]
     let orderedChanges: [AttoVisualWorkspaceEditJSONChange]?
@@ -1793,6 +1822,8 @@ private struct AttoVisualWorkspaceEditJSONApplySummary: Decodable, Equatable {
         case expectedActiveTextAfterUndo
         case expectedFileContentsAfterApply
         case expectedFileContentsAfterUndo
+        case expectedMissingFilesAfterApply
+        case expectedMissingFilesAfterUndo
         case documents
         case resourceOperations
         case orderedChanges
@@ -1827,6 +1858,14 @@ private struct AttoVisualWorkspaceEditJSONApplySummary: Decodable, Equatable {
         expectedFileContentsAfterUndo = try container.decodeIfPresent(
             [AttoVisualWorkspaceEditExpectedFileContent].self,
             forKey: .expectedFileContentsAfterUndo
+        ) ?? []
+        expectedMissingFilesAfterApply = try container.decodeIfPresent(
+            [String].self,
+            forKey: .expectedMissingFilesAfterApply
+        ) ?? []
+        expectedMissingFilesAfterUndo = try container.decodeIfPresent(
+            [String].self,
+            forKey: .expectedMissingFilesAfterUndo
         ) ?? []
         documents = try container.decodeIfPresent(
             [AttoVisualWorkspaceEditJSONDocument].self,
@@ -1886,6 +1925,7 @@ private struct AttoVisualWorkspaceEditJSONApplySummary: Decodable, Equatable {
     ) throws {
         try assertActiveText(expectedActiveTextAfterApply, in: vc, caseID: caseID)
         try assertFileContents(expectedFileContentsAfterApply, tempDir: tempDir, caseID: caseID)
+        assertMissingFiles(expectedMissingFilesAfterApply, tempDir: tempDir, caseID: caseID)
     }
 
     @MainActor
@@ -1896,6 +1936,7 @@ private struct AttoVisualWorkspaceEditJSONApplySummary: Decodable, Equatable {
     ) throws {
         try assertActiveText(expectedActiveTextAfterUndo, in: vc, caseID: caseID)
         try assertFileContents(expectedFileContentsAfterUndo, tempDir: tempDir, caseID: caseID)
+        assertMissingFiles(expectedMissingFilesAfterUndo, tempDir: tempDir, caseID: caseID)
     }
 
     @MainActor
@@ -1922,6 +1963,17 @@ private struct AttoVisualWorkspaceEditJSONApplySummary: Decodable, Equatable {
             let url = tempDir.appendingPathComponent(expected.fileName)
             let actualText = try String(contentsOf: url, encoding: .utf8)
             XCTAssertEqual(actualText, expected.text, caseID)
+        }
+    }
+
+    private func assertMissingFiles(
+        _ fileNames: [String],
+        tempDir: URL,
+        caseID: String
+    ) {
+        for fileName in fileNames {
+            let url = tempDir.appendingPathComponent(fileName)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: url.path), caseID)
         }
     }
 }
@@ -2064,6 +2116,9 @@ private struct AttoVisualWorkspaceEditTextEditPayload: Encodable {
 
 private struct AttoVisualWorkspaceEditJSONResourceOperation: Decodable, Equatable {
     let kind: String
+    let uri: String?
+    let oldURI: String?
+    let newURI: String?
     let fileName: String?
     let oldFileName: String?
     let newFileName: String?
@@ -2072,9 +2127,9 @@ private struct AttoVisualWorkspaceEditJSONResourceOperation: Decodable, Equatabl
     func payload(tempDir: URL) -> AttoVisualWorkspaceEditResourceOperationPayload {
         AttoVisualWorkspaceEditResourceOperationPayload(
             kind: kind,
-            uri: fileName.map { AttoVisualWorkspaceEditPreview.fileURI($0, tempDir: tempDir) },
-            oldURI: oldFileName.map { AttoVisualWorkspaceEditPreview.fileURI($0, tempDir: tempDir) },
-            newURI: newFileName.map { AttoVisualWorkspaceEditPreview.fileURI($0, tempDir: tempDir) },
+            uri: uri ?? fileName.map { AttoVisualWorkspaceEditPreview.fileURI($0, tempDir: tempDir) },
+            oldURI: oldURI ?? oldFileName.map { AttoVisualWorkspaceEditPreview.fileURI($0, tempDir: tempDir) },
+            newURI: newURI ?? newFileName.map { AttoVisualWorkspaceEditPreview.fileURI($0, tempDir: tempDir) },
             options: options
         )
     }

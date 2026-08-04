@@ -405,6 +405,201 @@ final class AttoConfigurationSettingsTests: XCTestCase {
         XCTAssertEqual(settings.scopedSettings.first?.language?.formatOnSaveEnabled, false)
     }
 
+    func testSettingsSchemaListsCurrentEditableFieldsWithoutDuplicates() {
+        let schema = AttoConfigurationSettingsSchema.current
+        let keyPaths = schema.fields.map(\.keyPath)
+
+        XCTAssertEqual(schema.schemaVersion, AttoConfigurationSettings.currentSchemaVersion)
+        XCTAssertEqual(Set(keyPaths).count, keyPaths.count)
+        XCTAssertTrue(keyPaths.contains("editor.font_families"))
+        XCTAssertTrue(keyPaths.contains("editor.word_boundary_ascii_boundary_chars"))
+        XCTAssertTrue(keyPaths.contains("rendering.theme_name"))
+        XCTAssertTrue(keyPaths.contains("language.comment_configurations"))
+        XCTAssertTrue(keyPaths.contains("language.lsp_auto_restart.server_base_delay_seconds"))
+        XCTAssertTrue(keyPaths.contains("workspace.find_in_files_default_scope"))
+        XCTAssertTrue(keyPaths.contains("workspace.workspace_search_exclude_globs"))
+
+        let editorField = schema.field(keyPath: "editor.font_size_points")
+        XCTAssertEqual(editorField?.valueKind, .number)
+        XCTAssertEqual(editorField?.supportedScopes, [.user, .workspace, .runtime])
+        XCTAssertEqual(editorField?.supportsDocumentSelectors, true)
+
+        let workspaceField = schema.field(keyPath: "workspace.root_path")
+        XCTAssertEqual(workspaceField?.valueKind, .string)
+        XCTAssertEqual(workspaceField?.supportedScopes, [.user, .workspace, .runtime])
+        XCTAssertEqual(workspaceField?.supportsDocumentSelectors, false)
+    }
+
+    func testSettingsSchemaRoundTripsAndCarriesChoices() throws {
+        let schema = AttoConfigurationSettingsSchema.current
+        let data = try JSONEncoder().encode(schema)
+        let decoded = try JSONDecoder().decode(AttoConfigurationSettingsSchemaDescriptor.self, from: data)
+
+        XCTAssertEqual(decoded, schema)
+
+        let wrapMode = try XCTUnwrap(decoded.field(keyPath: "editor.wrap_mode"))
+        XCTAssertEqual(wrapMode.valueKind, .string)
+        XCTAssertEqual(wrapMode.choices.map(\.value), ["none", "char", "word"])
+        XCTAssertEqual(wrapMode.choices.map(\.title), ["Off", "By Character", "By Word"])
+
+        let findScope = try XCTUnwrap(decoded.field(keyPath: "workspace.find_in_files_default_scope"))
+        XCTAssertEqual(findScope.choices.map(\.value), ["opened_files", "workspace"])
+        XCTAssertFalse(findScope.supportsDocumentSelectors)
+    }
+
+    func testSettingsSchemaValidationAcceptsValidSettings() {
+        let settings = AttoConfigurationSettings(
+            editor: AttoEditorPreferenceSettings(
+                fontSizePoints: 18,
+                wrapMode: "word",
+                wrapIndent: "fixed_cells:8"
+            ),
+            language: AttoLanguagePreferenceSettings(
+                lspAutoRestart: AttoLspAutoRestartPolicySettings(
+                    maxAttempts: 5,
+                    baseDelaySeconds: 30,
+                    serverMaxAttempts: ["swift": 3],
+                    serverBaseDelaySeconds: ["swift": 0.5]
+                )
+            ),
+            workspace: AttoWorkspacePreferenceSettings(findInFilesDefaultScope: "workspace")
+        )
+
+        let result = AttoConfigurationSettingsSchema.current.validate(settings)
+
+        XCTAssertTrue(result.isValid)
+        XCTAssertEqual(result.issues, [])
+    }
+
+    func testSettingsSchemaValidationReportsInvalidChoicesAndRanges() {
+        let settings = AttoConfigurationSettings(
+            editor: AttoEditorPreferenceSettings(
+                fontSizePoints: 2,
+                wrapMode: "paragraph",
+                wrapIndent: "fixed_cells:-1"
+            ),
+            language: AttoLanguagePreferenceSettings(
+                lspAutoRestart: AttoLspAutoRestartPolicySettings(
+                    maxAttempts: -1,
+                    baseDelaySeconds: 7_200,
+                    serverMaxAttempts: ["swift": 99],
+                    serverBaseDelaySeconds: ["swift": -1]
+                )
+            ),
+            workspace: AttoWorkspacePreferenceSettings(findInFilesDefaultScope: "everywhere")
+        )
+
+        let result = AttoConfigurationSettingsSchema.current.validate(settings)
+        let keyPaths = Set(result.issues.map(\.keyPath))
+
+        XCTAssertFalse(result.isValid)
+        XCTAssertEqual(keyPaths, Set([
+            "editor.font_size_points",
+            "editor.wrap_mode",
+            "editor.wrap_indent",
+            "language.lsp_auto_restart.max_attempts",
+            "language.lsp_auto_restart.base_delay_seconds",
+            "language.lsp_auto_restart.server_max_attempts[swift]",
+            "language.lsp_auto_restart.server_base_delay_seconds[swift]",
+            "workspace.find_in_files_default_scope",
+        ]))
+        XCTAssertTrue(result.issues.allSatisfy { $0.severity == .error })
+        XCTAssertTrue(result.issues.allSatisfy { $0.scope == .user })
+    }
+
+    func testSettingsSchemaValidationReportsScopedSelectorIssues() {
+        let settings = AttoConfigurationSettings(
+            scopedSettings: [
+                AttoScopedConfigurationSettings(
+                    selectors: [" "],
+                    editor: AttoEditorPreferenceSettings(wrapMode: "paragraph")
+                ),
+            ]
+        )
+
+        let result = AttoConfigurationSettingsSchema.current.validate(settings, scope: .workspace)
+
+        XCTAssertFalse(result.isValid)
+        XCTAssertEqual(Set(result.issues.map(\.keyPath)), Set([
+            "scoped_settings[0].selectors",
+            "scoped_settings[0].editor.wrap_mode",
+        ]))
+        XCTAssertTrue(result.issues.allSatisfy { $0.scope == .workspaceScoped })
+    }
+
+    func testSettingsSchemaFileValidationReportsValidAndInvalidSettings() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoConfigurationSettingsTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let validURL = tempDir.appendingPathComponent("valid-settings.json")
+        try AttoConfigurationSettingsStore().save(
+            AttoConfigurationSettings(
+                editor: AttoEditorPreferenceSettings(
+                    fontSizePoints: 16,
+                    wrapMode: "word",
+                    wrapIndent: "same_as_line_indent"
+                )
+            ),
+            to: validURL
+        )
+        let validReport = try AttoConfigurationSettingsSchema.current.validateSettingsFile(
+            at: validURL,
+            scope: .user
+        )
+        XCTAssertTrue(validReport.result.isValid)
+        XCTAssertEqual(validReport.result.issues, [])
+        XCTAssertEqual(validReport.scope, .user)
+
+        let invalidURL = tempDir.appendingPathComponent("invalid-values-settings.json")
+        try AttoConfigurationSettingsStore().save(
+            AttoConfigurationSettings(
+                editor: AttoEditorPreferenceSettings(
+                    fontSizePoints: 2,
+                    wrapMode: "paragraph"
+                )
+            ),
+            to: invalidURL
+        )
+        let invalidReport = try AttoConfigurationSettingsSchema.current.validateSettingsFile(
+            at: invalidURL,
+            scope: .workspace
+        )
+        XCTAssertFalse(invalidReport.result.isValid)
+        XCTAssertEqual(Set(invalidReport.result.issues.map(\.keyPath)), Set([
+            "editor.font_size_points",
+            "editor.wrap_mode",
+        ]))
+        XCTAssertTrue(invalidReport.result.issues.allSatisfy { $0.scope == .workspace })
+    }
+
+    func testSettingsSchemaFileValidationReportsMissingAndInvalidFilesWithoutMovingThem() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoConfigurationSettingsTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let missingURL = tempDir.appendingPathComponent("missing-settings.json")
+        XCTAssertThrowsError(
+            try AttoConfigurationSettingsSchema.current.validateSettingsFile(at: missingURL, scope: .user)
+        ) { error in
+            XCTAssertEqual(
+                error as? AttoConfigurationSettingsFileValidationError,
+                .missingFile(missingURL)
+            )
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: missingURL.path))
+
+        let invalidURL = tempDir.appendingPathComponent("invalid-settings.json")
+        try "{ invalid json".write(to: invalidURL, atomically: true, encoding: .utf8)
+        XCTAssertThrowsError(
+            try AttoConfigurationSettingsSchema.current.validateSettingsFile(at: invalidURL, scope: .user)
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: invalidURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: invalidURL.appendingPathExtension("invalid").path))
+    }
+
     private func baseSnapshot() -> AttoConfigurationSnapshot {
         AttoConfigurationSnapshot(
             editor: AttoEditorPreferenceSnapshot(

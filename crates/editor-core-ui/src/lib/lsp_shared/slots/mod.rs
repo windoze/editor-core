@@ -35,6 +35,8 @@ pub(crate) enum LspResultSlot {
     DocumentDiagnostic,
     WorkspaceDiagnostic,
     PublishDiagnostics,
+    Formatting,
+    RangeFormatting,
     DocumentColor,
     ColorPresentation,
     PrepareCallHierarchy,

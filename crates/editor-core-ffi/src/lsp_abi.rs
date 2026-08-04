@@ -220,34 +220,45 @@ pub extern "C" fn editor_core_ffi_lsp_on_type_formatting_params_json(
     options_json: *const c_char,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
-        let state = require_ref(state, "state")?;
-        let uri = require_string(uri, "uri")?;
-        let ch = require_string(ch, "ch")?;
-
-        let options = if let Some(options_json) = optional_string(options_json, "options_json")? {
-            parse_json_value(&options_json, "formatting options")?
-        } else {
-            json!({})
-        };
-
-        let pos = state.inner.editor().cursor_position();
-        let line_text = state
-            .inner
-            .editor()
-            .line_index()
-            .get_line_text(pos.line)
-            .unwrap_or_default();
-        let utf16_character = LspCoordinateConverter::char_offset_to_utf16(&line_text, pos.column);
-
-        Ok(json!({
-            "params": {
-                "textDocument": { "uri": uri },
-                "position": { "line": pos.line, "character": utf16_character },
-                "ch": ch,
-                "options": options,
-            }
-        }))
+        lsp_on_type_formatting_params_value(state, uri, ch, options_json)
+            .map_err(|(_, message)| message)
     })
+}
+
+pub(crate) fn lsp_on_type_formatting_params_value(
+    state: *const EcfEditorState,
+    uri: *const c_char,
+    ch: *const c_char,
+    options_json: *const c_char,
+) -> Result<Value, (EcfStatus, String)> {
+    let state = require_ref_status(state, "state")?;
+    let uri = require_string_status(uri, "uri")?;
+    let ch = require_string_status(ch, "ch")?;
+
+    let options = if let Some(options_json) = optional_string_status(options_json, "options_json")?
+    {
+        parse_json_value_status(&options_json, "formatting options")?
+    } else {
+        json!({})
+    };
+
+    let pos = state.inner.editor().cursor_position();
+    let line_text = state
+        .inner
+        .editor()
+        .line_index()
+        .get_line_text(pos.line)
+        .unwrap_or_default();
+    let utf16_character = LspCoordinateConverter::char_offset_to_utf16(&line_text, pos.column);
+
+    Ok(json!({
+        "params": {
+            "textDocument": { "uri": uri },
+            "position": { "line": pos.line, "character": utf16_character },
+            "ch": ch,
+            "options": options,
+        }
+    }))
 }
 
 /// Apply LSP `TextEdit[]` JSON to an editor state.
@@ -257,19 +268,30 @@ pub extern "C" fn editor_core_ffi_lsp_apply_text_edits_json(
     edits_json: *const c_char,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
-        let state = require_mut(state, "state")?;
-        let edits_json = require_string(edits_json, "edits_json")?;
-        let value = parse_json_value(&edits_json, "LSP text edits")?;
-        let edits = text_edits_from_value(&value);
-        let changed = apply_text_edits(&mut state.inner, &edits)
-            .map_err(|err| format!("apply LSP text edits failed: {err}"))?;
-        Ok(json!({
-            "changed_ranges": changed
-                .into_iter()
-                .map(|(start, end)| value_offset_range(start, end))
-                .collect::<Vec<_>>()
-        }))
+        lsp_apply_text_edits_value(state, edits_json).map_err(|(_, message)| message)
     })
+}
+
+pub(crate) fn lsp_apply_text_edits_value(
+    state: *mut EcfEditorState,
+    edits_json: *const c_char,
+) -> Result<Value, (EcfStatus, String)> {
+    let state = require_mut_status(state, "state")?;
+    let edits_json = require_string_status(edits_json, "edits_json")?;
+    let value = parse_json_value_status(&edits_json, "LSP text edits")?;
+    let edits = text_edits_from_value(&value);
+    let changed = apply_text_edits(&mut state.inner, &edits).map_err(|err| {
+        (
+            EcfStatus::CommandFailed,
+            format!("apply LSP text edits failed: {err}"),
+        )
+    })?;
+    Ok(json!({
+        "changed_ranges": changed
+            .into_iter()
+            .map(|(start, end)| value_offset_range(start, end))
+            .collect::<Vec<_>>()
+    }))
 }
 
 /// Convert semantic tokens data (`u32[]`) into style intervals for current state text.
@@ -279,20 +301,32 @@ pub extern "C" fn editor_core_ffi_lsp_semantic_tokens_to_intervals_json(
     data_json: *const c_char,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
-        let state = require_ref(state, "state")?;
-        let data_json = require_string(data_json, "data_json")?;
-        let data: Vec<u32> = parse_json(&data_json, "semantic tokens data")?;
-        let intervals = semantic_tokens_to_intervals(
-            &data,
-            state.inner.editor().line_index(),
-            encode_semantic_style_id,
-        )
-        .map_err(|err| format!("semantic_tokens_to_intervals failed: {err}"))?;
-
-        Ok(json!({
-            "intervals": intervals.iter().map(value_interval).collect::<Vec<_>>()
-        }))
+        lsp_semantic_tokens_to_intervals_value(state, data_json).map_err(|(_, message)| message)
     })
+}
+
+pub(crate) fn lsp_semantic_tokens_to_intervals_value(
+    state: *const EcfEditorState,
+    data_json: *const c_char,
+) -> Result<Value, (EcfStatus, String)> {
+    let state = require_ref_status(state, "state")?;
+    let data_json = require_string_status(data_json, "data_json")?;
+    let data: Vec<u32> = parse_json_status(&data_json, "semantic tokens data")?;
+    let intervals = semantic_tokens_to_intervals(
+        &data,
+        state.inner.editor().line_index(),
+        encode_semantic_style_id,
+    )
+    .map_err(|err| {
+        (
+            EcfStatus::InvalidArgument,
+            format!("semantic_tokens_to_intervals failed: {err}"),
+        )
+    })?;
+
+    Ok(json!({
+        "intervals": intervals.iter().map(value_interval).collect::<Vec<_>>()
+    }))
 }
 
 /// Decode default semantic style id into `(token_type, token_modifiers)`.
@@ -326,7 +360,17 @@ pub extern "C" fn editor_core_ffi_lsp_document_highlights_to_processing_edit_jso
     state: *const EcfEditorState,
     result_json: *const c_char,
 ) -> *mut c_char {
-    lsp_single_processing_edit_from_state_json(state, result_json, |line_index, value| {
+    result_json_ptr(ptr::null_mut(), || {
+        lsp_document_highlights_processing_edit_value(state, result_json)
+            .map_err(|(_, message)| message)
+    })
+}
+
+pub(crate) fn lsp_document_highlights_processing_edit_value(
+    state: *const EcfEditorState,
+    result_json: *const c_char,
+) -> Result<Value, (EcfStatus, String)> {
+    lsp_single_processing_edit_from_state_value(state, result_json, |line_index, value| {
         lsp_document_highlights_to_processing_edit(line_index, value)
     })
 }
@@ -337,7 +381,16 @@ pub extern "C" fn editor_core_ffi_lsp_inlay_hints_to_processing_edit_json(
     state: *const EcfEditorState,
     result_json: *const c_char,
 ) -> *mut c_char {
-    lsp_single_processing_edit_from_state_json(state, result_json, |line_index, value| {
+    result_json_ptr(ptr::null_mut(), || {
+        lsp_inlay_hints_processing_edit_value(state, result_json).map_err(|(_, message)| message)
+    })
+}
+
+pub(crate) fn lsp_inlay_hints_processing_edit_value(
+    state: *const EcfEditorState,
+    result_json: *const c_char,
+) -> Result<Value, (EcfStatus, String)> {
+    lsp_single_processing_edit_from_state_value(state, result_json, |line_index, value| {
         lsp_inlay_hints_to_processing_edit(line_index, value)
     })
 }
@@ -348,7 +401,16 @@ pub extern "C" fn editor_core_ffi_lsp_document_links_to_processing_edit_json(
     state: *const EcfEditorState,
     result_json: *const c_char,
 ) -> *mut c_char {
-    lsp_single_processing_edit_from_state_json(state, result_json, |line_index, value| {
+    result_json_ptr(ptr::null_mut(), || {
+        lsp_document_links_processing_edit_value(state, result_json).map_err(|(_, message)| message)
+    })
+}
+
+pub(crate) fn lsp_document_links_processing_edit_value(
+    state: *const EcfEditorState,
+    result_json: *const c_char,
+) -> Result<Value, (EcfStatus, String)> {
+    lsp_single_processing_edit_from_state_value(state, result_json, |line_index, value| {
         lsp_document_links_to_processing_edit(line_index, value)
     })
 }
@@ -359,7 +421,16 @@ pub extern "C" fn editor_core_ffi_lsp_code_lens_to_processing_edit_json(
     state: *const EcfEditorState,
     result_json: *const c_char,
 ) -> *mut c_char {
-    lsp_single_processing_edit_from_state_json(state, result_json, |line_index, value| {
+    result_json_ptr(ptr::null_mut(), || {
+        lsp_code_lens_processing_edit_value(state, result_json).map_err(|(_, message)| message)
+    })
+}
+
+pub(crate) fn lsp_code_lens_processing_edit_value(
+    state: *const EcfEditorState,
+    result_json: *const c_char,
+) -> Result<Value, (EcfStatus, String)> {
+    lsp_single_processing_edit_from_state_value(state, result_json, |line_index, value| {
         lsp_code_lens_to_processing_edit(line_index, value)
     })
 }
@@ -370,7 +441,17 @@ pub extern "C" fn editor_core_ffi_lsp_document_symbols_to_processing_edit_json(
     state: *const EcfEditorState,
     result_json: *const c_char,
 ) -> *mut c_char {
-    lsp_single_processing_edit_from_state_json(state, result_json, |line_index, value| {
+    result_json_ptr(ptr::null_mut(), || {
+        lsp_document_symbols_processing_edit_value(state, result_json)
+            .map_err(|(_, message)| message)
+    })
+}
+
+pub(crate) fn lsp_document_symbols_processing_edit_value(
+    state: *const EcfEditorState,
+    result_json: *const c_char,
+) -> Result<Value, (EcfStatus, String)> {
+    lsp_single_processing_edit_from_state_value(state, result_json, |line_index, value| {
         lsp_document_symbols_to_processing_edit(line_index, value)
     })
 }
@@ -382,28 +463,44 @@ pub extern "C" fn editor_core_ffi_lsp_diagnostics_to_processing_edits_json(
     publish_diagnostics_params_json: *const c_char,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
-        let state = require_ref(state, "state")?;
-        let params_json = require_string(
-            publish_diagnostics_params_json,
-            "publish_diagnostics_params_json",
-        )?;
-        let params_value = parse_json_value(&params_json, "publishDiagnostics params")?;
-
-        let notification = editor_core_lsp::LspNotification::from_method_and_params(
-            "textDocument/publishDiagnostics",
-            &params_value,
-        )
-        .ok_or_else(|| "invalid publishDiagnostics params".to_string())?;
-
-        let editor_core_lsp::LspNotification::PublishDiagnostics(params) = notification else {
-            return Err("invalid publishDiagnostics payload".to_string());
-        };
-
-        let edits = lsp_diagnostics_to_processing_edits(state.inner.editor().line_index(), &params);
-        Ok(json!({
-            "edits": edits.iter().map(value_processing_edit).collect::<Vec<_>>()
-        }))
+        lsp_diagnostics_processing_edits_value(state, publish_diagnostics_params_json)
+            .map_err(|(_, message)| message)
     })
+}
+
+pub(crate) fn lsp_diagnostics_processing_edits_value(
+    state: *const EcfEditorState,
+    publish_diagnostics_params_json: *const c_char,
+) -> Result<Value, (EcfStatus, String)> {
+    let state = require_ref_status(state, "state")?;
+    let params_json = require_string_status(
+        publish_diagnostics_params_json,
+        "publish_diagnostics_params_json",
+    )?;
+    let params_value = parse_json_value_status(&params_json, "publishDiagnostics params")?;
+
+    let notification = editor_core_lsp::LspNotification::from_method_and_params(
+        "textDocument/publishDiagnostics",
+        &params_value,
+    )
+    .ok_or_else(|| {
+        (
+            EcfStatus::InvalidArgument,
+            "invalid publishDiagnostics params".to_string(),
+        )
+    })?;
+
+    let editor_core_lsp::LspNotification::PublishDiagnostics(params) = notification else {
+        return Err((
+            EcfStatus::InvalidArgument,
+            "invalid publishDiagnostics payload".to_string(),
+        ));
+    };
+
+    let edits = lsp_diagnostics_to_processing_edits(state.inner.editor().line_index(), &params);
+    Ok(json!({
+        "edits": edits.iter().map(value_processing_edit).collect::<Vec<_>>()
+    }))
 }
 
 /// Convert LSP workspace symbol result JSON into workspace symbols JSON.
@@ -488,35 +585,54 @@ pub extern "C" fn editor_core_ffi_lsp_completion_item_to_text_edits_json(
     has_fallback: bool,
 ) -> *mut c_char {
     result_json_ptr(ptr::null_mut(), || {
-        let state = require_ref(state, "state")?;
-        let completion_item_json = require_string(completion_item_json, "completion_item_json")?;
-        let mode = require_string(mode, "mode")?;
-
-        let mode = parse_completion_mode(&mode)?;
-        let item = parse_json_value(&completion_item_json, "completion item")?;
-        let fallback = if has_fallback {
-            Some((
-                usize_from_u64(fallback_start, "fallback_start")?,
-                usize_from_u64(fallback_end, "fallback_end")?,
-            ))
-        } else {
-            None
-        };
-
-        let edits = completion_item_to_text_edit_specs(
-            state.inner.editor().line_index(),
-            &item,
+        lsp_completion_item_to_text_edits_value(
+            state,
+            completion_item_json,
             mode,
-            fallback,
-        );
-
-        Ok(json!({
-            "edits": edits
-                .into_iter()
-                .map(|e| json!({ "start": e.start, "end": e.end, "text": e.text }))
-                .collect::<Vec<_>>()
-        }))
+            fallback_start,
+            fallback_end,
+            has_fallback,
+        )
+        .map_err(|(_, message)| message)
     })
+}
+
+pub(crate) fn lsp_completion_item_to_text_edits_value(
+    state: *const EcfEditorState,
+    completion_item_json: *const c_char,
+    mode: *const c_char,
+    fallback_start: u64,
+    fallback_end: u64,
+    has_fallback: bool,
+) -> Result<Value, (EcfStatus, String)> {
+    let state = require_ref_status(state, "state")?;
+    let completion_item_json = require_string_status(completion_item_json, "completion_item_json")?;
+    let mode = require_string_status(mode, "mode")?;
+
+    let mode = parse_completion_mode_status(&mode)?;
+    let item = parse_json_value_status(&completion_item_json, "completion item")?;
+    let fallback = if has_fallback {
+        Some((
+            status_usize_from_u64(fallback_start, "fallback_start")?,
+            status_usize_from_u64(fallback_end, "fallback_end")?,
+        ))
+    } else {
+        None
+    };
+
+    let edits = completion_item_to_text_edit_specs(
+        state.inner.editor().line_index(),
+        &item,
+        mode,
+        fallback,
+    );
+
+    Ok(json!({
+        "edits": edits
+            .into_iter()
+            .map(|e| json!({ "start": e.start, "end": e.end, "text": e.text }))
+            .collect::<Vec<_>>()
+    }))
 }
 
 /// Apply one completion item JSON as a single undoable edit.
@@ -540,34 +656,58 @@ pub extern "C" fn editor_core_ffi_lsp_apply_completion_item_json(
     })
 }
 
+pub(crate) fn lsp_apply_completion_item_value(
+    state: *mut EcfEditorState,
+    completion_item_json: *const c_char,
+    mode: *const c_char,
+) -> Result<Value, (EcfStatus, String)> {
+    let state = require_mut_status(state, "state")?;
+    let completion_item_json = require_string_status(completion_item_json, "completion_item_json")?;
+    let mode = require_string_status(mode, "mode")?;
+
+    let item = parse_json_value_status(&completion_item_json, "completion item")?;
+    let mode = parse_completion_mode_status(&mode)?;
+
+    apply_completion_item(&mut state.inner, &item, mode).map_err(|err| {
+        (
+            EcfStatus::CommandFailed,
+            format!("apply_completion_item failed: {err}"),
+        )
+    })?;
+    Ok(json!({ "applied": true }))
+}
+
 fn parse_completion_mode(mode: &str) -> Result<CompletionTextEditMode, String> {
+    parse_completion_mode_status(mode).map_err(|(_, message)| message)
+}
+
+fn parse_completion_mode_status(mode: &str) -> Result<CompletionTextEditMode, (EcfStatus, String)> {
     match mode.trim().to_ascii_lowercase().as_str() {
         "insert" => Ok(CompletionTextEditMode::Insert),
         "replace" => Ok(CompletionTextEditMode::Replace),
-        other => Err(format!(
-            "invalid completion mode: {other} (expected insert|replace)"
+        other => Err((
+            EcfStatus::InvalidArgument,
+            format!("invalid completion mode: {other} (expected insert|replace)"),
         )),
     }
 }
 
-fn lsp_single_processing_edit_from_state_json<F>(
+fn lsp_single_processing_edit_from_state_value<F>(
     state: *const EcfEditorState,
     result_json: *const c_char,
     f: F,
-) -> *mut c_char
+) -> Result<Value, (EcfStatus, String)>
 where
     F: Fn(&editor_core::LineIndex, &Value) -> ProcessingEdit,
 {
-    result_json_ptr(ptr::null_mut(), || {
-        let state = require_ref(state, "state")?;
-        let result_json = require_string(result_json, "result_json")?;
-        let value = parse_json_value(&result_json, "LSP result")?;
-        let edit = f(state.inner.editor().line_index(), &value);
-        Ok(value_processing_edit(&edit))
-    })
+    let state = require_ref_status(state, "state")?;
+    let result_json = require_string_status(result_json, "result_json")?;
+    let value = parse_json_value_status(&result_json, "LSP result")?;
+    let edit = f(state.inner.editor().line_index(), &value);
+    Ok(value_processing_edit(&edit))
 }
 
-fn lsp_helper_envelope_json_ptr<F>(operation: &'static str, f: F) -> *mut c_char
+pub(crate) fn lsp_helper_envelope_json_ptr<F>(operation: &'static str, f: F) -> *mut c_char
 where
     F: FnOnce() -> Result<Value, (EcfStatus, String)>,
 {

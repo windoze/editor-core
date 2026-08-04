@@ -27,12 +27,20 @@ char* editor_core_ui_ffi_runtime_info_json(void);
   "kind": "editor-core-ui-ffi",
   "abi_version": 1,
   "version": "0.5.0",
-  "feature_flags": 1099511627775,
+  "feature_flags": 2251799813685247,
   "features": [
     { "bit": 0, "flag": 1, "name": "json_command_dispatch", "description": "..." }
   ]
 }
 ```
+
+Hosts should gate feature-specific calls before invoking them. The numeric feature mask is the
+machine-readable contract; descriptor names in `runtime_info_json` are intended for diagnostics,
+logs, and non-Swift bindings. New integrations should prefer the envelope APIs when their feature
+bit is present and fall back to legacy raw JSON symbols only for compatibility. Unknown descriptor
+names and unknown envelope status strings are forward-compatible and should not make a host reject
+the runtime by default. Every returned runtime-info, envelope, legacy JSON, or allocated error
+string must be freed exactly once with `editor_core_ui_ffi_string_free`.
 
 ## JSON Command Envelope
 
@@ -375,6 +383,115 @@ The returned string is owned by the caller and must be freed with
 `editor_core_ui_ffi_string_free`. Availability is advertised by
 `ECU_FEATURE_LSP_WORKSPACE_EDIT_APPLICATION_ENVELOPE`.
 
+## LSP Derived-State Application Envelopes
+
+The legacy per-`EditorUi` LSP derived-state apply APIs remain available as status-code functions:
+
+```c
+int32_t editor_core_ui_ffi_editor_ui_lsp_apply_diagnostics_json(EditorUi* ui, const char* publish_diagnostics_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_apply_inlay_hints_json(EditorUi* ui, const char* inlay_hints_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_apply_code_lens_json(EditorUi* ui, const char* code_lens_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_apply_document_links_json(EditorUi* ui, const char* document_links_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_apply_document_highlights_json(EditorUi* ui, const char* document_highlights_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_apply_document_symbols_json(EditorUi* ui, const char* document_symbols_result_json_utf8);
+int32_t editor_core_ui_ffi_editor_ui_lsp_apply_folding_ranges_json(EditorUi* ui, const char* folding_ranges_result_json_utf8);
+```
+
+Hosts that want the stage-10 structured error model can call the additive envelope variants:
+
+```c
+char* editor_core_ui_ffi_editor_ui_lsp_apply_diagnostics_envelope_json(EditorUi* ui, const char* publish_diagnostics_json_utf8);
+char* editor_core_ui_ffi_editor_ui_lsp_apply_inlay_hints_envelope_json(EditorUi* ui, const char* inlay_hints_result_json_utf8);
+char* editor_core_ui_ffi_editor_ui_lsp_apply_code_lens_envelope_json(EditorUi* ui, const char* code_lens_result_json_utf8);
+char* editor_core_ui_ffi_editor_ui_lsp_apply_document_links_envelope_json(EditorUi* ui, const char* document_links_result_json_utf8);
+char* editor_core_ui_ffi_editor_ui_lsp_apply_document_highlights_envelope_json(EditorUi* ui, const char* document_highlights_result_json_utf8);
+char* editor_core_ui_ffi_editor_ui_lsp_apply_document_symbols_envelope_json(EditorUi* ui, const char* document_symbols_result_json_utf8);
+char* editor_core_ui_ffi_editor_ui_lsp_apply_folding_ranges_envelope_json(EditorUi* ui, const char* folding_ranges_result_json_utf8);
+```
+
+Success records the applied operation name and a stable minimal value:
+
+```json
+{
+  "ok": true,
+  "operation": "apply_inlay_hints",
+  "status": "success",
+  "value": { "applied": true },
+  "error": null,
+  "version": 1
+}
+```
+
+Failure returns a structured error instead of requiring a separate last-error read:
+
+```json
+{
+  "ok": false,
+  "operation": "apply_inlay_hints",
+  "status": "error",
+  "value": null,
+  "error": { "code": "internal", "status": 7, "message": "failed to parse inlay hints: ..." },
+  "version": 1
+}
+```
+
+The returned string is owned by the caller and must be freed with
+`editor_core_ui_ffi_string_free`. Availability is advertised by
+`ECU_FEATURE_LSP_DERIVED_STATE_APPLICATION_ENVELOPE`.
+
+## LSP Semantic Tokens Application Envelope
+
+The legacy per-`EditorUi` semantic tokens raw-buffer apply API remains available as a status-code
+function:
+
+```c
+int32_t editor_core_ui_ffi_editor_ui_lsp_apply_semantic_tokens(
+    EditorUi* ui,
+    const uint32_t* data,
+    uint32_t data_len
+);
+```
+
+Hosts that want the stage-10 structured error model can call the additive envelope variant:
+
+```c
+char* editor_core_ui_ffi_editor_ui_lsp_apply_semantic_tokens_envelope_json(
+    EditorUi* ui,
+    const uint32_t* data,
+    uint32_t data_len
+);
+```
+
+Success records the stable operation name and the accepted `uint32_t` count:
+
+```json
+{
+  "ok": true,
+  "operation": "apply_semantic_tokens",
+  "status": "success",
+  "value": { "applied": true, "data_len": 5 },
+  "error": null,
+  "version": 1
+}
+```
+
+Failure returns a structured error instead of requiring a separate last-error read:
+
+```json
+{
+  "ok": false,
+  "operation": "apply_semantic_tokens",
+  "status": "error",
+  "value": null,
+  "error": { "code": "internal", "status": 7, "message": "Semantic tokens data length must be a multiple of 5 (got 1)" },
+  "version": 1
+}
+```
+
+The returned string is owned by the caller and must be freed with
+`editor_core_ui_ffi_string_free`. Availability is advertised by
+`ECU_FEATURE_LSP_SEMANTIC_TOKENS_APPLICATION_ENVELOPE`.
+
 ## Event Stream Envelope
 
 The legacy event stream APIs remain available as raw JSON string functions, for example
@@ -703,6 +820,203 @@ char* editor_core_ui_ffi_multi_document_set_workspace_roots_with_change_json(
 
 The returned string is owned by the caller and must be freed with `editor_core_ui_ffi_string_free`.
 
+## Multi-document Recent Files
+
+The multi-document model also owns a bounded recent file URI list for workspace/session features:
+
+```c
+int32_t editor_core_ui_ffi_multi_document_remember_recent_file_uri(
+    MultiDocumentEditorUi* multi,
+    const char* uri_utf8
+);
+
+int32_t editor_core_ui_ffi_multi_document_restore_recent_files_json(
+    MultiDocumentEditorUi* multi,
+    const char* uris_json_utf8
+);
+
+int32_t editor_core_ui_ffi_multi_document_clear_recent_files(MultiDocumentEditorUi* multi);
+
+char* editor_core_ui_ffi_multi_document_recent_files_json(MultiDocumentEditorUi* multi);
+```
+
+`remember_recent_file_uri` trims URI strings, ignores empty values, moves duplicates to the front,
+and keeps a fixed-size most-recent-first list. `restore_recent_files_json` accepts a JSON array of
+URI strings in snapshot order and applies the same normalization. `recent_files_json` returns an
+array of objects such as `{ "uri": "file:///project/src/lib.rs" }`, and
+`editor_core_ui_ffi_multi_document_snapshot_json` includes the same array under `recent_files`.
+Changing workspace roots clears the recent file list so hosts do not carry stale project-local
+files across workspaces. Availability is advertised by `ECU_FEATURE_MULTI_DOCUMENT_RECENT_FILES`.
+
+The same model can also own a bounded recent project/workspace root URI list:
+
+```c
+int32_t editor_core_ui_ffi_multi_document_remember_recent_project_uri(
+    MultiDocumentEditorUi* multi,
+    const char* uri_utf8
+);
+
+int32_t editor_core_ui_ffi_multi_document_restore_recent_projects_json(
+    MultiDocumentEditorUi* multi,
+    const char* uris_json_utf8
+);
+
+int32_t editor_core_ui_ffi_multi_document_clear_recent_projects(MultiDocumentEditorUi* multi);
+
+char* editor_core_ui_ffi_multi_document_recent_projects_json(MultiDocumentEditorUi* multi);
+```
+
+Recent projects use the same trim, ignore-empty, de-duplicate, fixed-size MRU behavior as recent
+files, but are not cleared when workspace roots change. `recent_projects_json` returns an array of
+objects such as `{ "uri": "file:///project" }`, and
+`editor_core_ui_ffi_multi_document_snapshot_json` includes the same array under `recent_projects`.
+Availability is advertised by `ECU_FEATURE_MULTI_DOCUMENT_RECENT_PROJECTS`.
+
+## Multi-document Workspace File List
+
+Workspace file listing uses the multi-document workspace roots as its trust boundary and enumerates
+local `file://` roots only. It is intended for Quick Open and project file panels that need file
+names rather than content matches:
+
+```c
+char* editor_core_ui_ffi_multi_document_list_workspace_files_json(
+    MultiDocumentEditorUi* multi,
+    const char* include_globs_json_utf8,
+    const char* exclude_globs_json_utf8,
+    uint32_t max_results
+);
+```
+
+`include_globs_json_utf8` and `exclude_globs_json_utf8` use the same JSON string-array format and
+glob semantics as workspace file search. `max_results == 0` selects the default bounded limit.
+Hidden paths, `target`, and `.build` are skipped. The returned JSON is `{ "files": [...] }`; each
+entry contains `uri`, `path`, and `relative_path`, sorted by relative path for stable UI display.
+Availability is advertised by `ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_LIST`.
+
+Hosts that want a core-owned project file cache can refresh and query the project file index:
+
+```c
+char* editor_core_ui_ffi_multi_document_refresh_project_file_index_json(
+    MultiDocumentEditorUi* multi,
+    uint32_t max_results
+);
+
+char* editor_core_ui_ffi_multi_document_project_file_index_snapshot_json(
+    MultiDocumentEditorUi* multi
+);
+
+int32_t editor_core_ui_ffi_multi_document_clear_project_file_index(MultiDocumentEditorUi* multi);
+
+char* editor_core_ui_ffi_multi_document_query_project_file_index_json(
+    MultiDocumentEditorUi* multi,
+    const char* query_utf8,
+    uint32_t max_results
+);
+```
+
+Refreshing the index uses the same root trust boundary, default skip rules, stable sorting, and
+`max_results == 0` default as the workspace file list. The returned snapshot has
+`workspace_roots`, `files`, `is_built`, and `max_results` fields. Workspace root changes clear the
+cached snapshot so hosts do not reuse a previous project's file list.
+`query_project_file_index_json` queries the last refreshed snapshot with case-insensitive fuzzy
+subsequence matching on `relative_path` and returns `{ "results": [...] }` entries with `uri`,
+`path`, `relative_path`, and `score`, ordered by descending score with stable path tie-breaks.
+Availability is advertised by `ECU_FEATURE_MULTI_DOCUMENT_PROJECT_FILE_INDEX`; fuzzy queries are
+advertised separately by `ECU_FEATURE_MULTI_DOCUMENT_PROJECT_FILE_INDEX_QUERY`.
+
+## Multi-document Workspace File Search
+
+Workspace file search uses the multi-document workspace roots as its trust boundary and searches
+local `file://` roots only. The raw JSON API returns `{ "results": [...] }`; the envelope API uses
+the same `ok/status/value/error/version` shape as other multi-document search envelopes.
+
+```c
+char* editor_core_ui_ffi_multi_document_search_workspace_files_json(
+    MultiDocumentEditorUi* multi,
+    const char* query_utf8,
+    const char* include_globs_json_utf8,
+    const char* exclude_globs_json_utf8,
+    uint8_t case_sensitive,
+    uint8_t whole_word,
+    uint8_t regex,
+    uint32_t max_results
+);
+
+char* editor_core_ui_ffi_multi_document_search_workspace_files_envelope_json(
+    MultiDocumentEditorUi* multi,
+    const char* query_utf8,
+    const char* include_globs_json_utf8,
+    const char* exclude_globs_json_utf8,
+    uint8_t case_sensitive,
+    uint8_t whole_word,
+    uint8_t regex,
+    uint32_t max_results
+);
+```
+
+`include_globs_json_utf8` and `exclude_globs_json_utf8` are JSON arrays of string patterns; null or
+an empty string means no patterns. Patterns use `/` separators and support `*`, `?`, and `**`.
+Patterns without `/` match path components by basename. `max_results == 0` selects the default
+bounded limit.
+
+Each result contains `uri`, `path`, `relative_path`, `line1`, `column1`, `line_text`, `match_start`,
+and `match_end`. `line1` and `column1` are 1-based for UI navigation. `match_start` and `match_end`
+are 0-based line-local character offsets for preview highlighting.
+
+## Multi-document Workspace File Replacement WorkspaceEdit
+
+Hosts can ask the multi-document model to generate a WorkspaceEdit payload for replacing matches
+found in local workspace files:
+
+```c
+char* editor_core_ui_ffi_multi_document_workspace_file_replacement_workspace_edit_json(
+    MultiDocumentEditorUi* multi,
+    const char* query_utf8,
+    const char* replacement_utf8,
+    const char* include_globs_json_utf8,
+    const char* exclude_globs_json_utf8,
+    const char* apply_mode_utf8,
+    uint8_t case_sensitive,
+    uint8_t whole_word,
+    uint8_t regex,
+    uint32_t max_results
+);
+```
+
+`include_globs_json_utf8` and `exclude_globs_json_utf8` use the same JSON string-array format and
+glob semantics as workspace file search. `apply_mode_utf8` accepts `partial` or `atomic`; null or an
+empty string defaults to `atomic`. `max_results == 0` selects the default bounded limit.
+
+The returned JSON is a transaction-compatible envelope:
+
+```json
+{
+  "workspaceEdit": {
+    "documentChanges": [
+      {
+        "textDocument": { "uri": "file:///project/src/lib.rs" },
+        "edits": [
+          {
+            "range": {
+              "start": { "line": 0, "character": 3 },
+              "end": { "line": 0, "character": 8 }
+            },
+            "newText": "replacement"
+          }
+        ]
+      }
+    ]
+  },
+  "applyMode": "atomic"
+}
+```
+
+Ranges are LSP UTF-16 positions. When `regex != 0`, `replacement_utf8` uses Rust regex replacement
+expansion, so captures such as `$1` are expanded for each generated edit. The returned payload is
+not applied automatically; hosts should pass it to the existing multi-document WorkspaceEdit
+preview/apply APIs and can use the existing transaction undo/redo APIs after apply. Availability is
+advertised by `ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_REPLACEMENT`.
+
 ## Multi-document Project LSP Servers
 
 The multi-document model also owns a project-level LSP server configuration list. This is a
@@ -763,6 +1077,83 @@ Error:
 The returned string is owned by the caller and must be freed with
 `editor_core_ui_ffi_string_free`. Availability is advertised by
 `ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_SERVERS_ENVELOPE`.
+
+## Multi-document Project LSP Lifecycle Envelope
+
+Legacy project LSP lifecycle queries remain available as raw JSON string functions:
+`editor_core_ui_ffi_multi_document_project_lsp_start_plan_json(...)`,
+`editor_core_ui_ffi_multi_document_project_lsp_stop_plan_json(...)`,
+`editor_core_ui_ffi_multi_document_project_lsp_restart_plan_json(...)`, and
+`editor_core_ui_ffi_multi_document_project_lsp_lifecycle_events_json(...)`. Hosts that want a
+single JSON result/error shape can use the additive operation-based envelope variant:
+
+```c
+char* editor_core_ui_ffi_multi_document_project_lsp_lifecycle_envelope_json(
+    MultiDocumentEditorUi* multi,
+    const char* operation_utf8,
+    uint64_t after_sequence
+);
+```
+
+`operation_utf8` must be one of `start_plan`, `stop_plan`, `restart_plan`, or
+`lifecycle_events`. `after_sequence` is used only by `lifecycle_events`; the plan operations ignore
+it. Success envelopes preserve the legacy operation payload under `value`:
+
+```json
+{
+  "ok": true,
+  "operation": "start_plan",
+  "status": "success",
+  "value": [
+    {
+      "tab_id": 1,
+      "document_uri": "file:///project/main.rs",
+      "language_id": "rust",
+      "server_key": "rust",
+      "command": "/bin/rust-analyzer",
+      "args": ["--stdio"],
+      "workspace_roots": ["file:///project"],
+      "trigger": "auto_start"
+    }
+  ],
+  "error": null,
+  "version": 1
+}
+```
+
+Lifecycle event snapshots return the legacy cursor payload:
+
+```json
+{
+  "ok": true,
+  "operation": "lifecycle_events",
+  "status": "success",
+  "value": { "latest_sequence": 7, "events": [] },
+  "error": null,
+  "version": 1
+}
+```
+
+Error:
+
+```json
+{
+  "ok": false,
+  "operation": "future_operation",
+  "status": "error",
+  "value": null,
+  "error": {
+    "code": "invalid_argument",
+    "status": 1,
+    "message": "unknown project LSP lifecycle operation \"future_operation\""
+  },
+  "version": 1
+}
+```
+
+The returned string is owned by the caller and must be freed with
+`editor_core_ui_ffi_string_free`. Availability is advertised by
+`ECU_FEATURE_MULTI_DOCUMENT_PROJECT_LSP_LIFECYCLE_ENVELOPE`.
 
 ## EditorUi Derived Snapshot Envelope
 

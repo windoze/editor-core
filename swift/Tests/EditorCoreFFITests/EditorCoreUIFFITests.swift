@@ -117,6 +117,20 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertTrue(info.supports(.lspWorkspaceEditApplicationEnvelope))
         XCTAssertTrue(info.supports(.editorUIMinimapEnvelope))
         XCTAssertTrue(info.supports(.editorUIViewPointPayloadEnvelope))
+        XCTAssertTrue(info.supports(.multiDocumentProjectLSPStartPlan))
+        XCTAssertTrue(info.supports(.multiDocumentProjectLSPLifecycleEvents))
+        XCTAssertTrue(info.supports(.multiDocumentProjectLSPStopPlan))
+        XCTAssertTrue(info.supports(.multiDocumentProjectLSPRestartPlan))
+        XCTAssertTrue(info.supports(.multiDocumentProjectLSPLifecycleEnvelope))
+        XCTAssertTrue(info.supports(.lspDerivedStateApplicationEnvelope))
+        XCTAssertTrue(info.supports(.lspSemanticTokensApplicationEnvelope))
+        XCTAssertTrue(info.supports(.multiDocumentWorkspaceFileSearch))
+        XCTAssertTrue(info.supports(.multiDocumentWorkspaceFileReplacement))
+        XCTAssertTrue(info.supports(.multiDocumentRecentFiles))
+        XCTAssertTrue(info.supports(.multiDocumentWorkspaceFileList))
+        XCTAssertTrue(info.supports(.multiDocumentRecentProjects))
+        XCTAssertTrue(info.supports(.multiDocumentProjectFileIndex))
+        XCTAssertTrue(info.supports(.multiDocumentProjectFileIndexQuery))
 
         let runtimeJSON = try JSONTestHelpers.object(try lib.runtimeInfoJSON())
         XCTAssertEqual(runtimeJSON["kind"] as? String, "editor-core-ui-ffi")
@@ -216,6 +230,132 @@ final class EditorCoreUIFFITests: XCTestCase {
                 && (feature["flag"] as? NSNumber)?.uint64Value
                     == EditorCoreUIFFIFeatures.editorUIViewPointPayloadEnvelope.rawValue
         })
+        XCTAssertTrue(features.contains { feature in
+            feature["name"] as? String == "multi_document_project_lsp_start_plan"
+                && (feature["bit"] as? NSNumber)?.uint8Value == 42
+                && (feature["flag"] as? NSNumber)?.uint64Value
+                    == EditorCoreUIFFIFeatures.multiDocumentProjectLSPStartPlan.rawValue
+        })
+        XCTAssertTrue(features.contains { feature in
+            feature["name"] as? String == "multi_document_project_lsp_lifecycle_events"
+                && (feature["bit"] as? NSNumber)?.uint8Value == 43
+                && (feature["flag"] as? NSNumber)?.uint64Value
+                    == EditorCoreUIFFIFeatures.multiDocumentProjectLSPLifecycleEvents.rawValue
+        })
+        XCTAssertTrue(features.contains { feature in
+            feature["name"] as? String == "multi_document_project_lsp_stop_plan"
+                && (feature["bit"] as? NSNumber)?.uint8Value == 44
+                && (feature["flag"] as? NSNumber)?.uint64Value
+                    == EditorCoreUIFFIFeatures.multiDocumentProjectLSPStopPlan.rawValue
+        })
+        XCTAssertTrue(features.contains { feature in
+            feature["name"] as? String == "multi_document_project_lsp_restart_plan"
+                && (feature["bit"] as? NSNumber)?.uint8Value == 45
+                && (feature["flag"] as? NSNumber)?.uint64Value
+                    == EditorCoreUIFFIFeatures.multiDocumentProjectLSPRestartPlan.rawValue
+        })
+        XCTAssertTrue(features.contains { feature in
+            feature["name"] as? String == "multi_document_project_lsp_lifecycle_envelope"
+                && (feature["bit"] as? NSNumber)?.uint8Value == 46
+                && (feature["flag"] as? NSNumber)?.uint64Value
+                    == EditorCoreUIFFIFeatures.multiDocumentProjectLSPLifecycleEnvelope.rawValue
+        })
+        XCTAssertTrue(features.contains { feature in
+            feature["name"] as? String == "lsp_derived_state_application_envelope"
+                && (feature["bit"] as? NSNumber)?.uint8Value == 47
+                && (feature["flag"] as? NSNumber)?.uint64Value
+                    == EditorCoreUIFFIFeatures.lspDerivedStateApplicationEnvelope.rawValue
+        })
+        XCTAssertTrue(features.contains { feature in
+            feature["name"] as? String == "lsp_semantic_tokens_application_envelope"
+                && (feature["bit"] as? NSNumber)?.uint8Value == 48
+                && (feature["flag"] as? NSNumber)?.uint64Value
+                    == EditorCoreUIFFIFeatures.lspSemanticTokensApplicationEnvelope.rawValue
+        })
+        XCTAssertTrue(features.contains { feature in
+            feature["name"] as? String == "multi_document_workspace_file_search"
+                && (feature["bit"] as? NSNumber)?.uint8Value == 49
+                && (feature["flag"] as? NSNumber)?.uint64Value
+                    == EditorCoreUIFFIFeatures.multiDocumentWorkspaceFileSearch.rawValue
+        })
+        XCTAssertTrue(features.contains { feature in
+            feature["name"] as? String == "multi_document_workspace_file_replacement"
+                && (feature["bit"] as? NSNumber)?.uint8Value == 50
+                && (feature["flag"] as? NSNumber)?.uint64Value
+                    == EditorCoreUIFFIFeatures.multiDocumentWorkspaceFileReplacement.rawValue
+        })
+        XCTAssertTrue(features.contains { feature in
+            feature["name"] as? String == "multi_document_recent_files"
+                && (feature["bit"] as? NSNumber)?.uint8Value == 51
+                && (feature["flag"] as? NSNumber)?.uint64Value
+                    == EditorCoreUIFFIFeatures.multiDocumentRecentFiles.rawValue
+        })
+        XCTAssertTrue(features.contains { feature in
+            feature["name"] as? String == "multi_document_workspace_file_list"
+                && (feature["bit"] as? NSNumber)?.uint8Value == 52
+                && (feature["flag"] as? NSNumber)?.uint64Value
+                    == EditorCoreUIFFIFeatures.multiDocumentWorkspaceFileList.rawValue
+        })
+        XCTAssertTrue(features.contains { feature in
+            feature["name"] as? String == "multi_document_recent_projects"
+                && (feature["bit"] as? NSNumber)?.uint8Value == 53
+                && (feature["flag"] as? NSNumber)?.uint64Value
+                    == EditorCoreUIFFIFeatures.multiDocumentRecentProjects.rawValue
+        })
+        XCTAssertTrue(features.contains { feature in
+            feature["name"] as? String == "multi_document_project_file_index"
+                && (feature["bit"] as? NSNumber)?.uint8Value == 54
+                && (feature["flag"] as? NSNumber)?.uint64Value
+                    == EditorCoreUIFFIFeatures.multiDocumentProjectFileIndex.rawValue
+        })
+        XCTAssertTrue(features.contains { feature in
+            feature["name"] as? String == "multi_document_project_file_index_query"
+                && (feature["bit"] as? NSNumber)?.uint8Value == 55
+                && (feature["flag"] as? NSNumber)?.uint64Value
+                    == EditorCoreUIFFIFeatures.multiDocumentProjectFileIndexQuery.rawValue
+        })
+    }
+
+    func testRuntimeInfoJSONDescriptorsCoverKnownFeatures() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let runtimeJSON = try JSONTestHelpers.object(try lib.runtimeInfoJSON())
+        let features = try XCTUnwrap(runtimeJSON["features"] as? [[String: Any]])
+
+        for knownFeature in EditorCoreUIFFIRuntimeCompatibility.knownFeatures {
+            let flag = knownFeature.feature.rawValue
+            let descriptor = try XCTUnwrap(
+                features.first { feature in
+                    (feature["flag"] as? NSNumber)?.uint64Value == flag
+                },
+                "missing runtime descriptor for \(knownFeature.name)"
+            )
+            XCTAssertEqual(
+                (descriptor["bit"] as? NSNumber)?.intValue,
+                flag.trailingZeroBitCount,
+                "wrong runtime descriptor bit for \(knownFeature.name)"
+            )
+            XCTAssertFalse((descriptor["name"] as? String ?? "").isEmpty)
+            XCTAssertFalse((descriptor["description"] as? String ?? "").isEmpty)
+        }
+    }
+
+    func testRuntimeCapabilitySnapshotDecodesFeatureDescriptors() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let snapshot = try lib.runtimeCapabilitySnapshot()
+
+        XCTAssertEqual(snapshot.kind, "editor-core-ui-ffi")
+        XCTAssertEqual(snapshot.abiVersion, lib.abiVersion)
+        XCTAssertEqual(snapshot.featureFlags, lib.featureFlags)
+        XCTAssertEqual(snapshot.runtimeInfo, try lib.runtimeInfo())
+        XCTAssertTrue(snapshot.supports(.lspSemanticTokensApplicationEnvelope))
+
+        let descriptor = try XCTUnwrap(
+            snapshot.features.first { $0.feature == .lspSemanticTokensApplicationEnvelope }
+        )
+        XCTAssertEqual(descriptor.bit, 48)
+        XCTAssertEqual(descriptor.flag, EditorCoreUIFFIFeatures.lspSemanticTokensApplicationEnvelope.rawValue)
+        XCTAssertEqual(descriptor.name, "lsp_semantic_tokens_application_envelope")
+        XCTAssertFalse(descriptor.description.isEmpty)
     }
 
     func testExecuteCommandEnvelopeJSONReportsSuccessAndError() throws {
@@ -933,6 +1073,147 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertNil(failure.error?.status)
     }
 
+    func testProjectLspLifecycleEnvelopeReportsPlansEventsAndErrors() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let multi = try MultiDocumentEditorUI(library: lib)
+        let tab = try multi.openTab(text: "fn main() {}\n", viewportWidthCells: 80)
+        try multi.setTabDocumentURI("file:///project/main.rs", tabId: tab)
+        try multi.setTabLanguageId("rust", tabId: tab)
+        try multi.setWorkspaceRoots(["file:///project"])
+        try multi.setProjectLspServers([
+            EcuProjectLspServerConfig(
+                key: "rust",
+                command: "/bin/rust-analyzer",
+                args: ["--stdio"],
+                languageId: "rust"
+            ),
+        ])
+
+        let start = try multi.projectLspStartPlanEnvelope()
+        XCTAssertTrue(start.ok)
+        XCTAssertEqual(start.operationKind, .startPlan)
+        XCTAssertEqual(start.statusKind, .success)
+        XCTAssertEqual(start.version, lib.abiVersion)
+        XCTAssertNil(start.error)
+        guard case .array(let startPlan)? = start.value,
+              case .object(let firstStart)? = startPlan.first
+        else {
+            XCTFail("expected project LSP start plan array")
+            return
+        }
+        XCTAssertEqual(firstStart["tab_id"], .number(Double(tab)))
+        XCTAssertEqual(firstStart["document_uri"], .string("file:///project/main.rs"))
+        XCTAssertEqual(firstStart["server_key"], .string("rust"))
+
+        let stop = try multi.projectLspStopPlanEnvelope()
+        XCTAssertTrue(stop.ok)
+        XCTAssertEqual(stop.operationKind, .stopPlan)
+        guard case .array(let stopPlan)? = stop.value,
+              case .object(let firstStop)? = stopPlan.first
+        else {
+            XCTFail("expected project LSP stop plan array")
+            return
+        }
+        XCTAssertEqual(firstStop["server_key"], .string("rust"))
+
+        let restart = try multi.projectLspRestartPlanEnvelope()
+        XCTAssertTrue(restart.ok)
+        XCTAssertEqual(restart.operationKind, .restartPlan)
+        guard case .array(let restartPlan)? = restart.value,
+              case .object(let firstRestart)? = restartPlan.first
+        else {
+            XCTFail("expected project LSP restart plan array")
+            return
+        }
+        XCTAssertEqual(firstRestart["server_key"], .string("rust"))
+
+        try multi.recordProjectLspStartOutcome(EcuProjectLspStartOutcome(
+            tabId: tab,
+            documentURI: "file:///project/main.rs",
+            languageId: "rust",
+            serverKey: "rust",
+            command: "/bin/rust-analyzer",
+            args: ["--stdio"],
+            workspaceRoots: ["file:///project"],
+            status: "started"
+        ))
+        let events = try multi.projectLspLifecycleEventsEnvelope()
+        XCTAssertTrue(events.ok)
+        XCTAssertEqual(events.operationKind, .lifecycleEvents)
+        guard case .object(let eventSnapshot)? = events.value,
+              case .number(let latestSequence)? = eventSnapshot["latest_sequence"],
+              case .array(let eventValues)? = eventSnapshot["events"],
+              case .object(let firstEvent)? = eventValues.first
+        else {
+            XCTFail("expected project LSP lifecycle events snapshot")
+            return
+        }
+        XCTAssertEqual(latestSequence, 1)
+        XCTAssertEqual(firstEvent["operation"], .string("start"))
+        XCTAssertEqual(firstEvent["status"], .string("started"))
+
+        let failure = try multi.projectLspLifecycleEnvelope(operationRawValue: "future_operation")
+        XCTAssertFalse(failure.ok)
+        XCTAssertEqual(failure.operationKind, .unknown("future_operation"))
+        XCTAssertEqual(failure.statusKind, .error)
+        XCTAssertEqual(failure.value, .null)
+        XCTAssertEqual(failure.error?.code, "invalid_argument")
+        XCTAssertEqual(failure.error?.status, .invalidArgument)
+        XCTAssertTrue(failure.error?.message.contains("unknown project LSP lifecycle operation") ?? false)
+    }
+
+    func testProjectLspLifecycleEnvelopeDecodesFutureFieldsAndUnknownStatus() throws {
+        let successJSON = """
+        {
+          "ok": true,
+          "operation": "future_operation",
+          "status": "future_status",
+          "value": {
+            "items": [],
+            "future": true
+          },
+          "error": null,
+          "version": 15,
+          "futureTopLevel": true
+        }
+        """
+        let success = try JSONTestHelpers.decode(EcuProjectLspLifecycleEnvelope.self, from: successJSON)
+        XCTAssertTrue(success.ok)
+        XCTAssertEqual(success.operationKind, .unknown("future_operation"))
+        XCTAssertEqual(success.statusKind, .unknown("future_status"))
+        XCTAssertNil(success.error)
+        guard case .object(let value)? = success.value else {
+            XCTFail("expected future project LSP lifecycle value")
+            return
+        }
+        XCTAssertEqual(value["items"], .array([]))
+        XCTAssertEqual(value["future"], .bool(true))
+
+        let failureJSON = """
+        {
+          "ok": false,
+          "operation": null,
+          "status": "error",
+          "value": null,
+          "error": {
+            "code": "future_error",
+            "status": 1000002,
+            "message": "future failure",
+            "futureErrorMetadata": true
+          },
+          "version": 16
+        }
+        """
+        let failure = try JSONTestHelpers.decode(EcuProjectLspLifecycleEnvelope.self, from: failureJSON)
+        XCTAssertFalse(failure.ok)
+        XCTAssertNil(failure.operationKind)
+        XCTAssertEqual(failure.statusKind, .error)
+        XCTAssertEqual(failure.value, .null)
+        XCTAssertEqual(failure.error?.code, "future_error")
+        XCTAssertEqual(failure.error?.message, "future failure")
+        XCTAssertNil(failure.error?.status)
+    }
+
     func testMultiDocumentSearchEnvelopeReportsSuccess() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         let multi = try MultiDocumentEditorUI(library: lib)
@@ -958,6 +1239,188 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(firstMatch["start"], .number(6))
         XCTAssertEqual(firstMatch["end"], .number(11))
         XCTAssertEqual(second["tab_id"], .number(Double(beta)))
+    }
+
+    func testMultiDocumentWorkspaceFileSearchUsesWorkspaceRootsAndGlobs() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let multi = try MultiDocumentEditorUI(library: lib)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("editor-core-ui-swift-workspace-search-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("src", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let sourceURL = root.appendingPathComponent("src/lib.rs")
+        let notesURL = root.appendingPathComponent("notes.txt")
+        try "fn main() {\n    let needle = 1;\n}\n".write(to: sourceURL, atomically: true, encoding: .utf8)
+        try "needle in notes\n".write(to: notesURL, atomically: true, encoding: .utf8)
+
+        try multi.setWorkspaceRoots([root.standardizedFileURL.absoluteString])
+
+        let results = try multi.searchWorkspaceFiles(
+            query: "needle",
+            options: EcuSearchOptions(caseSensitive: false),
+            includeGlobs: ["*.rs"],
+            excludeGlobs: [],
+            maxResults: 10
+        )
+        XCTAssertEqual(results.count, 1)
+        XCTAssertEqual(results[0].path, sourceURL.standardizedFileURL.path)
+        XCTAssertEqual(results[0].relativePath, "src/lib.rs")
+        XCTAssertEqual(results[0].line1, 2)
+        XCTAssertEqual(results[0].column1, 9)
+        XCTAssertEqual(results[0].lineText, "let needle = 1;")
+        XCTAssertEqual(results[0].matchStart, 8)
+        XCTAssertEqual(results[0].matchEnd, 14)
+
+        let envelope = try multi.searchWorkspaceFilesEnvelope(
+            query: "needle",
+            options: EcuSearchOptions(caseSensitive: false),
+            includeGlobs: ["*.rs"],
+            excludeGlobs: [],
+            maxResults: 10
+        )
+        XCTAssertTrue(envelope.ok)
+        XCTAssertEqual(envelope.statusKind, .success)
+        guard case .object(let value)? = envelope.value,
+              case .array(let envelopeResults)? = value["results"]
+        else {
+            XCTFail("expected workspace file search result envelope")
+            return
+        }
+        XCTAssertEqual(envelopeResults.count, 1)
+    }
+
+    func testMultiDocumentWorkspaceFileListUsesWorkspaceRootsAndGlobs() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let multi = try MultiDocumentEditorUI(library: lib)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("editor-core-ui-swift-workspace-list-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("src", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("target", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let sourceURL = root.appendingPathComponent("src/lib.rs")
+        let swiftURL = root.appendingPathComponent("src/App.swift")
+        let readmeURL = root.appendingPathComponent("README.md")
+        try "pub fn demo() {}\n".write(to: sourceURL, atomically: true, encoding: .utf8)
+        try "let value = 1\n".write(to: swiftURL, atomically: true, encoding: .utf8)
+        try "# docs\n".write(to: readmeURL, atomically: true, encoding: .utf8)
+        try "ignored\n".write(to: root.appendingPathComponent("target/generated.rs"), atomically: true, encoding: .utf8)
+
+        try multi.setWorkspaceRoots([root.standardizedFileURL.absoluteString])
+
+        let files = try multi.listWorkspaceFiles(
+            includeGlobs: ["src/**"],
+            excludeGlobs: ["*.swift"],
+            maxResults: 10
+        )
+        XCTAssertEqual(files.count, 1)
+        XCTAssertEqual(files[0].path, sourceURL.standardizedFileURL.path)
+        XCTAssertEqual(files[0].relativePath, "src/lib.rs")
+        XCTAssertEqual(URL(string: files[0].uri)?.isFileURL, true)
+
+        let limited = try multi.listWorkspaceFiles(maxResults: 1)
+        XCTAssertEqual(limited.count, 1)
+        XCTAssertEqual(limited[0].relativePath, "README.md")
+    }
+
+    func testMultiDocumentProjectFileIndexRefreshesWorkspaceFiles() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let multi = try MultiDocumentEditorUI(library: lib)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("editor-core-ui-swift-project-index-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("src", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let firstURL = root.appendingPathComponent("src/lib.rs")
+        let secondURL = root.appendingPathComponent("src/main.rs")
+        let coreModelURL = root.appendingPathComponent("src/core_model.rs")
+        try "pub fn demo() {}\n".write(to: firstURL, atomically: true, encoding: .utf8)
+        try "pub fn core() {}\n".write(to: coreModelURL, atomically: true, encoding: .utf8)
+
+        try multi.setWorkspaceRoots([root.standardizedFileURL.absoluteString])
+        let initial = try multi.projectFileIndexSnapshot()
+        XCTAssertFalse(initial.isBuilt)
+        XCTAssertTrue(initial.files.isEmpty)
+        XCTAssertTrue(try multi.queryProjectFileIndex(query: "cm").isEmpty)
+
+        let refreshed = try multi.refreshProjectFileIndex(maxResults: 10)
+        XCTAssertTrue(refreshed.isBuilt)
+        XCTAssertEqual(refreshed.maxResults, 10)
+        XCTAssertEqual(refreshed.files.map(\.relativePath), ["src/core_model.rs", "src/lib.rs"])
+        let queryMatches = try multi.queryProjectFileIndex(query: "cm")
+        XCTAssertEqual(queryMatches.map(\.relativePath), ["src/core_model.rs"])
+        XCTAssertGreaterThan(try XCTUnwrap(queryMatches.first?.score), 0)
+
+        try "fn main() {}\n".write(to: secondURL, atomically: true, encoding: .utf8)
+        XCTAssertEqual(
+            try multi.projectFileIndexSnapshot().files.map(\.relativePath),
+            ["src/core_model.rs", "src/lib.rs"]
+        )
+        XCTAssertEqual(
+            try multi.refreshProjectFileIndex(maxResults: 10).files.map(\.relativePath),
+            ["src/core_model.rs", "src/lib.rs", "src/main.rs"]
+        )
+
+        try multi.clearProjectFileIndex()
+        let cleared = try multi.projectFileIndexSnapshot()
+        XCTAssertFalse(cleared.isBuilt)
+        XCTAssertTrue(cleared.files.isEmpty)
+    }
+
+    func testMultiDocumentWorkspaceFileReplacementBuildsWorkspaceEdit() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let multi = try MultiDocumentEditorUI(library: lib)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("editor-core-ui-swift-workspace-replace-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("src", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let sourceURL = root.appendingPathComponent("src/lib.rs")
+        let notesURL = root.appendingPathComponent("notes.txt")
+        try "👋 alpha1\nalpha2\n".write(to: sourceURL, atomically: true, encoding: .utf8)
+        try "alpha3\n".write(to: notesURL, atomically: true, encoding: .utf8)
+
+        try multi.setWorkspaceRoots([root.standardizedFileURL.absoluteString])
+
+        let workspaceEdit = try multi.workspaceFileReplacementWorkspaceEditJSON(
+            query: #"alpha(\d)"#,
+            replacement: "beta$1",
+            options: EcuSearchOptions(caseSensitive: true, regex: true),
+            includeGlobs: ["*.rs"],
+            excludeGlobs: [],
+            applyMode: "atomic",
+            maxResults: 10
+        )
+        let preview = try multi.previewWorkspaceEditTransaction(workspaceEdit)
+        XCTAssertFalse(preview.applied)
+        XCTAssertEqual(preview.documents.count, 1)
+        XCTAssertEqual(preview.documents[0].editCount, 2)
+
+        let applied = try multi.applyWorkspaceEditTransaction(workspaceEdit)
+        XCTAssertTrue(applied.applied)
+        XCTAssertEqual(applied.appliedEditCount, 2)
+        XCTAssertEqual(try String(contentsOf: sourceURL, encoding: .utf8), "👋 beta1\nbeta2\n")
+        XCTAssertEqual(try String(contentsOf: notesURL, encoding: .utf8), "alpha3\n")
+
+        let undone = try multi.undoLastWorkspaceEditTransaction()
+        XCTAssertTrue(undone.undone)
+        XCTAssertEqual(try String(contentsOf: sourceURL, encoding: .utf8), "👋 alpha1\nalpha2\n")
     }
 
     func testMultiDocumentSearchEnvelopeDecodesFutureFieldsAndUnknownStatus() throws {
@@ -1610,6 +2073,8 @@ final class EditorCoreUIFFITests: XCTestCase {
         let beta = try multi.openTab(text: "beta world", viewportWidthCells: 80)
         XCTAssertNotEqual(alpha, beta)
 
+        try multi.setTabDocumentURI("file:///project/main.rs", tabId: alpha)
+        try multi.setTabLanguageId("rust", tabId: alpha)
         try multi.setTabTitle("Beta", tabId: beta)
         try multi.setTabDocumentURI("file:///project/Beta.swift", tabId: beta)
         XCTAssertEqual(try multi.tabDocumentURI(tabId: beta), "file:///project/Beta.swift")
@@ -1636,6 +2101,50 @@ final class EditorCoreUIFFITests: XCTestCase {
         )
         XCTAssertEqual(try multi.snapshot().workspaceRoots, ["file:///other", "file:///new"])
 
+        try multi.rememberRecentFileURI(" file:///new/main.rs ")
+        try multi.rememberRecentFileURI("file:///new/App.swift")
+        try multi.rememberRecentFileURI("file:///new/main.rs")
+        XCTAssertEqual(
+            try multi.recentFiles(),
+            [
+                EcuRecentFileEntry(uri: "file:///new/main.rs"),
+                EcuRecentFileEntry(uri: "file:///new/App.swift"),
+            ]
+        )
+        XCTAssertEqual(try multi.snapshot().recentFiles.map(\.uri), [
+            "file:///new/main.rs",
+            "file:///new/App.swift",
+        ])
+        try multi.restoreRecentFileURIs(["file:///new/restored.rs", "file:///new/main.rs"])
+        XCTAssertEqual(try multi.recentFiles().map(\.uri), [
+            "file:///new/restored.rs",
+            "file:///new/main.rs",
+        ])
+        try multi.clearRecentFiles()
+        XCTAssertTrue(try multi.recentFiles().isEmpty)
+
+        try multi.rememberRecentProjectURI(" file:///new ")
+        try multi.rememberRecentProjectURI("file:///other")
+        try multi.rememberRecentProjectURI("file:///new")
+        XCTAssertEqual(
+            try multi.recentProjects(),
+            [
+                EcuRecentProjectEntry(uri: "file:///new"),
+                EcuRecentProjectEntry(uri: "file:///other"),
+            ]
+        )
+        XCTAssertEqual(try multi.snapshot().recentProjects.map(\.uri), [
+            "file:///new",
+            "file:///other",
+        ])
+        try multi.restoreRecentProjectURIs(["file:///restored", "file:///new"])
+        XCTAssertEqual(try multi.recentProjects().map(\.uri), [
+            "file:///restored",
+            "file:///new",
+        ])
+        try multi.clearRecentProjects()
+        XCTAssertTrue(try multi.recentProjects().isEmpty)
+
         try multi.setProjectLspServers([
             EcuProjectLspServerConfig(
                 key: " Rust ",
@@ -1659,6 +2168,90 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(lspServers[0].workspaceRoots, ["file:///new", "file:///other"])
         XCTAssertFalse(lspServers[1].autoStart)
         XCTAssertEqual(try multi.snapshot().projectLspServers, lspServers)
+        let startPlan = try multi.projectLspStartPlan()
+        XCTAssertEqual(startPlan.count, 1)
+        XCTAssertEqual(startPlan[0].tabId, alpha)
+        XCTAssertEqual(startPlan[0].activeViewIndex, 0)
+        XCTAssertEqual(startPlan[0].documentURI, "file:///project/main.rs")
+        XCTAssertEqual(startPlan[0].languageId, "rust")
+        XCTAssertEqual(startPlan[0].serverKey, "rust")
+        XCTAssertEqual(startPlan[0].command, "/bin/rust-analyzer")
+        XCTAssertEqual(startPlan[0].args, ["--stdio"])
+        XCTAssertEqual(startPlan[0].workspaceRoots, ["file:///new", "file:///other"])
+        let stopPlan = try multi.projectLspStopPlan()
+        XCTAssertEqual(stopPlan.count, 2)
+        XCTAssertEqual(stopPlan[0].tabId, alpha)
+        XCTAssertEqual(stopPlan[0].documentURI, "file:///project/main.rs")
+        XCTAssertEqual(stopPlan[0].serverKey, "rust")
+        XCTAssertEqual(stopPlan[0].workspaceRoots, ["file:///new", "file:///other"])
+        XCTAssertEqual(stopPlan[1].tabId, beta)
+        XCTAssertEqual(stopPlan[1].documentURI, "file:///project/Beta.swift")
+        XCTAssertEqual(stopPlan[1].serverKey, "swift")
+        XCTAssertEqual(stopPlan[1].command, "/bin/sourcekit-lsp")
+        XCTAssertEqual(stopPlan[1].workspaceRoots, ["file:///new", "file:///other"])
+        let restartPlan = try multi.projectLspRestartPlan()
+        XCTAssertEqual(restartPlan.count, 2)
+        XCTAssertEqual(restartPlan[0].tabId, alpha)
+        XCTAssertEqual(restartPlan[0].documentURI, "file:///project/main.rs")
+        XCTAssertEqual(restartPlan[0].serverKey, "rust")
+        XCTAssertEqual(restartPlan[0].workspaceRoots, ["file:///new", "file:///other"])
+        XCTAssertEqual(restartPlan[1].tabId, beta)
+        XCTAssertEqual(restartPlan[1].documentURI, "file:///project/Beta.swift")
+        XCTAssertEqual(restartPlan[1].serverKey, "swift")
+        XCTAssertEqual(restartPlan[1].command, "/bin/sourcekit-lsp")
+        XCTAssertEqual(restartPlan[1].workspaceRoots, ["file:///new", "file:///other"])
+
+        try multi.recordProjectLspStartOutcome(EcuProjectLspStartOutcome(
+            tabId: alpha,
+            activeViewIndex: 0,
+            documentURI: "file:///project/main.rs",
+            languageId: "rust",
+            serverKey: "rust",
+            command: "/bin/rust-analyzer",
+            args: ["--stdio"],
+            workspaceRoots: ["file:///new", "file:///other"],
+            status: "started"
+        ))
+        try multi.recordProjectLspStartOutcome(EcuProjectLspStartOutcome(
+            tabId: alpha,
+            activeViewIndex: 0,
+            operation: "restart",
+            documentURI: "file:///project/main.rs",
+            languageId: "rust",
+            serverKey: "rust",
+            command: "/bin/rust-analyzer",
+            args: ["--stdio"],
+            workspaceRoots: ["file:///new", "file:///other"],
+            trigger: "manual_restart",
+            status: "started"
+        ))
+        try multi.recordProjectLspStartOutcome(EcuProjectLspStartOutcome(
+            tabId: alpha,
+            activeViewIndex: 0,
+            operation: "stop",
+            documentURI: "file:///project/main.rs",
+            languageId: "rust",
+            serverKey: "rust",
+            command: "/bin/rust-analyzer",
+            args: ["--stdio"],
+            workspaceRoots: ["file:///new", "file:///other"],
+            trigger: "tab_close",
+            status: "stopped"
+        ))
+        XCTAssertEqual(try multi.projectLspLifecycleEventsLatestSequence(), 3)
+        let lifecycleEvents = try multi.projectLspLifecycleEvents()
+        XCTAssertEqual(lifecycleEvents.latestSequence, 3)
+        XCTAssertEqual(lifecycleEvents.events.count, 3)
+        XCTAssertEqual(lifecycleEvents.events[0].operation, "start")
+        XCTAssertEqual(lifecycleEvents.events[0].status, "started")
+        XCTAssertEqual(lifecycleEvents.events[0].tabId, alpha)
+        XCTAssertEqual(lifecycleEvents.events[0].documentURI, "file:///project/main.rs")
+        XCTAssertEqual(lifecycleEvents.events[1].operation, "restart")
+        XCTAssertEqual(lifecycleEvents.events[1].trigger, "manual_restart")
+        XCTAssertEqual(lifecycleEvents.events[2].operation, "stop")
+        XCTAssertEqual(lifecycleEvents.events[2].trigger, "tab_close")
+        XCTAssertEqual(lifecycleEvents.events[2].status, "stopped")
+        XCTAssertEqual(try multi.projectLspLifecycleEvents(after: 3).events, [])
 
         try multi.setActiveTab(beta)
         XCTAssertEqual(try multi.activeTabId(), beta)
@@ -4028,6 +4621,95 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(pixel(rgba, widthPx: 200, x: 15, y: 10), [1, 200, 2, 255])
     }
 
+    func testLspSemanticTokensApplicationEnvelopeReportsSuccessAndError() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui = try EditorUI(library: lib, initialText: "a c\n", viewportWidthCells: 80)
+
+        let envelope = try ui.lspApplySemanticTokensEnvelope([0, 1, 1, 7, 0])
+        XCTAssertTrue(envelope.ok)
+        XCTAssertEqual(envelope.version, lib.abiVersion)
+        XCTAssertEqual(envelope.operationKind, .applySemanticTokens)
+        XCTAssertEqual(envelope.statusKind, .success)
+        XCTAssertEqual(envelope.value?.applied, true)
+        XCTAssertEqual(envelope.value?.dataLen, 5)
+        guard case .object(let rawValue)? = envelope.rawValue else {
+            XCTFail("expected semantic tokens application raw object")
+            return
+        }
+        XCTAssertEqual(rawValue["applied"], .bool(true))
+        XCTAssertEqual(rawValue["data_len"], .number(5))
+        XCTAssertNil(envelope.error)
+
+        let failure = try ui.lspApplySemanticTokensEnvelope([0])
+        XCTAssertFalse(failure.ok)
+        XCTAssertEqual(failure.operationKind, .applySemanticTokens)
+        XCTAssertEqual(failure.statusKind, .error)
+        XCTAssertNil(failure.value)
+        XCTAssertEqual(failure.rawValue, .null)
+        XCTAssertEqual(failure.error?.code, "internal")
+        XCTAssertEqual(failure.error?.status, .internal)
+        let message = failure.error?.message.lowercased() ?? ""
+        XCTAssertTrue(message.contains("semantic tokens data length"))
+        XCTAssertTrue(message.contains("multiple of 5"))
+    }
+
+    func testLspSemanticTokensApplicationEnvelopeDecodesFutureFieldsAndUnknownStatus() throws {
+        let successJSON = """
+        {
+          "ok": true,
+          "operation": "apply_semantic_tokens",
+          "status": "future_status",
+          "value": {
+            "applied": true,
+            "data_len": 10,
+            "future": "kept in raw value"
+          },
+          "error": null,
+          "version": 21,
+          "future_top_level": true
+        }
+        """
+        let success = try JSONTestHelpers.decode(EcuLspSemanticTokensApplicationEnvelope.self, from: successJSON)
+        XCTAssertTrue(success.ok)
+        XCTAssertEqual(success.operationKind, .applySemanticTokens)
+        XCTAssertEqual(success.statusKind, .unknown("future_status"))
+        XCTAssertEqual(success.value?.applied, true)
+        XCTAssertEqual(success.value?.dataLen, 10)
+        guard case .object(let rawValue)? = success.rawValue else {
+            XCTFail("expected semantic tokens application raw object")
+            return
+        }
+        XCTAssertEqual(rawValue["data_len"], .number(10))
+        XCTAssertEqual(rawValue["future"], .string("kept in raw value"))
+        XCTAssertNil(success.error)
+
+        let failureJSON = """
+        {
+          "ok": false,
+          "operation": "apply_semantic_tokens",
+          "status": "error",
+          "value": null,
+          "error": {
+            "code": "future_error",
+            "status": 123456,
+            "message": "future failure",
+            "metadata": { "retryable": false }
+          },
+          "version": 22,
+          "future_top_level": true
+        }
+        """
+        let failure = try JSONTestHelpers.decode(EcuLspSemanticTokensApplicationEnvelope.self, from: failureJSON)
+        XCTAssertFalse(failure.ok)
+        XCTAssertEqual(failure.operationKind, .applySemanticTokens)
+        XCTAssertEqual(failure.statusKind, .error)
+        XCTAssertNil(failure.value)
+        XCTAssertEqual(failure.rawValue, .null)
+        XCTAssertEqual(failure.error?.code, "future_error")
+        XCTAssertNil(failure.error?.status)
+        XCTAssertEqual(failure.error?.message, "future failure")
+    }
+
     func testLspApplyWorkspaceEditJSONAppliesCurrentDocumentAndReportsSkippedURIs() throws {
         let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
         let ui = try EditorUI(library: lib, initialText: "abc\n", viewportWidthCells: 80)
@@ -4131,6 +4813,162 @@ final class EditorCoreUIFFITests: XCTestCase {
         XCTAssertEqual(failure.rawValue, .null)
         XCTAssertEqual(failure.error?.code, "internal")
         XCTAssertTrue(failure.error?.message.contains("EOF while parsing") ?? false)
+    }
+
+    func testLspDerivedStateApplicationEnvelopeReportsSuccessAndError() throws {
+        let lib = try EditorCoreUIFFITestSupport.shared.loadLibrary()
+        let ui = try EditorUI(library: lib, initialText: "fn main() {}\n", viewportWidthCells: 80)
+
+        let diagnostics = """
+        {
+          "uri": "file:///test.rs",
+          "diagnostics": [
+            {
+              "range": {
+                "start": { "line": 0, "character": 3 },
+                "end": { "line": 0, "character": 7 }
+              },
+              "severity": 1,
+              "message": "demo"
+            }
+          ]
+        }
+        """
+        let inlayHints = #"[{"position":{"line":0,"character":3},"label":": i32"}]"#
+        let codeLens = """
+        [
+          {
+            "range": {
+              "start": { "line": 0, "character": 0 },
+              "end": { "line": 0, "character": 2 }
+            },
+            "command": { "title": "run", "command": "demo.run" }
+          }
+        ]
+        """
+        let documentLinks = """
+        [
+          {
+            "range": {
+              "start": { "line": 0, "character": 0 },
+              "end": { "line": 0, "character": 2 }
+            },
+            "target": "file:///target.rs"
+          }
+        ]
+        """
+        let documentHighlights = """
+        [
+          {
+            "range": {
+              "start": { "line": 0, "character": 3 },
+              "end": { "line": 0, "character": 7 }
+            },
+            "kind": 1
+          }
+        ]
+        """
+        let documentSymbols = """
+        [
+          {
+            "name": "main",
+            "kind": 12,
+            "range": {
+              "start": { "line": 0, "character": 0 },
+              "end": { "line": 0, "character": 12 }
+            },
+            "selectionRange": {
+              "start": { "line": 0, "character": 3 },
+              "end": { "line": 0, "character": 7 }
+            }
+          }
+        ]
+        """
+        let foldingRanges = #"[{"startLine":0,"startCharacter":0,"endLine":0,"endCharacter":12}]"#
+        let cases: [(EcuLspDerivedStateApplicationOperation, () throws -> EcuLspDerivedStateApplicationEnvelope)] = [
+            (.applyDiagnostics, { try ui.lspApplyDiagnosticsEnvelope(diagnostics) }),
+            (.applyInlayHints, { try ui.lspApplyInlayHintsEnvelope(inlayHints) }),
+            (.applyCodeLens, { try ui.lspApplyCodeLensEnvelope(codeLens) }),
+            (.applyDocumentLinks, { try ui.lspApplyDocumentLinksEnvelope(documentLinks) }),
+            (.applyDocumentHighlights, { try ui.lspApplyDocumentHighlightsEnvelope(documentHighlights) }),
+            (.applyDocumentSymbols, { try ui.lspApplyDocumentSymbolsEnvelope(documentSymbols) }),
+            (.applyFoldingRanges, { try ui.lspApplyFoldingRangesEnvelope(foldingRanges) }),
+        ]
+
+        for (operation, apply) in cases {
+            let envelope = try apply()
+            XCTAssertTrue(envelope.ok, operation.rawValue)
+            XCTAssertEqual(envelope.operationKind, operation)
+            XCTAssertEqual(envelope.statusKind, .success)
+            XCTAssertEqual(envelope.value?.applied, true)
+            guard case .object(let rawValue)? = envelope.rawValue else {
+                XCTFail("expected raw value object for \(operation.rawValue)")
+                return
+            }
+            XCTAssertEqual(rawValue["applied"], .bool(true))
+            XCTAssertNil(envelope.error)
+            XCTAssertEqual(envelope.version, lib.abiVersion)
+        }
+
+        let failure = try ui.lspApplyInlayHintsEnvelope("{")
+        XCTAssertFalse(failure.ok)
+        XCTAssertEqual(failure.operationKind, .applyInlayHints)
+        XCTAssertEqual(failure.statusKind, .error)
+        XCTAssertNil(failure.value)
+        XCTAssertEqual(failure.rawValue, .null)
+        XCTAssertEqual(failure.error?.code, "internal")
+        XCTAssertTrue(failure.error?.message.contains("EOF while parsing") ?? false)
+    }
+
+    func testLspDerivedStateApplicationEnvelopeDecodesFutureFieldsAndUnknownStatus() throws {
+        let successJSON = """
+        {
+          "ok": true,
+          "operation": "future_apply",
+          "status": "future_status",
+          "value": {
+            "applied": true,
+            "future": "kept in raw value"
+          },
+          "error": null,
+          "version": 1,
+          "future_top_level": true
+        }
+        """
+        let success = try JSONTestHelpers.decode(EcuLspDerivedStateApplicationEnvelope.self, from: successJSON)
+        XCTAssertTrue(success.ok)
+        XCTAssertEqual(success.operationKind, .unknown("future_apply"))
+        XCTAssertEqual(success.statusKind, .unknown("future_status"))
+        XCTAssertEqual(success.value?.applied, true)
+        guard case .object(let rawValue)? = success.rawValue else {
+            XCTFail("expected raw value object")
+            return
+        }
+        XCTAssertEqual(rawValue["future"], .string("kept in raw value"))
+        XCTAssertNil(success.error)
+
+        let failureJSON = """
+        {
+          "ok": false,
+          "operation": "apply_diagnostics",
+          "status": "error",
+          "value": null,
+          "error": {
+            "code": "invalid_argument",
+            "status": 1,
+            "message": "bad input"
+          },
+          "version": 1
+        }
+        """
+        let failure = try JSONTestHelpers.decode(EcuLspDerivedStateApplicationEnvelope.self, from: failureJSON)
+        XCTAssertFalse(failure.ok)
+        XCTAssertEqual(failure.operationKind, .applyDiagnostics)
+        XCTAssertEqual(failure.statusKind, .error)
+        XCTAssertNil(failure.value)
+        XCTAssertEqual(failure.rawValue, .null)
+        XCTAssertEqual(failure.error?.status, .invalidArgument)
+        XCTAssertEqual(failure.error?.message, "bad input")
     }
 
     func testLspWorkspaceEditApplicationEnvelopeDecodesFutureFieldsAndUnknownStatus() throws {

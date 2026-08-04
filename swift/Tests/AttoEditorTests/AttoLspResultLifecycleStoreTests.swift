@@ -200,6 +200,11 @@ final class AttoLspResultLifecycleStoreTests: XCTestCase {
         XCTAssertEqual(stream.events.map(\.state), [staleState, staleState])
         XCTAssertEqual(stream.entries(after: 2).map(\.state), [staleState])
 
+        let cleared = stream.clearLatestStaleStates(families: ["symbols", "missing"])
+        XCTAssertEqual(cleared.map(\.family), ["symbols"])
+        XCTAssertEqual(cleared.map(\.state), [.fresh])
+        XCTAssertEqual(stream.events.map(\.state), [.fresh, staleState])
+
         stream.clear()
         XCTAssertEqual(stream.events, [])
         XCTAssertEqual(stream.latestSequence, 0)
@@ -212,6 +217,133 @@ final class AttoLspResultLifecycleStoreTests: XCTestCase {
             ).sequence,
             1
         )
+    }
+
+    func testClearCurrentStaleStateRestoresFreshMetadataOnlyWhenStale() {
+        let store = AttoLspResultLifecycleStore<String>(maxHistoryEntries: 3)
+
+        store.record("first", family: "locations", title: "Definitions")
+        XCTAssertNil(store.clearCurrentStaleState())
+
+        store.updateCurrentState(.stale(reason: "document edited"))
+        let cleared = store.clearCurrentStaleState()
+
+        XCTAssertEqual(cleared?.state, .fresh)
+        XCTAssertEqual(store.currentEntry?.state, .fresh)
+        XCTAssertEqual(store.historyEntries.map(\.state), [.fresh])
+    }
+
+    func testClearStaleStateForHistoryEntryLeavesCurrentEntryUntouched() {
+        let store = AttoLspResultLifecycleStore<String>(maxHistoryEntries: 3)
+        let stale = AttoLspResultLifecycleState.stale(reason: "document edited")
+        let first = store.record("first", family: "locations", title: "Definitions", state: stale)
+        let second = store.record("second", family: "symbols", title: "Document Symbols")
+
+        store.pin(first, key: "locations")
+
+        let cleared = store.clearStaleState(for: first)
+
+        XCTAssertEqual(cleared?.state, .fresh)
+        XCTAssertEqual(store.currentEntry, second)
+        XCTAssertEqual(store.historyEntries.map(\.state), [.fresh, .fresh])
+        XCTAssertEqual(store.pinnedEntriesByKey["locations"]?.state, .fresh)
+    }
+
+    func testPinCurrentResultRetainsEntryAfterHistoryBounds() {
+        let store = AttoLspResultLifecycleStore<String>(maxHistoryEntries: 2)
+        let staleState = AttoLspResultLifecycleState.stale(reason: "document edited")
+
+        store.record("first", family: "locations", title: "Definitions")
+        let second = store.record("second", family: "locations", title: "References", state: staleState)
+
+        XCTAssertEqual(store.pinCurrent(), second)
+        XCTAssertEqual(store.pinnedEntry, second)
+        XCTAssertEqual(store.pinnedEntriesByKey["locations"], second)
+
+        let cleared = store.clearCurrentStaleState()
+        XCTAssertEqual(cleared?.state, .fresh)
+        XCTAssertEqual(store.pinnedEntry?.state, .fresh)
+        XCTAssertEqual(store.pinnedEntriesByKey["locations"]?.state, .fresh)
+
+        store.record("third")
+        store.record("fourth")
+
+        XCTAssertEqual(store.history, ["third", "fourth"])
+        XCTAssertEqual(store.pinnedEntriesByKey["locations"]?.snapshot, "second")
+
+        store.clear()
+        XCTAssertNil(store.pinnedEntry)
+        XCTAssertEqual(store.pinnedEntriesByKey, [:])
+    }
+
+    func testPinResultCanUseWorkbenchKeySeparateFromFamily() {
+        let store = AttoLspResultLifecycleStore<String>(maxHistoryEntries: 3)
+
+        let symbols = store.record("document symbols", family: "symbols", title: "Document Symbols")
+        let outline = store.record("workspace outline", family: "symbols", title: "Workspace Outline")
+
+        store.pin(symbols, key: "symbols")
+        store.pin(outline, key: "workspace_outline")
+
+        XCTAssertEqual(store.pinnedEntriesByKey["symbols"], symbols)
+        XCTAssertEqual(store.pinnedEntriesByKey["workspace_outline"], outline)
+        XCTAssertEqual(store.pinnedEntry, outline)
+
+        XCTAssertEqual(store.unpin(key: "symbols"), symbols)
+        XCTAssertNil(store.pinnedEntriesByKey["symbols"])
+        XCTAssertEqual(store.pinnedEntriesByKey["workspace_outline"], outline)
+        XCTAssertEqual(store.pinnedEntry, outline)
+
+        XCTAssertEqual(store.unpin(key: "workspace_outline"), outline)
+        XCTAssertEqual(store.pinnedEntriesByKey, [:])
+        XCTAssertNil(store.pinnedEntry)
+        XCTAssertNil(store.unpin(key: "workspace_outline"))
+    }
+
+    func testPinLatestResultEventRetainsEventAfterHistoryBounds() {
+        let stream = AttoLspResultEventStream(maxHistoryEntries: 2)
+        let staleState = AttoLspResultLifecycleState.stale(reason: "document edited")
+
+        stream.record(
+            family: "code_lens",
+            title: "Code Lens: 1 action",
+            payload: .codeLens(itemCount: 1)
+        )
+        let links = stream.record(
+            family: "document_links",
+            title: "Document Links: 2 links",
+            state: staleState,
+            payload: .documentLinks(itemCount: 2)
+        )
+
+        XCTAssertEqual(stream.pinLatest(family: "document_links"), links)
+        XCTAssertEqual(stream.pinnedEventsByFamily["document_links"], links)
+        XCTAssertNil(stream.pinLatest(family: "missing"))
+
+        let cleared = stream.clearLatestStaleStates(families: ["document_links"])
+        XCTAssertEqual(cleared.map(\.family), ["document_links"])
+        XCTAssertEqual(stream.pinnedEventsByFamily["document_links"]?.state, .fresh)
+
+        stream.record(
+            family: "hierarchy",
+            title: "Hierarchy: 1 result",
+            payload: .hierarchy(title: "Hierarchy", itemCount: 1)
+        )
+        stream.record(
+            family: "document_colors",
+            title: "Document Colors: 1 color",
+            payload: .documentColors(mode: "document_colors", itemCount: 1)
+        )
+
+        XCTAssertFalse(stream.events.contains { $0.sequence == links.sequence })
+        XCTAssertEqual(stream.pinnedEventsByFamily["document_links"]?.sequence, links.sequence)
+
+        XCTAssertEqual(stream.unpin(family: "document_links")?.sequence, links.sequence)
+        XCTAssertNil(stream.pinnedEventsByFamily["document_links"])
+        XCTAssertNil(stream.unpin(family: "document_links"))
+
+        stream.clear()
+        XCTAssertEqual(stream.pinnedEventsByFamily, [:])
     }
 
     func testProjectLspPanelErrorEventStoreBoundsAndFiltersBySequence() {
@@ -358,6 +490,73 @@ final class AttoLspResultLifecycleStoreTests: XCTestCase {
             ).sequence,
             1
         )
+    }
+
+    func testProjectLspLifecycleEventStoreBoundsAndFiltersBySequence() throws {
+        let store = AttoProjectLspLifecycleEventStore(maxHistoryEntries: 2)
+        let decoder = JSONDecoder()
+
+        let first = try decoder.decode(EcuProjectLspLifecycleEvent.self, from: Data("""
+        {
+          "sequence": 1,
+          "operation": "start",
+          "trigger": "auto_start",
+          "status": "started",
+          "tab_id": 10,
+          "active_view_index": 0,
+          "document_uri": "file:///tmp/a.rs",
+          "language_id": "rust",
+          "server_key": "rust-analyzer",
+          "command": "rust-analyzer",
+          "args": [],
+          "workspace_roots": ["file:///tmp"]
+        }
+        """.utf8))
+        let second = try decoder.decode(EcuProjectLspLifecycleEvent.self, from: Data("""
+        {
+          "sequence": 2,
+          "operation": "start",
+          "trigger": "auto_start",
+          "status": "failed",
+          "tab_id": 11,
+          "active_view_index": 1,
+          "document_uri": "file:///tmp/b.py",
+          "language_id": "python",
+          "server_key": "pylsp",
+          "command": "pylsp",
+          "args": ["--stdio"],
+          "workspace_roots": ["file:///tmp"],
+          "error_message": "server missing"
+        }
+        """.utf8))
+        let third = try decoder.decode(EcuProjectLspLifecycleEvent.self, from: Data("""
+        {
+          "sequence": 3,
+          "operation": "start",
+          "trigger": "manual_restart",
+          "status": "started",
+          "tab_id": 12,
+          "active_view_index": 0,
+          "document_uri": "file:///tmp/c.swift",
+          "language_id": "swift",
+          "server_key": "sourcekit-lsp",
+          "command": "sourcekit-lsp",
+          "args": [],
+          "workspace_roots": ["file:///tmp"]
+        }
+        """.utf8))
+
+        store.record(first)
+        store.record(contentsOf: [second, third])
+
+        XCTAssertEqual(store.latestSequence, 3)
+        XCTAssertEqual(store.events.map(\.sequence), [2, 3])
+        XCTAssertEqual(store.entries(after: 2), [third])
+        XCTAssertEqual(store.entries(after: 3), [])
+
+        store.clear()
+        XCTAssertEqual(store.events, [])
+        XCTAssertEqual(store.latestSequence, 0)
     }
 
     func testProjectLspProcessHealthLogStoreAppendsAndLoadsRecentWorkspaceEntries() throws {

@@ -164,12 +164,15 @@ struct AttoRecentCommandStore {
 final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var commandPaletteController: AttoCommandPaletteController?
     private var quickOpenController: AttoCommandPaletteController?
+    private var quickOpenQuery: String = ""
+    private var recentProjectController: AttoCommandPaletteController?
     private var macroDeleteHistoryController: AttoCommandPaletteController?
     private var macroDeleteHistoryPanelController: AttoDeletedMacroHistoryPanelController?
+    private var settingsValidationPanelController: AttoSettingsValidationPanelController?
     private var preferencesWindowController: AttoPreferencesWindowController?
 
     private let library = EditorCoreUIFFILibrary()
-    private let sessionManager = AttoSessionManager()
+    private let sessionManager: AttoSessionManager
     private var runtimeCompatibilityReport: AttoRuntimeCompatibility.Report?
 
     private var windows: [AttoWindowContext] = []
@@ -224,6 +227,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         self.recentCommandRecords = recentCommandStore?.load(maxCount: Self.maxRecentCommandCount) ?? []
         self.macroStore = .appDefault
         self.settingsStore = AttoConfigurationSettingsStore()
+        self.sessionManager = AttoSessionManager()
         self.lastMacroCommands = self.macroStore?.load(maxCount: Self.maxRecordedMacroCommandCount) ?? []
         self.deletedMacroUndoStack = self.macroStore?.loadDeletedMacroUndoRecords(
             maxRecords: Self.maxDeletedMacroUndoRecordCount,
@@ -241,7 +245,8 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         keymapResolver: ((AttoKeymapContext) -> AttoKeymapResolution)? = nil,
         recentCommandStore: AttoRecentCommandStore? = nil,
         macroStore: AttoMacroStore? = nil,
-        configurationSettingsStore: AttoConfigurationSettingsStore = AttoConfigurationSettingsStore()
+        configurationSettingsStore: AttoConfigurationSettingsStore = AttoConfigurationSettingsStore(),
+        sessionManager: AttoSessionManager = AttoSessionManager()
     ) {
         self.keyBindings = keyBindings
         self.keySequences = keySequences
@@ -253,6 +258,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         self.recentCommandRecords = recentCommandStore?.load(maxCount: Self.maxRecentCommandCount) ?? []
         self.macroStore = macroStore
         self.settingsStore = configurationSettingsStore
+        self.sessionManager = sessionManager
         self.lastMacroCommands = self.macroStore?.load(maxCount: Self.maxRecordedMacroCommandCount) ?? []
         self.deletedMacroUndoStack = self.macroStore?.loadDeletedMacroUndoRecords(
             maxRecords: Self.maxDeletedMacroUndoRecordCount,
@@ -576,8 +582,20 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
 
         quickOpenController = AttoCommandPaletteController(
             accessibilityPrefix: "AttoEditor.QuickOpen",
+            searchTextDidChange: { [weak self] query in
+                self?.quickOpenQuery = query
+                self?.quickOpenController?.reloadCommands()
+            },
             commandsProvider: { [weak self] in
-                self?.quickOpenCommands() ?? []
+                guard let self else { return [] }
+                return self.quickOpenCommands(query: self.quickOpenQuery)
+            }
+        )
+
+        recentProjectController = AttoCommandPaletteController(
+            accessibilityPrefix: "AttoEditor.RecentProjects",
+            commandsProvider: { [weak self] in
+                self?.recentProjectCommands() ?? []
             }
         )
 
@@ -964,7 +982,13 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
 
     private func showQuickOpen() {
         guard let win = activeWindow()?.window else { return }
+        quickOpenQuery = ""
         quickOpenController?.show(relativeTo: win, placeholder: "Type a file name to open…")
+    }
+
+    private func showRecentProjects() {
+        guard let ctx = ensureActiveWindowForMenuActions() else { return }
+        recentProjectController?.show(relativeTo: ctx.window, placeholder: "Type a project name to open…")
     }
 
     private func defaultCommands(orderForCommandPalette: Bool = true) -> [AttoCommandPaletteCommand] {
@@ -974,6 +998,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             },
             .init(id: "file.open_folder", title: "File: Open Folder…") { [weak self] in
                 self?.openFolderMenuClicked(nil)
+            },
+            .init(id: "file.open_recent_project", title: "File: Open Recent Project…") { [weak self] in
+                self?.showRecentProjects()
             },
             .init(id: "file.open_file", title: "File: Open File…") { [weak self] in
                 self?.openFileMenuClicked(nil)
@@ -1161,6 +1188,15 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .init(id: "settings.open_workspace_settings", title: "Settings: Open Workspace Settings") { [weak self] in
                 self?.openWorkspaceSettingsFile()
             },
+            .init(id: "settings.validate_user_settings", title: "Settings: Validate User Settings") { [weak self] in
+                self?.validateUserSettingsFile()
+            },
+            .init(
+                id: "settings.validate_workspace_settings",
+                title: "Settings: Validate Workspace Settings"
+            ) { [weak self] in
+                self?.validateWorkspaceSettingsFile()
+            },
             .init(id: "go.back", title: "Go: Back") { [weak self] in
                 self?.activeWindow()?.editorAreaController.jumpBackInActiveTab()
             },
@@ -1197,6 +1233,42 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .init(id: "lsp.show_workbench_panel", title: "LSP: Show Workbench Panel") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showLspWorkbenchPanel()
             },
+            .init(id: "lsp.show_workbench_history", title: "LSP: Show Workbench History") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showLspWorkbenchHistoryPanel()
+            },
+            .init(id: "lsp.show_workbench_pinned_results", title: "LSP: Show Workbench Pinned Results") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showLspWorkbenchPinnedResultsPanel()
+            },
+            .init(id: "lsp.show_workbench_selected_history", title: "LSP: Show Workbench Selected History") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showSelectedLspWorkbenchHistory()
+            },
+            .init(id: "lsp.jump_workbench_first_result", title: "LSP: Jump to Workbench First Result") { [weak self] in
+                self?.activeWindow()?.editorAreaController.jumpToFirstLspWorkbenchResult()
+            },
+            .init(id: "lsp.jump_workbench_selected_result", title: "LSP: Jump to Workbench Selected Result") { [weak self] in
+                self?.activeWindow()?.editorAreaController.jumpToSelectedLspWorkbenchResult()
+            },
+            .init(id: "lsp.refresh_workbench_selected_result", title: "LSP: Refresh Workbench Selected Result") { [weak self] in
+                self?.activeWindow()?.editorAreaController.refreshSelectedLspWorkbenchResult()
+            },
+            .init(id: "lsp.pin_workbench_current_results", title: "LSP: Pin Workbench Current Results") { [weak self] in
+                self?.activeWindow()?.editorAreaController.pinCurrentLspWorkbenchResults()
+            },
+            .init(id: "lsp.pin_workbench_selected_result", title: "LSP: Pin Workbench Selected Result") { [weak self] in
+                self?.activeWindow()?.editorAreaController.pinSelectedLspWorkbenchResult()
+            },
+            .init(id: "lsp.unpin_workbench_current_results", title: "LSP: Unpin Workbench Current Results") { [weak self] in
+                self?.activeWindow()?.editorAreaController.unpinCurrentLspWorkbenchResults()
+            },
+            .init(id: "lsp.unpin_workbench_selected_result", title: "LSP: Unpin Workbench Selected Result") { [weak self] in
+                self?.activeWindow()?.editorAreaController.unpinSelectedLspWorkbenchResult()
+            },
+            .init(id: "lsp.clear_workbench_stale_results", title: "LSP: Clear Workbench Stale Results") { [weak self] in
+                self?.activeWindow()?.editorAreaController.clearLspWorkbenchStaleResults()
+            },
+            .init(id: "lsp.clear_workbench_selected_stale_result", title: "LSP: Clear Workbench Selected Stale Result") { [weak self] in
+                self?.activeWindow()?.editorAreaController.clearSelectedLspWorkbenchStaleResult()
+            },
             .init(id: "lsp.call_hierarchy_incoming", title: "LSP: Incoming Calls") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showIncomingCallsInActiveTab()
             },
@@ -1211,6 +1283,12 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             },
             .init(id: "lsp.show_hierarchy_panel", title: "LSP: Show Hierarchy Panel") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showHierarchyPanelInActiveTab()
+            },
+            .init(id: "lsp.refresh_hierarchy_panel", title: "LSP: Refresh Hierarchy Panel") { [weak self] in
+                self?.activeWindow()?.editorAreaController.refreshHierarchyPanelInActiveTab()
+            },
+            .init(id: "lsp.expand_hierarchy_selection", title: "LSP: Expand Hierarchy Selection") { [weak self] in
+                self?.activeWindow()?.editorAreaController.expandSelectedHierarchyPanelResultInActiveTab()
             },
             .init(
                 id: "lsp.rename",
@@ -1298,8 +1376,14 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .init(id: "lsp.restart_server", title: "LSP: Restart Server") { [weak self] in
                 self?.activeWindow()?.editorAreaController.restartLspServerInActiveTab()
             },
+            .init(id: "lsp.shutdown_server", title: "LSP: Shut Down Server") { [weak self] in
+                self?.activeWindow()?.editorAreaController.shutdownLspServerInActiveTab()
+            },
             .init(id: "lsp.restart_project_servers", title: "LSP: Restart Project Servers") { [weak self] in
                 self?.activeWindow()?.editorAreaController.restartProjectLspServers()
+            },
+            .init(id: "lsp.shutdown_project_servers", title: "LSP: Shut Down Project Servers") { [weak self] in
+                self?.activeWindow()?.editorAreaController.shutdownProjectLspServers()
             },
             .init(id: "lsp.document_colors", title: "LSP: Document Colors") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showDocumentColorsInActiveTab()
@@ -1309,6 +1393,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             },
             .init(id: "lsp.show_document_colors_panel", title: "LSP: Show Document Colors Panel") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showDocumentColorsPanelInActiveTab()
+            },
+            .init(id: "lsp.refresh_document_colors", title: "LSP: Refresh Document Colors") { [weak self] in
+                self?.activeWindow()?.editorAreaController.refreshDocumentColorsInActiveTab()
             },
             .init(id: "lsp.refresh_folding_ranges", title: "LSP: Refresh Folding Ranges") { [weak self] in
                 self?.activeWindow()?.editorAreaController.refreshFoldingRangesInActiveTab()
@@ -1362,6 +1449,14 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
 
     func _defaultCommandsForTesting() -> [AttoCommandPaletteCommand] {
         defaultCommands()
+    }
+
+    func _quickOpenCommandsForTesting(query: String = "") -> [AttoCommandPaletteCommand] {
+        quickOpenCommands(query: query)
+    }
+
+    func _recentProjectCommandsForTesting() -> [AttoCommandPaletteCommand] {
+        recentProjectCommands()
     }
 
     func _keyBindingForTesting(commandID: String) -> AttoKeyBinding? {
@@ -1475,6 +1570,24 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             contentSize: AttoWindowSizing.preferredContentSize,
             centerOnShow: false
         )
+    }
+
+    func _workspaceRootURLsForTesting() -> [URL] {
+        windows.map { $0.workspaceRootURL.standardizedFileURL }
+    }
+
+    func _closeWindowsForTesting() {
+        let contexts = windows
+        windows.removeAll()
+        activeWindowID = nil
+        for ctx in contexts {
+            ctx.window.delegate = nil
+            ctx.window.close()
+        }
+    }
+
+    func _makeSessionSnapshotForTesting() -> AttoSessionSnapshot? {
+        makeSessionSnapshot()
     }
 
     func _applyEditorPreferencesForTesting() {
@@ -2536,7 +2649,8 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
 
         let requirement: CommandAvailabilityRequirement = {
             switch commandID {
-            case "file.open_folder", "file.open_file", "file.new", "workbench.command_palette", "workbench.preferences":
+            case "file.open_folder", "file.open_recent_project", "file.open_file", "file.new",
+                 "workbench.command_palette", "workbench.preferences":
                 return .none
             case "go.file", "search.find_in_files", "view.toggle_sidebar",
                  "workspace.undo_last_workspace_edit", "workspace.redo_last_workspace_edit",
@@ -2617,10 +2731,11 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
                 macroPolicy: .notRecordable,
                 requiredRuntimeFeatures: .workspaceEditTransactionHistoryCommandRequirements
             )
-        case "file.open_folder", "file.open_file", "workbench.preferences", "go.file",
+        case "file.open_folder", "file.open_recent_project", "file.open_file", "workbench.preferences", "go.file",
              "editor.find", "editor.replace", "workbench.command_palette":
             return AttoCommandSchema(macroPolicy: .promptRequired)
-        case "settings.open_user_settings", "settings.open_workspace_settings":
+        case "settings.open_user_settings", "settings.open_workspace_settings",
+             "settings.validate_user_settings", "settings.validate_workspace_settings":
             return AttoCommandSchema(macroPolicy: .notRecordable)
         case "macro.save_named":
             return Self.macroNameCommandSchema()
@@ -2721,6 +2836,26 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         )
     }
 
+    private func validateUserSettingsFile() {
+        guard let ctx = ensureActiveWindowForMenuActions() else { return }
+        validateSettingsFile(
+            settingsStore.userSettingsURL,
+            displayName: "User Settings",
+            scope: .user,
+            in: ctx
+        )
+    }
+
+    private func validateWorkspaceSettingsFile() {
+        guard let ctx = ensureActiveWindowForMenuActions() else { return }
+        validateSettingsFile(
+            AttoConfigurationSettingsStore.workspaceSettingsURL(forWorkspaceRootURL: ctx.workspaceRootURL),
+            displayName: "Workspace Settings",
+            scope: .workspace,
+            in: ctx
+        )
+    }
+
     private func openSettingsFile(
         _ url: URL,
         displayName: String,
@@ -2742,6 +2877,98 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         } else {
             ctx.editorAreaController.setTransientStatusText("Failed to open \(displayName)")
         }
+    }
+
+    private func validateSettingsFile(
+        _ url: URL,
+        displayName: String,
+        scope: AttoConfigurationSettingsScope,
+        in ctx: AttoWindowContext
+    ) {
+        do {
+            let report = try AttoConfigurationSettingsSchema.current.validateSettingsFile(
+                at: url,
+                scope: scope
+            )
+            ctx.editorAreaController.setTransientStatusText(
+                Self.settingsValidationStatusText(displayName: displayName, result: report.result)
+            )
+            showSettingsValidationPanelIfNeeded(report: report, displayName: displayName, in: ctx)
+        } catch let error as AttoConfigurationSettingsFileValidationError {
+            switch error {
+            case .missingFile:
+                settingsValidationPanelController?.hide()
+                ctx.editorAreaController.setTransientStatusText("\(displayName) file missing")
+            }
+        } catch {
+            settingsValidationPanelController?.hide()
+            NSLog("AttoEditor: failed to validate %@ file %@: %@", displayName, url.path, String(describing: error))
+            ctx.editorAreaController.setTransientStatusText("Failed to validate \(displayName)")
+        }
+    }
+
+    private func showSettingsValidationPanelIfNeeded(
+        report: AttoConfigurationSettingsFileValidationReport,
+        displayName: String,
+        in ctx: AttoWindowContext
+    ) {
+        let items = AttoSettingsValidationPanelController.items(for: report, displayName: displayName)
+        guard items.isEmpty == false else {
+            settingsValidationPanelController?.hide()
+            return
+        }
+
+        let controller = settingsValidationPanelController ?? AttoSettingsValidationPanelController(
+            onOpen: { [weak self] item in
+                self?.openSettingsValidationIssue(item)
+            }
+        )
+        settingsValidationPanelController = controller
+        _ = controller.show(
+            relativeTo: ctx.window,
+            title: "\(displayName) Validation",
+            items: items
+        )
+    }
+
+    private func openSettingsValidationIssue(_ item: AttoSettingsValidationPanelController.Item) {
+        guard let ctx = ensureActiveWindowForMenuActions() else { return }
+        guard let location = item.sourceLocation else {
+            NSSound.beep()
+            ctx.editorAreaController.setTransientStatusText("Settings issue has no source location")
+            return
+        }
+
+        let fileLocation = AttoCommandLine.FileLocation(
+            line1: location.line,
+            column1: location.column
+        )
+        ctx.rememberRecentFile(item.sourceURL)
+        if ctx.editorAreaController.openFile(url: item.sourceURL, mode: .pinned, location: fileLocation) {
+            ctx.fileExplorerController.revealFile(item.sourceURL)
+            ctx.editorAreaController.setTransientStatusText(
+                "Opened settings issue at \(location.line):\(location.column)"
+            )
+        } else {
+            ctx.editorAreaController.setTransientStatusText("Failed to open settings issue")
+        }
+    }
+
+    private static func settingsValidationStatusText(
+        displayName: String,
+        result: AttoConfigurationSettingsValidationResult
+    ) -> String {
+        let errorCount = result.issues.filter { $0.severity == .error }.count
+        if errorCount > 0 {
+            return "\(displayName) invalid: \(errorCount) \(errorCount == 1 ? "issue" : "issues")"
+        }
+
+        let warningCount = result.issues.filter { $0.severity == .warning }.count
+        if warningCount > 0 {
+            return "\(displayName) valid: \(warningCount) \(warningCount == 1 ? "warning" : "warnings")"
+        }
+
+        return "\(displayName) valid"
     }
 
     private func ensureSettingsScaffoldExists(at url: URL) throws {
@@ -2849,16 +3076,18 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         ).snapshot
     }
 
-    private func quickOpenCommands() -> [AttoCommandPaletteCommand] {
+    private func quickOpenCommands(query: String = "") -> [AttoCommandPaletteCommand] {
         guard let ctx = activeWindow() else { return [] }
         let editorAreaController = ctx.editorAreaController
         let fileExplorerController = ctx.fileExplorerController
-        let all = ctx.fileIndex.entries()
+        let all = query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? ctx.workspaceFileEntries()
+            : ctx.workspaceFileEntries(matching: query)
 
         var out: [AttoCommandPaletteCommand] = []
         var seen: Set<URL> = Set()
 
-        for url in ctx.recentFiles {
+        for url in ctx.recentFileURLs() {
             let u = url.standardizedFileURL
             if seen.contains(u) { continue }
             seen.insert(u)
@@ -2882,6 +3111,61 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         }
 
         return out
+    }
+
+    private func recentProjectCommands() -> [AttoCommandPaletteCommand] {
+        recentProjectURLsForCommands().map { url in
+            let standardized = url.standardizedFileURL
+            return AttoCommandPaletteCommand(
+                id: "file.open_recent_project:\(standardized.absoluteString)",
+                title: recentProjectTitle(for: standardized),
+                group: "File"
+            ) { [weak self] in
+                self?.openRecentProject(url: standardized)
+            }
+        }
+    }
+
+    private func recentProjectURLsForCommands(fileManager: FileManager = .default) -> [URL] {
+        var out: [URL] = []
+        var seen: Set<String> = []
+
+        func remember(_ url: URL) {
+            let standardized = url.standardizedFileURL
+            guard Self.directoryExists(at: standardized, fileManager: fileManager) else { return }
+            let key = standardized.path
+            guard seen.contains(key) == false else { return }
+            seen.insert(key)
+            out.append(standardized)
+        }
+
+        for ctx in windowsOrderedForSessionProjectHistory() {
+            for url in ctx.recentProjectURLs() {
+                remember(url)
+            }
+            remember(ctx.workspaceRootURL)
+        }
+
+        return Array(out.prefix(20))
+    }
+
+    private func recentProjectTitle(for url: URL) -> String {
+        let name = url.lastPathComponent.isEmpty ? url.path : url.lastPathComponent
+        return "\(name) — \(url.path)"
+    }
+
+    private func openRecentProject(url: URL) {
+        let standardized = url.standardizedFileURL
+        guard Self.directoryExists(at: standardized, fileManager: .default) else {
+            NSSound.beep()
+            return
+        }
+
+        let visibleFrame = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame
+            ?? CGRect(origin: .zero, size: AttoWindowSizing.preferredContentSize)
+        let contentSize = AttoWindowSizing.defaultContentSize(forVisibleFrame: visibleFrame)
+        let ctx = createWindow(workspaceRootURL: standardized, contentSize: contentSize)
+        focusWindow(ctx)
     }
 
     // MARK: - macOS window tabbing (disable + hide menu items)
@@ -2974,8 +3258,63 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             schemaVersion: AttoSessionSnapshot.currentSchemaVersion,
             savedAt: Date(),
             activeWindowIndex: activeIndex,
+            recentProjectURIs: sessionRecentProjectURIs(windowSnapshots: windowSnaps),
             windows: windowSnaps
         )
+    }
+
+    private func sessionRecentProjectURIs(windowSnapshots: [AttoWindowSnapshot]) -> [String] {
+        var out: [String] = []
+        var seen: Set<String> = []
+
+        func remember(_ uri: String?) {
+            guard let raw = uri else { return }
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard trimmed.isEmpty == false,
+                  let url = URL(string: trimmed),
+                  url.isFileURL
+            else {
+                return
+            }
+
+            let normalized = url.standardizedFileURL.absoluteString
+            guard seen.contains(normalized) == false else { return }
+            seen.insert(normalized)
+            out.append(normalized)
+        }
+
+        for ctx in windowsOrderedForSessionProjectHistory() {
+            for url in ctx.recentProjectURLs() {
+                remember(url.standardizedFileURL.absoluteString)
+            }
+        }
+
+        for snap in windowSnapshots {
+            remember(snap.workspaceRootURI)
+            if snap.workspaceRootURI == nil {
+                remember(URL(fileURLWithPath: snap.workspaceRootPath).standardizedFileURL.absoluteString)
+            }
+        }
+
+        return Array(out.prefix(20))
+    }
+
+    private func windowsOrderedForSessionProjectHistory() -> [AttoWindowContext] {
+        guard let activeWindowID,
+              let activeIndex = windows.firstIndex(where: { $0.id == activeWindowID })
+        else {
+            return windows
+        }
+
+        var ordered = windows
+        let active = ordered.remove(at: activeIndex)
+        ordered.insert(active, at: 0)
+        return ordered
+    }
+
+    private static func directoryExists(at url: URL, fileManager: FileManager) -> Bool {
+        var isDir: ObjCBool = false
+        return fileManager.fileExists(atPath: url.path, isDirectory: &isDir) && isDir.boolValue
     }
 
     private func scheduleSessionSave(reason: String) {
@@ -2999,13 +3338,6 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
 
         let fm = FileManager.default
 
-        func validatedWorkspaceRoot(_ path: String) -> URL? {
-            let url = URL(fileURLWithPath: path).standardizedFileURL
-            var isDir: ObjCBool = false
-            guard fm.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue else { return nil }
-            return url
-        }
-
         func rectIfVisible(_ frame: AttoWindowFrameSnapshot?) -> CGRect? {
             guard let frame else { return nil }
             let rect = CGRect(x: frame.x, y: frame.y, width: frame.width, height: frame.height)
@@ -3015,7 +3347,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         }
 
         for win in snapshot.windows {
-            let root = validatedWorkspaceRoot(win.workspaceRootPath) ?? fm.homeDirectoryForCurrentUser
+            let root = win.validatedWorkspaceRootURL(fileManager: fm) ?? fm.homeDirectoryForCurrentUser
             let frameRect = rectIfVisible(win.frame)
             let ctx = createWindow(
                 workspaceRootURL: root,
@@ -3025,6 +3357,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             )
 
             ctx.sidebarSplitItem.isCollapsed = win.sidebarCollapsed
+            ctx.restoreRecentProjectURIs(snapshot.recentProjectURIs, fileManager: fm)
             ctx.restoreRecentFiles(filePaths: win.recentFilePaths)
             ctx.editorAreaController.restoreSession(
                 tabs: win.tabs,

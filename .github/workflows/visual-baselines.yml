@@ -12,13 +12,6 @@ on:
           - smoke
           - strict
   pull_request:
-    paths:
-      - ".github/workflows/visual-baselines.yml"
-      - "swift/Tests/AttoEditorTests/AttoEditorVisualBaselineManifestTests.swift"
-      - "swift/Tests/AttoEditorTests/AttoVisualSnapshotTestSupport.swift"
-      - "swift/Tests/AttoEditorTests/Resources/VisualBaselines/**"
-      - "swift/Tests/AttoEditorTests/Resources/VisualFixtures/**"
-      - "swift/scripts/*visual-baselines.sh"
 
 concurrency:
   group: visual-baselines-${{ github.ref }}
@@ -46,12 +39,25 @@ jobs:
       - name: Record visual environment
         run: swift/scripts/write-visual-ci-environment.sh
 
+      - name: Detect checked-in visual baseline PNGs
+        id: checked_in_baselines
+        shell: bash
+        run: |
+          baseline_png="$(find swift/Tests/AttoEditorTests/Resources/VisualBaselines -type f -name '*.png' -print -quit)"
+          if [[ -n "$baseline_png" ]]; then
+            echo "has_png=true" >> "$GITHUB_OUTPUT"
+            echo "Found checked-in visual baseline PNG: $baseline_png"
+          else
+            echo "has_png=false" >> "$GITHUB_OUTPUT"
+            echo "No checked-in visual baseline PNGs found; pull requests run smoke capture only."
+          fi
+
       - name: Smoke visual baseline manifest
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.mode == 'smoke' }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'smoke') || (github.event_name == 'pull_request' && steps.checked_in_baselines.outputs.has_png != 'true') }}
         run: swift test --package-path swift --filter 'AttoEditorVisualBaselineManifestTests'
 
       - name: Strict visual baseline comparison
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'strict' }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'strict') || (github.event_name == 'pull_request' && steps.checked_in_baselines.outputs.has_png == 'true') }}
         run: swift/scripts/check-visual-baselines.sh
 
       - name: Upload visual artifacts

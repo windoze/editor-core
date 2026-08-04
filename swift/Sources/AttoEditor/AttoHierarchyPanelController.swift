@@ -5,7 +5,7 @@ import Foundation
 final class AttoHierarchyPanelController: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate, NSWindowDelegate {
     typealias Entry = AttoLspHierarchyParser.Entry
 
-    struct Snapshot {
+    struct Snapshot: Equatable {
         let title: String
         let entries: [Entry]
     }
@@ -17,6 +17,7 @@ final class AttoHierarchyPanelController: NSObject, NSTableViewDataSource, NSTab
 
     private let titleForEntry: (Entry) -> String
     private let onOpen: (Entry) -> Void
+    private let onExpand: (Entry) -> Void
     private var snapshot: Snapshot?
     private var rows: [Row] = []
     private var filteredRows: [Row] = []
@@ -28,10 +29,12 @@ final class AttoHierarchyPanelController: NSObject, NSTableViewDataSource, NSTab
 
     init(
         titleForEntry: @escaping (Entry) -> String,
-        onOpen: @escaping (Entry) -> Void
+        onOpen: @escaping (Entry) -> Void,
+        onExpand: @escaping (Entry) -> Void = { _ in }
     ) {
         self.titleForEntry = titleForEntry
         self.onOpen = onOpen
+        self.onExpand = onExpand
         super.init()
     }
 
@@ -45,6 +48,12 @@ final class AttoHierarchyPanelController: NSObject, NSTableViewDataSource, NSTab
 
     var rowCount: Int {
         filteredRows.count
+    }
+
+    var selectedEntry: Entry? {
+        let row = tableView.selectedRow
+        guard row >= 0, row < filteredRows.count else { return nil }
+        return filteredRows[row].entry
     }
 
     func update(snapshot: Snapshot) {
@@ -241,9 +250,13 @@ final class AttoHierarchyPanelController: NSObject, NSTableViewDataSource, NSTab
     }
 
     private func openSelectedHierarchyEntry() {
-        let row = tableView.selectedRow
-        guard row >= 0, row < filteredRows.count else { return }
-        onOpen(filteredRows[row].entry)
+        guard let selectedEntry else { return }
+        onOpen(selectedEntry)
+    }
+
+    private func expandSelectedHierarchyEntry() {
+        guard let selectedEntry else { return }
+        onExpand(selectedEntry)
     }
 
     func controlTextDidChange(_ obj: Notification) {
@@ -269,6 +282,9 @@ final class AttoHierarchyPanelController: NSObject, NSTableViewDataSource, NSTab
             return true
         case #selector(NSResponder.insertNewline(_:)):
             openSelectedHierarchyEntry()
+            return true
+        case #selector(NSResponder.moveRight(_:)):
+            expandSelectedHierarchyEntry()
             return true
         default:
             return false

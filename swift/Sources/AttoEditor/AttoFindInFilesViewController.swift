@@ -41,8 +41,22 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
         let lineText: String
     }
 
+    struct SearchOptions: Hashable, Sendable {
+        var caseSensitive: Bool
+        var wholeWord: Bool
+        var regex: Bool
+
+        static let `default` = SearchOptions(caseSensitive: false, wholeWord: false, regex: false)
+    }
+
     var onOpenResult: ((URL, AttoCommandLine.FileLocation) -> Void)?
-    var openedFilesSearchProvider: ((String) -> [SearchResult])?
+    var openedFilesSearchProvider: ((String, SearchOptions) -> [SearchResult])?
+    var workspaceFilesSearchProvider: ((String, [String], [String], SearchOptions) -> [SearchResult]?)?
+    var workspaceFilesReplaceProvider: ((String, String, [String], [String], SearchOptions) -> Bool)? {
+        didSet {
+            updateReplaceControls()
+        }
+    }
     var openedFilesProvider: (() -> [URL])?
     var workspaceFilesProvider: (() -> [URL])?
 
@@ -54,9 +68,16 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
     private var defaultScope: Scope = .openedFiles
     private var workspaceSearchIncludeGlobs: [String] = []
     private var workspaceSearchExcludeGlobs: [String] = []
+    private var workspaceReplacementEnabled = false
+    private var defaultSearchOptions: SearchOptions = .default
 
     private let headerLabel = NSTextField(labelWithString: "FIND IN FILES")
     private let queryField = NSSearchField(frame: .zero)
+    private let replacementField = NSTextField(frame: .zero)
+    private let replaceAllButton = NSButton(title: "Replace All", target: nil, action: nil)
+    private let caseSensitiveButton = NSButton(checkboxWithTitle: "Aa", target: nil, action: nil)
+    private let wholeWordButton = NSButton(checkboxWithTitle: "Word", target: nil, action: nil)
+    private let regexButton = NSButton(checkboxWithTitle: "Regex", target: nil, action: nil)
     private let scopeControl = NSSegmentedControl(labels: ["Opened", "Folder"], trackingMode: .selectOne, target: nil, action: nil)
     private let statusLabel = NSTextField(labelWithString: "")
 
@@ -93,7 +114,38 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
         queryField.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
         queryField.focusRingType = .none
         queryField.delegate = self
+        queryField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         queryField.translatesAutoresizingMaskIntoConstraints = false
+
+        replacementField.placeholderString = "Replace"
+        replacementField.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.findInFilesReplacementField)
+        replacementField.controlSize = .small
+        replacementField.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+        replacementField.focusRingType = .none
+        replacementField.delegate = self
+        replacementField.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            replacementField.widthAnchor.constraint(greaterThanOrEqualToConstant: 120),
+        ])
+
+        replaceAllButton.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.findInFilesReplaceAllButton)
+        replaceAllButton.controlSize = .small
+        replaceAllButton.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+        replaceAllButton.target = self
+        replaceAllButton.action = #selector(replaceAllClicked(_:))
+        replaceAllButton.translatesAutoresizingMaskIntoConstraints = false
+
+        for button in [caseSensitiveButton, wholeWordButton, regexButton] {
+            button.setButtonType(.switch)
+            button.controlSize = .small
+            button.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+            button.target = self
+            button.action = #selector(searchOptionsChanged(_:))
+        }
+        caseSensitiveButton.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.findInFilesCaseSensitiveButton)
+        wholeWordButton.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.findInFilesWholeWordButton)
+        regexButton.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.findInFilesRegexButton)
+        applySearchOptionsToButtons(defaultSearchOptions)
 
         scopeControl.controlSize = .small
         scopeControl.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.findInFilesScopeControl)
@@ -109,11 +161,34 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
         statusLabel.stringValue = "Type to search…"
 
-        let controlsRow = NSStackView(views: [queryField, scopeControl])
-        controlsRow.orientation = .horizontal
-        controlsRow.alignment = .centerY
-        controlsRow.spacing = 8
-        controlsRow.translatesAutoresizingMaskIntoConstraints = false
+        let queryScopeRow = NSStackView(views: [
+            queryField,
+            scopeControl,
+        ])
+        queryScopeRow.orientation = .horizontal
+        queryScopeRow.alignment = .centerY
+        queryScopeRow.spacing = 8
+
+        let optionsRow = NSStackView(views: [
+            caseSensitiveButton,
+            wholeWordButton,
+            regexButton,
+        ])
+        optionsRow.orientation = .horizontal
+        optionsRow.alignment = .centerY
+        optionsRow.spacing = 8
+
+        let controlsColumn = NSStackView(views: [queryScopeRow, optionsRow])
+        controlsColumn.orientation = .vertical
+        controlsColumn.alignment = .width
+        controlsColumn.spacing = 4
+        controlsColumn.translatesAutoresizingMaskIntoConstraints = false
+
+        let replaceRow = NSStackView(views: [replacementField, replaceAllButton])
+        replaceRow.orientation = .horizontal
+        replaceRow.alignment = .centerY
+        replaceRow.spacing = 8
+        replaceRow.translatesAutoresizingMaskIntoConstraints = false
 
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("result"))
         tableView.addTableColumn(column)
@@ -135,7 +210,8 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
         scrollView.translatesAutoresizingMaskIntoConstraints = false
 
         view.addSubview(headerLabel)
-        view.addSubview(controlsRow)
+        view.addSubview(controlsColumn)
+        view.addSubview(replaceRow)
         view.addSubview(statusLabel)
         view.addSubview(scrollView)
 
@@ -144,19 +220,24 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
             headerLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -10),
             headerLabel.topAnchor.constraint(equalTo: view.topAnchor, constant: 8),
 
-            controlsRow.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 10),
-            controlsRow.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -10),
-            controlsRow.topAnchor.constraint(equalTo: headerLabel.bottomAnchor, constant: 6),
+            controlsColumn.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 10),
+            controlsColumn.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -10),
+            controlsColumn.topAnchor.constraint(equalTo: headerLabel.bottomAnchor, constant: 6),
+
+            replaceRow.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 10),
+            replaceRow.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -10),
+            replaceRow.topAnchor.constraint(equalTo: controlsColumn.bottomAnchor, constant: 6),
 
             statusLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 10),
             statusLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -10),
-            statusLabel.topAnchor.constraint(equalTo: controlsRow.bottomAnchor, constant: 6),
+            statusLabel.topAnchor.constraint(equalTo: replaceRow.bottomAnchor, constant: 6),
 
             scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             scrollView.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: 6),
             scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
+        updateReplaceControls()
     }
 
     func setRootURL(_ url: URL) {
@@ -196,6 +277,18 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
         }
     }
 
+    func setWorkspaceReplacementEnabled(_ enabled: Bool) {
+        workspaceReplacementEnabled = enabled
+        updateReplaceControls()
+    }
+
+    func setSearchOptions(_ options: SearchOptions) {
+        defaultSearchOptions = options
+        guard isViewLoaded else { return }
+        applySearchOptionsToButtons(options)
+        scheduleSearch()
+    }
+
     func focusSearchField() {
         view.window?.makeFirstResponder(queryField)
     }
@@ -208,9 +301,46 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
         filteredWorkspaceFiles(files)
     }
 
+    func _setSearchOptionsForTesting(_ options: SearchOptions) {
+        _ = view
+        applySearchOptionsToButtons(options)
+    }
+
+    func _searchOptionsForTesting() -> SearchOptions {
+        _ = view
+        return currentSearchOptions()
+    }
+
+    func _replaceWorkspaceMatchesForTesting(
+        query: String,
+        replacement: String,
+        scope: Scope = .workspace
+    ) -> Bool {
+        _ = view
+        scopeControl.selectedSegment = scope.rawValue
+        queryField.stringValue = query
+        replacementField.stringValue = replacement
+        updateReplaceControls()
+        return performReplaceAll()
+    }
+
+    func _replaceAllButtonIsEnabledForTesting(
+        query: String,
+        replacement: String = "",
+        scope: Scope = .workspace
+    ) -> Bool {
+        _ = view
+        scopeControl.selectedSegment = scope.rawValue
+        queryField.stringValue = query
+        replacementField.stringValue = replacement
+        updateReplaceControls()
+        return replaceAllButton.isEnabled
+    }
+
     // MARK: - Actions
 
     @objc private func scopeChanged(_ sender: Any?) {
+        updateReplaceControls()
         scheduleSearch()
     }
 
@@ -220,9 +350,22 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
         open(result: results[row])
     }
 
+    @objc private func replaceAllClicked(_ sender: Any?) {
+        _ = performReplaceAll()
+    }
+
+    @objc private func searchOptionsChanged(_ sender: Any?) {
+        scheduleSearch()
+    }
+
     // MARK: - Searching
 
     func controlTextDidChange(_ obj: Notification) {
+        if let field = obj.object as? NSTextField, field === replacementField {
+            updateReplaceControls()
+            return
+        }
+        updateReplaceControls()
         scheduleSearch()
     }
 
@@ -240,6 +383,7 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
         if rawQuery.isEmpty {
             clearResults()
             statusLabel.stringValue = "Type to search…"
+            updateReplaceControls()
             return
         }
 
@@ -249,12 +393,32 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
             let token = lastSearchToken &+ 1
             lastSearchToken = token
             statusLabel.stringValue = "Searching…"
-            let found = openedFilesSearchProvider(rawQuery)
+            let found = openedFilesSearchProvider(rawQuery, currentSearchOptions())
             guard lastSearchToken == token else { return }
             results = found
             tableView.reloadData()
             statusLabel.stringValue = "\(found.count) results"
+            updateReplaceControls()
             return
+        }
+
+        if scope == .workspace, let workspaceFilesSearchProvider {
+            let token = lastSearchToken &+ 1
+            lastSearchToken = token
+            statusLabel.stringValue = "Searching…"
+            if let found = workspaceFilesSearchProvider(
+                rawQuery,
+                workspaceSearchIncludeGlobs,
+                workspaceSearchExcludeGlobs,
+                currentSearchOptions()
+            ) {
+                guard lastSearchToken == token else { return }
+                results = found
+                tableView.reloadData()
+                statusLabel.stringValue = "\(found.count) results"
+                updateReplaceControls()
+                return
+            }
         }
 
         let files: [URL] = {
@@ -270,14 +434,16 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
         lastSearchToken = token
         statusLabel.stringValue = "Searching…"
 
-        DispatchQueue.global(qos: .userInitiated).async { [rawQuery, token] in
-            let found = Self.search(query: rawQuery, inFiles: files)
+        let options = currentSearchOptions()
+        DispatchQueue.global(qos: .userInitiated).async { [rawQuery, token, files, options] in
+            let found = Self.search(query: rawQuery, options: options, inFiles: files)
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 guard self.lastSearchToken == token else { return }
                 self.results = found
                 self.tableView.reloadData()
                 self.statusLabel.stringValue = "\(found.count) results"
+                self.updateReplaceControls()
             }
         }
     }
@@ -289,6 +455,71 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
 
     private func selectedScope() -> Scope {
         Scope(rawValue: scopeControl.selectedSegment) ?? defaultScope
+    }
+
+    private func currentSearchOptions() -> SearchOptions {
+        SearchOptions(
+            caseSensitive: caseSensitiveButton.state == .on,
+            wholeWord: wholeWordButton.state == .on,
+            regex: regexButton.state == .on
+        )
+    }
+
+    private func applySearchOptionsToButtons(_ options: SearchOptions) {
+        guard isViewLoaded else { return }
+        caseSensitiveButton.state = options.caseSensitive ? .on : .off
+        wholeWordButton.state = options.wholeWord ? .on : .off
+        regexButton.state = options.regex ? .on : .off
+        updateReplaceControls()
+    }
+
+    private func updateReplaceControls() {
+        guard isViewLoaded else { return }
+        let query = queryField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        replaceAllButton.isEnabled = workspaceReplacementEnabled
+            && selectedScope() == .workspace
+            && query.isEmpty == false
+            && workspaceFilesReplaceProvider != nil
+    }
+
+    @discardableResult
+    private func performReplaceAll() -> Bool {
+        let query = queryField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard query.isEmpty == false else {
+            statusLabel.stringValue = "Type to search…"
+            updateReplaceControls()
+            NSSound.beep()
+            return false
+        }
+        guard selectedScope() == .workspace else {
+            statusLabel.stringValue = "Replace is available for Folder scope"
+            updateReplaceControls()
+            NSSound.beep()
+            return false
+        }
+        guard workspaceReplacementEnabled, let workspaceFilesReplaceProvider else {
+            statusLabel.stringValue = "Replace is unavailable"
+            updateReplaceControls()
+            NSSound.beep()
+            return false
+        }
+
+        statusLabel.stringValue = "Replacing…"
+        let applied = workspaceFilesReplaceProvider(
+            query,
+            replacementField.stringValue,
+            workspaceSearchIncludeGlobs,
+            workspaceSearchExcludeGlobs,
+            currentSearchOptions()
+        )
+        if applied {
+            statusLabel.stringValue = "Replacement applied"
+        } else {
+            statusLabel.stringValue = "Replacement not applied"
+            NSSound.beep()
+        }
+        updateReplaceControls()
+        return applied
     }
 
     private func filteredWorkspaceFiles(_ files: [URL]) -> [URL] {
@@ -411,15 +642,16 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
         return out
     }
 
-    nonisolated private static func search(query: String, inFiles files: [URL]) -> [SearchResult] {
+    nonisolated private static func search(
+        query: String,
+        options: SearchOptions,
+        inFiles files: [URL]
+    ) -> [SearchResult] {
         var out: [SearchResult] = []
         out.reserveCapacity(128)
 
         // MVP: cap results to keep the UI responsive.
         let maxResults = 2000
-
-        let q = query
-        let compareOptions: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive]
 
         for url in files {
             if out.count >= maxResults { break }
@@ -430,7 +662,13 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
                 if out.count >= maxResults { break }
 
                 let line = String(lineSub)
-                guard let range = line.range(of: q, options: compareOptions) else { continue }
+                guard let range = firstSearchRange(
+                    query: query,
+                    options: options,
+                    in: line
+                ) else {
+                    continue
+                }
 
                 let col1 = line.distance(from: line.startIndex, to: range.lowerBound) + 1
                 let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -454,6 +692,65 @@ final class AttoFindInFilesViewController: NSViewController, NSTableViewDataSour
         }
 
         return out
+    }
+
+    nonisolated private static func firstSearchRange(
+        query: String,
+        options: SearchOptions,
+        in line: String
+    ) -> Range<String.Index>? {
+        if options.regex {
+            let regexOptions: NSRegularExpression.Options = options.caseSensitive ? [] : [.caseInsensitive]
+            guard let regex = try? NSRegularExpression(pattern: query, options: regexOptions) else {
+                return nil
+            }
+            let nsRange = NSRange(line.startIndex..<line.endIndex, in: line)
+            for match in regex.matches(in: line, options: [], range: nsRange) {
+                guard let range = Range(match.range, in: line), range.isEmpty == false else {
+                    continue
+                }
+                if options.wholeWord == false || isWholeWordRange(range, in: line) {
+                    return range
+                }
+            }
+            return nil
+        }
+
+        let compareOptions: String.CompareOptions = options.caseSensitive
+            ? []
+            : [.caseInsensitive, .diacriticInsensitive]
+        var searchRange = line.startIndex..<line.endIndex
+        while let range = line.range(of: query, options: compareOptions, range: searchRange) {
+            if options.wholeWord == false || isWholeWordRange(range, in: line) {
+                return range
+            }
+            guard range.upperBound < line.endIndex else { return nil }
+            searchRange = range.upperBound..<line.endIndex
+        }
+        return nil
+    }
+
+    nonisolated private static func isWholeWordRange(_ range: Range<String.Index>, in line: String) -> Bool {
+        guard range.isEmpty == false else { return false }
+        if range.lowerBound > line.startIndex {
+            let before = line[line.index(before: range.lowerBound)]
+            if isSearchWordCharacter(before) {
+                return false
+            }
+        }
+        if range.upperBound < line.endIndex {
+            let after = line[range.upperBound]
+            if isSearchWordCharacter(after) {
+                return false
+            }
+        }
+        return true
+    }
+
+    nonisolated private static func isSearchWordCharacter(_ character: Character) -> Bool {
+        character == "_" || character.unicodeScalars.allSatisfy {
+            CharacterSet.alphanumerics.contains($0)
+        }
     }
 
     // MARK: - NSTableViewDataSource

@@ -26,6 +26,8 @@ final class FFILibrarySmokeTests: XCTestCase {
         XCTAssertTrue(info.supports(.workspaceLifecycleEnvelope))
         XCTAssertTrue(info.supports(.editorStateQueryEnvelope))
         XCTAssertTrue(info.supports(.lspHelperEnvelope))
+        XCTAssertTrue(info.supports(.lspEditHelperEnvelope))
+        XCTAssertTrue(info.supports(.processorResultEnvelope))
 
         let runtimeJSON = try JSONTestHelpers.object(try library.runtimeInfoJSON())
         XCTAssertEqual(runtimeJSON["kind"] as? String, "editor-core-ffi")
@@ -72,6 +74,16 @@ final class FFILibrarySmokeTests: XCTestCase {
                 && (feature["bit"] as? NSNumber)?.uint8Value == 15
                 && (feature["flag"] as? NSNumber)?.uint64Value == EditorCoreFFIFeatures.lspHelperEnvelope.rawValue
         })
+        XCTAssertTrue(features.contains { feature in
+            feature["name"] as? String == "lsp_edit_helper_envelope"
+                && (feature["bit"] as? NSNumber)?.uint8Value == 16
+                && (feature["flag"] as? NSNumber)?.uint64Value == EditorCoreFFIFeatures.lspEditHelperEnvelope.rawValue
+        })
+        XCTAssertTrue(features.contains { feature in
+            feature["name"] as? String == "processor_result_envelope"
+                && (feature["bit"] as? NSNumber)?.uint8Value == 17
+                && (feature["flag"] as? NSNumber)?.uint64Value == EditorCoreFFIFeatures.processorResultEnvelope.rawValue
+        })
     }
 
     func testPathInitializerIsIgnoredInStaticLinkMode() throws {
@@ -87,5 +99,49 @@ final class FFILibrarySmokeTests: XCTestCase {
         XCTAssertTrue(library.featureFlags.contains(.workspaceLifecycleEnvelope))
         XCTAssertTrue(library.featureFlags.contains(.editorStateQueryEnvelope))
         XCTAssertTrue(library.featureFlags.contains(.lspHelperEnvelope))
+        XCTAssertTrue(library.featureFlags.contains(.lspEditHelperEnvelope))
+        XCTAssertTrue(library.featureFlags.contains(.processorResultEnvelope))
+    }
+
+    func testRuntimeInfoJSONDescriptorsCoverKnownFeatures() throws {
+        let library = try EditorCoreFFITestSupport.shared.loadLibrary()
+        let runtimeJSON = try JSONTestHelpers.object(try library.runtimeInfoJSON())
+        let features = try XCTUnwrap(runtimeJSON["features"] as? [[String: Any]])
+
+        for knownFeature in EditorCoreFFIRuntimeCompatibility.knownFeatures {
+            let flag = knownFeature.feature.rawValue
+            let descriptor = try XCTUnwrap(
+                features.first { feature in
+                    (feature["flag"] as? NSNumber)?.uint64Value == flag
+                },
+                "missing runtime descriptor for \(knownFeature.name)"
+            )
+            XCTAssertEqual(
+                (descriptor["bit"] as? NSNumber)?.intValue,
+                flag.trailingZeroBitCount,
+                "wrong runtime descriptor bit for \(knownFeature.name)"
+            )
+            XCTAssertFalse((descriptor["name"] as? String ?? "").isEmpty)
+            XCTAssertFalse((descriptor["description"] as? String ?? "").isEmpty)
+        }
+    }
+
+    func testRuntimeCapabilitySnapshotDecodesFeatureDescriptors() throws {
+        let library = try EditorCoreFFITestSupport.shared.loadLibrary()
+        let snapshot = try library.runtimeCapabilitySnapshot()
+
+        XCTAssertEqual(snapshot.kind, "editor-core-ffi")
+        XCTAssertEqual(snapshot.abiVersion, library.abiVersion)
+        XCTAssertEqual(snapshot.featureFlags, library.featureFlags)
+        XCTAssertEqual(snapshot.runtimeInfo, try library.runtimeInfo())
+        XCTAssertTrue(snapshot.supports(.processorResultEnvelope))
+
+        let descriptor = try XCTUnwrap(
+            snapshot.features.first { $0.feature == .processorResultEnvelope }
+        )
+        XCTAssertEqual(descriptor.bit, 17)
+        XCTAssertEqual(descriptor.flag, EditorCoreFFIFeatures.processorResultEnvelope.rawValue)
+        XCTAssertEqual(descriptor.name, "processor_result_envelope")
+        XCTAssertFalse(descriptor.description.isEmpty)
     }
 }

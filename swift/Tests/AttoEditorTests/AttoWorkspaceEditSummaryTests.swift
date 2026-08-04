@@ -71,6 +71,43 @@ final class AttoWorkspaceEditSummaryTests: XCTestCase {
         )
     }
 
+    func testWorkspaceEditSummaryListsSkippedDetailReasons() throws {
+        let result = AttoWorkspaceEditApplyResult(json: """
+        {
+          "applied": false,
+          "applied_uri": "file:///project/main.swift",
+          "applied_edit_count": 0,
+          "skipped_uris": ["file:///project/main.swift"],
+          "skipped_details": [
+            {
+              "uri": "file:///project/main.swift",
+              "reason": "version_mismatch",
+              "operation": "text_edit",
+              "message": "document changed"
+            }
+          ],
+          "documents": [
+            {
+              "uri": "file:///project/main.swift",
+              "edit_count": 1,
+              "has_overlapping_edits": false
+            }
+          ]
+        }
+        """)
+
+        XCTAssertEqual(
+            AttoWorkspaceEditApplyResult.displayText(for: result),
+            """
+            Workspace edit was not applied.
+            No edits were applied.
+
+            Affected documents:
+            - main.swift (1 edit) [text_edit: version_mismatch]
+            """
+        )
+    }
+
     func testWorkspaceEditSummaryIsNilWhenNothingWasSkipped() throws {
         let result = AttoWorkspaceEditApplyResult(json: """
         {
@@ -89,6 +126,50 @@ final class AttoWorkspaceEditSummaryTests: XCTestCase {
         """)
 
         XCTAssertNil(AttoWorkspaceEditApplyResult.displayText(for: result))
+    }
+
+    func testWorkspaceEditSummaryListsUnsupportedResourceOperations() throws {
+        let result = AttoWorkspaceEditApplyResult(json: """
+        {
+          "applied": true,
+          "applied_uri": "file:///project/main.swift",
+          "applied_edit_count": 1,
+          "skipped_uris": [],
+          "unsupported_operation_uris": [
+            "file:///outside/Old.swift",
+            "file:///outside/New.swift"
+          ],
+          "documents": [
+            {
+              "uri": "file:///project/main.swift",
+              "edit_count": 1,
+              "has_overlapping_edits": false
+            },
+            {
+              "uri": "file:///outside/Old.swift",
+              "edit_count": 0,
+              "has_overlapping_edits": false
+            },
+            {
+              "uri": "file:///outside/New.swift",
+              "edit_count": 0,
+              "has_overlapping_edits": false
+            }
+          ]
+        }
+        """)
+
+        XCTAssertEqual(
+            AttoWorkspaceEditApplyResult.displayText(for: result),
+            """
+            Workspace edit partially applied.
+            Applied 1 edit across 1 document.
+
+            Not applied:
+            - New.swift [unsupported operation]
+            - Old.swift [unsupported operation]
+            """
+        )
     }
 
     func testWorkspaceEditPreviewSummarizesResourceOperations() throws {

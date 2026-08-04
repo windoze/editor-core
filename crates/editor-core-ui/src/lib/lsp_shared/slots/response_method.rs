@@ -32,6 +32,8 @@ pub(super) fn from_response_method(method: &str) -> Option<LspResultSlot> {
         "textDocument/linkedEditingRange" => Some(LspResultSlot::LinkedEditingRange),
         "textDocument/diagnostic" => Some(LspResultSlot::DocumentDiagnostic),
         "workspace/diagnostic" => Some(LspResultSlot::WorkspaceDiagnostic),
+        "textDocument/formatting" => Some(LspResultSlot::Formatting),
+        "textDocument/rangeFormatting" => Some(LspResultSlot::RangeFormatting),
         "textDocument/documentColor" => Some(LspResultSlot::DocumentColor),
         "textDocument/colorPresentation" => Some(LspResultSlot::ColorPresentation),
         "textDocument/prepareCallHierarchy" => Some(LspResultSlot::PrepareCallHierarchy),

@@ -28,6 +28,9 @@ pub(super) fn family(slot: LspResultSlot) -> &'static str {
         LspResultSlot::DocumentDiagnostic
         | LspResultSlot::WorkspaceDiagnostic
         | LspResultSlot::PublishDiagnostics => "diagnostics",
+        LspResultSlot::Formatting
+        | LspResultSlot::RangeFormatting
+        | LspResultSlot::OnTypeFormatting => "formatting",
         LspResultSlot::DocumentColor | LspResultSlot::ColorPresentation => "colors",
         LspResultSlot::PrepareCallHierarchy
         | LspResultSlot::CallHierarchyIncoming
@@ -35,7 +38,6 @@ pub(super) fn family(slot: LspResultSlot) -> &'static str {
         LspResultSlot::PrepareTypeHierarchy
         | LspResultSlot::TypeHierarchySupertypes
         | LspResultSlot::TypeHierarchySubtypes => "type_hierarchy",
-        LspResultSlot::OnTypeFormatting => "formatting",
     }
 }
 
@@ -72,6 +74,8 @@ pub(super) fn title(slot: LspResultSlot) -> &'static str {
         LspResultSlot::DocumentDiagnostic => "LSP Document Diagnostic",
         LspResultSlot::WorkspaceDiagnostic => "LSP Workspace Diagnostic",
         LspResultSlot::PublishDiagnostics => "LSP Publish Diagnostics",
+        LspResultSlot::Formatting => "LSP Formatting",
+        LspResultSlot::RangeFormatting => "LSP Range Formatting",
         LspResultSlot::DocumentColor => "LSP Document Color",
         LspResultSlot::ColorPresentation => "LSP Color Presentation",
         LspResultSlot::PrepareCallHierarchy => "LSP Prepare Call Hierarchy",

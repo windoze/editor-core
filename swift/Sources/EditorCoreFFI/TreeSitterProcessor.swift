@@ -120,6 +120,21 @@ public final class TreeSitterProcessor {
         )
     }
 
+    public func processEnvelopeJSON(state: EditorState) throws -> String {
+        try ffi.takeOwnedCString(
+            editor_core_ffi_treesitter_processor_process_envelope_json(handle, state.handle),
+            context: "treesitter_processor_process_envelope_json"
+        )
+    }
+
+    public func processEnvelope(state: EditorState) throws -> EcfProcessorResultEnvelope {
+        try JSON.decode(
+            EcfProcessorResultEnvelope.self,
+            from: processEnvelopeJSON(state: state),
+            context: "treesitter_processor_process_envelope_decode"
+        )
+    }
+
     public func apply(state: EditorState) throws {
         let ok = editor_core_ffi_treesitter_processor_apply(handle, state.handle)
         guard ok else {
@@ -134,5 +149,20 @@ public final class TreeSitterProcessor {
             context: "treesitter_processor_last_update_mode_json"
         )
         return try JSON.decode(TreeSitterUpdateModeResponse.self, from: json, context: "treesitter_last_update_mode").mode
+    }
+
+    public func lastUpdateModeEnvelopeJSON() throws -> String {
+        try ffi.takeOwnedCString(
+            editor_core_ffi_treesitter_processor_last_update_mode_envelope_json(handle),
+            context: "treesitter_processor_last_update_mode_envelope_json"
+        )
+    }
+
+    public func lastUpdateModeEnvelope() throws -> EcfProcessorResultEnvelope {
+        try JSON.decode(
+            EcfProcessorResultEnvelope.self,
+            from: lastUpdateModeEnvelopeJSON(),
+            context: "treesitter_processor_last_update_mode_envelope_decode"
+        )
     }
 }

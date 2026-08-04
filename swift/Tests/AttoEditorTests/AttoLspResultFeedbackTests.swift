@@ -251,6 +251,23 @@ final class AttoLspResultFeedbackTests: XCTestCase {
                 detailText: "LSP server restart failed.\nspawn failed"
             )
         )
+        XCTAssertEqual(
+            AttoLspResultFeedback.unavailable(
+                .serverShutdown,
+                reason: "No LSP server is running for this document."
+            ),
+            AttoLspResultFeedback.Message(
+                statusText: "LSP server shutdown: unavailable",
+                detailText: "LSP server shutdown is unavailable.\nNo LSP server is running for this document."
+            )
+        )
+        XCTAssertEqual(
+            AttoLspResultFeedback.failed(.serverShutdown, errorDescription: "shutdown failed"),
+            AttoLspResultFeedback.Message(
+                statusText: "LSP server shutdown: failed",
+                detailText: "LSP server shutdown failed.\nshutdown failed"
+            )
+        )
     }
 
     func testRefreshSummaryFormatsSingularAndPluralCounts() {

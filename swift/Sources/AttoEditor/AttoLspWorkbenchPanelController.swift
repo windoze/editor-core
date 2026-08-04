@@ -3,25 +3,64 @@ import Foundation
 
 @MainActor
 final class AttoLspWorkbenchPanelController: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate, NSWindowDelegate {
+    enum ItemLifecycleState: Equatable {
+        case unknown
+        case fresh
+        case stale
+        case error
+    }
+
     struct Item: Equatable {
         let id: String
         let title: String
         let detail: String
         let status: String
         let isEnabled: Bool
+        let lifecycleState: ItemLifecycleState
+        let isPinned: Bool
+        let historyCount: Int
+        let jumpTargetCount: Int
+
+        init(
+            id: String,
+            title: String,
+            detail: String,
+            status: String,
+            isEnabled: Bool,
+            lifecycleState: ItemLifecycleState = .unknown,
+            isPinned: Bool = false,
+            historyCount: Int = 0,
+            jumpTargetCount: Int = 0
+        ) {
+            self.id = id
+            self.title = title
+            self.detail = detail
+            self.status = status
+            self.isEnabled = isEnabled
+            self.lifecycleState = lifecycleState
+            self.isPinned = isPinned
+            self.historyCount = historyCount
+            self.jumpTargetCount = jumpTargetCount
+        }
     }
 
     private var items: [Item] = []
     private var filteredItems: [Item] = []
+    private var selectedItemID: String?
     private var panel: NSPanel?
     private let onOpen: (Item) -> Void
+    private let onOpenHistory: (Item) -> Void
     private let searchField = NSSearchField(frame: .zero)
     private let metadataLabel = NSTextField(labelWithString: "")
     private let tableView = NSTableView(frame: .zero)
     private let scrollView = NSScrollView(frame: .zero)
 
-    init(onOpen: @escaping (Item) -> Void) {
+    init(
+        onOpen: @escaping (Item) -> Void,
+        onOpenHistory: @escaping (Item) -> Void = { _ in }
+    ) {
         self.onOpen = onOpen
+        self.onOpenHistory = onOpenHistory
         super.init()
     }
 
@@ -35,6 +74,59 @@ final class AttoLspWorkbenchPanelController: NSObject, NSTableViewDataSource, NS
 
     var rowCount: Int {
         filteredItems.count
+    }
+
+    var selectedItem: Item? {
+        let row = tableView.selectedRow
+        if row >= 0, row < filteredItems.count {
+            return filteredItems[row]
+        }
+        guard let selectedItemID else { return nil }
+        return filteredItems.first { $0.id == selectedItemID }
+    }
+
+    @discardableResult
+    func selectItem(id: String) -> Bool {
+        guard let index = filteredItems.firstIndex(where: { $0.id == id }) else {
+            return false
+        }
+        selectedItemID = id
+        tableView.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
+        tableView.scrollRowToVisible(index)
+        return true
+    }
+
+    static func metadataSummary(for items: [Item]) -> String {
+        let enabledCount = items.filter(\.isEnabled).count
+        let staleCount = items.filter { $0.lifecycleState == .stale }.count
+        let errorCount = items.filter { $0.lifecycleState == .error }.count
+        let pinnedCount = items.filter(\.isPinned).count
+        let historyCount = items.reduce(0) { partial, item in
+            partial + max(0, item.historyCount)
+        }
+        let jumpTargetCount = items.reduce(0) { partial, item in
+            partial + max(0, item.jumpTargetCount)
+        }
+        var parts = [
+            "\(enabledCount) available",
+            "\(items.count) result families",
+        ]
+        if historyCount > 0 {
+            parts.append("\(historyCount) history \(historyCount == 1 ? "entry" : "entries")")
+        }
+        if jumpTargetCount > 0 {
+            parts.append("\(jumpTargetCount) jump \(jumpTargetCount == 1 ? "target" : "targets")")
+        }
+        if pinnedCount > 0 {
+            parts.append("\(pinnedCount) pinned")
+        }
+        if staleCount > 0 {
+            parts.append("\(staleCount) stale")
+        }
+        if errorCount > 0 {
+            parts.append("\(errorCount) \(errorCount == 1 ? "error" : "errors")")
+        }
+        return parts.joined(separator: " | ")
     }
 
     func update(items: [Item]) {
@@ -155,8 +247,7 @@ final class AttoLspWorkbenchPanelController: NSObject, NSTableViewDataSource, NS
     private func updateTitle() {
         guard let panel else { return }
         panel.title = "LSP Workbench (\(items.count))"
-        let enabledCount = items.filter(\.isEnabled).count
-        metadataLabel.stringValue = "\(enabledCount) available | \(items.count) result families"
+        metadataLabel.stringValue = Self.metadataSummary(for: items)
     }
 
     private func position(panel: NSPanel, relativeTo window: NSWindow) {
@@ -186,8 +277,15 @@ final class AttoLspWorkbenchPanelController: NSObject, NSTableViewDataSource, NS
             }
         }
         tableView.reloadData()
-        if filteredItems.isEmpty == false {
+        if let selectedItemID,
+           let selectedIndex = filteredItems.firstIndex(where: { $0.id == selectedItemID }) {
+            tableView.selectRowIndexes(IndexSet(integer: selectedIndex), byExtendingSelection: false)
+        } else if let first = filteredItems.first {
+            selectedItemID = first.id
             tableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+        } else {
+            selectedItemID = nil
+            tableView.deselectAll(nil)
         }
     }
 
@@ -217,7 +315,8 @@ final class AttoLspWorkbenchPanelController: NSObject, NSTableViewDataSource, NS
         detailLabel.lineBreakMode = .byTruncatingTail
         detailLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        let statusLabel = NSTextField(labelWithString: item.status)
+        let statusText = item.isPinned ? "Pinned | \(item.status)" : item.status
+        let statusLabel = NSTextField(labelWithString: statusText)
         statusLabel.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.lspWorkbenchPanelRowStatus)
         statusLabel.font = NSFont.systemFont(ofSize: 11)
         statusLabel.alignment = .right
@@ -251,11 +350,15 @@ final class AttoLspWorkbenchPanelController: NSObject, NSTableViewDataSource, NS
     }
 
     private func openSelectedItem() {
-        let row = tableView.selectedRow
-        guard row >= 0, row < filteredItems.count else { return }
-        let item = filteredItems[row]
+        guard let item = selectedItem else { return }
         guard item.isEnabled else { return }
         onOpen(item)
+    }
+
+    private func openSelectedItemHistory() {
+        guard let item = selectedItem else { return }
+        guard item.historyCount > 0 else { return }
+        onOpenHistory(item)
     }
 
     func controlTextDidChange(_ obj: Notification) {
@@ -268,19 +371,34 @@ final class AttoLspWorkbenchPanelController: NSObject, NSTableViewDataSource, NS
             hide()
             return true
         case #selector(NSResponder.moveDown(_:)):
-            let next = min(tableView.selectedRow + 1, filteredItems.count - 1)
-            if next >= 0 {
-                tableView.selectRowIndexes(IndexSet(integer: next), byExtendingSelection: false)
-                tableView.scrollRowToVisible(next)
+            guard filteredItems.isEmpty == false else {
+                selectedItemID = nil
+                tableView.deselectAll(nil)
+                return true
             }
+            let current = max(tableView.selectedRow, 0)
+            let next = min(current + 1, filteredItems.count - 1)
+            selectedItemID = filteredItems[next].id
+            tableView.selectRowIndexes(IndexSet(integer: next), byExtendingSelection: false)
+            tableView.scrollRowToVisible(next)
             return true
         case #selector(NSResponder.moveUp(_:)):
-            let previous = max(tableView.selectedRow - 1, 0)
+            guard filteredItems.isEmpty == false else {
+                selectedItemID = nil
+                tableView.deselectAll(nil)
+                return true
+            }
+            let current = max(tableView.selectedRow, 0)
+            let previous = max(current - 1, 0)
+            selectedItemID = filteredItems[previous].id
             tableView.selectRowIndexes(IndexSet(integer: previous), byExtendingSelection: false)
             tableView.scrollRowToVisible(previous)
             return true
         case #selector(NSResponder.insertNewline(_:)):
             openSelectedItem()
+            return true
+        case #selector(NSResponder.moveRight(_:)):
+            openSelectedItemHistory()
             return true
         default:
             return false

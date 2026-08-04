@@ -93,6 +93,10 @@ final class AttoEditorPreferencesApplicationTests: XCTestCase {
         XCTAssertEqual(ctx.editorAreaController.findReplaceBarView.regexButton.state, .on)
         ctx.findInFilesController.view.layoutSubtreeIfNeeded()
         XCTAssertEqual(ctx.findInFilesController._selectedScopeForTesting(), .workspace)
+        XCTAssertEqual(
+            ctx.findInFilesController._searchOptionsForTesting(),
+            AttoFindInFilesViewController.SearchOptions(caseSensitive: false, wholeWord: true, regex: true)
+        )
         let workspaceSearchFiles = [sourceURL, generatedURL, readmeURL, vendoredURL, fileURL]
         XCTAssertEqual(
             ctx.findInFilesController._filteredWorkspaceFileURLsForTesting(workspaceSearchFiles).map(\.standardizedFileURL),
@@ -132,6 +136,10 @@ final class AttoEditorPreferencesApplicationTests: XCTestCase {
         XCTAssertEqual(ctx.editorAreaController.findReplaceBarView.wholeWordButton.state, .off)
         XCTAssertEqual(ctx.editorAreaController.findReplaceBarView.regexButton.state, .off)
         XCTAssertEqual(ctx.findInFilesController._selectedScopeForTesting(), .openedFiles)
+        XCTAssertEqual(
+            ctx.findInFilesController._searchOptionsForTesting(),
+            AttoFindInFilesViewController.SearchOptions(caseSensitive: true, wholeWord: false, regex: false)
+        )
         XCTAssertEqual(
             ctx.findInFilesController._filteredWorkspaceFileURLsForTesting(workspaceSearchFiles).map(\.standardizedFileURL),
             workspaceSearchFiles.map(\.standardizedFileURL)

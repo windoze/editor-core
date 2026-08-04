@@ -35,6 +35,11 @@ public final class EditorCoreFFILibrary {
         try takeOwnedCString(editor_core_ffi_runtime_info_json(), context: "editor_core_ffi_runtime_info_json")
     }
 
+    public func runtimeCapabilitySnapshot() throws -> EditorCoreFFIRuntimeCapabilitySnapshot {
+        let data = Data(try runtimeInfoJSON().utf8)
+        return try JSONDecoder().decode(EditorCoreFFIRuntimeCapabilitySnapshot.self, from: data)
+    }
+
     public func lastErrorMessage() -> String {
         // 注意：Rust 侧返回的是“需释放”的字符串。
         guard let ptr = editor_core_ffi_last_error_message() else {
@@ -92,6 +97,8 @@ public struct EditorCoreFFIFeatures: OptionSet, Equatable, Sendable {
     public static let workspaceLifecycleEnvelope = Self(rawValue: 1 << 13)
     public static let editorStateQueryEnvelope = Self(rawValue: 1 << 14)
     public static let lspHelperEnvelope = Self(rawValue: 1 << 15)
+    public static let lspEditHelperEnvelope = Self(rawValue: 1 << 16)
+    public static let processorResultEnvelope = Self(rawValue: 1 << 17)
 }
 
 public struct EditorCoreFFIRuntimeInfo: Equatable, Sendable {
@@ -107,5 +114,74 @@ public struct EditorCoreFFIRuntimeInfo: Equatable, Sendable {
 
     public func supports(_ feature: EditorCoreFFIFeatures) -> Bool {
         features.contains(feature)
+    }
+}
+
+public struct EditorCoreFFIRuntimeFeatureDescriptor: Equatable, Sendable, Decodable {
+    public let bit: UInt8
+    public let flag: UInt64
+    public let name: String
+    public let description: String
+
+    public init(bit: UInt8, flag: UInt64, name: String, description: String) {
+        self.bit = bit
+        self.flag = flag
+        self.name = name
+        self.description = description
+    }
+
+    public var feature: EditorCoreFFIFeatures {
+        EditorCoreFFIFeatures(rawValue: flag)
+    }
+}
+
+public struct EditorCoreFFIRuntimeCapabilitySnapshot: Equatable, Sendable, Decodable {
+    public let kind: String
+    public let abiVersion: UInt32
+    public let version: String
+    public let featureFlags: EditorCoreFFIFeatures
+    public let features: [EditorCoreFFIRuntimeFeatureDescriptor]
+
+    public init(
+        kind: String,
+        abiVersion: UInt32,
+        version: String,
+        featureFlags: EditorCoreFFIFeatures,
+        features: [EditorCoreFFIRuntimeFeatureDescriptor]
+    ) {
+        self.kind = kind
+        self.abiVersion = abiVersion
+        self.version = version
+        self.featureFlags = featureFlags
+        self.features = features
+    }
+
+    public var runtimeInfo: EditorCoreFFIRuntimeInfo {
+        EditorCoreFFIRuntimeInfo(
+            abiVersion: abiVersion,
+            version: version,
+            features: featureFlags
+        )
+    }
+
+    public func supports(_ feature: EditorCoreFFIFeatures) -> Bool {
+        featureFlags.contains(feature)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case kind
+        case abiVersion = "abi_version"
+        case version
+        case featureFlags = "feature_flags"
+        case features
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try container.decode(String.self, forKey: .kind)
+        abiVersion = try container.decode(UInt32.self, forKey: .abiVersion)
+        version = try container.decode(String.self, forKey: .version)
+        featureFlags = EditorCoreFFIFeatures(rawValue: try container.decode(UInt64.self, forKey: .featureFlags))
+        features = try container.decode([EditorCoreFFIRuntimeFeatureDescriptor].self, forKey: .features)
     }
 }

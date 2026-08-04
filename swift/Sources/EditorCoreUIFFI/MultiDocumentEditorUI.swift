@@ -41,12 +41,16 @@ public struct EcuMultiDocumentTabSnapshot: Decodable, Equatable, Sendable {
 public struct EcuMultiDocumentSnapshot: Decodable, Equatable, Sendable {
     public let activeTabId: UInt64?
     public let workspaceRoots: [String]
+    public let recentFiles: [EcuRecentFileEntry]
+    public let recentProjects: [EcuRecentProjectEntry]
     public let projectLspServers: [EcuProjectLspServerConfig]
     public let tabs: [EcuMultiDocumentTabSnapshot]
 
     private enum CodingKeys: String, CodingKey {
         case activeTabId = "active_tab_id"
         case workspaceRoots = "workspace_roots"
+        case recentFiles = "recent_files"
+        case recentProjects = "recent_projects"
         case projectLspServers = "project_lsp_servers"
         case tabs
     }
@@ -55,11 +59,29 @@ public struct EcuMultiDocumentSnapshot: Decodable, Equatable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         activeTabId = try container.decodeIfPresent(UInt64.self, forKey: .activeTabId)
         workspaceRoots = try container.decodeIfPresent([String].self, forKey: .workspaceRoots) ?? []
+        recentFiles = try container.decodeIfPresent([EcuRecentFileEntry].self, forKey: .recentFiles) ?? []
+        recentProjects = try container.decodeIfPresent([EcuRecentProjectEntry].self, forKey: .recentProjects) ?? []
         projectLspServers = try container.decodeIfPresent(
             [EcuProjectLspServerConfig].self,
             forKey: .projectLspServers
         ) ?? []
         tabs = try container.decodeIfPresent([EcuMultiDocumentTabSnapshot].self, forKey: .tabs) ?? []
+    }
+}
+
+public struct EcuRecentFileEntry: Decodable, Equatable, Sendable {
+    public let uri: String
+
+    public init(uri: String) {
+        self.uri = uri
+    }
+}
+
+public struct EcuRecentProjectEntry: Decodable, Equatable, Sendable {
+    public let uri: String
+
+    public init(uri: String) {
+        self.uri = uri
     }
 }
 
@@ -188,6 +210,214 @@ public struct EcuProjectLspServerConfig: Codable, Equatable, Sendable {
         languageId = try container.decodeIfPresent(String.self, forKey: .languageId) ?? ""
         workspaceRoots = try container.decodeIfPresent([String].self, forKey: .workspaceRoots) ?? []
         autoStart = try container.decodeIfPresent(Bool.self, forKey: .autoStart) ?? true
+    }
+}
+
+public struct EcuProjectLspStartPlanEntry: Decodable, Equatable, Sendable {
+    public let tabId: UInt64
+    public let activeViewIndex: UInt32
+    public let documentURI: String
+    public let languageId: String
+    public let serverKey: String
+    public let command: String
+    public let args: [String]
+    public let workspaceRoots: [String]
+
+    private enum CodingKeys: String, CodingKey {
+        case tabId = "tab_id"
+        case activeViewIndex = "active_view_index"
+        case documentURI = "document_uri"
+        case languageId = "language_id"
+        case serverKey = "server_key"
+        case command
+        case args
+        case workspaceRoots = "workspace_roots"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        tabId = try container.decode(UInt64.self, forKey: .tabId)
+        activeViewIndex = try container.decodeIfPresent(UInt32.self, forKey: .activeViewIndex) ?? 0
+        documentURI = try container.decodeIfPresent(String.self, forKey: .documentURI) ?? ""
+        languageId = try container.decodeIfPresent(String.self, forKey: .languageId) ?? ""
+        serverKey = try container.decodeIfPresent(String.self, forKey: .serverKey) ?? ""
+        command = try container.decode(String.self, forKey: .command)
+        args = try container.decodeIfPresent([String].self, forKey: .args) ?? []
+        workspaceRoots = try container.decodeIfPresent([String].self, forKey: .workspaceRoots) ?? []
+    }
+}
+
+public struct EcuProjectLspStopPlanEntry: Decodable, Equatable, Sendable {
+    public let tabId: UInt64
+    public let activeViewIndex: UInt32
+    public let documentURI: String
+    public let languageId: String
+    public let serverKey: String
+    public let command: String
+    public let args: [String]
+    public let workspaceRoots: [String]
+
+    private enum CodingKeys: String, CodingKey {
+        case tabId = "tab_id"
+        case activeViewIndex = "active_view_index"
+        case documentURI = "document_uri"
+        case languageId = "language_id"
+        case serverKey = "server_key"
+        case command
+        case args
+        case workspaceRoots = "workspace_roots"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        tabId = try container.decode(UInt64.self, forKey: .tabId)
+        activeViewIndex = try container.decodeIfPresent(UInt32.self, forKey: .activeViewIndex) ?? 0
+        documentURI = try container.decodeIfPresent(String.self, forKey: .documentURI) ?? ""
+        languageId = try container.decodeIfPresent(String.self, forKey: .languageId) ?? ""
+        serverKey = try container.decodeIfPresent(String.self, forKey: .serverKey) ?? ""
+        command = try container.decode(String.self, forKey: .command)
+        args = try container.decodeIfPresent([String].self, forKey: .args) ?? []
+        workspaceRoots = try container.decodeIfPresent([String].self, forKey: .workspaceRoots) ?? []
+    }
+}
+
+public struct EcuProjectLspRestartPlanEntry: Decodable, Equatable, Sendable {
+    public let tabId: UInt64
+    public let activeViewIndex: UInt32
+    public let documentURI: String
+    public let languageId: String
+    public let serverKey: String
+    public let command: String
+    public let args: [String]
+    public let workspaceRoots: [String]
+
+    private enum CodingKeys: String, CodingKey {
+        case tabId = "tab_id"
+        case activeViewIndex = "active_view_index"
+        case documentURI = "document_uri"
+        case languageId = "language_id"
+        case serverKey = "server_key"
+        case command
+        case args
+        case workspaceRoots = "workspace_roots"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        tabId = try container.decode(UInt64.self, forKey: .tabId)
+        activeViewIndex = try container.decodeIfPresent(UInt32.self, forKey: .activeViewIndex) ?? 0
+        documentURI = try container.decodeIfPresent(String.self, forKey: .documentURI) ?? ""
+        languageId = try container.decodeIfPresent(String.self, forKey: .languageId) ?? ""
+        serverKey = try container.decodeIfPresent(String.self, forKey: .serverKey) ?? ""
+        command = try container.decode(String.self, forKey: .command)
+        args = try container.decodeIfPresent([String].self, forKey: .args) ?? []
+        workspaceRoots = try container.decodeIfPresent([String].self, forKey: .workspaceRoots) ?? []
+    }
+}
+
+public struct EcuProjectLspStartOutcome: Encodable, Equatable, Sendable {
+    public let tabId: UInt64
+    public let activeViewIndex: UInt32
+    public let operation: String
+    public let documentURI: String
+    public let languageId: String
+    public let serverKey: String
+    public let command: String
+    public let args: [String]
+    public let workspaceRoots: [String]
+    public let trigger: String
+    public let status: String
+    public let attemptId: UInt64?
+    public let errorMessage: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case tabId = "tab_id"
+        case activeViewIndex = "active_view_index"
+        case operation
+        case documentURI = "document_uri"
+        case languageId = "language_id"
+        case serverKey = "server_key"
+        case command
+        case args
+        case workspaceRoots = "workspace_roots"
+        case trigger
+        case status
+        case attemptId = "attempt_id"
+        case errorMessage = "error_message"
+    }
+
+    public init(
+        tabId: UInt64,
+        activeViewIndex: UInt32 = 0,
+        operation: String = "start",
+        documentURI: String,
+        languageId: String,
+        serverKey: String,
+        command: String,
+        args: [String] = [],
+        workspaceRoots: [String] = [],
+        trigger: String = "auto_start",
+        status: String,
+        attemptId: UInt64? = nil,
+        errorMessage: String? = nil
+    ) {
+        self.tabId = tabId
+        self.activeViewIndex = activeViewIndex
+        self.operation = operation
+        self.documentURI = documentURI
+        self.languageId = languageId
+        self.serverKey = serverKey
+        self.command = command
+        self.args = args
+        self.workspaceRoots = workspaceRoots
+        self.trigger = trigger
+        self.status = status
+        self.attemptId = attemptId
+        self.errorMessage = errorMessage
+    }
+}
+
+public struct EcuProjectLspLifecycleEvent: Decodable, Equatable, Sendable {
+    public let sequence: UInt64
+    public let operation: String
+    public let trigger: String
+    public let status: String
+    public let tabId: UInt64
+    public let activeViewIndex: UInt32
+    public let documentURI: String
+    public let languageId: String
+    public let serverKey: String
+    public let command: String
+    public let args: [String]
+    public let workspaceRoots: [String]
+    public let attemptId: UInt64?
+    public let errorMessage: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case sequence
+        case operation
+        case trigger
+        case status
+        case tabId = "tab_id"
+        case activeViewIndex = "active_view_index"
+        case documentURI = "document_uri"
+        case languageId = "language_id"
+        case serverKey = "server_key"
+        case command
+        case args
+        case workspaceRoots = "workspace_roots"
+        case attemptId = "attempt_id"
+        case errorMessage = "error_message"
+    }
+}
+
+public struct EcuProjectLspLifecycleEventsSnapshot: Decodable, Equatable, Sendable {
+    public let latestSequence: UInt64
+    public let events: [EcuProjectLspLifecycleEvent]
+
+    private enum CodingKeys: String, CodingKey {
+        case latestSequence = "latest_sequence"
+        case events
     }
 }
 
@@ -385,6 +615,94 @@ public struct EcuTabSearchResult: Decodable, Equatable, Sendable {
 
 private struct EcuTabSearchResponse: Decodable {
     let results: [EcuTabSearchResult]
+}
+
+public struct EcuWorkspaceFileSearchResult: Decodable, Equatable, Sendable {
+    public let uri: String
+    public let path: String
+    public let relativePath: String
+    public let line1: UInt32
+    public let column1: UInt32
+    public let lineText: String
+    public let matchStart: UInt32
+    public let matchEnd: UInt32
+
+    private enum CodingKeys: String, CodingKey {
+        case uri
+        case path
+        case relativePath = "relative_path"
+        case line1
+        case column1
+        case lineText = "line_text"
+        case matchStart = "match_start"
+        case matchEnd = "match_end"
+    }
+}
+
+public struct EcuWorkspaceFileEntry: Decodable, Equatable, Sendable {
+    public let uri: String
+    public let path: String
+    public let relativePath: String
+
+    public init(uri: String, path: String, relativePath: String) {
+        self.uri = uri
+        self.path = path
+        self.relativePath = relativePath
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case uri
+        case path
+        case relativePath = "relative_path"
+    }
+}
+
+public struct EcuProjectFileIndexSnapshot: Decodable, Equatable, Sendable {
+    public let workspaceRoots: [String]
+    public let files: [EcuWorkspaceFileEntry]
+    public let isBuilt: Bool
+    public let maxResults: UInt32
+
+    private enum CodingKeys: String, CodingKey {
+        case workspaceRoots = "workspace_roots"
+        case files
+        case isBuilt = "is_built"
+        case maxResults = "max_results"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        workspaceRoots = try container.decodeIfPresent([String].self, forKey: .workspaceRoots) ?? []
+        files = try container.decodeIfPresent([EcuWorkspaceFileEntry].self, forKey: .files) ?? []
+        isBuilt = try container.decodeIfPresent(Bool.self, forKey: .isBuilt) ?? false
+        maxResults = try container.decodeIfPresent(UInt32.self, forKey: .maxResults) ?? 0
+    }
+}
+
+public struct EcuProjectFileIndexQueryResult: Decodable, Equatable, Sendable {
+    public let uri: String
+    public let path: String
+    public let relativePath: String
+    public let score: Int32
+
+    private enum CodingKeys: String, CodingKey {
+        case uri
+        case path
+        case relativePath = "relative_path"
+        case score
+    }
+}
+
+private struct EcuWorkspaceFileSearchResponse: Decodable {
+    let results: [EcuWorkspaceFileSearchResult]
+}
+
+private struct EcuWorkspaceFileListResponse: Decodable {
+    let files: [EcuWorkspaceFileEntry]
+}
+
+private struct EcuProjectFileIndexQueryResponse: Decodable {
+    let results: [EcuProjectFileIndexQueryResult]
 }
 
 public enum EcuMultiDocumentSearchEnvelopeStatus: Hashable, Sendable {
@@ -660,7 +978,23 @@ public struct EcuWorkspaceEditTransactionResult: Decodable, Equatable, Sendable 
 public struct EcuWorkspaceEditTransactionEvent: Decodable, Equatable, Sendable {
     public let sequence: UInt64
     public let operation: String
+    public let workspaceEditJSON: String?
     public let result: EcuWorkspaceEditTransactionResult
+
+    private enum CodingKeys: String, CodingKey {
+        case sequence
+        case operation
+        case workspaceEditJSON = "workspace_edit_json"
+        case result
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sequence = try container.decode(UInt64.self, forKey: .sequence)
+        operation = try container.decode(String.self, forKey: .operation)
+        workspaceEditJSON = try container.decodeIfPresent(String.self, forKey: .workspaceEditJSON)
+        result = try container.decode(EcuWorkspaceEditTransactionResult.self, forKey: .result)
+    }
 }
 
 public struct EcuWorkspaceEditTransactionEventsSnapshot: Decodable, Equatable, Sendable {
@@ -1209,7 +1543,7 @@ public struct EcuMultiDocumentStateEventsSnapshot: Decodable, Equatable, Sendabl
 
 public final class MultiDocumentEditorUI {
     public let library: EditorCoreUIFFILibrary
-    private let handle: OpaquePointer
+    let handle: OpaquePointer
 
     public init(library: EditorCoreUIFFILibrary) throws {
         self.library = library
@@ -1281,6 +1615,77 @@ public final class MultiDocumentEditorUI {
 
     public func snapshot() throws -> EcuMultiDocumentSnapshot {
         try decode(EcuMultiDocumentSnapshot.self, from: snapshotJSON(), context: "multi_document_snapshot_decode")
+    }
+
+    public func rememberRecentFileURI(_ uri: String) throws {
+        let status = uri.withCString { uriPtr in
+            editor_core_ui_ffi_multi_document_remember_recent_file_uri(handle, uriPtr)
+        }
+        try library.ensureStatus(status, context: "multi_document_remember_recent_file_uri")
+    }
+
+    public func restoreRecentFileURIs(_ uris: [String]) throws {
+        let json = try Self.encodeStringArray(uris, context: "multi_document_restore_recent_files_encode")
+        let status = json.withCString { urisPtr in
+            editor_core_ui_ffi_multi_document_restore_recent_files_json(handle, urisPtr)
+        }
+        try library.ensureStatus(status, context: "multi_document_restore_recent_files_json")
+    }
+
+    public func clearRecentFiles() throws {
+        let status = editor_core_ui_ffi_multi_document_clear_recent_files(handle)
+        try library.ensureStatus(status, context: "multi_document_clear_recent_files")
+    }
+
+    public func recentFilesJSON() throws -> String {
+        try ffiStringResult(context: "multi_document_recent_files_json") {
+            editor_core_ui_ffi_multi_document_recent_files_json(handle)
+        }
+    }
+
+    public func recentFiles() throws -> [EcuRecentFileEntry] {
+        try decode(
+            [EcuRecentFileEntry].self,
+            from: recentFilesJSON(),
+            context: "multi_document_recent_files_decode"
+        )
+    }
+
+    public func rememberRecentProjectURI(_ uri: String) throws {
+        let status = uri.withCString { uriPtr in
+            editor_core_ui_ffi_multi_document_remember_recent_project_uri(handle, uriPtr)
+        }
+        try library.ensureStatus(status, context: "multi_document_remember_recent_project_uri")
+    }
+
+    public func restoreRecentProjectURIs(_ uris: [String]) throws {
+        let json = try Self.encodeStringArray(
+            uris,
+            context: "multi_document_restore_recent_projects_encode"
+        )
+        let status = json.withCString { urisPtr in
+            editor_core_ui_ffi_multi_document_restore_recent_projects_json(handle, urisPtr)
+        }
+        try library.ensureStatus(status, context: "multi_document_restore_recent_projects_json")
+    }
+
+    public func clearRecentProjects() throws {
+        let status = editor_core_ui_ffi_multi_document_clear_recent_projects(handle)
+        try library.ensureStatus(status, context: "multi_document_clear_recent_projects")
+    }
+
+    public func recentProjectsJSON() throws -> String {
+        try ffiStringResult(context: "multi_document_recent_projects_json") {
+            editor_core_ui_ffi_multi_document_recent_projects_json(handle)
+        }
+    }
+
+    public func recentProjects() throws -> [EcuRecentProjectEntry] {
+        try decode(
+            [EcuRecentProjectEntry].self,
+            from: recentProjectsJSON(),
+            context: "multi_document_recent_projects_decode"
+        )
     }
 
     public func setWorkspaceRoots(_ roots: [String]) throws {
@@ -1383,6 +1788,105 @@ public final class MultiDocumentEditorUI {
             [EcuProjectLspServerConfig].self,
             from: projectLspServersJSON(),
             context: "multi_document_project_lsp_servers_decode"
+        )
+    }
+
+    public func projectLspStartPlanJSON() throws -> String {
+        try ffiStringResult(context: "multi_document_project_lsp_start_plan_json") {
+            editor_core_ui_ffi_multi_document_project_lsp_start_plan_json(handle)
+        }
+    }
+
+    public func projectLspStartPlan() throws -> [EcuProjectLspStartPlanEntry] {
+        try decode(
+            [EcuProjectLspStartPlanEntry].self,
+            from: projectLspStartPlanJSON(),
+            context: "multi_document_project_lsp_start_plan_decode"
+        )
+    }
+
+    public func projectLspStopPlanJSON() throws -> String {
+        try ffiStringResult(context: "multi_document_project_lsp_stop_plan_json") {
+            editor_core_ui_ffi_multi_document_project_lsp_stop_plan_json(handle)
+        }
+    }
+
+    public func projectLspStopPlan() throws -> [EcuProjectLspStopPlanEntry] {
+        try decode(
+            [EcuProjectLspStopPlanEntry].self,
+            from: projectLspStopPlanJSON(),
+            context: "multi_document_project_lsp_stop_plan_decode"
+        )
+    }
+
+    public func projectLspRestartPlanJSON() throws -> String {
+        try ffiStringResult(context: "multi_document_project_lsp_restart_plan_json") {
+            editor_core_ui_ffi_multi_document_project_lsp_restart_plan_json(handle)
+        }
+    }
+
+    public func projectLspRestartPlan() throws -> [EcuProjectLspRestartPlanEntry] {
+        try decode(
+            [EcuProjectLspRestartPlanEntry].self,
+            from: projectLspRestartPlanJSON(),
+            context: "multi_document_project_lsp_restart_plan_decode"
+        )
+    }
+
+    public func recordProjectLspStartOutcome(_ outcome: EcuProjectLspStartOutcome) throws {
+        let data: Data
+        do {
+            data = try JSONEncoder().encode(outcome)
+        } catch {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .internal,
+                context: "multi_document_project_lsp_start_outcome_encode",
+                message: "failed to encode project LSP start outcome JSON"
+            )
+        }
+        guard let json = String(data: data, encoding: .utf8) else {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .internal,
+                context: "multi_document_project_lsp_start_outcome_encode",
+                message: "encoded project LSP start outcome is not UTF-8"
+            )
+        }
+
+        let status = json.withCString { outcomePtr in
+            editor_core_ui_ffi_multi_document_record_project_lsp_start_outcome_json(handle, outcomePtr)
+        }
+        try library.ensureStatus(
+            status,
+            context: "multi_document_record_project_lsp_start_outcome_json"
+        )
+    }
+
+    public func projectLspLifecycleEventsLatestSequence() throws -> UInt64 {
+        var sequence: UInt64 = 0
+        let status = editor_core_ui_ffi_multi_document_project_lsp_lifecycle_events_latest_sequence(
+            handle,
+            &sequence
+        )
+        try library.ensureStatus(
+            status,
+            context: "multi_document_project_lsp_lifecycle_events_latest_sequence"
+        )
+        return sequence
+    }
+
+    public func projectLspLifecycleEventsJSON(after sequence: UInt64 = 0) throws -> String {
+        try ffiStringResult(context: "multi_document_project_lsp_lifecycle_events_json") {
+            editor_core_ui_ffi_multi_document_project_lsp_lifecycle_events_json(handle, sequence)
+        }
+    }
+
+    public func projectLspLifecycleEvents(
+        after sequence: UInt64 = 0
+    ) throws -> EcuProjectLspLifecycleEventsSnapshot {
+        try decode(
+            EcuProjectLspLifecycleEventsSnapshot.self,
+            from: projectLspLifecycleEventsJSON(after: sequence),
+            context: "multi_document_project_lsp_lifecycle_events_decode"
         )
     }
 
@@ -1621,6 +2125,242 @@ public final class MultiDocumentEditorUI {
             from: searchAllTabsEnvelopeJSON(query: query, options: options),
             context: "multi_document_search_all_tabs_envelope_decode"
         )
+    }
+
+    public func searchWorkspaceFilesJSON(
+        query: String,
+        options: EcuSearchOptions = EcuSearchOptions(),
+        includeGlobs: [String] = [],
+        excludeGlobs: [String] = [],
+        maxResults: UInt32 = 2000
+    ) throws -> String {
+        let includeJSON = try Self.encodeStringArray(includeGlobs, context: "multi_document_workspace_file_search_include_globs_encode")
+        let excludeJSON = try Self.encodeStringArray(excludeGlobs, context: "multi_document_workspace_file_search_exclude_globs_encode")
+        return try ffiStringResult(context: "multi_document_search_workspace_files_json") {
+            query.withCString { queryPtr in
+                includeJSON.withCString { includePtr in
+                    excludeJSON.withCString { excludePtr in
+                        editor_core_ui_ffi_multi_document_search_workspace_files_json(
+                            handle,
+                            queryPtr,
+                            includePtr,
+                            excludePtr,
+                            options.ffiCaseSensitive,
+                            options.ffiWholeWord,
+                            options.ffiRegex,
+                            maxResults
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    public func searchWorkspaceFiles(
+        query: String,
+        options: EcuSearchOptions = EcuSearchOptions(),
+        includeGlobs: [String] = [],
+        excludeGlobs: [String] = [],
+        maxResults: UInt32 = 2000
+    ) throws -> [EcuWorkspaceFileSearchResult] {
+        let json = try searchWorkspaceFilesJSON(
+            query: query,
+            options: options,
+            includeGlobs: includeGlobs,
+            excludeGlobs: excludeGlobs,
+            maxResults: maxResults
+        )
+        return try decode(
+            EcuWorkspaceFileSearchResponse.self,
+            from: json,
+            context: "multi_document_search_workspace_files_decode"
+        ).results
+    }
+
+    public func listWorkspaceFilesJSON(
+        includeGlobs: [String] = [],
+        excludeGlobs: [String] = [],
+        maxResults: UInt32 = 10_000
+    ) throws -> String {
+        let includeJSON = try Self.encodeStringArray(
+            includeGlobs,
+            context: "multi_document_workspace_file_list_include_globs_encode"
+        )
+        let excludeJSON = try Self.encodeStringArray(
+            excludeGlobs,
+            context: "multi_document_workspace_file_list_exclude_globs_encode"
+        )
+        return try ffiStringResult(context: "multi_document_list_workspace_files_json") {
+            includeJSON.withCString { includePtr in
+                excludeJSON.withCString { excludePtr in
+                    editor_core_ui_ffi_multi_document_list_workspace_files_json(
+                        handle,
+                        includePtr,
+                        excludePtr,
+                        maxResults
+                    )
+                }
+            }
+        }
+    }
+
+    public func listWorkspaceFiles(
+        includeGlobs: [String] = [],
+        excludeGlobs: [String] = [],
+        maxResults: UInt32 = 10_000
+    ) throws -> [EcuWorkspaceFileEntry] {
+        let json = try listWorkspaceFilesJSON(
+            includeGlobs: includeGlobs,
+            excludeGlobs: excludeGlobs,
+            maxResults: maxResults
+        )
+        return try decode(
+            EcuWorkspaceFileListResponse.self,
+            from: json,
+            context: "multi_document_list_workspace_files_decode"
+        ).files
+    }
+
+    public func refreshProjectFileIndexJSON(maxResults: UInt32 = 10_000) throws -> String {
+        try ffiStringResult(context: "multi_document_refresh_project_file_index_json") {
+            editor_core_ui_ffi_multi_document_refresh_project_file_index_json(handle, maxResults)
+        }
+    }
+
+    public func refreshProjectFileIndex(maxResults: UInt32 = 10_000) throws -> EcuProjectFileIndexSnapshot {
+        try decode(
+            EcuProjectFileIndexSnapshot.self,
+            from: refreshProjectFileIndexJSON(maxResults: maxResults),
+            context: "multi_document_refresh_project_file_index_decode"
+        )
+    }
+
+    public func projectFileIndexSnapshotJSON() throws -> String {
+        try ffiStringResult(context: "multi_document_project_file_index_snapshot_json") {
+            editor_core_ui_ffi_multi_document_project_file_index_snapshot_json(handle)
+        }
+    }
+
+    public func projectFileIndexSnapshot() throws -> EcuProjectFileIndexSnapshot {
+        try decode(
+            EcuProjectFileIndexSnapshot.self,
+            from: projectFileIndexSnapshotJSON(),
+            context: "multi_document_project_file_index_snapshot_decode"
+        )
+    }
+
+    public func clearProjectFileIndex() throws {
+        let status = editor_core_ui_ffi_multi_document_clear_project_file_index(handle)
+        try library.ensureStatus(status, context: "multi_document_clear_project_file_index")
+    }
+
+    public func queryProjectFileIndexJSON(query: String, maxResults: UInt32 = 200) throws -> String {
+        try ffiStringResult(context: "multi_document_query_project_file_index_json") {
+            query.withCString { queryPtr in
+                editor_core_ui_ffi_multi_document_query_project_file_index_json(
+                    handle,
+                    queryPtr,
+                    maxResults
+                )
+            }
+        }
+    }
+
+    public func queryProjectFileIndex(
+        query: String,
+        maxResults: UInt32 = 200
+    ) throws -> [EcuProjectFileIndexQueryResult] {
+        try decode(
+            EcuProjectFileIndexQueryResponse.self,
+            from: queryProjectFileIndexJSON(query: query, maxResults: maxResults),
+            context: "multi_document_query_project_file_index_decode"
+        ).results
+    }
+
+    public func searchWorkspaceFilesEnvelopeJSON(
+        query: String,
+        options: EcuSearchOptions = EcuSearchOptions(),
+        includeGlobs: [String] = [],
+        excludeGlobs: [String] = [],
+        maxResults: UInt32 = 2000
+    ) throws -> String {
+        let includeJSON = try Self.encodeStringArray(includeGlobs, context: "multi_document_workspace_file_search_include_globs_encode")
+        let excludeJSON = try Self.encodeStringArray(excludeGlobs, context: "multi_document_workspace_file_search_exclude_globs_encode")
+        return try ffiStringResult(context: "multi_document_search_workspace_files_envelope_json") {
+            query.withCString { queryPtr in
+                includeJSON.withCString { includePtr in
+                    excludeJSON.withCString { excludePtr in
+                        editor_core_ui_ffi_multi_document_search_workspace_files_envelope_json(
+                            handle,
+                            queryPtr,
+                            includePtr,
+                            excludePtr,
+                            options.ffiCaseSensitive,
+                            options.ffiWholeWord,
+                            options.ffiRegex,
+                            maxResults
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    public func searchWorkspaceFilesEnvelope(
+        query: String,
+        options: EcuSearchOptions = EcuSearchOptions(),
+        includeGlobs: [String] = [],
+        excludeGlobs: [String] = [],
+        maxResults: UInt32 = 2000
+    ) throws -> EcuMultiDocumentSearchEnvelope {
+        try decode(
+            EcuMultiDocumentSearchEnvelope.self,
+            from: searchWorkspaceFilesEnvelopeJSON(
+                query: query,
+                options: options,
+                includeGlobs: includeGlobs,
+                excludeGlobs: excludeGlobs,
+                maxResults: maxResults
+            ),
+            context: "multi_document_search_workspace_files_envelope_decode"
+        )
+    }
+
+    public func workspaceFileReplacementWorkspaceEditJSON(
+        query: String,
+        replacement: String,
+        options: EcuSearchOptions = EcuSearchOptions(),
+        includeGlobs: [String] = [],
+        excludeGlobs: [String] = [],
+        applyMode: String = "atomic",
+        maxResults: UInt32 = 2000
+    ) throws -> String {
+        let includeJSON = try Self.encodeStringArray(includeGlobs, context: "multi_document_workspace_file_replacement_include_globs_encode")
+        let excludeJSON = try Self.encodeStringArray(excludeGlobs, context: "multi_document_workspace_file_replacement_exclude_globs_encode")
+        return try ffiStringResult(context: "multi_document_workspace_file_replacement_workspace_edit_json") {
+            query.withCString { queryPtr in
+                replacement.withCString { replacementPtr in
+                    includeJSON.withCString { includePtr in
+                        excludeJSON.withCString { excludePtr in
+                            applyMode.withCString { applyModePtr in
+                                editor_core_ui_ffi_multi_document_workspace_file_replacement_workspace_edit_json(
+                                    handle,
+                                    queryPtr,
+                                    replacementPtr,
+                                    includePtr,
+                                    excludePtr,
+                                    applyModePtr,
+                                    options.ffiCaseSensitive,
+                                    options.ffiWholeWord,
+                                    options.ffiRegex,
+                                    maxResults
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     public func workspaceOutlineSnapshotJSON() throws -> String {
@@ -2052,7 +2792,29 @@ public final class MultiDocumentEditorUI {
         try library.ensureStatus(status, context: "multi_document_clear_workspace_diagnostics")
     }
 
-    private func decode<T: Decodable>(_ type: T.Type, from json: String, context: String) throws -> T {
+    private static func encodeStringArray(_ values: [String], context: String) throws -> String {
+        do {
+            let data = try JSONEncoder().encode(values)
+            guard let json = String(data: data, encoding: .utf8) else {
+                throw EditorCoreUIFFIError.ffiStatus(
+                    code: .invalidArgument,
+                    context: context,
+                    message: "encoded JSON is not UTF-8"
+                )
+            }
+            return json
+        } catch let error as EditorCoreUIFFIError {
+            throw error
+        } catch {
+            throw EditorCoreUIFFIError.ffiStatus(
+                code: .invalidArgument,
+                context: context,
+                message: String(describing: error)
+            )
+        }
+    }
+
+    func decode<T: Decodable>(_ type: T.Type, from json: String, context: String) throws -> T {
         guard let data = json.data(using: .utf8) else {
             throw EditorCoreUIFFIError.ffiStatus(
                 code: .invalidArgument,
@@ -2071,7 +2833,7 @@ public final class MultiDocumentEditorUI {
         }
     }
 
-    private func ffiStringResult(
+    func ffiStringResult(
         context: String,
         _ body: () -> UnsafeMutablePointer<CChar>?
     ) throws -> String {

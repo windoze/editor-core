@@ -1,13 +1,15 @@
 use editor_core_ffi::{
     ECF_ABI_VERSION, ECF_FEATURE_EDITOR_STATE_DERIVED_SNAPSHOT_ENVELOPE,
     ECF_FEATURE_EDITOR_STATE_QUERY_ENVELOPE, ECF_FEATURE_JSON_COMMAND_DISPATCH,
-    ECF_FEATURE_JSON_COMMAND_ENVELOPE, ECF_FEATURE_LSP_HELPER_ENVELOPE, ECF_FEATURE_LSP_HELPERS,
-    ECF_FEATURE_PROCESSING_EDIT_JSON, ECF_FEATURE_RENDERING_SNAPSHOT_ENVELOPE,
+    ECF_FEATURE_JSON_COMMAND_ENVELOPE, ECF_FEATURE_LSP_EDIT_HELPER_ENVELOPE,
+    ECF_FEATURE_LSP_HELPER_ENVELOPE, ECF_FEATURE_LSP_HELPERS, ECF_FEATURE_PROCESSING_EDIT_JSON,
+    ECF_FEATURE_PROCESSOR_RESULT_ENVELOPE, ECF_FEATURE_RENDERING_SNAPSHOT_ENVELOPE,
     ECF_FEATURE_SUBLIME_PROCESSOR, ECF_FEATURE_TREESITTER_PROCESSOR, ECF_FEATURE_TYPED_HOT_PATH,
     ECF_FEATURE_VIEWPORT_BLOB, ECF_FEATURE_WORKSPACE_LIFECYCLE_ENVELOPE,
     ECF_FEATURE_WORKSPACE_QUERY_ENVELOPE, ECF_FEATURE_WORKSPACE_RESULT_ENVELOPE,
     ECF_FEATURE_WORKSPACE_TYPED_API, EcfCreateViewResult, EcfDocumentStats, EcfEditorState,
-    EcfOpenBufferResult, EcfStatus, EcfWorkspace, EcfWorkspaceInfo, EcfWorkspaceViewportState,
+    EcfOpenBufferResult, EcfStatus, EcfSublimeProcessor, EcfTreeSitterIndenter,
+    EcfTreeSitterProcessor, EcfWorkspace, EcfWorkspaceInfo, EcfWorkspaceViewportState,
     ecf_abi_version, ecf_editor_backspace, ecf_editor_get_viewport_blob,
     ecf_editor_insert_text_utf8, ecf_editor_move_to, ecf_feature_flags,
     editor_core_ffi_editor_get_document_stats, editor_core_ffi_editor_get_viewport_blob,
@@ -26,18 +28,39 @@ use editor_core_ffi::{
     editor_core_ffi_editor_state_viewport_composed_json,
     editor_core_ffi_editor_state_viewport_styled_envelope_json,
     editor_core_ffi_editor_state_viewport_styled_json, editor_core_ffi_feature_flags,
-    editor_core_ffi_last_error_message, editor_core_ffi_lsp_char_offset_to_utf16,
+    editor_core_ffi_last_error_message, editor_core_ffi_lsp_apply_completion_item_envelope_json,
+    editor_core_ffi_lsp_apply_text_edits_envelope_json, editor_core_ffi_lsp_char_offset_to_utf16,
+    editor_core_ffi_lsp_code_lens_to_processing_edit_envelope_json,
+    editor_core_ffi_lsp_completion_item_to_text_edits_envelope_json,
     editor_core_ffi_lsp_completion_item_to_text_edits_json,
     editor_core_ffi_lsp_decode_semantic_style_id_envelope_json,
+    editor_core_ffi_lsp_diagnostics_to_processing_edits_envelope_json,
+    editor_core_ffi_lsp_document_highlights_to_processing_edit_envelope_json,
+    editor_core_ffi_lsp_document_links_to_processing_edit_envelope_json,
+    editor_core_ffi_lsp_document_symbols_to_processing_edit_envelope_json,
     editor_core_ffi_lsp_file_uri_to_path_envelope_json,
     editor_core_ffi_lsp_formatting_options_envelope_json,
     editor_core_ffi_lsp_formatting_options_for_indentation_config_envelope_json,
-    editor_core_ffi_lsp_formatting_options_json, editor_core_ffi_lsp_locations_envelope_json,
+    editor_core_ffi_lsp_formatting_options_json,
+    editor_core_ffi_lsp_inlay_hints_to_processing_edit_envelope_json,
+    editor_core_ffi_lsp_locations_envelope_json,
+    editor_core_ffi_lsp_on_type_formatting_params_envelope_json,
     editor_core_ffi_lsp_path_to_file_uri_envelope_json,
     editor_core_ffi_lsp_percent_decode_path_envelope_json,
     editor_core_ffi_lsp_percent_encode_path_envelope_json,
+    editor_core_ffi_lsp_semantic_tokens_to_intervals_envelope_json,
     editor_core_ffi_lsp_utf16_to_char_offset, editor_core_ffi_lsp_workspace_symbols_envelope_json,
     editor_core_ffi_runtime_info_json, editor_core_ffi_string_free,
+    editor_core_ffi_sublime_processor_free, editor_core_ffi_sublime_processor_new_from_yaml,
+    editor_core_ffi_sublime_processor_process_envelope_json,
+    editor_core_ffi_sublime_processor_scope_for_style_id_envelope_json,
+    editor_core_ffi_treesitter_indenter_free,
+    editor_core_ffi_treesitter_indenter_new_wasm_from_path,
+    editor_core_ffi_treesitter_indenter_reindent_line_envelope_json,
+    editor_core_ffi_treesitter_processor_free,
+    editor_core_ffi_treesitter_processor_last_update_mode_envelope_json,
+    editor_core_ffi_treesitter_processor_new_wasm_from_path,
+    editor_core_ffi_treesitter_processor_process_envelope_json,
     editor_core_ffi_workspace_apply_text_edits_envelope_json, editor_core_ffi_workspace_backspace,
     editor_core_ffi_workspace_buffer_text_envelope_json,
     editor_core_ffi_workspace_create_view_envelope_json,
@@ -78,6 +101,11 @@ fn read_u32_le(bytes: &[u8], off: usize) -> u32 {
     u32::from_le_bytes(bytes[off..off + 4].try_into().expect("u32"))
 }
 
+fn rust_treesitter_fixture_dir() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../editor-core-treesitter/tests/fixtures/treesitter/rust")
+}
+
 #[test]
 fn abi_version_and_alias_work() {
     assert_eq!(ecf_abi_version(), ECF_ABI_VERSION);
@@ -106,6 +134,8 @@ fn feature_flags_and_alias_work() {
     assert_ne!(flags & ECF_FEATURE_WORKSPACE_LIFECYCLE_ENVELOPE, 0);
     assert_ne!(flags & ECF_FEATURE_EDITOR_STATE_QUERY_ENVELOPE, 0);
     assert_ne!(flags & ECF_FEATURE_LSP_HELPER_ENVELOPE, 0);
+    assert_ne!(flags & ECF_FEATURE_LSP_EDIT_HELPER_ENVELOPE, 0);
+    assert_ne!(flags & ECF_FEATURE_PROCESSOR_RESULT_ENVELOPE, 0);
 }
 
 #[test]
@@ -158,6 +188,16 @@ fn runtime_info_json_reports_version_and_feature_descriptors() {
         feature["name"] == "lsp_helper_envelope"
             && feature["bit"] == 15
             && feature["flag"] == ECF_FEATURE_LSP_HELPER_ENVELOPE
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "lsp_edit_helper_envelope"
+            && feature["bit"] == 16
+            && feature["flag"] == ECF_FEATURE_LSP_EDIT_HELPER_ENVELOPE
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "processor_result_envelope"
+            && feature["bit"] == 17
+            && feature["flag"] == ECF_FEATURE_PROCESSOR_RESULT_ENVELOPE
     }));
     assert!(features.iter().any(|feature| {
         feature["name"] == "lsp_helpers"
@@ -283,6 +323,58 @@ fn public_abi_scalar_signatures_are_fixed_width() {
         u64,
         bool,
     ) -> *mut std::ffi::c_char = editor_core_ffi_lsp_completion_item_to_text_edits_json;
+    let _: extern "C" fn(
+        *const EcfEditorState,
+        *const std::ffi::c_char,
+        *const std::ffi::c_char,
+        *const std::ffi::c_char,
+    ) -> *mut std::ffi::c_char = editor_core_ffi_lsp_on_type_formatting_params_envelope_json;
+    let _: extern "C" fn(*mut EcfEditorState, *const std::ffi::c_char) -> *mut std::ffi::c_char =
+        editor_core_ffi_lsp_apply_text_edits_envelope_json;
+    let _: extern "C" fn(*const EcfEditorState, *const std::ffi::c_char) -> *mut std::ffi::c_char =
+        editor_core_ffi_lsp_semantic_tokens_to_intervals_envelope_json;
+    let _: extern "C" fn(*const EcfEditorState, *const std::ffi::c_char) -> *mut std::ffi::c_char =
+        editor_core_ffi_lsp_document_highlights_to_processing_edit_envelope_json;
+    let _: extern "C" fn(*const EcfEditorState, *const std::ffi::c_char) -> *mut std::ffi::c_char =
+        editor_core_ffi_lsp_inlay_hints_to_processing_edit_envelope_json;
+    let _: extern "C" fn(*const EcfEditorState, *const std::ffi::c_char) -> *mut std::ffi::c_char =
+        editor_core_ffi_lsp_document_links_to_processing_edit_envelope_json;
+    let _: extern "C" fn(*const EcfEditorState, *const std::ffi::c_char) -> *mut std::ffi::c_char =
+        editor_core_ffi_lsp_code_lens_to_processing_edit_envelope_json;
+    let _: extern "C" fn(*const EcfEditorState, *const std::ffi::c_char) -> *mut std::ffi::c_char =
+        editor_core_ffi_lsp_document_symbols_to_processing_edit_envelope_json;
+    let _: extern "C" fn(*const EcfEditorState, *const std::ffi::c_char) -> *mut std::ffi::c_char =
+        editor_core_ffi_lsp_diagnostics_to_processing_edits_envelope_json;
+    let _: extern "C" fn(
+        *const EcfEditorState,
+        *const std::ffi::c_char,
+        *const std::ffi::c_char,
+        u64,
+        u64,
+        bool,
+    ) -> *mut std::ffi::c_char = editor_core_ffi_lsp_completion_item_to_text_edits_envelope_json;
+    let _: extern "C" fn(
+        *mut EcfEditorState,
+        *const std::ffi::c_char,
+        *const std::ffi::c_char,
+    ) -> *mut std::ffi::c_char = editor_core_ffi_lsp_apply_completion_item_envelope_json;
+
+    let _: extern "C" fn(*mut EcfSublimeProcessor, *const EcfEditorState) -> *mut std::ffi::c_char =
+        editor_core_ffi_sublime_processor_process_envelope_json;
+    let _: extern "C" fn(*const EcfSublimeProcessor, u32) -> *mut std::ffi::c_char =
+        editor_core_ffi_sublime_processor_scope_for_style_id_envelope_json;
+    let _: extern "C" fn(
+        *mut EcfTreeSitterProcessor,
+        *const EcfEditorState,
+    ) -> *mut std::ffi::c_char = editor_core_ffi_treesitter_processor_process_envelope_json;
+    let _: extern "C" fn(*const EcfTreeSitterProcessor) -> *mut std::ffi::c_char =
+        editor_core_ffi_treesitter_processor_last_update_mode_envelope_json;
+    let _: extern "C" fn(
+        *mut EcfTreeSitterIndenter,
+        *const EcfEditorState,
+        u32,
+        *const std::ffi::c_char,
+    ) -> *mut std::ffi::c_char = editor_core_ffi_treesitter_indenter_reindent_line_envelope_json;
 }
 
 #[test]
@@ -442,6 +534,359 @@ fn lsp_helper_envelope_json_reports_success_and_errors() {
     assert_eq!(parse["value"], serde_json::Value::Null);
     assert_eq!(parse["error"]["code"], "parse");
     assert_eq!(parse["error"]["status"], status(EcfStatus::Parse));
+}
+
+#[test]
+fn lsp_edit_helper_envelope_json_reports_success_and_errors() {
+    let initial = CString::new("abc\n").expect("cstring");
+    let state = editor_core_ffi_editor_state_new(initial.as_ptr(), 80);
+    assert!(!state.is_null());
+
+    let uri = CString::new("file:///demo.rs").unwrap();
+    let ch = CString::new("}").unwrap();
+    let options = CString::new(r#"{"tabSize":4,"insertSpaces":true}"#).unwrap();
+    let on_type_json = take_string(editor_core_ffi_lsp_on_type_formatting_params_envelope_json(
+        state,
+        uri.as_ptr(),
+        ch.as_ptr(),
+        options.as_ptr(),
+    ));
+    let on_type: serde_json::Value = serde_json::from_str(&on_type_json).unwrap();
+    assert_eq!(on_type["ok"], true);
+    assert_eq!(on_type["operation"], "on_type_formatting_params");
+    assert_eq!(
+        on_type["value"]["params"]["textDocument"]["uri"],
+        "file:///demo.rs"
+    );
+    assert_eq!(on_type["value"]["params"]["ch"], "}");
+
+    let edits = CString::new(
+        r#"[
+          {
+            "range": {
+              "start": { "line": 0, "character": 1 },
+              "end": { "line": 0, "character": 2 }
+            },
+            "newText": "Z"
+          }
+        ]"#,
+    )
+    .unwrap();
+    let apply_json = take_string(editor_core_ffi_lsp_apply_text_edits_envelope_json(
+        state,
+        edits.as_ptr(),
+    ));
+    let apply: serde_json::Value = serde_json::from_str(&apply_json).unwrap();
+    assert_eq!(apply["ok"], true);
+    assert_eq!(apply["operation"], "apply_text_edits");
+    assert_eq!(
+        apply["value"]["changed_ranges"].as_array().unwrap().len(),
+        1
+    );
+
+    let semantic_data = CString::new("[0,0,3,1,2]").unwrap();
+    let semantic_json = take_string(
+        editor_core_ffi_lsp_semantic_tokens_to_intervals_envelope_json(
+            state,
+            semantic_data.as_ptr(),
+        ),
+    );
+    let semantic: serde_json::Value = serde_json::from_str(&semantic_json).unwrap();
+    assert_eq!(semantic["ok"], true);
+    assert_eq!(semantic["operation"], "semantic_tokens_to_intervals");
+    assert_eq!(semantic["value"]["intervals"].as_array().unwrap().len(), 1);
+
+    let highlights = CString::new(
+        r#"[
+          {
+            "range": {
+              "start": { "line": 0, "character": 0 },
+              "end": { "line": 0, "character": 1 }
+            },
+            "kind": 3
+          }
+        ]"#,
+    )
+    .unwrap();
+    let highlights_json = take_string(
+        editor_core_ffi_lsp_document_highlights_to_processing_edit_envelope_json(
+            state,
+            highlights.as_ptr(),
+        ),
+    );
+    let highlights_envelope: serde_json::Value = serde_json::from_str(&highlights_json).unwrap();
+    assert_eq!(highlights_envelope["ok"], true);
+    assert_eq!(
+        highlights_envelope["operation"],
+        "document_highlights_to_processing_edit"
+    );
+    assert!(highlights_envelope["value"].is_object());
+
+    let diagnostics = CString::new(
+        r#"{
+          "uri": "file:///demo.rs",
+          "diagnostics": [
+            {
+              "range": {
+                "start": { "line": 0, "character": 0 },
+                "end": { "line": 0, "character": 1 }
+              },
+              "severity": 2,
+              "message": "oops"
+            }
+          ]
+        }"#,
+    )
+    .unwrap();
+    let diagnostics_json = take_string(
+        editor_core_ffi_lsp_diagnostics_to_processing_edits_envelope_json(
+            state,
+            diagnostics.as_ptr(),
+        ),
+    );
+    let diagnostics_envelope: serde_json::Value = serde_json::from_str(&diagnostics_json).unwrap();
+    assert_eq!(diagnostics_envelope["ok"], true);
+    assert_eq!(
+        diagnostics_envelope["operation"],
+        "diagnostics_to_processing_edits"
+    );
+    assert!(
+        !diagnostics_envelope["value"]["edits"]
+            .as_array()
+            .expect("edits")
+            .is_empty()
+    );
+
+    let completion_item = CString::new(
+        r#"{
+          "label": "bar",
+          "textEdit": {
+            "range": {
+              "start": { "line": 0, "character": 0 },
+              "end": { "line": 0, "character": 3 }
+            },
+            "newText": "bar"
+          }
+        }"#,
+    )
+    .unwrap();
+    let replace = CString::new("replace").unwrap();
+    let completion_json = take_string(
+        editor_core_ffi_lsp_completion_item_to_text_edits_envelope_json(
+            state,
+            completion_item.as_ptr(),
+            replace.as_ptr(),
+            0,
+            0,
+            false,
+        ),
+    );
+    let completion: serde_json::Value = serde_json::from_str(&completion_json).unwrap();
+    assert_eq!(completion["ok"], true);
+    assert_eq!(completion["operation"], "completion_item_to_text_edits");
+    assert_eq!(completion["value"]["edits"].as_array().unwrap().len(), 1);
+
+    let insert = CString::new("insert").unwrap();
+    let apply_completion = CString::new(r#"{"label":"XYZ"}"#).unwrap();
+    let apply_completion_json =
+        take_string(editor_core_ffi_lsp_apply_completion_item_envelope_json(
+            state,
+            apply_completion.as_ptr(),
+            insert.as_ptr(),
+        ));
+    let apply_completion: serde_json::Value = serde_json::from_str(&apply_completion_json).unwrap();
+    assert_eq!(apply_completion["ok"], true);
+    assert_eq!(apply_completion["operation"], "apply_completion_item");
+    assert_eq!(apply_completion["value"]["applied"], true);
+
+    let invalid_mode = CString::new("future").unwrap();
+    let invalid_json = take_string(
+        editor_core_ffi_lsp_completion_item_to_text_edits_envelope_json(
+            state,
+            completion_item.as_ptr(),
+            invalid_mode.as_ptr(),
+            0,
+            0,
+            false,
+        ),
+    );
+    let invalid: serde_json::Value = serde_json::from_str(&invalid_json).unwrap();
+    assert_eq!(invalid["ok"], false);
+    assert_eq!(invalid["operation"], "completion_item_to_text_edits");
+    assert_eq!(invalid["error"]["code"], "invalid_argument");
+    assert_eq!(
+        invalid["error"]["status"],
+        status(EcfStatus::InvalidArgument)
+    );
+    assert!(
+        invalid["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("invalid completion mode")
+    );
+
+    unsafe { editor_core_ffi_editor_state_free(state) };
+}
+
+#[test]
+fn processor_result_envelope_json_reports_success_and_errors() {
+    let sublime_text = CString::new("TODO\n").expect("cstring");
+    let sublime_state = editor_core_ffi_editor_state_new(sublime_text.as_ptr(), 80);
+    assert!(!sublime_state.is_null());
+
+    let sublime_yaml = CString::new(
+        r#"%YAML 1.2
+---
+name: Demo
+scope: source.demo
+contexts:
+  main:
+    - match: TODO
+      scope: keyword.todo.demo
+"#,
+    )
+    .expect("cstring");
+    let sublime = editor_core_ffi_sublime_processor_new_from_yaml(sublime_yaml.as_ptr());
+    assert!(!sublime.is_null());
+
+    let sublime_json = take_string(editor_core_ffi_sublime_processor_process_envelope_json(
+        sublime,
+        sublime_state,
+    ));
+    let sublime_envelope: serde_json::Value = serde_json::from_str(&sublime_json).unwrap();
+    assert_eq!(sublime_envelope["ok"], true);
+    assert_eq!(sublime_envelope["status"], "success");
+    assert_eq!(sublime_envelope["operation"], "sublime_process");
+    assert_eq!(sublime_envelope["version"], ECF_ABI_VERSION);
+    assert!(
+        !sublime_envelope["value"]["edits"]
+            .as_array()
+            .expect("edits")
+            .is_empty()
+    );
+    assert!(sublime_envelope["error"].is_null());
+
+    let style_id = sublime_envelope["value"]["edits"]
+        .as_array()
+        .expect("edits")
+        .iter()
+        .find_map(|edit| {
+            (edit["op"] == "replace_style_layer")
+                .then(|| edit["intervals"].as_array())
+                .flatten()
+                .and_then(|intervals| intervals.first())
+                .and_then(|interval| interval["style_id"].as_u64())
+        })
+        .expect("sublime style id") as u32;
+    let scope_json = take_string(
+        editor_core_ffi_sublime_processor_scope_for_style_id_envelope_json(sublime, style_id),
+    );
+    let scope_envelope: serde_json::Value = serde_json::from_str(&scope_json).unwrap();
+    assert_eq!(scope_envelope["ok"], true);
+    assert_eq!(scope_envelope["operation"], "sublime_scope_for_style_id");
+    assert!(scope_envelope["value"]["scope"].is_string());
+    assert!(
+        scope_envelope["value"]["scope"]
+            .as_str()
+            .unwrap()
+            .contains("demo")
+    );
+
+    let rust_text = CString::new("fn main() {\nlet x = 1;\n}\n").expect("cstring");
+    let rust_state = editor_core_ffi_editor_state_new(rust_text.as_ptr(), 80);
+    assert!(!rust_state.is_null());
+
+    let fixture_dir = rust_treesitter_fixture_dir();
+    let wasm_path = fixture_dir.join("language.wasm");
+    assert!(wasm_path.exists());
+    let wasm_path = CString::new(wasm_path.to_string_lossy().into_owned()).expect("cstring");
+    let language_id = CString::new("rust").expect("cstring");
+    let highlights = CString::new("(identifier) @id").expect("cstring");
+    let folds = CString::new("(function_item) @fold\n(block) @fold\n").expect("cstring");
+    let capture_styles = CString::new(r#"{"id":777}"#).expect("cstring");
+
+    let treesitter = editor_core_ffi_treesitter_processor_new_wasm_from_path(
+        language_id.as_ptr(),
+        wasm_path.as_ptr(),
+        highlights.as_ptr(),
+        folds.as_ptr(),
+        capture_styles.as_ptr(),
+        424_242,
+        true,
+    );
+    assert!(!treesitter.is_null());
+
+    let treesitter_json = take_string(editor_core_ffi_treesitter_processor_process_envelope_json(
+        treesitter, rust_state,
+    ));
+    let treesitter_envelope: serde_json::Value = serde_json::from_str(&treesitter_json).unwrap();
+    assert_eq!(treesitter_envelope["ok"], true);
+    assert_eq!(treesitter_envelope["status"], "success");
+    assert_eq!(treesitter_envelope["operation"], "treesitter_process");
+    assert!(
+        !treesitter_envelope["value"]["edits"]
+            .as_array()
+            .expect("edits")
+            .is_empty()
+    );
+
+    let mode_json = take_string(
+        editor_core_ffi_treesitter_processor_last_update_mode_envelope_json(treesitter),
+    );
+    let mode_envelope: serde_json::Value = serde_json::from_str(&mode_json).unwrap();
+    assert_eq!(mode_envelope["ok"], true);
+    assert_eq!(mode_envelope["operation"], "treesitter_last_update_mode");
+    assert_eq!(mode_envelope["value"]["mode"], "initial");
+
+    let indents_query =
+        std::fs::read_to_string(fixture_dir.join("indents.scm")).expect("read indents.scm");
+    let indents_query = CString::new(indents_query).expect("cstring");
+    let indenter = editor_core_ffi_treesitter_indenter_new_wasm_from_path(
+        language_id.as_ptr(),
+        wasm_path.as_ptr(),
+        indents_query.as_ptr(),
+    );
+    assert!(!indenter.is_null());
+
+    let indentation_config =
+        CString::new(r#"{"style":{"kind":"spaces","width":4}}"#).expect("cstring");
+    let indenter_json = take_string(
+        editor_core_ffi_treesitter_indenter_reindent_line_envelope_json(
+            indenter,
+            rust_state,
+            1,
+            indentation_config.as_ptr(),
+        ),
+    );
+    let indenter_envelope: serde_json::Value = serde_json::from_str(&indenter_json).unwrap();
+    assert_eq!(indenter_envelope["ok"], true);
+    assert_eq!(indenter_envelope["operation"], "treesitter_reindent_line");
+    assert_eq!(indenter_envelope["value"]["has_edit"], true);
+    assert_eq!(indenter_envelope["value"]["edit"]["text"], "    ");
+
+    let error_json = take_string(editor_core_ffi_treesitter_processor_process_envelope_json(
+        std::ptr::null_mut(),
+        rust_state,
+    ));
+    let error_envelope: serde_json::Value = serde_json::from_str(&error_json).unwrap();
+    assert_eq!(error_envelope["ok"], false);
+    assert_eq!(error_envelope["status"], "error");
+    assert_eq!(error_envelope["operation"], "treesitter_process");
+    assert!(error_envelope["value"].is_null());
+    assert_eq!(error_envelope["error"]["code"], "invalid_argument");
+    assert_eq!(
+        error_envelope["error"]["status"],
+        status(EcfStatus::InvalidArgument)
+    );
+    assert_eq!(error_envelope["error"]["message"], "processor is null");
+
+    unsafe {
+        editor_core_ffi_treesitter_indenter_free(indenter);
+        editor_core_ffi_treesitter_processor_free(treesitter);
+        editor_core_ffi_sublime_processor_free(sublime);
+        editor_core_ffi_editor_state_free(rust_state);
+        editor_core_ffi_editor_state_free(sublime_state);
+    }
 }
 
 #[test]

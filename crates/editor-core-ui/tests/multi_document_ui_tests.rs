@@ -213,6 +213,237 @@ fn multi_document_ui_search_uses_tab_word_boundary_config() {
 }
 
 #[test]
+fn multi_document_ui_searches_workspace_files_with_globs() {
+    let root = unique_test_dir("workspace-file-search");
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    std::fs::create_dir_all(root.join("target")).unwrap();
+    std::fs::write(
+        root.join("src").join("main.rs"),
+        "fn main() {\n    let alpha = 1;\n}\n",
+    )
+    .unwrap();
+    std::fs::write(root.join("README.md"), "alpha in docs\n").unwrap();
+    std::fs::write(
+        root.join("target").join("generated.rs"),
+        "alpha generated\n",
+    )
+    .unwrap();
+
+    let mut ui = MultiDocumentEditorUi::new();
+    ui.set_workspace_roots([path_to_file_uri(&root)]);
+
+    let results = ui
+        .search_workspace_files(
+            "alpha",
+            SearchOptions::default(),
+            editor_core_ui::WorkspaceFileSearchOptions {
+                include_globs: vec!["*.rs".to_string()],
+                exclude_globs: vec![],
+                max_results: 10,
+            },
+        )
+        .unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].relative_path, "src/main.rs");
+    assert_eq!(results[0].line1, 2);
+    assert_eq!(results[0].column1, 9);
+    assert_eq!(results[0].line_text, "let alpha = 1;");
+
+    let limited = ui
+        .search_workspace_files(
+            "alpha",
+            SearchOptions::default(),
+            editor_core_ui::WorkspaceFileSearchOptions {
+                include_globs: vec![],
+                exclude_globs: vec!["README.md".to_string()],
+                max_results: 1,
+            },
+        )
+        .unwrap();
+    assert_eq!(limited.len(), 1);
+    assert_eq!(limited[0].relative_path, "src/main.rs");
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn multi_document_ui_lists_workspace_files_with_globs() {
+    let root = unique_test_dir("workspace-file-list");
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    std::fs::create_dir_all(root.join(".git")).unwrap();
+    std::fs::create_dir_all(root.join("target")).unwrap();
+    std::fs::write(root.join("src").join("main.rs"), "fn main() {}\n").unwrap();
+    std::fs::write(root.join("src").join("lib.swift"), "let value = 1\n").unwrap();
+    std::fs::write(root.join("README.md"), "# docs\n").unwrap();
+    std::fs::write(root.join(".git").join("config"), "ignored\n").unwrap();
+    std::fs::write(root.join("target").join("generated.rs"), "ignored\n").unwrap();
+
+    let mut ui = MultiDocumentEditorUi::new();
+    ui.set_workspace_roots([path_to_file_uri(&root)]);
+
+    let files = ui
+        .list_workspace_files(editor_core_ui::WorkspaceFileListOptions {
+            include_globs: vec![],
+            exclude_globs: vec![],
+            max_results: 20,
+        })
+        .unwrap();
+    assert_eq!(
+        files
+            .iter()
+            .map(|entry| entry.relative_path.as_str())
+            .collect::<Vec<_>>(),
+        vec!["README.md", "src/lib.swift", "src/main.rs"]
+    );
+    assert_eq!(
+        files[2].uri,
+        path_to_file_uri(&root.join("src").join("main.rs"))
+    );
+
+    let rust_files = ui
+        .list_workspace_files(editor_core_ui::WorkspaceFileListOptions {
+            include_globs: vec!["*.rs".to_string()],
+            exclude_globs: vec![],
+            max_results: 20,
+        })
+        .unwrap();
+    assert_eq!(rust_files.len(), 1);
+    assert_eq!(rust_files[0].relative_path, "src/main.rs");
+
+    let limited = ui
+        .list_workspace_files(editor_core_ui::WorkspaceFileListOptions {
+            include_globs: vec![],
+            exclude_globs: vec!["README.md".to_string()],
+            max_results: 1,
+        })
+        .unwrap();
+    assert_eq!(limited.len(), 1);
+    assert_eq!(limited[0].relative_path, "src/lib.swift");
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn multi_document_ui_builds_workspace_file_replacement_workspace_edit() {
+    let root = unique_test_dir("workspace-file-replace");
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    std::fs::write(root.join("src").join("main.rs"), "👋 alpha1\nalpha2\n").unwrap();
+    std::fs::write(root.join("README.md"), "alpha3\n").unwrap();
+
+    let mut ui = MultiDocumentEditorUi::new();
+    ui.set_workspace_roots([path_to_file_uri(&root)]);
+
+    let workspace_edit = ui
+        .workspace_file_replacement_workspace_edit_json(
+            r"alpha(\d)",
+            "beta$1",
+            SearchOptions {
+                case_sensitive: true,
+                whole_word: false,
+                regex: true,
+            },
+            editor_core_ui::WorkspaceFileReplacementOptions {
+                include_globs: vec!["*.rs".to_string()],
+                exclude_globs: vec![],
+                max_results: 10,
+                apply_mode: "atomic".to_string(),
+            },
+        )
+        .unwrap();
+
+    let preview = ui
+        .preview_workspace_edit_transaction(&workspace_edit)
+        .unwrap();
+    assert!(!preview.applied);
+    assert_eq!(preview.documents.len(), 1);
+    assert_eq!(preview.documents[0].edit_count, 2);
+
+    let applied = ui
+        .apply_workspace_edit_transaction(&workspace_edit)
+        .unwrap();
+    assert!(applied.applied);
+    assert_eq!(applied.applied_edit_count, 2);
+    assert_eq!(
+        std::fs::read_to_string(root.join("src").join("main.rs")).unwrap(),
+        "👋 beta1\nbeta2\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("README.md")).unwrap(),
+        "alpha3\n"
+    );
+
+    let undone = ui.undo_last_workspace_edit_transaction().unwrap();
+    assert!(undone.undone);
+    assert_eq!(
+        std::fs::read_to_string(root.join("src").join("main.rs")).unwrap(),
+        "👋 alpha1\nalpha2\n"
+    );
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[cfg(unix)]
+#[test]
+fn multi_document_ui_workspace_file_replacement_matches_open_tab_by_canonical_file_uri() {
+    let root = unique_test_dir("workspace-file-replace-canonical-uri");
+    let real_root = root.join("real");
+    let link_root = root.join("link");
+    std::fs::create_dir_all(real_root.join("src")).unwrap();
+    std::fs::write(real_root.join("src").join("main.rs"), "alpha\n").unwrap();
+    std::os::unix::fs::symlink(&real_root, &link_root).unwrap();
+
+    let link_root_uri = format!("file://{}", link_root.to_string_lossy());
+    let link_file_uri = format!(
+        "file://{}",
+        link_root.join("src").join("main.rs").to_string_lossy()
+    );
+
+    let mut ui = MultiDocumentEditorUi::new();
+    ui.set_workspace_roots([link_root_uri]);
+    let tab = ui.open_tab("alpha\n", 80);
+    ui.set_tab_document_uri(tab, Some(link_file_uri)).unwrap();
+
+    let workspace_edit = ui
+        .workspace_file_replacement_workspace_edit_json(
+            "alpha",
+            "beta",
+            SearchOptions {
+                case_sensitive: true,
+                whole_word: false,
+                regex: false,
+            },
+            editor_core_ui::WorkspaceFileReplacementOptions {
+                include_globs: vec!["*.rs".to_string()],
+                exclude_globs: vec![],
+                max_results: 10,
+                apply_mode: "atomic".to_string(),
+            },
+        )
+        .unwrap();
+
+    let preview = ui
+        .preview_workspace_edit_transaction(&workspace_edit)
+        .unwrap();
+    assert_eq!(preview.documents.len(), 1);
+    assert!(preview.documents[0].is_open);
+    assert_eq!(preview.documents[0].tab_id, Some(tab.get()));
+
+    let applied = ui
+        .apply_workspace_edit_transaction(&workspace_edit)
+        .unwrap();
+    assert!(applied.applied);
+    assert_eq!(applied.applied_edit_count, 1);
+    assert_eq!(ui.tab_text(tab).unwrap(), "beta\n");
+    assert_eq!(
+        std::fs::read_to_string(real_root.join("src").join("main.rs")).unwrap(),
+        "alpha\n"
+    );
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn multi_document_ui_exports_workspace_outline_snapshot() {
     let mut ui = MultiDocumentEditorUi::new();
     let app = ui.open_tab("struct App {\n  func run() {}\n}\n", 80);
@@ -379,6 +610,7 @@ fn multi_document_ui_previews_and_applies_workspace_edit_transactions() {
     assert_eq!(events.events.len(), 1);
     assert_eq!(events.events[0].sequence, 1);
     assert_eq!(events.events[0].operation, "apply");
+    assert_eq!(events.events[0].workspace_edit_json.as_deref(), Some(edit));
     assert_eq!(events.events[0].result.applied_uris, applied.applied_uris);
 
     let json: serde_json::Value =
@@ -390,6 +622,7 @@ fn multi_document_ui_previews_and_applies_workspace_edit_transactions() {
         serde_json::from_str(&ui.workspace_edit_transaction_events_json(0).unwrap()).unwrap();
     assert_eq!(events_json["latest_sequence"], 1);
     assert_eq!(events_json["events"][0]["result"]["mode"], "apply");
+    assert_eq!(events_json["events"][0]["workspace_edit_json"], edit);
 }
 
 #[test]

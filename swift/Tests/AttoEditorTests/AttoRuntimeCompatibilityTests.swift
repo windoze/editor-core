@@ -46,6 +46,8 @@ final class AttoRuntimeCompatibilityTests: XCTestCase {
         XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .lspStatusEnvelope })
         XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .workspaceEditApplication })
         XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .lspWorkspaceEditApplicationEnvelope })
+        XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .lspDerivedStateApplicationEnvelope })
+        XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .lspSemanticTokensApplicationEnvelope })
         XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .workspaceDiagnosticsStore })
         XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .lspResultEvents })
         XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .multiDocumentLSPResultEvents })
@@ -65,11 +67,30 @@ final class AttoRuntimeCompatibilityTests: XCTestCase {
         XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .workspaceDiagnosticsEnvelope })
         XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .workspaceOutlineSnapshotEnvelope })
         XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .multiDocumentSearchEnvelope })
+        XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .multiDocumentWorkspaceFileSearch })
+        XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .multiDocumentWorkspaceFileReplacement })
+        XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .multiDocumentRecentFiles })
+        XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .multiDocumentWorkspaceFileList })
+        XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .multiDocumentRecentProjects })
+        XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .multiDocumentProjectFileIndex })
+        XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .multiDocumentProjectFileIndexQuery })
         XCTAssertTrue(report.missingOptionalFeatures.contains {
             $0.feature == .multiDocumentWorkspaceRootsChangeEnvelope
         })
         XCTAssertTrue(report.missingOptionalFeatures.contains {
             $0.feature == .multiDocumentProjectLSPServersEnvelope
+        })
+        XCTAssertTrue(report.missingOptionalFeatures.contains {
+            $0.feature == .multiDocumentProjectLSPStartPlan
+        })
+        XCTAssertTrue(report.missingOptionalFeatures.contains {
+            $0.feature == .multiDocumentProjectLSPStopPlan
+        })
+        XCTAssertTrue(report.missingOptionalFeatures.contains {
+            $0.feature == .multiDocumentProjectLSPRestartPlan
+        })
+        XCTAssertTrue(report.missingOptionalFeatures.contains {
+            $0.feature == .multiDocumentProjectLSPLifecycleEvents
         })
         XCTAssertTrue(report.diagnosticMessage.contains("Missing UI FFI features"))
     }
@@ -93,6 +114,8 @@ final class AttoRuntimeCompatibilityTests: XCTestCase {
                 EditorCoreUIFFIFeatures.lspStatusEnvelope.rawValue,
                 EditorCoreUIFFIFeatures.workspaceEditApplication.rawValue,
                 EditorCoreUIFFIFeatures.lspWorkspaceEditApplicationEnvelope.rawValue,
+                EditorCoreUIFFIFeatures.lspDerivedStateApplicationEnvelope.rawValue,
+                EditorCoreUIFFIFeatures.lspSemanticTokensApplicationEnvelope.rawValue,
                 EditorCoreUIFFIFeatures.workspaceDiagnosticsStore.rawValue,
                 EditorCoreUIFFIFeatures.workspaceDiagnosticsEvents.rawValue,
                 EditorCoreUIFFIFeatures.lspResultEvents.rawValue,
@@ -113,8 +136,19 @@ final class AttoRuntimeCompatibilityTests: XCTestCase {
                 EditorCoreUIFFIFeatures.workspaceDiagnosticsEnvelope.rawValue,
                 EditorCoreUIFFIFeatures.workspaceOutlineSnapshotEnvelope.rawValue,
                 EditorCoreUIFFIFeatures.multiDocumentSearchEnvelope.rawValue,
+                EditorCoreUIFFIFeatures.multiDocumentWorkspaceFileSearch.rawValue,
+                EditorCoreUIFFIFeatures.multiDocumentWorkspaceFileReplacement.rawValue,
+                EditorCoreUIFFIFeatures.multiDocumentRecentFiles.rawValue,
+                EditorCoreUIFFIFeatures.multiDocumentWorkspaceFileList.rawValue,
+                EditorCoreUIFFIFeatures.multiDocumentRecentProjects.rawValue,
+                EditorCoreUIFFIFeatures.multiDocumentProjectFileIndex.rawValue,
+                EditorCoreUIFFIFeatures.multiDocumentProjectFileIndexQuery.rawValue,
                 EditorCoreUIFFIFeatures.multiDocumentWorkspaceRootsChangeEnvelope.rawValue,
                 EditorCoreUIFFIFeatures.multiDocumentProjectLSPServersEnvelope.rawValue,
+                EditorCoreUIFFIFeatures.multiDocumentProjectLSPStartPlan.rawValue,
+                EditorCoreUIFFIFeatures.multiDocumentProjectLSPStopPlan.rawValue,
+                EditorCoreUIFFIFeatures.multiDocumentProjectLSPRestartPlan.rawValue,
+                EditorCoreUIFFIFeatures.multiDocumentProjectLSPLifecycleEvents.rawValue,
                 EditorCoreUIFFIFeatures.workspaceOutlineSnapshot.rawValue,
                 EditorCoreUIFFIFeatures.multiDocumentTabDocumentURI.rawValue,
                 EditorCoreUIFFIFeatures.multiDocumentTabLanguageID.rawValue,

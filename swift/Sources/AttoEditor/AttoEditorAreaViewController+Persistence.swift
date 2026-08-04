@@ -5,6 +5,21 @@ import EditorCoreUIFFI
 import Foundation
 
 extension AttoEditorAreaViewController {
+    private typealias ProjectedWorkspaceTab = (tab: AttoEditorTab, fileURL: URL)
+
+    private struct ProjectLspStartCandidate {
+        let coreTabID: UInt64?
+        let tab: AttoEditorTab
+        let fileURL: URL
+        let config: AttoLspServerLaunchConfig
+    }
+
+    private struct ProjectLspStartTarget {
+        let candidate: ProjectLspStartCandidate
+        let planEntry: EcuProjectLspStartPlanEntry?
+        let rootURI: String?
+    }
+
     struct SyntaxSupportConfiguration {
         let syntaxLanguageId: String?
         let lspServerConfig: AttoLspServerLaunchConfig?
@@ -88,16 +103,21 @@ extension AttoEditorAreaViewController {
     }
 
     func syncCoreTabLanguageId(_ tab: AttoEditorTab) {
-        guard let coreDocuments, let coreTabID = tab.coreTabID else { return }
-
         let fileURL = projectedFileURL(for: tab)
         let languageId = AttoLanguageConfiguration.languageKey(
             fileURL: fileURL,
             syntaxLanguageId: tab.syntaxLanguageId
         )
+        syncCoreTabLanguageId(languageId.isEmpty ? nil : languageId, for: tab)
+    }
+
+    func syncCoreTabLanguageId(_ languageId: String?, for tab: AttoEditorTab) {
+        guard let coreDocuments, let coreTabID = tab.coreTabID else { return }
+
+        let normalized = languageId?.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
             try coreDocuments.setTabLanguageId(
-                languageId.isEmpty ? nil : languageId,
+                normalized?.isEmpty == false ? normalized : nil,
                 tabId: coreTabID
             )
         } catch {
@@ -182,9 +202,10 @@ extension AttoEditorAreaViewController {
         for url: URL,
         isPreview: Bool,
         showsMinimap: Bool = true,
-        isUntitled: Bool = false
+        isUntitled: Bool = false,
+        initialTextOverride: String? = nil
     ) throws -> AttoEditorTab {
-        let initialText = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        let initialText = initialTextOverride ?? ((try? String(contentsOf: url, encoding: .utf8)) ?? "")
 
         let prefs = AttoPreferences.shared
         let fontFamiliesCSV = prefs.fontFamiliesCSVForNewViews()
@@ -412,13 +433,18 @@ extension AttoEditorAreaViewController {
         }
     }
 
-    private func projectLspServerConfigsForOpenTabs() -> [EcuProjectLspServerConfig] {
-        let workspaceRootURI = workspaceRootURL.standardizedFileURL.absoluteString
+    private func projectLspServerConfigsForOpenTabs(
+        additionalLaunchConfigsByTab: [ObjectIdentifier: AttoLspServerLaunchConfig] = [:]
+    ) -> [EcuProjectLspServerConfig] {
+        let workspaceRootURIs = projectLspWorkspaceRootURIs()
         var configsByKey: [String: EcuProjectLspServerConfig] = [:]
         var orderedKeys: [String] = []
 
         for projected in coreProjectedTabsForWorkspaceLifecycle() {
-            guard let launchConfig = projected.tab.lspServerConfig else { continue }
+            let tabKey = ObjectIdentifier(projected.tab)
+            guard let launchConfig = projected.tab.lspServerConfig ?? additionalLaunchConfigsByTab[tabKey] else {
+                continue
+            }
 
             let key = Self.projectLspServerConfigKey(for: launchConfig)
             guard key.isEmpty == false else { continue }
@@ -426,8 +452,8 @@ extension AttoEditorAreaViewController {
             let autoStart = projected.tab.suppressesAutomaticLspStart == false
             if let existing = configsByKey[key] {
                 var workspaceRoots = existing.workspaceRoots
-                if workspaceRoots.contains(workspaceRootURI) == false {
-                    workspaceRoots.append(workspaceRootURI)
+                for rootURI in workspaceRootURIs where workspaceRoots.contains(rootURI) == false {
+                    workspaceRoots.append(rootURI)
                 }
                 configsByKey[key] = EcuProjectLspServerConfig(
                     key: existing.key,
@@ -446,7 +472,7 @@ extension AttoEditorAreaViewController {
                 command: launchConfig.command,
                 args: Self.projectLspServerConfigArgs(from: launchConfig.args),
                 languageId: launchConfig.languageId,
-                workspaceRoots: [workspaceRootURI],
+                workspaceRoots: workspaceRootURIs,
                 autoStart: autoStart
             )
         }
@@ -454,7 +480,31 @@ extension AttoEditorAreaViewController {
         return orderedKeys.compactMap { configsByKey[$0] }
     }
 
-    private static func projectLspServerConfigKey(for config: AttoLspServerLaunchConfig) -> String {
+    private func projectLspWorkspaceRootURIs() -> [String] {
+        if let coreRoots = try? coreDocuments?.snapshot().workspaceRoots {
+            let normalizedRoots = Self.uniqueProjectLspWorkspaceRootURIs(coreRoots)
+            if normalizedRoots.isEmpty == false {
+                return normalizedRoots
+            }
+        }
+
+        return [workspaceRootURL.standardizedFileURL.absoluteString]
+    }
+
+    private static func uniqueProjectLspWorkspaceRootURIs(_ roots: [String]) -> [String] {
+        var seen: Set<String> = []
+        var ordered: [String] = []
+        for root in roots {
+            let normalized = root.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard normalized.isEmpty == false, seen.insert(normalized).inserted else {
+                continue
+            }
+            ordered.append(normalized)
+        }
+        return ordered
+    }
+
+    static func projectLspServerConfigKey(for config: AttoLspServerLaunchConfig) -> String {
         ([config.languageId, config.command] + projectLspServerConfigArgs(from: config.args))
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { $0.isEmpty == false }
@@ -471,12 +521,13 @@ extension AttoEditorAreaViewController {
     func enableLspSupport(
         for url: URL,
         editCore: EditCoreUI,
-        config: AttoLspServerLaunchConfig
+        config: AttoLspServerLaunchConfig,
+        rootURI: String? = nil
     ) throws -> LspSupportConfiguration {
         try editCore.editor.lspEnable(
             command: config.command,
             args: config.args,
-            rootURI: workspaceRootURL.standardizedFileURL.absoluteString,
+            rootURI: rootURI ?? workspaceRootURL.standardizedFileURL.absoluteString,
             documentURI: url.standardizedFileURL.absoluteString,
             languageId: config.languageId
         )
@@ -517,23 +568,34 @@ extension AttoEditorAreaViewController {
         defer { syncProjectLspServerConfigsToCore() }
         guard isLspDisabled(environment: env) == false else { return 0 }
 
+        let projectedTabs = coreProjectedTabsForWorkspaceLifecycle()
+        let candidates = projectLspStartCandidates(
+            for: projectedTabs,
+            environment: env
+        )
+        let startTargets = projectLspStartTargets(for: candidates)
         var startedCount = 0
+        var attemptedTabIDs: Set<UInt64> = []
 
-        for projected in coreProjectedTabsForWorkspaceLifecycle() {
-            let tab = projected.tab
-            guard tab.suppressesAutomaticLspStart == false else { continue }
-            guard (try? tab.editCore.editor.lspIsEnabled()) != true else { continue }
-
-            let documentURL = projected.fileURL
-            guard let config = tab.lspServerConfig ?? lspLaunchConfig(for: documentURL, environment: env) else {
+        for target in startTargets {
+            let tab = target.candidate.tab
+            if let coreTabID = target.candidate.coreTabID,
+               attemptedTabIDs.insert(coreTabID).inserted == false
+            {
                 continue
             }
+            guard (try? tab.editCore.editor.lspIsEnabled()) != true else { continue }
+
+            let documentURL = target.candidate.fileURL
+            let config = target.candidate.config
+            let startAttemptId = recordProjectLspStartOutcome(for: target, status: "requested")
 
             do {
                 let lspSupport = try enableLspSupport(
                     for: documentURL,
                     editCore: tab.editCore,
-                    config: config
+                    config: config,
+                    rootURI: target.rootURI
                 )
                 tab.syntaxLanguageId = lspSupport.languageId
                 tab.languageSupportSource = lspSupport.source
@@ -542,8 +604,15 @@ extension AttoEditorAreaViewController {
                 applyLanguageConfiguration(for: tab)
                 tab.editCore.editorView.kickProcessingPoll()
                 tab.editCore.editorView.needsDisplay = true
+                recordProjectLspStartOutcome(for: target, status: "started", attemptId: startAttemptId)
                 startedCount += 1
             } catch {
+                recordProjectLspStartOutcome(
+                    for: target,
+                    status: "failed",
+                    errorMessage: String(describing: error),
+                    attemptId: startAttemptId
+                )
                 NSLog(
                     "AttoEditor: project LSP auto-start failed for %@: %@",
                     documentURL.path,
@@ -558,6 +627,356 @@ extension AttoEditorAreaViewController {
         }
 
         return startedCount
+    }
+
+    private func projectLspStartCandidates(
+        for projectedTabs: [ProjectedWorkspaceTab],
+        environment env: [String: String]
+    ) -> [ProjectLspStartCandidate] {
+        projectedTabs.compactMap { projected in
+            let tab = projected.tab
+            guard tab.suppressesAutomaticLspStart == false else { return nil }
+            guard (try? tab.editCore.editor.lspIsEnabled()) != true else { return nil }
+            let config = tab.lspServerConfig ?? lspLaunchConfig(for: projected.fileURL, environment: env)
+            guard let config else { return nil }
+            return ProjectLspStartCandidate(
+                coreTabID: tab.coreTabID,
+                tab: tab,
+                fileURL: projected.fileURL,
+                config: config
+            )
+        }
+    }
+
+    private func projectLspStartTargets(
+        for candidates: [ProjectLspStartCandidate]
+    ) -> [ProjectLspStartTarget] {
+        guard candidates.isEmpty == false else { return [] }
+        let fallbackTargets = candidates.map {
+            ProjectLspStartTarget(candidate: $0, planEntry: nil, rootURI: nil)
+        }
+        guard let coreDocuments else { return fallbackTargets }
+
+        let additionalConfigs = Dictionary(
+            uniqueKeysWithValues: candidates.map { (ObjectIdentifier($0.tab), $0.config) }
+        )
+
+        do {
+            try coreDocuments.setProjectLspServers(
+                projectLspServerConfigsForOpenTabs(additionalLaunchConfigsByTab: additionalConfigs)
+            )
+            let plan = try coreDocuments.projectLspStartPlan()
+            var candidatesByTabID: [UInt64: ProjectLspStartCandidate] = [:]
+            for candidate in candidates {
+                guard let coreTabID = candidate.coreTabID else { continue }
+                candidatesByTabID[coreTabID] = candidate
+            }
+
+            return plan.compactMap { entry in
+                guard let candidate = candidatesByTabID[entry.tabId],
+                      Self.projectLspStartPlanEntry(entry, matches: candidate.config),
+                      Self.projectLspStartPlanEntry(entry, matchesDocumentURL: candidate.fileURL)
+                else {
+                    return nil
+                }
+                return ProjectLspStartTarget(
+                    candidate: candidate,
+                    planEntry: entry,
+                    rootURI: Self.projectLspStartPlanRootURI(entry)
+                )
+            }
+        } catch {
+            NSLog("AttoEditor: failed to build project LSP start plan: %@", String(describing: error))
+            return fallbackTargets
+        }
+    }
+
+    private static func projectLspStartPlanEntry(
+        _ entry: EcuProjectLspStartPlanEntry,
+        matches config: AttoLspServerLaunchConfig
+    ) -> Bool {
+        entry.serverKey.lowercased() == projectLspServerConfigKey(for: config)
+    }
+
+    private static func projectLspStartPlanEntry(
+        _ entry: EcuProjectLspStartPlanEntry,
+        matchesDocumentURL documentURL: URL
+    ) -> Bool {
+        entry.documentURI == documentURL.standardizedFileURL.absoluteString
+    }
+
+    private static func projectLspStartPlanRootURI(_ entry: EcuProjectLspStartPlanEntry) -> String? {
+        entry.workspaceRoots.first { root in
+            root.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        }
+    }
+
+    @discardableResult
+    private func recordProjectLspStartOutcome(
+        for target: ProjectLspStartTarget,
+        status: String,
+        errorMessage: String? = nil,
+        attemptId: UInt64? = nil
+    ) -> UInt64? {
+        guard let coreDocuments,
+              let coreTabID = target.candidate.coreTabID
+        else {
+            return nil
+        }
+
+        let planEntry = target.planEntry
+        let outcome = EcuProjectLspStartOutcome(
+            tabId: coreTabID,
+            activeViewIndex: planEntry?.activeViewIndex ?? 0,
+            documentURI: planEntry?.documentURI ?? target.candidate.fileURL.standardizedFileURL.absoluteString,
+            languageId: planEntry?.languageId ?? target.candidate.config.languageId,
+            serverKey: planEntry?.serverKey ?? Self.projectLspServerConfigKey(for: target.candidate.config),
+            command: planEntry?.command ?? target.candidate.config.command,
+            args: planEntry?.args ?? Self.projectLspServerConfigArgs(from: target.candidate.config.args),
+            workspaceRoots: planEntry?.workspaceRoots ?? [],
+            trigger: "auto_start",
+            status: status,
+            attemptId: attemptId,
+            errorMessage: errorMessage
+        )
+
+        do {
+            try coreDocuments.recordProjectLspStartOutcome(outcome)
+            if let attemptId {
+                return attemptId
+            }
+            if Self.isProjectLspRequestedStatus(status) {
+                return try? coreDocuments.projectLspLifecycleEventsLatestSequence()
+            }
+        } catch {
+            NSLog("AttoEditor: failed to record project LSP start outcome: %@", String(describing: error))
+        }
+        return nil
+    }
+
+    @discardableResult
+    private func recordProjectLspLifecycleOutcome(
+        for tab: AttoEditorTab,
+        documentURL: URL,
+        config: AttoLspServerLaunchConfig,
+        operation: String,
+        trigger: String,
+        status: String,
+        errorMessage: String? = nil,
+        attemptId: UInt64? = nil
+    ) -> UInt64? {
+        guard let coreDocuments,
+              let coreTabID = tab.coreTabID
+        else {
+            return nil
+        }
+
+        let outcome = EcuProjectLspStartOutcome(
+            tabId: coreTabID,
+            activeViewIndex: UInt32(clamping: tab.activePaneIndex),
+            operation: operation,
+            documentURI: documentURL.standardizedFileURL.absoluteString,
+            languageId: config.languageId,
+            serverKey: Self.projectLspServerConfigKey(for: config),
+            command: config.command,
+            args: Self.projectLspServerConfigArgs(from: config.args),
+            workspaceRoots: projectLspWorkspaceRootURIs(),
+            trigger: trigger,
+            status: status,
+            attemptId: attemptId,
+            errorMessage: errorMessage
+        )
+
+        do {
+            try coreDocuments.recordProjectLspStartOutcome(outcome)
+            if let attemptId {
+                return attemptId
+            }
+            if Self.isProjectLspRequestedStatus(status) {
+                return try? coreDocuments.projectLspLifecycleEventsLatestSequence()
+            }
+        } catch {
+            NSLog(
+                "AttoEditor: failed to record project LSP %@ outcome: %@",
+                operation,
+                String(describing: error)
+            )
+        }
+        return nil
+    }
+
+    private static func isProjectLspRequestedStatus(_ status: String) -> Bool {
+        status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "requested"
+    }
+
+    @discardableResult
+    func recordProjectLspRestartOutcome(
+        for tab: AttoEditorTab,
+        documentURL: URL,
+        config: AttoLspServerLaunchConfig,
+        trigger: String,
+        status: String,
+        errorMessage: String? = nil,
+        attemptId: UInt64? = nil
+    ) -> UInt64? {
+        recordProjectLspLifecycleOutcome(
+            for: tab,
+            documentURL: documentURL,
+            config: config,
+            operation: "restart",
+            trigger: trigger,
+            status: status,
+            errorMessage: errorMessage,
+            attemptId: attemptId
+        )
+    }
+
+    @discardableResult
+    func recordProjectLspStopOutcome(
+        for tab: AttoEditorTab,
+        documentURL: URL,
+        config: AttoLspServerLaunchConfig,
+        trigger: String,
+        status: String,
+        errorMessage: String? = nil,
+        attemptId: UInt64? = nil
+    ) -> UInt64? {
+        recordProjectLspLifecycleOutcome(
+            for: tab,
+            documentURL: documentURL,
+            config: config,
+            operation: "stop",
+            trigger: trigger,
+            status: status,
+            errorMessage: errorMessage,
+            attemptId: attemptId
+        )
+    }
+
+    @discardableResult
+    func shutdownLspServerInActiveTab() -> Bool {
+        guard let tab = activeTab else {
+            NSSound.beep()
+            return false
+        }
+
+        let documentURL = projectedFileURL(for: tab)
+        let config = tab.lspServerConfig
+        guard (try? tab.editCore.editor.lspIsEnabled()) == true else {
+            NSSound.beep()
+            presentLspResultFeedback(
+                AttoLspResultFeedback.unavailable(
+                    .serverShutdown,
+                    reason: "No LSP server is running for this document."
+                ),
+                in: tab.editCore.editorView
+            )
+            return false
+        }
+
+        let shutdownAttemptId: UInt64?
+        if let config {
+            let planDecision = projectLspStopPlanDecision(
+                for: tab,
+                documentURL: documentURL,
+                config: config
+            )
+            guard planDecision.allowed else {
+                recordProjectLspStopOutcome(
+                    for: tab,
+                    documentURL: documentURL,
+                    config: config,
+                    trigger: "manual_shutdown",
+                    status: "skipped",
+                    errorMessage: "No project LSP stop plan matches this document."
+                )
+                NSSound.beep()
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.unavailable(
+                        .serverShutdown,
+                        reason: "No project LSP stop plan matches this document."
+                    ),
+                    in: tab.editCore.editorView
+                )
+                return false
+            }
+            shutdownAttemptId = recordProjectLspStopOutcome(
+                for: tab,
+                documentURL: documentURL,
+                config: config,
+                trigger: "manual_shutdown",
+                status: "requested"
+            )
+        } else {
+            shutdownAttemptId = nil
+        }
+
+        do {
+            let didShutdown = try tab.editCore.editor.lspShutdown()
+            guard didShutdown else {
+                if let config {
+                    recordProjectLspStopOutcome(
+                        for: tab,
+                        documentURL: documentURL,
+                        config: config,
+                        trigger: "manual_shutdown",
+                        status: "failed",
+                        errorMessage: "No running LSP server was available to shut down.",
+                        attemptId: shutdownAttemptId
+                    )
+                }
+                NSSound.beep()
+                presentLspResultFeedback(
+                    AttoLspResultFeedback.unavailable(
+                        .serverShutdown,
+                        reason: "No LSP server is running for this document."
+                    ),
+                    in: tab.editCore.editorView
+                )
+                return false
+            }
+
+            if let config {
+                recordProjectLspStopOutcome(
+                    for: tab,
+                    documentURL: documentURL,
+                    config: config,
+                    trigger: "manual_shutdown",
+                    status: "stopped",
+                    attemptId: shutdownAttemptId
+                )
+            }
+            markLspServerShutdown(for: tab)
+            syncProjectLspServerConfigsToCore()
+            updateAlwaysPollProcessingForSelectedTab()
+            updateStatusBar()
+            tab.editCore.editorView.needsDisplay = true
+            setTransientStatusText("LSP server shut down")
+            return true
+        } catch {
+            if let config {
+                recordProjectLspStopOutcome(
+                    for: tab,
+                    documentURL: documentURL,
+                    config: config,
+                    trigger: "manual_shutdown",
+                    status: "failed",
+                    errorMessage: String(describing: error),
+                    attemptId: shutdownAttemptId
+                )
+            }
+            updateAlwaysPollProcessingForSelectedTab()
+            updateStatusBar()
+            NSSound.beep()
+            presentLspResultFeedback(
+                AttoLspResultFeedback.failed(
+                    .serverShutdown,
+                    errorDescription: String(describing: error)
+                ),
+                in: tab.editCore.editorView
+            )
+            return false
+        }
     }
 
     @discardableResult
@@ -580,9 +999,53 @@ extension AttoEditorAreaViewController {
         }
 
         let documentURL = projectedFileURL(for: tab)
+        let planDecision = projectLspRestartPlanDecision(
+            for: tab,
+            documentURL: documentURL,
+            config: config
+        )
+        guard planDecision.allowed else {
+            recordProjectLspRestartOutcome(
+                for: tab,
+                documentURL: documentURL,
+                config: config,
+                trigger: "manual_restart",
+                status: "skipped",
+                errorMessage: "No project LSP restart plan matches this document."
+            )
+            NSSound.beep()
+            presentLspResultFeedback(
+                AttoLspResultFeedback.unavailable(
+                    .serverRestart,
+                    reason: "No project LSP restart plan matches this document."
+                ),
+                in: tab.editCore.editorView
+            )
+            return false
+        }
+        let restartAttemptId = recordProjectLspRestartOutcome(
+            for: tab,
+            documentURL: documentURL,
+            config: config,
+            trigger: "manual_restart",
+            status: "requested"
+        )
 
         do {
-            try restartLspServer(for: tab, documentURL: documentURL, config: config)
+            try restartLspServer(
+                for: tab,
+                documentURL: documentURL,
+                config: config,
+                rootURI: projectLspRestartPlanRootURI(planDecision.planEntry)
+            )
+            recordProjectLspRestartOutcome(
+                for: tab,
+                documentURL: documentURL,
+                config: config,
+                trigger: "manual_restart",
+                status: "started",
+                attemptId: restartAttemptId
+            )
             updateAlwaysPollProcessingForSelectedTab()
             updateStatusBar()
             setTransientStatusText("LSP server restarted")
@@ -590,6 +1053,15 @@ extension AttoEditorAreaViewController {
         } catch {
             tab.lspServerConfig = config
             syncProjectLspServerConfigsToCore()
+            recordProjectLspRestartOutcome(
+                for: tab,
+                documentURL: documentURL,
+                config: config,
+                trigger: "manual_restart",
+                status: "failed",
+                errorMessage: String(describing: error),
+                attemptId: restartAttemptId
+            )
             updateAlwaysPollProcessingForSelectedTab()
             updateStatusBar()
             NSSound.beep()
@@ -602,76 +1074,6 @@ extension AttoEditorAreaViewController {
             )
             return false
         }
-    }
-
-    @discardableResult
-    func restartProjectLspServers() -> Bool {
-        let projectedTabs = coreProjectedTabsForWorkspaceLifecycle()
-        let restartTargets = projectedTabs.compactMap {
-            projected -> (tab: AttoEditorTab, fileURL: URL, config: AttoLspServerLaunchConfig)? in
-            guard let config = projected.tab.lspServerConfig else {
-                return nil
-            }
-            return (
-                tab: projected.tab,
-                fileURL: projected.fileURL,
-                config: config
-            )
-        }
-
-        guard restartTargets.isEmpty == false else {
-            NSSound.beep()
-            if let tab = activeTab {
-                presentLspResultFeedback(
-                    AttoLspResultFeedback.unavailable(
-                        .serverRestart,
-                        reason: "No open document has a configured LSP server."
-                    ),
-                    in: tab.editCore.editorView
-                )
-            }
-            return false
-        }
-
-        var restartedCount = 0
-        var failures: [String] = []
-
-        for target in restartTargets {
-            do {
-                try restartLspServer(
-                    for: target.tab,
-                    documentURL: target.fileURL,
-                    config: target.config
-                )
-                restartedCount += 1
-            } catch {
-                target.tab.lspServerConfig = target.config
-                failures.append("\(target.fileURL.lastPathComponent): \(error)")
-            }
-        }
-        syncProjectLspServerConfigsToCore()
-
-        updateAlwaysPollProcessingForSelectedTab()
-        updateStatusBar()
-
-        if failures.isEmpty {
-            let noun = restartedCount == 1 ? "server" : "servers"
-            setTransientStatusText("LSP \(noun) restarted: \(restartedCount)")
-            return restartedCount > 0
-        }
-
-        NSSound.beep()
-        let detail = "Restarted \(restartedCount) of \(restartTargets.count) LSP servers.\n"
-            + failures.joined(separator: "\n")
-        if let tab = activeTab {
-            presentLspResultFeedback(
-                AttoLspResultFeedback.failed(.serverRestart, errorDescription: detail),
-                in: tab.editCore.editorView
-            )
-        } else {
-            setTransientStatusText("LSP server restart: failed")
-        }
-        return false
     }
 
     @discardableResult
@@ -717,6 +1119,14 @@ extension AttoEditorAreaViewController {
         else {
             return false
         }
+        let planDecision = projectLspRestartPlanDecision(
+            for: target.tab,
+            documentURL: target.fileURL,
+            config: config
+        )
+        guard planDecision.allowed else {
+            return false
+        }
 
         let attempts = (currentState?.attempts ?? 0) + 1
         projectLspAutoRestartStatesByTabID[tabId] = ProjectLspAutoRestartState(
@@ -726,8 +1136,28 @@ extension AttoEditorAreaViewController {
                 baseDelaySeconds: baseDelaySeconds
             ))
         )
+        let restartAttemptId = recordProjectLspRestartOutcome(
+            for: target.tab,
+            documentURL: target.fileURL,
+            config: config,
+            trigger: "auto_restart",
+            status: "requested"
+        )
         do {
-            try restartLspServer(for: target.tab, documentURL: target.fileURL, config: config)
+            try restartLspServer(
+                for: target.tab,
+                documentURL: target.fileURL,
+                config: config,
+                rootURI: projectLspRestartPlanRootURI(planDecision.planEntry)
+            )
+            recordProjectLspRestartOutcome(
+                for: target.tab,
+                documentURL: target.fileURL,
+                config: config,
+                trigger: "auto_restart",
+                status: "started",
+                attemptId: restartAttemptId
+            )
             updateAlwaysPollProcessingForSelectedTab()
             updateStatusBar()
             setTransientStatusText("LSP server auto-restarted")
@@ -735,6 +1165,15 @@ extension AttoEditorAreaViewController {
         } catch {
             target.tab.lspServerConfig = config
             syncProjectLspServerConfigsToCore()
+            recordProjectLspRestartOutcome(
+                for: target.tab,
+                documentURL: target.fileURL,
+                config: config,
+                trigger: "auto_restart",
+                status: "failed",
+                errorMessage: String(describing: error),
+                attemptId: restartAttemptId
+            )
             updateAlwaysPollProcessingForSelectedTab()
             updateStatusBar()
             NSLog(
@@ -751,16 +1190,18 @@ extension AttoEditorAreaViewController {
         return baseDelaySeconds * pow(2, Double(exponent))
     }
 
-    private func restartLspServer(
+    func restartLspServer(
         for tab: AttoEditorTab,
         documentURL: URL,
-        config: AttoLspServerLaunchConfig
+        config: AttoLspServerLaunchConfig,
+        rootURI: String? = nil
     ) throws {
         tab.editCore.editor.lspDisable()
         let lspSupport = try enableLspSupport(
             for: documentURL,
             editCore: tab.editCore,
-            config: config
+            config: config,
+            rootURI: rootURI
         )
         tab.syntaxLanguageId = lspSupport.languageId
         tab.languageSupportSource = lspSupport.source

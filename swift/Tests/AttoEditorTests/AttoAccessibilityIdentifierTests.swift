@@ -79,6 +79,11 @@ final class AttoAccessibilityIdentifierTests: XCTestCase {
         sidebar.selectTab(.findInFiles)
         XCTAssertNotNil(findView(identifier: AttoAccessibilityID.findInFiles, in: sidebar.view))
         XCTAssertNotNil(findView(identifier: AttoAccessibilityID.findInFilesQueryField, in: sidebar.view))
+        XCTAssertNotNil(findView(identifier: AttoAccessibilityID.findInFilesReplacementField, in: sidebar.view))
+        XCTAssertNotNil(findView(identifier: AttoAccessibilityID.findInFilesReplaceAllButton, in: sidebar.view))
+        XCTAssertNotNil(findView(identifier: AttoAccessibilityID.findInFilesCaseSensitiveButton, in: sidebar.view))
+        XCTAssertNotNil(findView(identifier: AttoAccessibilityID.findInFilesWholeWordButton, in: sidebar.view))
+        XCTAssertNotNil(findView(identifier: AttoAccessibilityID.findInFilesRegexButton, in: sidebar.view))
         XCTAssertNotNil(findView(identifier: AttoAccessibilityID.findInFilesScopeControl, in: sidebar.view))
         XCTAssertNotNil(findView(identifier: AttoAccessibilityID.findInFilesStatusLabel, in: sidebar.view))
         XCTAssertNotNil(findView(identifier: AttoAccessibilityID.findInFilesTable, in: sidebar.view))
@@ -861,6 +866,45 @@ final class AttoAccessibilityIdentifierTests: XCTestCase {
         XCTAssertTrue(controller.control(searchField, textView: NSTextView(), doCommandBy: #selector(NSResponder.insertNewline(_:))))
         XCTAssertEqual(openedItems, [items[0]])
         XCTAssertTrue(controller.isVisible)
+    }
+
+    func testLspWorkbenchPanelMetadataSummarizesLifecycleStates() throws {
+        let items = [
+            AttoLspWorkbenchPanelController.Item(
+                id: "problems",
+                title: "Problems",
+                detail: "Active document diagnostics",
+                status: "2 problems | Fresh",
+                isEnabled: true,
+                lifecycleState: .fresh,
+                jumpTargetCount: 1
+            ),
+            AttoLspWorkbenchPanelController.Item(
+                id: "links",
+                title: "Document Links",
+                detail: "Active document links",
+                status: "2 links | Stale: document edited",
+                isEnabled: true,
+                lifecycleState: .stale,
+                isPinned: true,
+                historyCount: 2,
+                jumpTargetCount: 2
+            ),
+            AttoLspWorkbenchPanelController.Item(
+                id: "colors",
+                title: "Document Colors",
+                detail: "Document color requests",
+                status: "Error: Document colors unavailable",
+                isEnabled: true,
+                lifecycleState: .error,
+                historyCount: 1
+            ),
+        ]
+
+        XCTAssertEqual(
+            AttoLspWorkbenchPanelController.metadataSummary(for: items),
+            "3 available | 3 result families | 3 history entries | 3 jump targets | 1 pinned | 1 stale | 1 error"
+        )
     }
 
     func testProblemsPanelExposesStableIdentifiersAndFiltersRows() throws {

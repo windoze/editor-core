@@ -103,6 +103,16 @@ struct AttoRuntimeCompatibility {
             reason: "Single-editor WorkspaceEdit fallback can use structured apply envelopes; Swift falls back to the legacy raw apply summary when unavailable."
         ),
         RuntimeFeature(
+            feature: .lspDerivedStateApplicationEnvelope,
+            name: "LSP derived-state application envelope",
+            reason: "LSP diagnostics, symbols, highlights, folding ranges, inlay hints, code lens, and document links can use structured apply envelopes; Swift falls back to legacy status-code apply helpers when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .lspSemanticTokensApplicationEnvelope,
+            name: "LSP semantic tokens application envelope",
+            reason: "Semantic highlighting can use structured raw-buffer apply envelopes; Swift falls back to the legacy status-code apply helper when unavailable."
+        ),
+        RuntimeFeature(
             feature: .workspaceDiagnosticsStore,
             name: "workspace diagnostics store",
             reason: "Project Problems can use the core-owned multi-document workspace diagnostics snapshot; Swift falls back to local parsing when unavailable."
@@ -178,6 +188,41 @@ struct AttoRuntimeCompatibility {
             reason: "Find in open tabs can read core search results through structured envelopes; Swift falls back to the legacy typed search wrapper when unavailable."
         ),
         RuntimeFeature(
+            feature: .multiDocumentWorkspaceFileSearch,
+            name: "multi-document workspace file search",
+            reason: "Find in Files workspace scope can use core workspace-root file search; Swift falls back to the local workspace file index when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentWorkspaceFileList,
+            name: "multi-document workspace file list",
+            reason: "Quick Open and project file panels can list workspace files from core-owned workspace roots; Swift falls back to the local workspace file index when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentProjectFileIndex,
+            name: "multi-document project file index",
+            reason: "Quick Open and project file panels can refresh and read core-owned project file index snapshots; Swift falls back to core file listing or the local workspace file index when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentProjectFileIndexQuery,
+            name: "multi-document project file index query",
+            reason: "Quick Open and project file panels can query core-owned project file indexes with fuzzy path matching; Swift keeps local palette filtering as a fallback."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentWorkspaceFileReplacement,
+            name: "multi-document workspace file replacement",
+            reason: "Replace in Files can generate core WorkspaceEdit payloads for project search matches; Swift keeps replacement UI disabled when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentRecentFiles,
+            name: "multi-document recent files",
+            reason: "Quick Open and session snapshots can use core-owned recent file state; Swift falls back to local recent files when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentRecentProjects,
+            name: "multi-document recent projects",
+            reason: "Workspace windows can record recent project roots in the core-owned multi-document model."
+        ),
+        RuntimeFeature(
             feature: .multiDocumentWorkspaceRootsChangeEnvelope,
             name: "multi-document workspace roots change envelope",
             reason: "Workspace root sync can read core folder diffs through structured envelopes; Swift falls back to the legacy typed change wrapper when unavailable."
@@ -186,6 +231,26 @@ struct AttoRuntimeCompatibility {
             feature: .multiDocumentProjectLSPServersEnvelope,
             name: "multi-document project LSP servers envelope",
             reason: "Project LSP launch metadata can be read through structured envelopes; Swift falls back to the legacy typed project LSP servers wrapper when unavailable."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentProjectLSPStartPlan,
+            name: "multi-document project LSP start plan",
+            reason: "Project LSP auto-start consumes core-owned start plans so document/language/server matching stays in the multi-document model."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentProjectLSPStopPlan,
+            name: "multi-document project LSP stop plan",
+            reason: "Project LSP shutdown consumes core-owned stop plans so document/language/server matching stays in the multi-document model."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentProjectLSPRestartPlan,
+            name: "multi-document project LSP restart plan",
+            reason: "Project LSP restart consumes core-owned restart plans so document/language/server matching stays in the multi-document model."
+        ),
+        RuntimeFeature(
+            feature: .multiDocumentProjectLSPLifecycleEvents,
+            name: "multi-document project LSP lifecycle events",
+            reason: "Project LSP start outcomes can be recorded in the core-owned multi-document lifecycle stream."
         ),
         RuntimeFeature(
             feature: .eventStreamEnvelope,

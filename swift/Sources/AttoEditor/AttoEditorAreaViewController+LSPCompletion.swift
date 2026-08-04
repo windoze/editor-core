@@ -40,11 +40,9 @@ extension AttoEditorAreaViewController {
                 beepOnFailure: beepOnFailure,
                 showFeedback: showFeedback
             )
-            let offsets = try tab.editCore.editor.selectionOffsets()
-            let pos = try tab.editCore.editor.charOffsetToLogicalPosition(offset: offsets.end)
             _ = try tab.editCore.editor.lspRequestCompletion(
-                logicalLine: pos.line,
-                logicalColumn: pos.column
+                logicalLine: context.logicalLine,
+                logicalColumn: context.logicalColumn
             )
 
             completionContext = context
@@ -68,6 +66,7 @@ extension AttoEditorAreaViewController {
         showFeedback: Bool = false
     ) throws -> CompletionRequestContext {
         let offsets = try tab.editCore.editor.selectionOffsets()
+        let position = try tab.editCore.editor.charOffsetToLogicalPosition(offset: offsets.end)
         let text = try tab.editCore.editor.text()
         let fallback: (start: UInt32, end: UInt32) = {
             let start = min(offsets.start, offsets.end)
@@ -79,6 +78,8 @@ extension AttoEditorAreaViewController {
         }()
         return CompletionRequestContext(
             tabID: tab.id,
+            logicalLine: position.line,
+            logicalColumn: position.column,
             fallbackStart: fallback.start,
             fallbackEnd: fallback.end,
             beepOnFailure: beepOnFailure,
@@ -395,15 +396,57 @@ extension AttoEditorAreaViewController {
             }
 
             if plan.isSnippet {
-                _ = try tab.editCore.editor.applySnippet(
-                    start: plan.start,
-                    end: plan.end,
-                    snippet: plan.text,
-                    additionalEdits: plan.additionalEdits
-                )
+                if let outcome = applySnippetCompletionAdditionalEditsWithWorkspaceEdit(
+                    plan,
+                    documentText: text,
+                    tab: tab,
+                    context: context
+                ) {
+                    switch outcome {
+                    case let .applied(start, end):
+                        _ = try tab.editCore.editor.applySnippet(
+                            start: start,
+                            end: end,
+                            snippet: plan.text
+                        )
+                    case .requestRerunStarted:
+                        return true
+                    case .stopped:
+                        if beepOnFailure {
+                            NSSound.beep()
+                        }
+                        return false
+                    }
+                } else {
+                    _ = try tab.editCore.editor.applySnippet(
+                        start: plan.start,
+                        end: plan.end,
+                        snippet: plan.text,
+                        additionalEdits: plan.additionalEdits
+                    )
+                }
             } else {
-                let edits = [EcuTextEdit(start: plan.start, end: plan.end, text: plan.text)] + plan.additionalEdits
-                _ = try tab.editCore.editor.applyTextEdits(edits)
+                if let outcome = applyCompletionPlanWithWorkspaceEdit(
+                    plan,
+                    documentText: text,
+                    tab: tab,
+                    context: context
+                ) {
+                    switch outcome {
+                    case .applied:
+                        break
+                    case .requestRerunStarted:
+                        return true
+                    case .stopped:
+                        if beepOnFailure {
+                            NSSound.beep()
+                        }
+                        return false
+                    }
+                } else {
+                    let edits = [EcuTextEdit(start: plan.start, end: plan.end, text: plan.text)] + plan.additionalEdits
+                    _ = try tab.editCore.editor.applyTextEdits(edits)
+                }
             }
             var didCommitCharacter = false
             if let commitCharacter {
@@ -435,5 +478,188 @@ extension AttoEditorAreaViewController {
             }
             return false
         }
+    }
+
+    enum CompletionSnippetAdditionalEditsOutcome {
+        case applied(start: UInt32, end: UInt32)
+        case requestRerunStarted
+        case stopped
+    }
+
+    func applySnippetCompletionAdditionalEditsWithWorkspaceEdit(
+        _ plan: AttoLspCompletionParser.ApplicationPlan,
+        documentText: String,
+        tab: AttoEditorTab,
+        context: CompletionRequestContext
+    ) -> CompletionSnippetAdditionalEditsOutcome? {
+        guard plan.additionalEdits.isEmpty == false else { return nil }
+        guard let transformedRange = completionSnippetRangeAfterApplyingAdditionalEdits(
+            start: plan.start,
+            end: plan.end,
+            additionalEdits: plan.additionalEdits
+        ) else {
+            return nil
+        }
+
+        let documentURI = projectedFileURL(for: tab).absoluteString
+        guard let workspaceEditJSON = completionWorkspaceEditJSON(
+            edits: plan.additionalEdits,
+            documentText: documentText,
+            documentURI: documentURI
+        ) else {
+            return nil
+        }
+        guard let parsed = AttoWorkspaceEditParser.parse(workspaceEditJSON) else {
+            return nil
+        }
+
+        let outcome = applyWorkspaceEditToActiveTab(
+            parsed,
+            workspaceEditJSON: workspaceEditJSON,
+            documentURI: documentURI,
+            requestRetryOwner: completionWorkspaceEditRequestRetryOwner(context: context)
+        )
+        switch outcome {
+        case .applied:
+            return .applied(start: transformedRange.start, end: transformedRange.end)
+        case .requestRerunStarted:
+            return .requestRerunStarted
+        case .stopped:
+            return .stopped
+        }
+    }
+
+    func completionSnippetRangeAfterApplyingAdditionalEdits(
+        start: UInt32,
+        end: UInt32,
+        additionalEdits: [EcuTextEdit]
+    ) -> (start: UInt32, end: UInt32)? {
+        guard start <= end else { return nil }
+        let sortedEdits = additionalEdits.sorted {
+            if $0.start != $1.start { return $0.start < $1.start }
+            return $0.end < $1.end
+        }
+
+        var previousEnd: UInt32 = 0
+        var deltaBeforeSnippet: Int64 = 0
+        for edit in sortedEdits {
+            guard edit.start <= edit.end else { return nil }
+            guard edit.start >= previousEnd else { return nil }
+            previousEnd = max(previousEnd, edit.end)
+
+            let isBeforeSnippet = edit.end <= start
+            let isAfterSnippet = edit.start >= end
+            guard isBeforeSnippet || isAfterSnippet else { return nil }
+
+            if isBeforeSnippet {
+                deltaBeforeSnippet += Int64(edit.text.unicodeScalars.count) - Int64(edit.end - edit.start)
+            }
+        }
+
+        let transformedStart = Int64(start) + deltaBeforeSnippet
+        let transformedEnd = Int64(end) + deltaBeforeSnippet
+        guard transformedStart >= 0,
+              transformedEnd >= transformedStart,
+              transformedStart <= Int64(UInt32.max),
+              transformedEnd <= Int64(UInt32.max)
+        else {
+            return nil
+        }
+        return (start: UInt32(transformedStart), end: UInt32(transformedEnd))
+    }
+
+    func applyCompletionPlanWithWorkspaceEdit(
+        _ plan: AttoLspCompletionParser.ApplicationPlan,
+        documentText: String,
+        tab: AttoEditorTab,
+        context: CompletionRequestContext
+    ) -> AttoWorkspaceEditApplyOutcome? {
+        let documentURI = projectedFileURL(for: tab).absoluteString
+        guard let workspaceEditJSON = completionWorkspaceEditJSON(
+            for: plan,
+            documentText: documentText,
+            documentURI: documentURI
+        ) else {
+            return nil
+        }
+        guard let parsed = AttoWorkspaceEditParser.parse(workspaceEditJSON) else {
+            return nil
+        }
+
+        return applyWorkspaceEditToActiveTab(
+            parsed,
+            workspaceEditJSON: workspaceEditJSON,
+            documentURI: documentURI,
+            requestRetryOwner: completionWorkspaceEditRequestRetryOwner(context: context)
+        )
+    }
+
+    func completionWorkspaceEditJSON(
+        for plan: AttoLspCompletionParser.ApplicationPlan,
+        documentText: String,
+        documentURI: String
+    ) -> String? {
+        let edits = [EcuTextEdit(start: plan.start, end: plan.end, text: plan.text)] + plan.additionalEdits
+        return completionWorkspaceEditJSON(
+            edits: edits,
+            documentText: documentText,
+            documentURI: documentURI
+        )
+    }
+
+    func completionWorkspaceEditJSON(
+        edits: [EcuTextEdit],
+        documentText: String,
+        documentURI: String
+    ) -> String? {
+        let editObjects = edits.compactMap {
+            completionTextEditObject($0, documentText: documentText)
+        }
+        guard editObjects.count == edits.count else { return nil }
+
+        let root: [String: Any] = [
+            "changes": [
+                documentURI: editObjects,
+            ],
+        ]
+        guard JSONSerialization.isValidJSONObject(root),
+              let data = try? JSONSerialization.data(withJSONObject: root, options: [])
+        else {
+            return nil
+        }
+        return String(data: data, encoding: .utf8)
+    }
+
+    func completionTextEditObject(_ edit: EcuTextEdit, documentText: String) -> [String: Any]? {
+        guard edit.start <= edit.end,
+              Int(edit.end) <= documentText.unicodeScalars.count
+        else {
+            return nil
+        }
+
+        return [
+            "range": [
+                "start": completionLspPosition(in: documentText, charOffset: edit.start),
+                "end": completionLspPosition(in: documentText, charOffset: edit.end),
+            ],
+            "newText": edit.text,
+        ]
+    }
+
+    func completionLspPosition(in text: String, charOffset: UInt32) -> [String: Int] {
+        let limit = min(Int(charOffset), text.unicodeScalars.count)
+        var line = 0
+        var utf16Column = 0
+
+        for scalar in text.unicodeScalars.prefix(limit) {
+            if scalar == "\n" {
+                line += 1
+                utf16Column = 0
+            } else {
+                utf16Column += String(scalar).utf16.count
+            }
+        }
+
+        return ["line": line, "character": utf16Column]
     }
 }

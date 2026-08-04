@@ -30,16 +30,12 @@ extension AttoEditorAreaViewController {
         let tabSnaps: [AttoTabSnapshot] = tabs.map { tab in
             let paneCount = tab.panes.count
             let activePaneIndex = max(0, min(tab.activePaneIndex, paneCount - 1))
-            return AttoTabSnapshot(
-                filePath: tab.fileURL.standardizedFileURL.path,
+            return makeTabSessionSnapshot(
+                tab: tab,
+                fileURL: tab.fileURL.standardizedFileURL,
                 isPreview: tab.isPreview,
-                showsMinimap: tab.editCore.showsMinimap,
                 paneCount: paneCount,
-                activePaneIndex: activePaneIndex,
-                paneLayout: AttoPaneLayoutSnapshot.horizontalSplit(
-                    paneCount: paneCount,
-                    activePaneIndex: activePaneIndex
-                )
+                activePaneIndex: activePaneIndex
             )
         }
 
@@ -65,21 +61,49 @@ extension AttoEditorAreaViewController {
             }
 
             tabSnaps.append(
-                AttoTabSnapshot(
-                    filePath: projected.fileURL.standardizedFileURL.path,
+                makeTabSessionSnapshot(
+                    tab: projected.tab,
+                    fileURL: projected.fileURL.standardizedFileURL,
                     isPreview: coreTab.isPreview,
-                    showsMinimap: projected.tab.editCore.showsMinimap,
                     paneCount: paneCount,
-                    activePaneIndex: activePaneIndex,
-                    paneLayout: AttoPaneLayoutSnapshot.horizontalSplit(
-                        paneCount: paneCount,
-                        activePaneIndex: activePaneIndex
-                    )
+                    activePaneIndex: activePaneIndex
                 )
             )
         }
 
         return (tabs: tabSnaps, selectedTabIndex: selectedIndex)
+    }
+
+    private func makeTabSessionSnapshot(
+        tab: AttoEditorTab,
+        fileURL: URL,
+        isPreview: Bool,
+        paneCount: Int,
+        activePaneIndex: Int
+    ) -> AttoTabSnapshot {
+        AttoTabSnapshot(
+            filePath: fileURL.standardizedFileURL.path,
+            isPreview: isPreview,
+            showsMinimap: tab.editCore.showsMinimap,
+            paneCount: paneCount,
+            activePaneIndex: activePaneIndex,
+            paneLayout: AttoPaneLayoutSnapshot.horizontalSplit(
+                paneCount: paneCount,
+                activePaneIndex: activePaneIndex
+            ),
+            isUntitled: tab.isUntitled ? true : nil,
+            unsavedText: tab.isUntitled ? unsavedSessionText(for: tab) : nil
+        )
+    }
+
+    private func unsavedSessionText(for tab: AttoEditorTab) -> String {
+        if let text = try? tab.editCore.editor.text() {
+            return text
+        }
+        if let coreDocuments, let coreTabID = tab.coreTabID, let text = try? coreDocuments.tabText(tabId: coreTabID) {
+            return text
+        }
+        return ""
     }
 
     private func makeCoreProjectedTabs() -> (snapshot: EcuMultiDocumentSnapshot, tabs: [CoreProjectedTab])? {
@@ -220,29 +244,27 @@ extension AttoEditorAreaViewController {
         newTabs.reserveCapacity(tabSnapshots.count)
 
         for snap in tabSnapshots {
+            let isUntitled = snap.isUntitled == true
             let url = URL(fileURLWithPath: snap.filePath).standardizedFileURL
-            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+            guard isUntitled || FileManager.default.fileExists(atPath: url.path) else { continue }
 
-            let wantsPreview = snap.isPreview && (didUsePreview == false)
+            let wantsPreview = isUntitled ? false : snap.isPreview && (didUsePreview == false)
             if wantsPreview { didUsePreview = true }
 
             do {
                 let tab = try makeTab(
                     for: url,
                     isPreview: wantsPreview,
-                    showsMinimap: snap.showsMinimap ?? true
+                    showsMinimap: snap.showsMinimap ?? true,
+                    isUntitled: isUntitled,
+                    initialTextOverride: isUntitled ? "" : nil
                 )
 
-                let paneCount = max(1, min(snap.paneLayout?.flattenedPaneCount ?? snap.paneCount ?? 1, 8))
-                if paneCount > 1 {
-                    for _ in 1..<paneCount {
-                        _ = try appendSplitPane(to: tab)
-                    }
-                    let activePaneIndex = snap.paneLayout?.clampedActivePaneIndex ?? snap.activePaneIndex ?? 0
-                    tab.activePaneIndex = max(0, min(activePaneIndex, tab.panes.count - 1))
-                    setCoreActiveView(tab)
+                if isUntitled, let unsavedText = snap.unsavedText {
+                    guard restoreUntitledText(unsavedText, to: tab) else { continue }
                 }
 
+                try restorePaneLayout(for: tab, from: snap)
                 newTabs.append(tab)
             } catch {
                 NSLog("AttoEditor: session restore failed to open file %@: %@", url.path, String(describing: error))
@@ -265,6 +287,38 @@ extension AttoEditorAreaViewController {
         let idx = selectedTabIndex ?? 0
         let safeIdx = (0..<newTabs.count).contains(idx) ? idx : 0
         selectTab(id: newTabs[safeIdx].id)
+    }
+
+    private func restorePaneLayout(for tab: AttoEditorTab, from snap: AttoTabSnapshot) throws {
+        let paneCount = max(1, min(snap.paneLayout?.flattenedPaneCount ?? snap.paneCount ?? 1, 8))
+        if paneCount > 1 {
+            for _ in 1..<paneCount {
+                _ = try appendSplitPane(to: tab)
+            }
+        }
+        let activePaneIndex = snap.paneLayout?.clampedActivePaneIndex ?? snap.activePaneIndex ?? 0
+        tab.activePaneIndex = max(0, min(activePaneIndex, tab.panes.count - 1))
+        setCoreActiveView(tab)
+    }
+
+    @discardableResult
+    private func restoreUntitledText(_ text: String, to tab: AttoEditorTab) -> Bool {
+        do {
+            let oldText = try tab.editCore.editor.text()
+            let fullRange = UInt32(clamping: oldText.unicodeScalars.count)
+            _ = try tab.editCore.editor.applyTextEdits([
+                EcuTextEdit(start: 0, end: fullRange, text: text),
+            ])
+            if oldText != text {
+                try tab.editCore.editor.endUndoGroup()
+            }
+            tab.isDirty = text.isEmpty == false || ((try? tab.editCore.editor.isModified()) ?? false)
+            syncCoreTabText(tab, markSaved: tab.isDirty == false)
+            return true
+        } catch {
+            NSLog("AttoEditor: session restore failed to restore untitled text %@: %@", tab.fileURL.path, String(describing: error))
+            return false
+        }
     }
 
     func notifySessionStateChanged() {
@@ -599,14 +653,17 @@ extension AttoEditorAreaViewController {
         return isDirty ? "● \(title)" : title
     }
 
-    func findInOpenTabs(query: String) -> [AttoFindInFilesViewController.SearchResult] {
+    func findInOpenTabs(
+        query: String,
+        options: AttoFindInFilesViewController.SearchOptions = .default
+    ) -> [AttoFindInFilesViewController.SearchResult] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard q.isEmpty == false, let coreDocuments else { return [] }
 
         do {
             let coreResults = try coreDocuments.searchAllTabs(
                 query: q,
-                options: EcuSearchOptions(caseSensitive: false)
+                options: ecuSearchOptions(from: options)
             )
 
             var out: [AttoFindInFilesViewController.SearchResult] = []
@@ -651,6 +708,97 @@ extension AttoEditorAreaViewController {
             NSLog("AttoEditor: core multi-document open-tab search failed: %@", String(describing: error))
             return []
         }
+    }
+
+    func findInWorkspaceFiles(
+        query: String,
+        includeGlobs: [String],
+        excludeGlobs: [String],
+        options: AttoFindInFilesViewController.SearchOptions = .default
+    ) -> [AttoFindInFilesViewController.SearchResult]? {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard q.isEmpty == false, let coreDocuments else { return nil }
+
+        do {
+            let coreResults = try coreDocuments.searchWorkspaceFiles(
+                query: q,
+                options: ecuSearchOptions(from: options),
+                includeGlobs: includeGlobs,
+                excludeGlobs: excludeGlobs,
+                maxResults: 2000
+            )
+
+            var out: [AttoFindInFilesViewController.SearchResult] = []
+            out.reserveCapacity(coreResults.count)
+            for result in coreResults {
+                let resultURL = URL(fileURLWithPath: result.path).standardizedFileURL
+                out.append(
+                    AttoFindInFilesViewController.SearchResult(
+                        url: resultURL,
+                        line1: Int(result.line1),
+                        column1: Int(result.column1),
+                        lineText: result.lineText
+                    )
+                )
+            }
+
+            out.sort { a, b in
+                if a.url.path != b.url.path { return a.url.path < b.url.path }
+                if a.line1 != b.line1 { return a.line1 < b.line1 }
+                return a.column1 < b.column1
+            }
+            return out
+        } catch {
+            NSLog("AttoEditor: core multi-document workspace file search failed: %@", String(describing: error))
+            return nil
+        }
+    }
+
+    @discardableResult
+    func replaceInWorkspaceFiles(
+        query: String,
+        replacement: String,
+        includeGlobs: [String],
+        excludeGlobs: [String],
+        options: AttoFindInFilesViewController.SearchOptions = .default
+    ) -> Bool {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard q.isEmpty == false, let coreDocuments else {
+            NSSound.beep()
+            return false
+        }
+
+        do {
+            let workspaceEditJSON = try coreDocuments.workspaceFileReplacementWorkspaceEditJSON(
+                query: q,
+                replacement: replacement,
+                options: ecuSearchOptions(from: options),
+                includeGlobs: includeGlobs,
+                excludeGlobs: excludeGlobs,
+                applyMode: "atomic",
+                maxResults: 2000
+            )
+            let applied = applyWorkspaceEditJSONToActiveTab(workspaceEditJSON)
+            if applied {
+                setTransientStatusText("Replace in Files applied")
+            }
+            return applied
+        } catch {
+            NSLog("AttoEditor: core multi-document workspace file replacement failed: %@", String(describing: error))
+            setTransientStatusText("Replace in Files failed")
+            NSSound.beep()
+            return false
+        }
+    }
+
+    private func ecuSearchOptions(
+        from options: AttoFindInFilesViewController.SearchOptions
+    ) -> EcuSearchOptions {
+        EcuSearchOptions(
+            caseSensitive: options.caseSensitive,
+            wholeWord: options.wholeWord,
+            regex: options.regex
+        )
     }
 
     static func findResultLinePreview(in text: String, zeroBasedLine: Int) -> String {
@@ -1124,7 +1272,29 @@ extension AttoEditorAreaViewController {
 
     func stopOwnedLspSessionForClosingTab(_ tab: AttoEditorTab) {
         guard (try? tab.editCore.editor.lspIsEnabled()) == true else { return }
+        let projectedURL = projectedFileURL(for: tab)
+        let config = tab.lspServerConfig
+        let stopAttemptId: UInt64? = {
+            guard let config else { return nil }
+            return recordProjectLspStopOutcome(
+                for: tab,
+                documentURL: projectedURL,
+                config: config,
+                trigger: "tab_close",
+                status: "requested"
+            )
+        }()
         tab.editCore.editor.lspDisable()
+        if let config {
+            recordProjectLspStopOutcome(
+                for: tab,
+                documentURL: projectedURL,
+                config: config,
+                trigger: "tab_close",
+                status: "stopped",
+                attemptId: stopAttemptId
+            )
+        }
     }
 
     func selectTab(id: UUID) {

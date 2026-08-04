@@ -596,6 +596,7 @@ extension AttoEditorAreaViewController {
         cancelInlayHintResolveUI()
         cancelDocumentLinkResolveUI()
         cancelExecuteCommandUI()
+        cancelFormattingUI()
     }
 
     func cancelCodeLensUI() {
@@ -678,5 +679,15 @@ extension AttoEditorAreaViewController {
         colorPresentationPollTimer?.cancel()
         colorPresentationPollTimer = nil
         colorPresentationContext = nil
+    }
+
+    func cancelFormattingUI() {
+        cancelFormattingRequestOnly()
+    }
+
+    func cancelFormattingRequestOnly() {
+        formattingPollTimer?.cancel()
+        formattingPollTimer = nil
+        formattingContext = nil
     }
 }

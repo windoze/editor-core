@@ -14,6 +14,49 @@ final class EditorCoreFFIRuntimeCompatibilityTests: XCTestCase {
         XCTAssertTrue(report.diagnosticMessage.contains("compatible"))
     }
 
+    func testEvaluatesCapabilitySnapshot() throws {
+        let library = try EditorCoreFFITestSupport.shared.loadLibrary()
+        let snapshot = try library.runtimeCapabilitySnapshot()
+        let report = EditorCoreFFIRuntimeCompatibility.evaluate(capabilitySnapshot: snapshot)
+
+        XCTAssertTrue(report.isCompatible, report.diagnosticMessage)
+        XCTAssertEqual(report.runtimeInfo, snapshot.runtimeInfo)
+        XCTAssertTrue(report.missingRequiredFeatures.isEmpty)
+        XCTAssertTrue(report.missingOptionalFeatures.isEmpty)
+        XCTAssertNil(report.loadError)
+    }
+
+    func testCapabilitySnapshotReportsMissingFeatures() throws {
+        let required = try feature(.jsonCommandEnvelope)
+        let optional = try feature(.processorResultEnvelope)
+        let snapshot = EditorCoreFFIRuntimeCapabilitySnapshot(
+            kind: "editor-core-ffi",
+            abiVersion: EditorCoreFFIRuntimeCompatibility.minimumABIVersion,
+            version: "test-runtime",
+            featureFlags: [.jsonCommandDispatch],
+            features: [
+                EditorCoreFFIRuntimeFeatureDescriptor(
+                    bit: 0,
+                    flag: EditorCoreFFIFeatures.jsonCommandDispatch.rawValue,
+                    name: "json_command_dispatch",
+                    description: "test descriptor"
+                ),
+            ]
+        )
+
+        let report = EditorCoreFFIRuntimeCompatibility.evaluate(
+            capabilitySnapshot: snapshot,
+            requiredFeatures: [required],
+            optionalFeatures: [optional]
+        )
+
+        XCTAssertFalse(report.isCompatible)
+        XCTAssertEqual(report.runtimeInfo, snapshot.runtimeInfo)
+        XCTAssertEqual(report.missingRequiredFeatures, [required])
+        XCTAssertEqual(report.missingOptionalFeatures, [optional])
+        XCTAssertNil(report.loadError)
+    }
+
     func testRejectsOlderABI() throws {
         let report = EditorCoreFFIRuntimeCompatibility.evaluate(
             runtimeInfo: EditorCoreFFIRuntimeInfo(
@@ -27,6 +70,35 @@ final class EditorCoreFFIRuntimeCompatibilityTests: XCTestCase {
         XCTAssertTrue(report.missingRequiredFeatures.isEmpty)
         XCTAssertTrue(report.missingOptionalFeatures.isEmpty)
         XCTAssertTrue(report.diagnosticMessage.contains("older than required ABI"))
+    }
+
+    func testReportsRuntimeInfoLoadFailure() {
+        let required = EditorCoreFFIRuntimeFeature(
+            feature: .jsonCommandEnvelope,
+            name: "JSON command envelope",
+            reason: "required by the test host"
+        )
+        let optional = EditorCoreFFIRuntimeFeature(
+            feature: .processorResultEnvelope,
+            name: "processor result envelope",
+            reason: "optional by the test host"
+        )
+        let report = EditorCoreFFIRuntimeCompatibilityReport(
+            runtimeInfo: nil,
+            minimumABIVersion: EditorCoreFFIRuntimeCompatibility.minimumABIVersion,
+            missingRequiredFeatures: [required],
+            missingOptionalFeatures: [optional],
+            loadError: "runtime_info_json returned null"
+        )
+
+        XCTAssertFalse(report.isCompatible)
+        XCTAssertNil(report.runtimeInfo)
+        XCTAssertEqual(report.loadError, "runtime_info_json returned null")
+        XCTAssertEqual(report.missingRequiredFeatures, [required])
+        XCTAssertEqual(report.missingOptionalFeatures, [optional])
+        XCTAssertTrue(report.diagnosticMessage.contains("Failed to read core runtime information"))
+        XCTAssertTrue(report.diagnosticMessage.contains("runtime_info_json returned null"))
+        XCTAssertFalse(report.diagnosticMessage.contains("Missing core FFI features"))
     }
 
     func testReportsMissingRequiredFeatures() throws {
@@ -49,7 +121,31 @@ final class EditorCoreFFIRuntimeCompatibilityTests: XCTestCase {
         XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .workspaceLifecycleEnvelope })
         XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .editorStateQueryEnvelope })
         XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .lspHelperEnvelope })
+        XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .lspEditHelperEnvelope })
+        XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .processorResultEnvelope })
         XCTAssertTrue(report.diagnosticMessage.contains("Missing core FFI features"))
+    }
+
+    func testReportsOlderABIAndFeatureMismatchesTogether() throws {
+        let required = try feature(.jsonCommandEnvelope)
+        let optional = try feature(.processorResultEnvelope)
+        let report = EditorCoreFFIRuntimeCompatibility.evaluate(
+            runtimeInfo: EditorCoreFFIRuntimeInfo(
+                abiVersion: 0,
+                version: "test-runtime",
+                features: []
+            ),
+            requiredFeatures: [required],
+            optionalFeatures: [optional]
+        )
+
+        XCTAssertFalse(report.isCompatible)
+        XCTAssertNil(report.loadError)
+        XCTAssertEqual(report.missingRequiredFeatures, [required])
+        XCTAssertEqual(report.missingOptionalFeatures, [optional])
+        XCTAssertTrue(report.diagnosticMessage.contains("older than required ABI"))
+        XCTAssertTrue(report.diagnosticMessage.contains("Missing core FFI features: JSON command envelope"))
+        XCTAssertTrue(report.diagnosticMessage.contains("Unavailable optional core FFI features: processor result envelope"))
     }
 
     func testMissingOptionalFeaturesDoNotBlockCompatibility() throws {
