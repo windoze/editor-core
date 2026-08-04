@@ -1,3 +1,4 @@
+use super::project_lsp::{ProjectLspWorkspaceFolder, normalize_project_lsp_workspace_schema};
 use crate::UiError;
 use std::collections::VecDeque;
 
@@ -21,6 +22,8 @@ pub struct ProjectLspStartOutcome {
     pub args: Vec<String>,
     #[serde(default)]
     pub workspace_roots: Vec<String>,
+    #[serde(default)]
+    pub workspace_folders: Vec<ProjectLspWorkspaceFolder>,
     #[serde(default = "default_project_lsp_lifecycle_trigger")]
     pub trigger: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -46,6 +49,8 @@ pub struct ProjectLspLifecycleEvent {
     pub args: Vec<String>,
     #[serde(default)]
     pub workspace_roots: Vec<String>,
+    #[serde(default)]
+    pub workspace_folders: Vec<ProjectLspWorkspaceFolder>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attempt_id: Option<u64>,
     #[serde(default)]
@@ -76,6 +81,10 @@ impl ProjectLspLifecycleEventStore {
         let command = normalize_required("project LSP start outcome command", &outcome.command)?;
         let operation = normalize_project_lsp_lifecycle_operation(&outcome.operation)?;
         let status = normalize_project_lsp_lifecycle_status(&outcome.status)?;
+        let (workspace_roots, workspace_folders) = normalize_project_lsp_workspace_schema(
+            outcome.workspace_roots,
+            outcome.workspace_folders,
+        );
         let attempt_id = outcome
             .attempt_id
             .or_else(|| (status == "requested").then_some(self.next_sequence));
@@ -92,7 +101,8 @@ impl ProjectLspLifecycleEventStore {
             server_key: normalize_optional(&outcome.server_key).unwrap_or_default(),
             command,
             args: normalize_non_empty_vec(outcome.args),
-            workspace_roots: normalize_non_empty_vec(outcome.workspace_roots),
+            workspace_roots,
+            workspace_folders,
             attempt_id,
             error_message: outcome
                 .error_message

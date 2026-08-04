@@ -1366,6 +1366,9 @@ fn ffi_project_lsp_servers_envelope_json_reports_success_and_errors() {
             "args": [" ", "--stdio "],
             "language_id": " rust ",
             "workspace_roots": ["file:///workspace", " file:///workspace ", "file:///other"],
+            "workspace_folders": [
+              { "uri": " file:///workspace ", "name": " Workspace ", "root_alias": " main " }
+            ],
             "auto_start": true
           },
           {
@@ -1399,6 +1402,17 @@ fn ffi_project_lsp_servers_envelope_json_reports_success_and_errors() {
                 "args": ["--stdio"],
                 "language_id": "rust",
                 "workspace_roots": ["file:///other", "file:///workspace"],
+                "workspace_folders": [
+                    {
+                        "uri": "file:///other",
+                        "name": "other"
+                    },
+                    {
+                        "uri": "file:///workspace",
+                        "name": "Workspace",
+                        "root_alias": "main"
+                    }
+                ],
                 "auto_start": true
             },
             {
@@ -1407,6 +1421,7 @@ fn ffi_project_lsp_servers_envelope_json_reports_success_and_errors() {
                 "args": [],
                 "language_id": "swift",
                 "workspace_roots": [],
+                "workspace_folders": [],
                 "auto_start": false
             }
         ])
@@ -2079,6 +2094,16 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                 "args": ["--stdio"],
                 "language_id": "rust",
                 "workspace_roots": ["file:///new", "file:///other"],
+                "workspace_folders": [
+                    {
+                        "uri": "file:///new",
+                        "name": "new"
+                    },
+                    {
+                        "uri": "file:///other",
+                        "name": "other"
+                    }
+                ],
                 "auto_start": true
             },
             {
@@ -2087,6 +2112,7 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                 "args": [],
                 "language_id": "swift",
                 "workspace_roots": [],
+                "workspace_folders": [],
                 "auto_start": false
             }
         ])
@@ -2112,7 +2138,17 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                 "server_key": "rust",
                 "command": "/bin/rust-analyzer",
                 "args": ["--stdio"],
-                "workspace_roots": ["file:///new", "file:///other"]
+                "workspace_roots": ["file:///new", "file:///other"],
+                "workspace_folders": [
+                    {
+                        "uri": "file:///new",
+                        "name": "new"
+                    },
+                    {
+                        "uri": "file:///other",
+                        "name": "other"
+                    }
+                ]
             }
         ])
     );
@@ -2136,7 +2172,17 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                 "server_key": "rust",
                 "command": "/bin/rust-analyzer",
                 "args": ["--stdio"],
-                "workspace_roots": ["file:///new", "file:///other"]
+                "workspace_roots": ["file:///new", "file:///other"],
+                "workspace_folders": [
+                    {
+                        "uri": "file:///new",
+                        "name": "new"
+                    },
+                    {
+                        "uri": "file:///other",
+                        "name": "other"
+                    }
+                ]
             },
             {
                 "operation": "stop",
@@ -2147,7 +2193,17 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                 "server_key": "swift",
                 "command": "/bin/sourcekit-lsp",
                 "args": [],
-                "workspace_roots": ["file:///new", "file:///other"]
+                "workspace_roots": ["file:///new", "file:///other"],
+                "workspace_folders": [
+                    {
+                        "uri": "file:///new",
+                        "name": "new"
+                    },
+                    {
+                        "uri": "file:///other",
+                        "name": "other"
+                    }
+                ]
             }
         ])
     );
@@ -2173,7 +2229,17 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                 "server_key": "rust",
                 "command": "/bin/rust-analyzer",
                 "args": ["--stdio"],
-                "workspace_roots": ["file:///new", "file:///other"]
+                "workspace_roots": ["file:///new", "file:///other"],
+                "workspace_folders": [
+                    {
+                        "uri": "file:///new",
+                        "name": "new"
+                    },
+                    {
+                        "uri": "file:///other",
+                        "name": "other"
+                    }
+                ]
             },
             {
                 "operation": "restart",
@@ -2184,7 +2250,17 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                 "server_key": "swift",
                 "command": "/bin/sourcekit-lsp",
                 "args": [],
-                "workspace_roots": ["file:///new", "file:///other"]
+                "workspace_roots": ["file:///new", "file:///other"],
+                "workspace_folders": [
+                    {
+                        "uri": "file:///new",
+                        "name": "new"
+                    },
+                    {
+                        "uri": "file:///other",
+                        "name": "other"
+                    }
+                ]
             }
         ])
     );

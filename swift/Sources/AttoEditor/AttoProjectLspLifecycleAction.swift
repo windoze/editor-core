@@ -12,6 +12,7 @@ struct AttoProjectLspLifecycleAction {
     let command: String
     let args: [String]
     let workspaceRoots: [String]
+    let workspaceFolders: [EcuProjectLspWorkspaceFolder]
 
     @MainActor
     static func start(
@@ -22,7 +23,9 @@ struct AttoProjectLspLifecycleAction {
         planEntry: EcuProjectLspStartPlanEntry?,
         fallbackWorkspaceRoots: [String]
     ) -> AttoProjectLspLifecycleAction {
-        AttoProjectLspLifecycleAction(
+        let workspaceRoots = planEntry?.workspaceRoots ?? fallbackWorkspaceRoots
+        let workspaceFolders = planEntry?.workspaceFolders ?? Self.workspaceFolders(from: workspaceRoots)
+        return AttoProjectLspLifecycleAction(
             coreTabID: tab.coreTabID,
             operation: planEntry?.operation ?? "start",
             trigger: trigger,
@@ -32,7 +35,8 @@ struct AttoProjectLspLifecycleAction {
             serverKey: planEntry?.serverKey ?? AttoEditorAreaViewController.projectLspServerConfigKey(for: config),
             command: planEntry?.command ?? config.command,
             args: planEntry?.args ?? AttoEditorAreaViewController.projectLspServerConfigArgs(from: config.args),
-            workspaceRoots: planEntry?.workspaceRoots ?? fallbackWorkspaceRoots
+            workspaceRoots: workspaceRoots,
+            workspaceFolders: workspaceFolders
         )
     }
 
@@ -45,7 +49,9 @@ struct AttoProjectLspLifecycleAction {
         planEntry: EcuProjectLspRestartPlanEntry?,
         fallbackWorkspaceRoots: [String]
     ) -> AttoProjectLspLifecycleAction {
-        AttoProjectLspLifecycleAction(
+        let workspaceRoots = planEntry?.workspaceRoots ?? fallbackWorkspaceRoots
+        let workspaceFolders = planEntry?.workspaceFolders ?? Self.workspaceFolders(from: workspaceRoots)
+        return AttoProjectLspLifecycleAction(
             coreTabID: tab.coreTabID,
             operation: planEntry?.operation ?? "restart",
             trigger: trigger,
@@ -55,7 +61,8 @@ struct AttoProjectLspLifecycleAction {
             serverKey: planEntry?.serverKey ?? AttoEditorAreaViewController.projectLspServerConfigKey(for: config),
             command: planEntry?.command ?? config.command,
             args: planEntry?.args ?? AttoEditorAreaViewController.projectLspServerConfigArgs(from: config.args),
-            workspaceRoots: planEntry?.workspaceRoots ?? fallbackWorkspaceRoots
+            workspaceRoots: workspaceRoots,
+            workspaceFolders: workspaceFolders
         )
     }
 
@@ -68,7 +75,9 @@ struct AttoProjectLspLifecycleAction {
         planEntry: EcuProjectLspStopPlanEntry?,
         fallbackWorkspaceRoots: [String]
     ) -> AttoProjectLspLifecycleAction {
-        AttoProjectLspLifecycleAction(
+        let workspaceRoots = planEntry?.workspaceRoots ?? fallbackWorkspaceRoots
+        let workspaceFolders = planEntry?.workspaceFolders ?? Self.workspaceFolders(from: workspaceRoots)
+        return AttoProjectLspLifecycleAction(
             coreTabID: tab.coreTabID,
             operation: planEntry?.operation ?? "stop",
             trigger: trigger,
@@ -78,7 +87,8 @@ struct AttoProjectLspLifecycleAction {
             serverKey: planEntry?.serverKey ?? AttoEditorAreaViewController.projectLspServerConfigKey(for: config),
             command: planEntry?.command ?? config.command,
             args: planEntry?.args ?? AttoEditorAreaViewController.projectLspServerConfigArgs(from: config.args),
-            workspaceRoots: planEntry?.workspaceRoots ?? fallbackWorkspaceRoots
+            workspaceRoots: workspaceRoots,
+            workspaceFolders: workspaceFolders
         )
     }
 
@@ -98,10 +108,30 @@ struct AttoProjectLspLifecycleAction {
             command: command,
             args: args,
             workspaceRoots: workspaceRoots,
+            workspaceFolders: workspaceFolders,
             trigger: trigger,
             status: status,
             attemptId: attemptId,
             errorMessage: errorMessage
         )
+    }
+
+    private static func workspaceFolders(from roots: [String]) -> [EcuProjectLspWorkspaceFolder] {
+        roots.compactMap { root in
+            let uri = root.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard uri.isEmpty == false else { return nil }
+            return EcuProjectLspWorkspaceFolder(
+                uri: uri,
+                name: workspaceFolderName(for: uri)
+            )
+        }
+    }
+
+    private static func workspaceFolderName(for uri: String) -> String {
+        let trimmed = uri.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return trimmed
+            .split(separator: "/")
+            .last
+            .map(String.init) ?? uri
     }
 }

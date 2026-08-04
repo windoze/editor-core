@@ -279,7 +279,12 @@ state as the long-term owner.
 Project-level LSP launch metadata is also a JSON control-plane surface on `MultiDocumentEditorUi`.
 `editor_core_ui_ffi_multi_document_set_project_lsp_servers_json(MultiDocumentEditorUi* multi,
 const char* configs_json_utf8)` accepts a UTF-8 JSON array of server configs with `key`,
-`command`, optional `args`, `language_id`, optional `workspace_roots`, and optional `auto_start`.
+`command`, optional `args`, `language_id`, optional `workspace_roots`, optional
+`workspace_folders`, and optional `auto_start`. `workspace_folders` is a typed descriptor list
+with `uri`, `name`, and optional `root_alias`; when omitted, core derives folder descriptors from
+`workspace_roots`, and when roots are omitted, core derives roots from folder URIs. The legacy
+`workspace_roots` string list remains the compatibility surface for hosts that only need root
+URIs.
 The companion `editor_core_ui_ffi_multi_document_project_lsp_servers_json(MultiDocumentEditorUi*
 multi)` returns the normalized list ordered by key, and
 `editor_core_ui_ffi_multi_document_snapshot_json` includes the same list as
@@ -289,8 +294,8 @@ through `editor_core_ui_ffi_multi_document_project_lsp_lifecycle_envelope_json(.
 `operation_utf8` values of `start_plan`, `stop_plan`, `restart_plan`, or `lifecycle_events`.
 Each plan entry carries an explicit `operation` string (`start`, `stop`, or `restart`) alongside
 the tab id, active view index, document URI, language id, server key, command, args, and workspace
-roots so hosts can execute and record lifecycle outcomes from a single typed action descriptor
-instead of inferring ownership from the endpoint used to fetch the plan.
+roots/folders so hosts can execute and record lifecycle outcomes from a single typed action
+descriptor instead of inferring ownership from the endpoint used to fetch the plan.
 The envelope value is the same payload as the corresponding legacy plan/event JSON surface, while
 invalid operations and null handles return `{ "ok": false, "operation": ..., "status": "error",
 "error": ..., "version": 1 }` instead of a null pointer.

@@ -94,7 +94,14 @@ extension EditorCoreUIFFITests {
                 command: " /bin/rust-analyzer ",
                 args: [" ", "--stdio "],
                 languageId: " rust ",
-                workspaceRoots: ["file:///new", "file:///new", " file:///other "]
+                workspaceRoots: ["file:///new", "file:///new", " file:///other "],
+                workspaceFolders: [
+                    EcuProjectLspWorkspaceFolder(
+                        uri: " file:///new ",
+                        name: " New Root ",
+                        rootAlias: " primary "
+                    ),
+                ]
             ),
             EcuProjectLspServerConfig(
                 key: "",
@@ -109,6 +116,17 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(lspServers[0].args, ["--stdio"])
         XCTAssertEqual(lspServers[0].languageId, "rust")
         XCTAssertEqual(lspServers[0].workspaceRoots, ["file:///new", "file:///other"])
+        XCTAssertEqual(lspServers[0].workspaceFolders, [
+            EcuProjectLspWorkspaceFolder(
+                uri: "file:///new",
+                name: "New Root",
+                rootAlias: "primary"
+            ),
+            EcuProjectLspWorkspaceFolder(
+                uri: "file:///other",
+                name: "other"
+            ),
+        ])
         XCTAssertFalse(lspServers[1].autoStart)
         XCTAssertEqual(try multi.snapshot().projectLspServers, lspServers)
         let startPlan = try multi.projectLspStartPlan()
@@ -122,6 +140,7 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(startPlan[0].command, "/bin/rust-analyzer")
         XCTAssertEqual(startPlan[0].args, ["--stdio"])
         XCTAssertEqual(startPlan[0].workspaceRoots, ["file:///new", "file:///other"])
+        XCTAssertEqual(startPlan[0].workspaceFolders, lspServers[0].workspaceFolders)
         let stopPlan = try multi.projectLspStopPlan()
         XCTAssertEqual(stopPlan.count, 2)
         XCTAssertEqual(stopPlan.map(\.operation), ["stop", "stop"])
@@ -129,11 +148,13 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(stopPlan[0].documentURI, "file:///project/main.rs")
         XCTAssertEqual(stopPlan[0].serverKey, "rust")
         XCTAssertEqual(stopPlan[0].workspaceRoots, ["file:///new", "file:///other"])
+        XCTAssertEqual(stopPlan[0].workspaceFolders, lspServers[0].workspaceFolders)
         XCTAssertEqual(stopPlan[1].tabId, beta)
         XCTAssertEqual(stopPlan[1].documentURI, "file:///project/Beta.swift")
         XCTAssertEqual(stopPlan[1].serverKey, "swift")
         XCTAssertEqual(stopPlan[1].command, "/bin/sourcekit-lsp")
         XCTAssertEqual(stopPlan[1].workspaceRoots, ["file:///new", "file:///other"])
+        XCTAssertEqual(stopPlan[1].workspaceFolders.map(\.name), ["new", "other"])
         let restartPlan = try multi.projectLspRestartPlan()
         XCTAssertEqual(restartPlan.count, 2)
         XCTAssertEqual(restartPlan.map(\.operation), ["restart", "restart"])
@@ -141,11 +162,13 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(restartPlan[0].documentURI, "file:///project/main.rs")
         XCTAssertEqual(restartPlan[0].serverKey, "rust")
         XCTAssertEqual(restartPlan[0].workspaceRoots, ["file:///new", "file:///other"])
+        XCTAssertEqual(restartPlan[0].workspaceFolders, lspServers[0].workspaceFolders)
         XCTAssertEqual(restartPlan[1].tabId, beta)
         XCTAssertEqual(restartPlan[1].documentURI, "file:///project/Beta.swift")
         XCTAssertEqual(restartPlan[1].serverKey, "swift")
         XCTAssertEqual(restartPlan[1].command, "/bin/sourcekit-lsp")
         XCTAssertEqual(restartPlan[1].workspaceRoots, ["file:///new", "file:///other"])
+        XCTAssertEqual(restartPlan[1].workspaceFolders.map(\.name), ["new", "other"])
 
         try multi.recordProjectLspStartOutcome(EcuProjectLspStartOutcome(
             tabId: alpha,
@@ -188,6 +211,7 @@ extension EditorCoreUIFFITests {
         let lifecycleEvents = try multi.projectLspLifecycleEvents()
         XCTAssertEqual(lifecycleEvents.latestSequence, 3)
         XCTAssertEqual(lifecycleEvents.events.count, 3)
+        XCTAssertEqual(lifecycleEvents.events[0].workspaceFolders.map(\.name), ["new", "other"])
         XCTAssertEqual(lifecycleEvents.events[0].operation, "start")
         XCTAssertEqual(lifecycleEvents.events[0].status, "started")
         XCTAssertEqual(lifecycleEvents.events[0].tabId, alpha)

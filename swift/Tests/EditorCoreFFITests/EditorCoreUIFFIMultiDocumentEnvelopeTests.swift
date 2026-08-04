@@ -178,6 +178,13 @@ extension EditorCoreUIFFITests {
                 args: [" ", "--stdio "],
                 languageId: " rust ",
                 workspaceRoots: ["file:///workspace", " file:///workspace ", "file:///other"],
+                workspaceFolders: [
+                    EcuProjectLspWorkspaceFolder(
+                        uri: " file:///workspace ",
+                        name: " Workspace ",
+                        rootAlias: " main "
+                    ),
+                ],
                 autoStart: true
             ),
             EcuProjectLspServerConfig(
@@ -205,12 +212,24 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(first["args"], .array([.string("--stdio")]))
         XCTAssertEqual(first["language_id"], .string("rust"))
         XCTAssertEqual(first["workspace_roots"], .array([.string("file:///other"), .string("file:///workspace")]))
+        XCTAssertEqual(first["workspace_folders"], .array([
+            .object([
+                "uri": .string("file:///other"),
+                "name": .string("other"),
+            ]),
+            .object([
+                "uri": .string("file:///workspace"),
+                "name": .string("Workspace"),
+                "root_alias": .string("main"),
+            ]),
+        ]))
         XCTAssertEqual(first["auto_start"], .bool(true))
         XCTAssertEqual(second["key"], .string("swift"))
         XCTAssertEqual(second["command"], .string("/bin/sourcekit-lsp"))
         XCTAssertEqual(second["args"], .array([]))
         XCTAssertEqual(second["language_id"], .string("swift"))
         XCTAssertEqual(second["workspace_roots"], .array([]))
+        XCTAssertEqual(second["workspace_folders"], .array([]))
         XCTAssertEqual(second["auto_start"], .bool(false))
     }
 

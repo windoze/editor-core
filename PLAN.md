@@ -179,6 +179,16 @@
   - 验证：`cargo fmt --check`
   - 验证：`git diff --check`
 - [ ] 完成 project LSP server schema：workspace roots、language metadata、capabilities、workspaceFolders、root alias、shared session、attempt id。
+  - [x] 为 project LSP server config、start/stop/restart plan、lifecycle outcome/event 增加 typed `workspace_folders` descriptor（`uri` / `name` / `root_alias`），并保持 `workspace_roots` 兼容字段可互相派生。
+  - 验证：`cargo test -p editor-core-ui project_lsp`
+  - 验证：`cargo test -p editor-core-ui-ffi project_lsp`
+  - 验证：`cargo test -p editor-core-ui-ffi ffi_multi_document_exposes_tab_preview_split_and_search`
+  - 验证：`cargo build -p editor-core-ui-ffi --release`
+  - 验证：`swift test --package-path swift --filter EditorCoreUIFFITests/testMultiDocumentEditorUIWrapperExposesTabsSplitsPreviewAndSearch`
+  - 验证：`swift test --package-path swift --filter EditorCoreUIFFITests/testProjectLspServersEnvelopeReportsSuccess`
+  - 验证：`swift test --package-path swift --filter 'AttoEditorCommandTests/test(WorkspaceRootChangeAutoStartsConfiguredOpenTabLsp|RestartLspServerInActiveTabUsesCoreRestartPlanRoot|ProjectLspAutoRestartUsesCoreRestartPlanRoot)'`
+  - 验证：`cargo fmt --check`
+  - 验证：`git diff --check`
 - [ ] 让 auto-start、manual restart/shutdown、project restart/shutdown、auto-restart 和 user stop 共享同一 core plan/execution/outcome 模型。
 - [ ] 将 recovery policy 变为 core 可解释、可执行或可校验的策略。
 - [ ] 产品化 Project LSP Dashboard：server health、events、stderr tail、trend、recovery policy、manual actions、query/export/clear。

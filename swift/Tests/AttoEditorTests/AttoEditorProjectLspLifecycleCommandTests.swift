@@ -119,6 +119,10 @@ extension AttoEditorCommandTests {
         XCTAssertEqual(lifecycle.events.map(\.trigger), ["auto_start", "auto_start"])
         XCTAssertEqual(lifecycle.events.map(\.status), ["requested", "started"])
         XCTAssertEqual(lifecycle.events.map(\.workspaceRoots), [[alternateRootURI], [alternateRootURI]])
+        XCTAssertEqual(
+            lifecycle.events.map { $0.workspaceFolders.map(\.uri) },
+            [[alternateRootURI], [alternateRootURI]]
+        )
         XCTAssertEqual(lifecycle.events.map(\.tabId), [coreTabID, coreTabID])
         let attemptId = try XCTUnwrap(lifecycle.events[0].attemptId)
         XCTAssertEqual(attemptId, lifecycle.events[0].sequence)
@@ -896,6 +900,10 @@ extension AttoEditorCommandTests {
         XCTAssertEqual(vc._transientStatusTextForTesting(), "LSP server restarted")
         let lifecycle = try XCTUnwrap(try vc._coreProjectLspLifecycleEventsForTesting())
         XCTAssertEqual(lifecycle.events.map(\.workspaceRoots), [[plannedRootURI], [plannedRootURI]])
+        XCTAssertEqual(
+            lifecycle.events.map { $0.workspaceFolders.map(\.uri) },
+            [[plannedRootURI], [plannedRootURI]]
+        )
     }
 
     func testRestartLspServerInActiveTabRecordsSkippedWhenCorePlanDoesNotMatch() throws {
@@ -1105,6 +1113,10 @@ extension AttoEditorCommandTests {
         XCTAssertEqual(lifecycle.events.map(\.trigger), ["auto_restart", "auto_restart"])
         XCTAssertEqual(lifecycle.events.map(\.status), ["requested", "started"])
         XCTAssertEqual(lifecycle.events.map(\.workspaceRoots), [[plannedRootURI], [plannedRootURI]])
+        XCTAssertEqual(
+            lifecycle.events.map { $0.workspaceFolders.map(\.uri) },
+            [[plannedRootURI], [plannedRootURI]]
+        )
         let attemptId = try XCTUnwrap(lifecycle.events[0].attemptId)
         XCTAssertEqual(attemptId, lifecycle.events[0].sequence)
         XCTAssertEqual(lifecycle.events[1].attemptId, attemptId)

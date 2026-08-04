@@ -2,6 +2,14 @@ use crate::UiError;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectLspWorkspaceFolder {
+    pub uri: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root_alias: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ProjectLspServerConfig {
     #[serde(default)]
     pub key: String,
@@ -12,6 +20,8 @@ pub struct ProjectLspServerConfig {
     pub language_id: String,
     #[serde(default)]
     pub workspace_roots: Vec<String>,
+    #[serde(default)]
+    pub workspace_folders: Vec<ProjectLspWorkspaceFolder>,
     #[serde(default = "default_auto_start")]
     pub auto_start: bool,
 }
@@ -29,6 +39,8 @@ pub struct ProjectLspStartPlanEntry {
     pub args: Vec<String>,
     #[serde(default)]
     pub workspace_roots: Vec<String>,
+    #[serde(default)]
+    pub workspace_folders: Vec<ProjectLspWorkspaceFolder>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -44,6 +56,8 @@ pub struct ProjectLspStopPlanEntry {
     pub args: Vec<String>,
     #[serde(default)]
     pub workspace_roots: Vec<String>,
+    #[serde(default)]
+    pub workspace_folders: Vec<ProjectLspWorkspaceFolder>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -59,6 +73,8 @@ pub struct ProjectLspRestartPlanEntry {
     pub args: Vec<String>,
     #[serde(default)]
     pub workspace_roots: Vec<String>,
+    #[serde(default)]
+    pub workspace_folders: Vec<ProjectLspWorkspaceFolder>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -89,7 +105,8 @@ pub(crate) fn project_lsp_start_plan(
     workspace_roots: &[String],
     documents: impl IntoIterator<Item = ProjectLspOpenDocument>,
 ) -> Vec<ProjectLspStartPlanEntry> {
-    let fallback_workspace_roots = normalize_project_lsp_workspace_roots(workspace_roots.to_vec());
+    let (fallback_workspace_roots, fallback_workspace_folders) =
+        normalize_project_lsp_workspace_schema(workspace_roots.to_vec(), Vec::new());
     let mut entries = Vec::new();
 
     for document in documents {
@@ -106,10 +123,16 @@ pub(crate) fn project_lsp_start_plan(
             {
                 continue;
             }
-            let workspace_roots = if config.workspace_roots.is_empty() {
-                fallback_workspace_roots.clone()
+            let (workspace_roots, workspace_folders) = if config.workspace_roots.is_empty() {
+                (
+                    fallback_workspace_roots.clone(),
+                    fallback_workspace_folders.clone(),
+                )
             } else {
-                config.workspace_roots.clone()
+                (
+                    config.workspace_roots.clone(),
+                    config.workspace_folders.clone(),
+                )
             };
             entries.push(ProjectLspStartPlanEntry {
                 operation: "start".to_string(),
@@ -121,6 +144,7 @@ pub(crate) fn project_lsp_start_plan(
                 command: config.command.clone(),
                 args: config.args.clone(),
                 workspace_roots,
+                workspace_folders,
             });
         }
     }
@@ -133,7 +157,8 @@ pub(crate) fn project_lsp_stop_plan(
     workspace_roots: &[String],
     documents: impl IntoIterator<Item = ProjectLspOpenDocument>,
 ) -> Vec<ProjectLspStopPlanEntry> {
-    let fallback_workspace_roots = normalize_project_lsp_workspace_roots(workspace_roots.to_vec());
+    let (fallback_workspace_roots, fallback_workspace_folders) =
+        normalize_project_lsp_workspace_schema(workspace_roots.to_vec(), Vec::new());
     let mut entries = Vec::new();
 
     for document in documents {
@@ -148,10 +173,16 @@ pub(crate) fn project_lsp_stop_plan(
             if config.language_id.eq_ignore_ascii_case(&language_id) == false {
                 continue;
             }
-            let workspace_roots = if config.workspace_roots.is_empty() {
-                fallback_workspace_roots.clone()
+            let (workspace_roots, workspace_folders) = if config.workspace_roots.is_empty() {
+                (
+                    fallback_workspace_roots.clone(),
+                    fallback_workspace_folders.clone(),
+                )
             } else {
-                config.workspace_roots.clone()
+                (
+                    config.workspace_roots.clone(),
+                    config.workspace_folders.clone(),
+                )
             };
             entries.push(ProjectLspStopPlanEntry {
                 operation: "stop".to_string(),
@@ -163,6 +194,7 @@ pub(crate) fn project_lsp_stop_plan(
                 command: config.command.clone(),
                 args: config.args.clone(),
                 workspace_roots,
+                workspace_folders,
             });
         }
     }
@@ -175,7 +207,8 @@ pub(crate) fn project_lsp_restart_plan(
     workspace_roots: &[String],
     documents: impl IntoIterator<Item = ProjectLspOpenDocument>,
 ) -> Vec<ProjectLspRestartPlanEntry> {
-    let fallback_workspace_roots = normalize_project_lsp_workspace_roots(workspace_roots.to_vec());
+    let (fallback_workspace_roots, fallback_workspace_folders) =
+        normalize_project_lsp_workspace_schema(workspace_roots.to_vec(), Vec::new());
     let mut entries = Vec::new();
 
     for document in documents {
@@ -190,10 +223,16 @@ pub(crate) fn project_lsp_restart_plan(
             if config.language_id.eq_ignore_ascii_case(&language_id) == false {
                 continue;
             }
-            let workspace_roots = if config.workspace_roots.is_empty() {
-                fallback_workspace_roots.clone()
+            let (workspace_roots, workspace_folders) = if config.workspace_roots.is_empty() {
+                (
+                    fallback_workspace_roots.clone(),
+                    fallback_workspace_folders.clone(),
+                )
             } else {
-                config.workspace_roots.clone()
+                (
+                    config.workspace_roots.clone(),
+                    config.workspace_folders.clone(),
+                )
             };
             entries.push(ProjectLspRestartPlanEntry {
                 operation: "restart".to_string(),
@@ -205,6 +244,7 @@ pub(crate) fn project_lsp_restart_plan(
                 command: config.command.clone(),
                 args: config.args.clone(),
                 workspace_roots,
+                workspace_folders,
             });
         }
     }
@@ -230,7 +270,8 @@ fn normalize_project_lsp_server(
         .map(|arg| arg.trim().to_string())
         .filter(|arg| !arg.is_empty())
         .collect();
-    let workspace_roots = normalize_project_lsp_workspace_roots(config.workspace_roots);
+    let (workspace_roots, workspace_folders) =
+        normalize_project_lsp_workspace_schema(config.workspace_roots, config.workspace_folders);
 
     Ok(ProjectLspServerConfig {
         key,
@@ -238,6 +279,7 @@ fn normalize_project_lsp_server(
         args,
         language_id,
         workspace_roots,
+        workspace_folders,
         auto_start: config.auto_start,
     })
 }
@@ -259,16 +301,68 @@ fn normalize_project_lsp_server_key(
     Ok(key.to_ascii_lowercase())
 }
 
-fn normalize_project_lsp_workspace_roots(roots: Vec<String>) -> Vec<String> {
-    let mut seen = BTreeMap::new();
+pub(crate) fn normalize_project_lsp_workspace_schema(
+    roots: Vec<String>,
+    folders: Vec<ProjectLspWorkspaceFolder>,
+) -> (Vec<String>, Vec<ProjectLspWorkspaceFolder>) {
+    let mut root_set = BTreeMap::new();
+    let mut folders_by_uri = BTreeMap::new();
+
     for root in roots {
-        let trimmed = root.trim();
-        if trimmed.is_empty() {
-            continue;
+        if let Some(uri) = normalize_non_empty(Some(root.as_str())) {
+            root_set.insert(uri, ());
         }
-        seen.entry(trimmed.to_string()).or_insert(());
     }
-    seen.into_keys().collect()
+
+    for folder in folders {
+        let Some(uri) = normalize_non_empty(Some(folder.uri.as_str())) else {
+            continue;
+        };
+        let name = normalize_non_empty(Some(folder.name.as_str()))
+            .unwrap_or_else(|| project_lsp_workspace_folder_name(&uri));
+        let root_alias = folder
+            .root_alias
+            .as_deref()
+            .and_then(|alias| normalize_non_empty(Some(alias)));
+        root_set.insert(uri.clone(), ());
+        folders_by_uri.insert(
+            uri.clone(),
+            ProjectLspWorkspaceFolder {
+                uri,
+                name,
+                root_alias,
+            },
+        );
+    }
+
+    let workspace_roots = root_set.into_keys().collect::<Vec<_>>();
+    let workspace_folders = workspace_roots
+        .iter()
+        .map(|uri| {
+            folders_by_uri
+                .remove(uri)
+                .unwrap_or_else(|| project_lsp_workspace_folder_from_uri(uri))
+        })
+        .collect::<Vec<_>>();
+
+    (workspace_roots, workspace_folders)
+}
+
+fn project_lsp_workspace_folder_from_uri(uri: &str) -> ProjectLspWorkspaceFolder {
+    ProjectLspWorkspaceFolder {
+        uri: uri.to_string(),
+        name: project_lsp_workspace_folder_name(uri),
+        root_alias: None,
+    }
+}
+
+fn project_lsp_workspace_folder_name(uri: &str) -> String {
+    let trimmed = uri.trim_end_matches('/');
+    trimmed
+        .rsplit('/')
+        .find(|part| !part.is_empty())
+        .unwrap_or(trimmed)
+        .to_string()
 }
 
 fn first_non_empty<'a>(values: impl IntoIterator<Item = &'a str>) -> Option<&'a str> {
