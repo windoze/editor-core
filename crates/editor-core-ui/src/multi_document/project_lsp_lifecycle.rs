@@ -1,5 +1,6 @@
 use super::project_lsp::{
-    ProjectLspWorkspaceFolder, normalize_project_lsp_language_name,
+    ProjectLspWorkspaceFolder, default_project_lsp_server_capabilities,
+    normalize_project_lsp_language_name, normalize_project_lsp_server_capabilities,
     normalize_project_lsp_workspace_schema,
 };
 use crate::UiError;
@@ -20,6 +21,8 @@ pub struct ProjectLspStartOutcome {
     pub language_id: String,
     #[serde(default)]
     pub language_name: String,
+    #[serde(default = "default_project_lsp_server_capabilities")]
+    pub server_capabilities: serde_json::Value,
     #[serde(default)]
     pub server_key: String,
     pub command: String,
@@ -49,6 +52,8 @@ pub struct ProjectLspLifecycleEvent {
     pub document_uri: String,
     pub language_id: String,
     pub language_name: String,
+    #[serde(default = "default_project_lsp_server_capabilities")]
+    pub server_capabilities: serde_json::Value,
     pub server_key: String,
     pub command: String,
     #[serde(default)]
@@ -94,6 +99,8 @@ impl ProjectLspLifecycleEventStore {
         let language_id = normalize_optional(&outcome.language_id).unwrap_or_default();
         let language_name =
             normalize_project_lsp_language_name(&outcome.language_name, &language_id);
+        let server_capabilities =
+            normalize_project_lsp_server_capabilities(outcome.server_capabilities)?;
         let attempt_id = outcome
             .attempt_id
             .or_else(|| (status == "requested").then_some(self.next_sequence));
@@ -108,6 +115,7 @@ impl ProjectLspLifecycleEventStore {
             document_uri: normalize_optional(&outcome.document_uri).unwrap_or_default(),
             language_id,
             language_name,
+            server_capabilities,
             server_key: normalize_optional(&outcome.server_key).unwrap_or_default(),
             command,
             args: normalize_non_empty_vec(outcome.args),

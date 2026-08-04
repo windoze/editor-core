@@ -433,7 +433,7 @@ public struct EcuTextEdit: Equatable, Sendable {
     }
 }
 
-public indirect enum EcuJSONValue: Equatable, Sendable, Decodable {
+public indirect enum EcuJSONValue: Equatable, Sendable, Codable {
     case null
     case bool(Bool)
     case number(Double)
@@ -455,6 +455,24 @@ public indirect enum EcuJSONValue: Equatable, Sendable, Decodable {
             self = .array(value)
         } else {
             self = .object(try container.decode([String: EcuJSONValue].self))
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .null:
+            try container.encodeNil()
+        case let .bool(value):
+            try container.encode(value)
+        case let .number(value):
+            try container.encode(value)
+        case let .string(value):
+            try container.encode(value)
+        case let .array(value):
+            try container.encode(value)
+        case let .object(value):
+            try container.encode(value)
         }
     }
 }

@@ -20,6 +20,8 @@ pub struct ProjectLspServerConfig {
     pub language_id: String,
     #[serde(default)]
     pub language_name: String,
+    #[serde(default = "default_project_lsp_server_capabilities")]
+    pub server_capabilities: serde_json::Value,
     #[serde(default)]
     pub workspace_roots: Vec<String>,
     #[serde(default)]
@@ -36,6 +38,8 @@ pub struct ProjectLspStartPlanEntry {
     pub document_uri: String,
     pub language_id: String,
     pub language_name: String,
+    #[serde(default = "default_project_lsp_server_capabilities")]
+    pub server_capabilities: serde_json::Value,
     pub server_key: String,
     pub command: String,
     #[serde(default)]
@@ -54,6 +58,8 @@ pub struct ProjectLspStopPlanEntry {
     pub document_uri: String,
     pub language_id: String,
     pub language_name: String,
+    #[serde(default = "default_project_lsp_server_capabilities")]
+    pub server_capabilities: serde_json::Value,
     pub server_key: String,
     pub command: String,
     #[serde(default)]
@@ -72,6 +78,8 @@ pub struct ProjectLspRestartPlanEntry {
     pub document_uri: String,
     pub language_id: String,
     pub language_name: String,
+    #[serde(default = "default_project_lsp_server_capabilities")]
+    pub server_capabilities: serde_json::Value,
     pub server_key: String,
     pub command: String,
     #[serde(default)]
@@ -146,6 +154,7 @@ pub(crate) fn project_lsp_start_plan(
                 document_uri: document_uri.clone(),
                 language_id: language_id.clone(),
                 language_name: config.language_name.clone(),
+                server_capabilities: config.server_capabilities.clone(),
                 server_key: config.key.clone(),
                 command: config.command.clone(),
                 args: config.args.clone(),
@@ -197,6 +206,7 @@ pub(crate) fn project_lsp_stop_plan(
                 document_uri: document_uri.clone(),
                 language_id: language_id.clone(),
                 language_name: config.language_name.clone(),
+                server_capabilities: config.server_capabilities.clone(),
                 server_key: config.key.clone(),
                 command: config.command.clone(),
                 args: config.args.clone(),
@@ -248,6 +258,7 @@ pub(crate) fn project_lsp_restart_plan(
                 document_uri: document_uri.clone(),
                 language_id: language_id.clone(),
                 language_name: config.language_name.clone(),
+                server_capabilities: config.server_capabilities.clone(),
                 server_key: config.key.clone(),
                 command: config.command.clone(),
                 args: config.args.clone(),
@@ -272,6 +283,8 @@ fn normalize_project_lsp_server(
 
     let language_id = config.language_id.trim().to_string();
     let language_name = normalize_project_lsp_language_name(&config.language_name, &language_id);
+    let server_capabilities =
+        normalize_project_lsp_server_capabilities(config.server_capabilities)?;
     let key = normalize_project_lsp_server_key(&config.key, &language_id, &command)?;
     let args = config
         .args
@@ -288,6 +301,7 @@ fn normalize_project_lsp_server(
         args,
         language_id,
         language_name,
+        server_capabilities,
         workspace_roots,
         workspace_folders,
         auto_start: config.auto_start,
@@ -306,6 +320,22 @@ pub(crate) fn normalize_project_lsp_language_name(
     language_id: &str,
 ) -> String {
     normalize_non_empty(Some(language_name)).unwrap_or_else(|| language_id.to_string())
+}
+
+pub(crate) fn default_project_lsp_server_capabilities() -> serde_json::Value {
+    serde_json::Value::Object(Default::default())
+}
+
+pub(crate) fn normalize_project_lsp_server_capabilities(
+    capabilities: serde_json::Value,
+) -> Result<serde_json::Value, UiError> {
+    match capabilities {
+        serde_json::Value::Null => Ok(default_project_lsp_server_capabilities()),
+        serde_json::Value::Object(_) => Ok(capabilities),
+        _ => Err(UiError::Processor(
+            "project LSP server capabilities must be a JSON object".to_string(),
+        )),
+    }
 }
 
 fn normalize_project_lsp_server_key(

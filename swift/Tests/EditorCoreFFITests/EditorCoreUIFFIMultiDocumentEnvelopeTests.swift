@@ -178,6 +178,10 @@ extension EditorCoreUIFFITests {
                 args: [" ", "--stdio "],
                 languageId: " rust ",
                 languageName: " Rust Language ",
+                serverCapabilities: .object([
+                    "semantic_tokens": .bool(true),
+                    "completion": .object(["supported": .bool(true)]),
+                ]),
                 workspaceRoots: ["file:///workspace", " file:///workspace ", "file:///other"],
                 workspaceFolders: [
                     EcuProjectLspWorkspaceFolder(
@@ -213,6 +217,10 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(first["args"], .array([.string("--stdio")]))
         XCTAssertEqual(first["language_id"], .string("rust"))
         XCTAssertEqual(first["language_name"], .string("Rust Language"))
+        XCTAssertEqual(first["server_capabilities"], .object([
+            "completion": .object(["supported": .bool(true)]),
+            "semantic_tokens": .bool(true),
+        ]))
         XCTAssertEqual(first["workspace_roots"], .array([.string("file:///other"), .string("file:///workspace")]))
         XCTAssertEqual(first["workspace_folders"], .array([
             .object([
@@ -231,6 +239,7 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(second["args"], .array([]))
         XCTAssertEqual(second["language_id"], .string("swift"))
         XCTAssertEqual(second["language_name"], .string("swift"))
+        XCTAssertEqual(second["server_capabilities"], .object([:]))
         XCTAssertEqual(second["workspace_roots"], .array([]))
         XCTAssertEqual(second["workspace_folders"], .array([]))
         XCTAssertEqual(second["auto_start"], .bool(false))
@@ -321,6 +330,7 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(firstStart["document_uri"], .string("file:///project/main.rs"))
         XCTAssertEqual(firstStart["server_key"], .string("rust"))
         XCTAssertEqual(firstStart["language_name"], .string("rust"))
+        XCTAssertEqual(firstStart["server_capabilities"], .object([:]))
 
         let stop = try multi.projectLspStopPlanEnvelope()
         XCTAssertTrue(stop.ok)
@@ -333,6 +343,7 @@ extension EditorCoreUIFFITests {
         }
         XCTAssertEqual(firstStop["server_key"], .string("rust"))
         XCTAssertEqual(firstStop["language_name"], .string("rust"))
+        XCTAssertEqual(firstStop["server_capabilities"], .object([:]))
 
         let restart = try multi.projectLspRestartPlanEnvelope()
         XCTAssertTrue(restart.ok)
@@ -345,11 +356,13 @@ extension EditorCoreUIFFITests {
         }
         XCTAssertEqual(firstRestart["server_key"], .string("rust"))
         XCTAssertEqual(firstRestart["language_name"], .string("rust"))
+        XCTAssertEqual(firstRestart["server_capabilities"], .object([:]))
 
         try multi.recordProjectLspStartOutcome(EcuProjectLspStartOutcome(
             tabId: tab,
             documentURI: "file:///project/main.rs",
             languageId: "rust",
+            serverCapabilities: .object(["hover": .bool(true)]),
             serverKey: "rust",
             command: "/bin/rust-analyzer",
             args: ["--stdio"],
@@ -370,6 +383,7 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(latestSequence, 1)
         XCTAssertEqual(firstEvent["operation"], .string("start"))
         XCTAssertEqual(firstEvent["language_name"], .string("rust"))
+        XCTAssertEqual(firstEvent["server_capabilities"], .object(["hover": .bool(true)]))
         XCTAssertEqual(firstEvent["status"], .string("started"))
 
         let failure = try multi.projectLspLifecycleEnvelope(operationRawValue: "future_operation")

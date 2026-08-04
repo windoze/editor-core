@@ -6,6 +6,7 @@ public struct EcuProjectLspServerConfig: Codable, Equatable, Sendable {
     public let args: [String]
     public let languageId: String
     public let languageName: String
+    public let serverCapabilities: EcuJSONValue
     public let workspaceRoots: [String]
     public let workspaceFolders: [EcuProjectLspWorkspaceFolder]
     public let autoStart: Bool
@@ -16,6 +17,7 @@ public struct EcuProjectLspServerConfig: Codable, Equatable, Sendable {
         case args
         case languageId = "language_id"
         case languageName = "language_name"
+        case serverCapabilities = "server_capabilities"
         case workspaceRoots = "workspace_roots"
         case workspaceFolders = "workspace_folders"
         case autoStart = "auto_start"
@@ -27,6 +29,7 @@ public struct EcuProjectLspServerConfig: Codable, Equatable, Sendable {
         args: [String] = [],
         languageId: String,
         languageName: String = "",
+        serverCapabilities: EcuJSONValue = .object([:]),
         workspaceRoots: [String] = [],
         workspaceFolders: [EcuProjectLspWorkspaceFolder] = [],
         autoStart: Bool = true
@@ -36,6 +39,7 @@ public struct EcuProjectLspServerConfig: Codable, Equatable, Sendable {
         self.args = args
         self.languageId = languageId
         self.languageName = languageName
+        self.serverCapabilities = serverCapabilities
         self.workspaceRoots = workspaceRoots
         self.workspaceFolders = workspaceFolders
         self.autoStart = autoStart
@@ -48,6 +52,7 @@ public struct EcuProjectLspServerConfig: Codable, Equatable, Sendable {
         args = try container.decodeIfPresent([String].self, forKey: .args) ?? []
         languageId = try container.decodeIfPresent(String.self, forKey: .languageId) ?? ""
         languageName = try container.decodeIfPresent(String.self, forKey: .languageName) ?? languageId
+        serverCapabilities = try container.decodeIfPresent(EcuJSONValue.self, forKey: .serverCapabilities) ?? .object([:])
         workspaceRoots = try container.decodeIfPresent([String].self, forKey: .workspaceRoots) ?? []
         workspaceFolders = try container.decodeIfPresent(
             [EcuProjectLspWorkspaceFolder].self,
@@ -93,6 +98,7 @@ public struct EcuProjectLspStartPlanEntry: Decodable, Equatable, Sendable {
     public let documentURI: String
     public let languageId: String
     public let languageName: String
+    public let serverCapabilities: EcuJSONValue
     public let serverKey: String
     public let command: String
     public let args: [String]
@@ -106,6 +112,7 @@ public struct EcuProjectLspStartPlanEntry: Decodable, Equatable, Sendable {
         case documentURI = "document_uri"
         case languageId = "language_id"
         case languageName = "language_name"
+        case serverCapabilities = "server_capabilities"
         case serverKey = "server_key"
         case command
         case args
@@ -121,6 +128,7 @@ public struct EcuProjectLspStartPlanEntry: Decodable, Equatable, Sendable {
         documentURI = try container.decodeIfPresent(String.self, forKey: .documentURI) ?? ""
         languageId = try container.decodeIfPresent(String.self, forKey: .languageId) ?? ""
         languageName = try container.decodeIfPresent(String.self, forKey: .languageName) ?? languageId
+        serverCapabilities = try container.decodeIfPresent(EcuJSONValue.self, forKey: .serverCapabilities) ?? .object([:])
         serverKey = try container.decodeIfPresent(String.self, forKey: .serverKey) ?? ""
         command = try container.decode(String.self, forKey: .command)
         args = try container.decodeIfPresent([String].self, forKey: .args) ?? []
@@ -139,6 +147,7 @@ public struct EcuProjectLspStopPlanEntry: Decodable, Equatable, Sendable {
     public let documentURI: String
     public let languageId: String
     public let languageName: String
+    public let serverCapabilities: EcuJSONValue
     public let serverKey: String
     public let command: String
     public let args: [String]
@@ -152,6 +161,7 @@ public struct EcuProjectLspStopPlanEntry: Decodable, Equatable, Sendable {
         case documentURI = "document_uri"
         case languageId = "language_id"
         case languageName = "language_name"
+        case serverCapabilities = "server_capabilities"
         case serverKey = "server_key"
         case command
         case args
@@ -167,6 +177,7 @@ public struct EcuProjectLspStopPlanEntry: Decodable, Equatable, Sendable {
         documentURI = try container.decodeIfPresent(String.self, forKey: .documentURI) ?? ""
         languageId = try container.decodeIfPresent(String.self, forKey: .languageId) ?? ""
         languageName = try container.decodeIfPresent(String.self, forKey: .languageName) ?? languageId
+        serverCapabilities = try container.decodeIfPresent(EcuJSONValue.self, forKey: .serverCapabilities) ?? .object([:])
         serverKey = try container.decodeIfPresent(String.self, forKey: .serverKey) ?? ""
         command = try container.decode(String.self, forKey: .command)
         args = try container.decodeIfPresent([String].self, forKey: .args) ?? []
@@ -185,6 +196,7 @@ public struct EcuProjectLspRestartPlanEntry: Decodable, Equatable, Sendable {
     public let documentURI: String
     public let languageId: String
     public let languageName: String
+    public let serverCapabilities: EcuJSONValue
     public let serverKey: String
     public let command: String
     public let args: [String]
@@ -198,6 +210,7 @@ public struct EcuProjectLspRestartPlanEntry: Decodable, Equatable, Sendable {
         case documentURI = "document_uri"
         case languageId = "language_id"
         case languageName = "language_name"
+        case serverCapabilities = "server_capabilities"
         case serverKey = "server_key"
         case command
         case args
@@ -213,6 +226,7 @@ public struct EcuProjectLspRestartPlanEntry: Decodable, Equatable, Sendable {
         documentURI = try container.decodeIfPresent(String.self, forKey: .documentURI) ?? ""
         languageId = try container.decodeIfPresent(String.self, forKey: .languageId) ?? ""
         languageName = try container.decodeIfPresent(String.self, forKey: .languageName) ?? languageId
+        serverCapabilities = try container.decodeIfPresent(EcuJSONValue.self, forKey: .serverCapabilities) ?? .object([:])
         serverKey = try container.decodeIfPresent(String.self, forKey: .serverKey) ?? ""
         command = try container.decode(String.self, forKey: .command)
         args = try container.decodeIfPresent([String].self, forKey: .args) ?? []
@@ -231,6 +245,7 @@ public struct EcuProjectLspStartOutcome: Encodable, Equatable, Sendable {
     public let documentURI: String
     public let languageId: String
     public let languageName: String
+    public let serverCapabilities: EcuJSONValue
     public let serverKey: String
     public let command: String
     public let args: [String]
@@ -248,6 +263,7 @@ public struct EcuProjectLspStartOutcome: Encodable, Equatable, Sendable {
         case documentURI = "document_uri"
         case languageId = "language_id"
         case languageName = "language_name"
+        case serverCapabilities = "server_capabilities"
         case serverKey = "server_key"
         case command
         case args
@@ -266,6 +282,7 @@ public struct EcuProjectLspStartOutcome: Encodable, Equatable, Sendable {
         documentURI: String,
         languageId: String,
         languageName: String? = nil,
+        serverCapabilities: EcuJSONValue = .object([:]),
         serverKey: String,
         command: String,
         args: [String] = [],
@@ -282,6 +299,7 @@ public struct EcuProjectLspStartOutcome: Encodable, Equatable, Sendable {
         self.documentURI = documentURI
         self.languageId = languageId
         self.languageName = languageName ?? languageId
+        self.serverCapabilities = serverCapabilities
         self.serverKey = serverKey
         self.command = command
         self.args = args
@@ -304,6 +322,7 @@ public struct EcuProjectLspLifecycleEvent: Decodable, Equatable, Sendable {
     public let documentURI: String
     public let languageId: String
     public let languageName: String
+    public let serverCapabilities: EcuJSONValue
     public let serverKey: String
     public let command: String
     public let args: [String]
@@ -322,6 +341,7 @@ public struct EcuProjectLspLifecycleEvent: Decodable, Equatable, Sendable {
         case documentURI = "document_uri"
         case languageId = "language_id"
         case languageName = "language_name"
+        case serverCapabilities = "server_capabilities"
         case serverKey = "server_key"
         case command
         case args
@@ -342,6 +362,7 @@ public struct EcuProjectLspLifecycleEvent: Decodable, Equatable, Sendable {
         documentURI = try container.decodeIfPresent(String.self, forKey: .documentURI) ?? ""
         languageId = try container.decodeIfPresent(String.self, forKey: .languageId) ?? ""
         languageName = try container.decodeIfPresent(String.self, forKey: .languageName) ?? languageId
+        serverCapabilities = try container.decodeIfPresent(EcuJSONValue.self, forKey: .serverCapabilities) ?? .object([:])
         serverKey = try container.decodeIfPresent(String.self, forKey: .serverKey) ?? ""
         command = try container.decodeIfPresent(String.self, forKey: .command) ?? ""
         args = try container.decodeIfPresent([String].self, forKey: .args) ?? []

@@ -263,6 +263,7 @@ extension AttoEditorCommandTests {
         XCTAssertEqual(projectedRust.args, ["--stdio", "--log-file"])
         XCTAssertEqual(projectedRust.languageId, "rust")
         XCTAssertEqual(projectedRust.languageName, "rust")
+        XCTAssertEqual(projectedRust.serverCapabilities, .object([:]))
         XCTAssertEqual(projectedRust.workspaceRoots, [rootURI])
         XCTAssertTrue(projectedRust.autoStart)
 
@@ -285,6 +286,7 @@ extension AttoEditorCommandTests {
         XCTAssertEqual(Set(configsByKey.keys), [rustKey, swiftKey])
         let projectedSwift = try XCTUnwrap(configsByKey[swiftKey])
         XCTAssertEqual(projectedSwift.languageName, "swift")
+        XCTAssertEqual(projectedSwift.serverCapabilities, .object([:]))
         XCTAssertFalse(projectedSwift.autoStart)
 
         vc.closeTab(id: rustTab.id)
@@ -597,6 +599,7 @@ extension AttoEditorCommandTests {
         XCTAssertEqual(lifecycle.events[0].languageId, "plaintext")
         XCTAssertEqual(lifecycle.events[1].languageId, "plaintext")
         XCTAssertEqual(lifecycle.events.map(\.languageName), ["plaintext", "plaintext"])
+        XCTAssertEqual(lifecycle.events.map(\.serverCapabilities), [.object([:]), .object([:])])
         XCTAssertEqual(lifecycle.events[0].command, scriptURL.path)
         XCTAssertEqual(lifecycle.events[1].command, scriptURL.path)
         let attemptId = try XCTUnwrap(lifecycle.events[0].attemptId)

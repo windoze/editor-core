@@ -95,6 +95,10 @@ extension EditorCoreUIFFITests {
                 args: [" ", "--stdio "],
                 languageId: " rust ",
                 languageName: " Rust Language ",
+                serverCapabilities: .object([
+                    "semantic_tokens": .bool(true),
+                    "completion": .object(["supported": .bool(true)]),
+                ]),
                 workspaceRoots: ["file:///new", "file:///new", " file:///other "],
                 workspaceFolders: [
                     EcuProjectLspWorkspaceFolder(
@@ -117,6 +121,10 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(lspServers[0].args, ["--stdio"])
         XCTAssertEqual(lspServers[0].languageId, "rust")
         XCTAssertEqual(lspServers[0].languageName, "Rust Language")
+        XCTAssertEqual(lspServers[0].serverCapabilities, .object([
+            "completion": .object(["supported": .bool(true)]),
+            "semantic_tokens": .bool(true),
+        ]))
         XCTAssertEqual(lspServers[0].workspaceRoots, ["file:///new", "file:///other"])
         XCTAssertEqual(lspServers[0].workspaceFolders, [
             EcuProjectLspWorkspaceFolder(
@@ -130,6 +138,7 @@ extension EditorCoreUIFFITests {
             ),
         ])
         XCTAssertEqual(lspServers[1].languageName, "swift")
+        XCTAssertEqual(lspServers[1].serverCapabilities, .object([:]))
         XCTAssertFalse(lspServers[1].autoStart)
         XCTAssertEqual(try multi.snapshot().projectLspServers, lspServers)
         let startPlan = try multi.projectLspStartPlan()
@@ -140,6 +149,7 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(startPlan[0].documentURI, "file:///project/main.rs")
         XCTAssertEqual(startPlan[0].languageId, "rust")
         XCTAssertEqual(startPlan[0].languageName, "Rust Language")
+        XCTAssertEqual(startPlan[0].serverCapabilities, lspServers[0].serverCapabilities)
         XCTAssertEqual(startPlan[0].serverKey, "rust")
         XCTAssertEqual(startPlan[0].command, "/bin/rust-analyzer")
         XCTAssertEqual(startPlan[0].args, ["--stdio"])
@@ -152,6 +162,7 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(stopPlan[0].documentURI, "file:///project/main.rs")
         XCTAssertEqual(stopPlan[0].serverKey, "rust")
         XCTAssertEqual(stopPlan[0].languageName, "Rust Language")
+        XCTAssertEqual(stopPlan[0].serverCapabilities, lspServers[0].serverCapabilities)
         XCTAssertEqual(stopPlan[0].workspaceRoots, ["file:///new", "file:///other"])
         XCTAssertEqual(stopPlan[0].workspaceFolders, lspServers[0].workspaceFolders)
         XCTAssertEqual(stopPlan[1].tabId, beta)
@@ -159,6 +170,7 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(stopPlan[1].serverKey, "swift")
         XCTAssertEqual(stopPlan[1].command, "/bin/sourcekit-lsp")
         XCTAssertEqual(stopPlan[1].languageName, "swift")
+        XCTAssertEqual(stopPlan[1].serverCapabilities, .object([:]))
         XCTAssertEqual(stopPlan[1].workspaceRoots, ["file:///new", "file:///other"])
         XCTAssertEqual(stopPlan[1].workspaceFolders.map(\.name), ["new", "other"])
         let restartPlan = try multi.projectLspRestartPlan()
@@ -168,6 +180,7 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(restartPlan[0].documentURI, "file:///project/main.rs")
         XCTAssertEqual(restartPlan[0].serverKey, "rust")
         XCTAssertEqual(restartPlan[0].languageName, "Rust Language")
+        XCTAssertEqual(restartPlan[0].serverCapabilities, lspServers[0].serverCapabilities)
         XCTAssertEqual(restartPlan[0].workspaceRoots, ["file:///new", "file:///other"])
         XCTAssertEqual(restartPlan[0].workspaceFolders, lspServers[0].workspaceFolders)
         XCTAssertEqual(restartPlan[1].tabId, beta)
@@ -175,6 +188,7 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(restartPlan[1].serverKey, "swift")
         XCTAssertEqual(restartPlan[1].command, "/bin/sourcekit-lsp")
         XCTAssertEqual(restartPlan[1].languageName, "swift")
+        XCTAssertEqual(restartPlan[1].serverCapabilities, .object([:]))
         XCTAssertEqual(restartPlan[1].workspaceRoots, ["file:///new", "file:///other"])
         XCTAssertEqual(restartPlan[1].workspaceFolders.map(\.name), ["new", "other"])
 
@@ -184,6 +198,7 @@ extension EditorCoreUIFFITests {
             documentURI: "file:///project/main.rs",
             languageId: "rust",
             languageName: "Rust Language",
+            serverCapabilities: .object(["hover": .bool(true)]),
             serverKey: "rust",
             command: "/bin/rust-analyzer",
             args: ["--stdio"],
@@ -226,6 +241,7 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(lifecycleEvents.events[0].tabId, alpha)
         XCTAssertEqual(lifecycleEvents.events[0].documentURI, "file:///project/main.rs")
         XCTAssertEqual(lifecycleEvents.events[0].languageName, "Rust Language")
+        XCTAssertEqual(lifecycleEvents.events[0].serverCapabilities, .object(["hover": .bool(true)]))
         XCTAssertEqual(lifecycleEvents.events[1].operation, "restart")
         XCTAssertEqual(lifecycleEvents.events[1].trigger, "manual_restart")
         XCTAssertEqual(lifecycleEvents.events[2].operation, "stop")

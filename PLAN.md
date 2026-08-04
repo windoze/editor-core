@@ -181,6 +181,7 @@
 - [ ] 完成 project LSP server schema：workspace roots、language metadata、capabilities、workspaceFolders、root alias、shared session、attempt id。
   - [x] 为 project LSP server config、start/stop/restart plan、lifecycle outcome/event 增加 typed `workspace_folders` descriptor（`uri` / `name` / `root_alias`），并保持 `workspace_roots` 兼容字段可互相派生。
   - [x] 为 project LSP server config、start/stop/restart plan、lifecycle outcome/event 增加 normalized `language_name` metadata，并在缺省时回退到 `language_id`。
+  - [x] 为 project LSP server config、start/stop/restart plan、lifecycle outcome/event 增加 typed `server_capabilities` JSON object，缺省 `{}`，并拒绝非 object 输入。
   - 验证：`cargo test -p editor-core-ui project_lsp`
   - 验证：`cargo test -p editor-core-ui-ffi project_lsp`
   - 验证：`cargo test -p editor-core-ui-ffi ffi_multi_document_exposes_tab_preview_split_and_search`

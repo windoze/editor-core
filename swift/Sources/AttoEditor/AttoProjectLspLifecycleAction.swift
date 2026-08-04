@@ -9,6 +9,7 @@ struct AttoProjectLspLifecycleAction {
     let documentURI: String
     let languageId: String
     let languageName: String
+    let serverCapabilities: EcuJSONValue
     let serverKey: String
     let command: String
     let args: [String]
@@ -34,6 +35,7 @@ struct AttoProjectLspLifecycleAction {
             documentURI: planEntry?.documentURI ?? documentURL.standardizedFileURL.absoluteString,
             languageId: planEntry?.languageId ?? config.languageId,
             languageName: planEntry?.languageName ?? config.languageId,
+            serverCapabilities: planEntry?.serverCapabilities ?? .object([:]),
             serverKey: planEntry?.serverKey ?? AttoEditorAreaViewController.projectLspServerConfigKey(for: config),
             command: planEntry?.command ?? config.command,
             args: planEntry?.args ?? AttoEditorAreaViewController.projectLspServerConfigArgs(from: config.args),
@@ -61,6 +63,7 @@ struct AttoProjectLspLifecycleAction {
             documentURI: planEntry?.documentURI ?? documentURL.standardizedFileURL.absoluteString,
             languageId: planEntry?.languageId ?? config.languageId,
             languageName: planEntry?.languageName ?? config.languageId,
+            serverCapabilities: planEntry?.serverCapabilities ?? .object([:]),
             serverKey: planEntry?.serverKey ?? AttoEditorAreaViewController.projectLspServerConfigKey(for: config),
             command: planEntry?.command ?? config.command,
             args: planEntry?.args ?? AttoEditorAreaViewController.projectLspServerConfigArgs(from: config.args),
@@ -88,6 +91,7 @@ struct AttoProjectLspLifecycleAction {
             documentURI: planEntry?.documentURI ?? documentURL.standardizedFileURL.absoluteString,
             languageId: planEntry?.languageId ?? config.languageId,
             languageName: planEntry?.languageName ?? config.languageId,
+            serverCapabilities: planEntry?.serverCapabilities ?? .object([:]),
             serverKey: planEntry?.serverKey ?? AttoEditorAreaViewController.projectLspServerConfigKey(for: config),
             command: planEntry?.command ?? config.command,
             args: planEntry?.args ?? AttoEditorAreaViewController.projectLspServerConfigArgs(from: config.args),
@@ -109,6 +113,7 @@ struct AttoProjectLspLifecycleAction {
             documentURI: documentURI,
             languageId: languageId,
             languageName: languageName,
+            serverCapabilities: serverCapabilities,
             serverKey: serverKey,
             command: command,
             args: args,
