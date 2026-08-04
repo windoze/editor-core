@@ -170,6 +170,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     private var macroDeleteHistoryPanelController: AttoDeletedMacroHistoryPanelController?
     private var settingsValidationPanelController: AttoSettingsValidationPanelController?
     private var preferencesWindowController: AttoPreferencesWindowController?
+    private var reportedSettingsLoadEvents: Set<String> = []
     private lazy var sublimeProductCoordinator = AttoSublimeProductCoordinator(
         activeWindowProvider: { [weak self] in self?.activeWindow() }
     )
@@ -3149,7 +3150,11 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         from settingsStore: AttoConfigurationSettingsStore
     ) -> AttoConfigurationSettings? {
         do {
-            guard let settings = try settingsStore.loadRuntimeSettings(),
+            let outcome = try settingsStore.loadRuntimeSettingsOutcome()
+            if let event = outcome.event {
+                NSLog("AttoEditor: %@", event.logText(displayName: "Runtime Overrides"))
+            }
+            guard let settings = outcome.settings,
                   settings.isEmpty == false
             else {
                 return nil
@@ -3173,7 +3178,13 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
 
         let userSettings: AttoConfigurationSettings?
         do {
-            userSettings = try settingsStore.loadUserSettings()
+            let outcome = try settingsStore.loadUserSettingsOutcome()
+            userSettings = outcome.settings
+            reportSettingsLoadEvent(
+                outcome.event,
+                displayName: "User Settings",
+                workspaceRootURL: workspaceRootURL
+            )
         } catch {
             userSettings = nil
             NSLog(
@@ -3188,7 +3199,13 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         )
         let workspaceSettings: AttoConfigurationSettings?
         do {
-            workspaceSettings = try settingsStore.loadWorkspaceSettings(workspaceRootURL: workspaceRootURL)
+            let outcome = try settingsStore.loadWorkspaceSettingsOutcome(workspaceRootURL: workspaceRootURL)
+            workspaceSettings = outcome.settings
+            reportSettingsLoadEvent(
+                outcome.event,
+                displayName: "Workspace Settings",
+                workspaceRootURL: workspaceRootURL
+            )
         } catch {
             workspaceSettings = nil
             NSLog(
@@ -3204,6 +3221,23 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             runtime: runtimeConfigurationSettings,
             documentContext: documentContext
         ).snapshot
+    }
+
+    private func reportSettingsLoadEvent(
+        _ event: AttoConfigurationSettingsLoadEvent?,
+        displayName: String,
+        workspaceRootURL: URL
+    ) {
+        guard let event else { return }
+        let key = "\(displayName)|\(event.eventKey)"
+        guard reportedSettingsLoadEvents.insert(key).inserted else { return }
+
+        NSLog("AttoEditor: %@", event.logText(displayName: displayName))
+        let statusText = event.statusText(displayName: displayName)
+        let standardizedWorkspaceRootURL = workspaceRootURL.standardizedFileURL
+        let target = windows.first { $0.workspaceRootURL.standardizedFileURL == standardizedWorkspaceRootURL }
+            ?? activeWindow()
+        target?.editorAreaController.setTransientStatusText(statusText)
     }
 
     private func quickOpenCommands(query: String = "") -> [AttoCommandPaletteCommand] {

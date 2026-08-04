@@ -77,11 +77,11 @@ final class AttoSettingsSchemaPageViewController: NSViewController, NSTableViewD
 
     func reloadRows() {
         let workspaceRootURL = workspaceRootURLProvider()
-        var loadErrors: [String] = []
-        let userSettings = loadUserSettings(loadErrors: &loadErrors)
+        var loadMessages: [String] = []
+        let userSettings = loadUserSettings(loadMessages: &loadMessages)
         let workspaceSettings = loadWorkspaceSettings(
             workspaceRootURL: workspaceRootURL,
-            loadErrors: &loadErrors
+            loadMessages: &loadMessages
         )
         let runtimeSettings = runtimeSettingsProvider()
         let validationIssues = validationIssues(
@@ -98,12 +98,16 @@ final class AttoSettingsSchemaPageViewController: NSViewController, NSTableViewD
             runtimeSettings: runtimeSettings,
             validationIssues: validationIssues
         )
-        updateStatus(workspaceRootURL: workspaceRootURL, loadErrors: loadErrors)
+        updateStatus(workspaceRootURL: workspaceRootURL, loadMessages: loadMessages)
         tableView.reloadData()
     }
 
     func rowsForTesting() -> [AttoSettingsSchemaRow] {
         rows
+    }
+
+    func statusTextForTesting() -> String {
+        statusLabel.stringValue
     }
 
     private func configureHeader() {
@@ -186,11 +190,13 @@ final class AttoSettingsSchemaPageViewController: NSViewController, NSTableViewD
         return column
     }
 
-    private func loadUserSettings(loadErrors: inout [String]) -> AttoConfigurationSettings? {
+    private func loadUserSettings(loadMessages: inout [String]) -> AttoConfigurationSettings? {
         do {
-            return try settingsStore.loadUserSettings()
+            let outcome = try settingsStore.loadUserSettingsOutcome()
+            appendLoadEvent(outcome.event, displayName: "User Settings", loadMessages: &loadMessages)
+            return outcome.settings
         } catch {
-            loadErrors.append("User settings failed to load")
+            loadMessages.append("User settings failed to load")
             NSLog(
                 "AttoEditor: failed to load user settings %@ for schema settings page: %@",
                 settingsStore.userSettingsURL.path,
@@ -202,13 +208,15 @@ final class AttoSettingsSchemaPageViewController: NSViewController, NSTableViewD
 
     private func loadWorkspaceSettings(
         workspaceRootURL: URL?,
-        loadErrors: inout [String]
+        loadMessages: inout [String]
     ) -> AttoConfigurationSettings? {
         guard let workspaceRootURL else { return nil }
         do {
-            return try settingsStore.loadWorkspaceSettings(workspaceRootURL: workspaceRootURL)
+            let outcome = try settingsStore.loadWorkspaceSettingsOutcome(workspaceRootURL: workspaceRootURL)
+            appendLoadEvent(outcome.event, displayName: "Workspace Settings", loadMessages: &loadMessages)
+            return outcome.settings
         } catch {
-            loadErrors.append("Workspace settings failed to load")
+            loadMessages.append("Workspace settings failed to load")
             NSLog(
                 "AttoEditor: failed to load workspace settings %@ for schema settings page: %@",
                 AttoConfigurationSettingsStore.workspaceSettingsURL(forWorkspaceRootURL: workspaceRootURL).path,
@@ -216,6 +224,16 @@ final class AttoSettingsSchemaPageViewController: NSViewController, NSTableViewD
             )
             return nil
         }
+    }
+
+    private func appendLoadEvent(
+        _ event: AttoConfigurationSettingsLoadEvent?,
+        displayName: String,
+        loadMessages: inout [String]
+    ) {
+        guard let event else { return }
+        loadMessages.append(event.statusText(displayName: displayName))
+        NSLog("AttoEditor: %@", event.logText(displayName: displayName))
     }
 
     private func validationIssues(
@@ -238,13 +256,13 @@ final class AttoSettingsSchemaPageViewController: NSViewController, NSTableViewD
 
     private func updateStatus(
         workspaceRootURL: URL?,
-        loadErrors: [String]
+        loadMessages: [String]
     ) {
         let workspaceText = workspaceRootURL?.path ?? "None"
         let base = "Workspace: \(workspaceText)"
-        statusLabel.stringValue = loadErrors.isEmpty
+        statusLabel.stringValue = loadMessages.isEmpty
             ? base
-            : "\(base) - \(loadErrors.joined(separator: "; "))"
+            : "\(base) - \(loadMessages.joined(separator: "; "))"
     }
 
     func numberOfRows(in tableView: NSTableView) -> Int {

@@ -267,6 +267,31 @@ struct AttoEditorPreferenceSettings: Codable, Equatable {
         case findRegex = "find_regex"
         case wordBoundaryAsciiBoundaryChars = "word_boundary_ascii_boundary_chars"
     }
+
+    private enum LegacyCodingKeys: String, CodingKey {
+        case fontFace = "font_face"
+        case fontSize = "font_size"
+        case wordWrap = "word_wrap"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let legacy = try decoder.container(keyedBy: LegacyCodingKeys.self)
+        self.init(
+            fontFamilies: try container.decodeIfPresent([String].self, forKey: .fontFamilies)
+                ?? legacy.decodeStringArrayOrSingleIfPresent(forKey: .fontFace),
+            fontSizePoints: try container.decodeIfPresent(Double.self, forKey: .fontSizePoints)
+                ?? legacy.decodeNumberIfPresent(forKey: .fontSize),
+            autoPairsEnabled: try container.decodeIfPresent(Bool.self, forKey: .autoPairsEnabled),
+            wrapMode: try container.decodeIfPresent(String.self, forKey: .wrapMode)
+                ?? legacy.decodeWordWrapModeIfPresent(forKey: .wordWrap),
+            wrapIndent: try container.decodeIfPresent(String.self, forKey: .wrapIndent),
+            findCaseSensitive: try container.decodeIfPresent(Bool.self, forKey: .findCaseSensitive),
+            findWholeWord: try container.decodeIfPresent(Bool.self, forKey: .findWholeWord),
+            findRegex: try container.decodeIfPresent(Bool.self, forKey: .findRegex),
+            wordBoundaryAsciiBoundaryChars: try container.decodeIfPresent(String.self, forKey: .wordBoundaryAsciiBoundaryChars)
+        )
+    }
 }
 
 struct AttoRenderingPreferenceSettings: Codable, Equatable {
@@ -284,6 +309,20 @@ struct AttoRenderingPreferenceSettings: Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case themeName = "theme_name"
         case fontLigaturesEnabled = "font_ligatures_enabled"
+    }
+
+    private enum LegacyCodingKeys: String, CodingKey {
+        case theme
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let legacy = try decoder.container(keyedBy: LegacyCodingKeys.self)
+        self.init(
+            themeName: try container.decodeIfPresent(String.self, forKey: .themeName)
+                ?? legacy.decodeIfPresent(String.self, forKey: .theme),
+            fontLigaturesEnabled: try container.decodeIfPresent(Bool.self, forKey: .fontLigaturesEnabled)
+        )
     }
 }
 
@@ -314,6 +353,42 @@ struct AttoLanguagePreferenceSettings: Codable, Equatable {
         case formatOnSaveEnabled = "format_on_save_enabled"
         case formatOnTypeEnabled = "format_on_type_enabled"
         case lspAutoRestart = "lsp_auto_restart"
+    }
+
+    private enum LegacyCodingKeys: String, CodingKey {
+        case lspAutoRestartEnabled = "lsp_auto_restart_enabled"
+        case lspAutoRestartMaxAttempts = "lsp_auto_restart_max_attempts"
+        case lspAutoRestartBaseDelaySeconds = "lsp_auto_restart_base_delay_seconds"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let legacy = try decoder.container(keyedBy: LegacyCodingKeys.self)
+        let legacyLspAutoRestart = AttoLspAutoRestartPolicySettings(
+            enabled: try legacy.decodeIfPresent(Bool.self, forKey: .lspAutoRestartEnabled),
+            maxAttempts: try legacy.decodeIfPresent(Int.self, forKey: .lspAutoRestartMaxAttempts),
+            baseDelaySeconds: try legacy.decodeNumberIfPresent(forKey: .lspAutoRestartBaseDelaySeconds)
+        )
+        self.init(
+            commentConfigurations: try container.decodeIfPresent(
+                [String: AttoCommentConfiguration].self,
+                forKey: .commentConfigurations
+            ),
+            semanticHighlightingEnabled: try container.decodeIfPresent(
+                Bool.self,
+                forKey: .semanticHighlightingEnabled
+            ),
+            formatOnSaveEnabled: try container.decodeIfPresent(
+                Bool.self,
+                forKey: .formatOnSaveEnabled
+            ),
+            formatOnTypeEnabled: try container.decodeIfPresent(
+                Bool.self,
+                forKey: .formatOnTypeEnabled
+            ),
+            lspAutoRestart: try container.decodeIfPresent(AttoLspAutoRestartPolicySettings.self, forKey: .lspAutoRestart)
+                ?? (legacyLspAutoRestart.isEmpty ? nil : legacyLspAutoRestart)
+        )
     }
 }
 
@@ -349,6 +424,15 @@ struct AttoLspAutoRestartPolicySettings: Codable, Equatable {
         case serverMaxAttempts = "server_max_attempts"
         case serverBaseDelaySeconds = "server_base_delay_seconds"
     }
+
+    var isEmpty: Bool {
+        enabled == nil
+            && maxAttempts == nil
+            && baseDelaySeconds == nil
+            && disabledServerKeys == nil
+            && serverMaxAttempts == nil
+            && serverBaseDelaySeconds == nil
+    }
 }
 
 struct AttoWorkspacePreferenceSettings: Codable, Equatable {
@@ -378,6 +462,49 @@ struct AttoWorkspacePreferenceSettings: Codable, Equatable {
         case findInFilesDefaultScope = "find_in_files_default_scope"
         case workspaceSearchIncludeGlobs = "workspace_search_include_globs"
         case workspaceSearchExcludeGlobs = "workspace_search_exclude_globs"
+    }
+}
+
+private extension KeyedDecodingContainer {
+    func decodeNumberIfPresent(forKey key: Key) throws -> Double? {
+        if let value = try? decodeIfPresent(Double.self, forKey: key) {
+            return value
+        }
+        if let value = try? decodeIfPresent(Int.self, forKey: key) {
+            return Double(value)
+        }
+        return nil
+    }
+
+    func decodeStringArrayOrSingleIfPresent(forKey key: Key) throws -> [String]? {
+        if let values = try? decodeIfPresent([String].self, forKey: key) {
+            return values
+        }
+        if let value = try? decodeIfPresent(String.self, forKey: key) {
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : [trimmed]
+        }
+        return nil
+    }
+
+    func decodeWordWrapModeIfPresent(forKey key: Key) throws -> String? {
+        if let enabled = try? decodeIfPresent(Bool.self, forKey: key) {
+            return enabled ? "word" : "none"
+        }
+        guard let raw = try? decodeIfPresent(String.self, forKey: key)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        else {
+            return nil
+        }
+        switch raw {
+        case "true", "on", "yes":
+            return "word"
+        case "false", "off", "no":
+            return "none"
+        default:
+            return raw.isEmpty ? nil : raw
+        }
     }
 }
 
@@ -426,7 +553,11 @@ struct AttoConfigurationSettingsStore {
     }
 
     func loadUserSettings() throws -> AttoConfigurationSettings? {
-        try load(from: userSettingsURL)
+        try loadUserSettingsOutcome().settings
+    }
+
+    func loadUserSettingsOutcome() throws -> AttoConfigurationSettingsLoadOutcome {
+        try loadOutcome(from: userSettingsURL)
     }
 
     func saveUserSettings(_ settings: AttoConfigurationSettings) throws {
@@ -434,7 +565,11 @@ struct AttoConfigurationSettingsStore {
     }
 
     func loadRuntimeSettings() throws -> AttoConfigurationSettings? {
-        try load(from: runtimeSettingsURL)
+        try loadRuntimeSettingsOutcome().settings
+    }
+
+    func loadRuntimeSettingsOutcome() throws -> AttoConfigurationSettingsLoadOutcome {
+        try loadOutcome(from: runtimeSettingsURL)
     }
 
     func saveRuntimeSettings(_ settings: AttoConfigurationSettings) throws {
@@ -447,7 +582,11 @@ struct AttoConfigurationSettingsStore {
     }
 
     func loadWorkspaceSettings(workspaceRootURL: URL) throws -> AttoConfigurationSettings? {
-        try load(from: Self.workspaceSettingsURL(forWorkspaceRootURL: workspaceRootURL))
+        try loadWorkspaceSettingsOutcome(workspaceRootURL: workspaceRootURL).settings
+    }
+
+    func loadWorkspaceSettingsOutcome(workspaceRootURL: URL) throws -> AttoConfigurationSettingsLoadOutcome {
+        try loadOutcome(from: Self.workspaceSettingsURL(forWorkspaceRootURL: workspaceRootURL))
     }
 
     func saveWorkspaceSettings(
@@ -458,24 +597,40 @@ struct AttoConfigurationSettingsStore {
     }
 
     func load(from url: URL) throws -> AttoConfigurationSettings? {
-        guard fileManager.fileExists(atPath: url.path) else { return nil }
+        try loadOutcome(from: url).settings
+    }
+
+    func loadOutcome(from url: URL) throws -> AttoConfigurationSettingsLoadOutcome {
+        guard fileManager.fileExists(atPath: url.path) else {
+            return AttoConfigurationSettingsLoadOutcome(settings: nil, event: nil)
+        }
         let data = try Data(contentsOf: url)
         let settings: AttoConfigurationSettings
         do {
             settings = try JSONDecoder().decode(AttoConfigurationSettings.self, from: data)
         } catch {
-            _ = try backupCorruptSettingsFile(at: url)
-            return nil
+            let backupURL = try backupCorruptSettingsFile(at: url)
+            return AttoConfigurationSettingsLoadOutcome(
+                settings: nil,
+                event: .invalidBackedUp(settingsURL: url, backupURL: backupURL)
+            )
         }
 
         guard settings.schemaVersion < AttoConfigurationSettings.currentSchemaVersion else {
-            return settings
+            return AttoConfigurationSettingsLoadOutcome(settings: settings, event: nil)
         }
 
         let migrated = settings.migratedToCurrentSchema()
-        _ = try backupMigratedSettingsFile(at: url, schemaVersion: settings.schemaVersion)
+        let backupURL = try backupMigratedSettingsFile(at: url, schemaVersion: settings.schemaVersion)
         try save(migrated, to: url)
-        return migrated
+        return AttoConfigurationSettingsLoadOutcome(
+            settings: migrated,
+            event: .migrated(
+                settingsURL: url,
+                backupURL: backupURL,
+                fromSchemaVersion: settings.schemaVersion
+            )
+        )
     }
 
     func save(_ settings: AttoConfigurationSettings, to url: URL) throws {

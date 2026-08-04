@@ -25,7 +25,6 @@
 ## 阶段 9：Settings Selector 与配置 UI
 
 - 补齐 schema-aware settings UI 中 user / workspace / runtime override 的可编辑状态，以及 user / workspace 文件级回滚体验；当前已具备 effective value、source、override、validation error 可见性和 runtime override 清空回滚。
-- 完成跨 schema 字段迁移和无效配置降级反馈产品化。
 - 补齐 per-document / per-language / per-workspace settings 应用的测试。
 
 ## 阶段 10：Result Envelope、错误模型与 Host Capability

@@ -9,7 +9,7 @@
 - [进行中] 阶段 6：完成 core-owned project/LSP lifecycle schema、server ownership、恢复策略和 dashboard 产品化。
 - [已完成] 阶段 7：完成跨 tab/project result panels、统一 dock/workbench 容器和刷新/过期策略。
 - [已完成] 阶段 8：完成 Sublime-like command/keymap 行为矩阵、keymap 文件兼容和 snippets/macros/build systems 边界。
-- [待办] 阶段 9：完成 settings selector、schema-aware settings UI、runtime override 持久化和跨 schema 字段迁移。
+- [已完成] 阶段 9：完成 settings selector、schema-aware settings UI、runtime override 持久化和跨 schema 字段迁移。
 - [待办] 阶段 10：完成剩余 JSON result envelope 覆盖、错误模型统一和 host capability negotiation。
 - [待办] 阶段 11：产品化 Tree-sitter + LSP 主路线的高亮、outline、folding、语言模式和降级体验。
 - [待办] 阶段 12：完成 core-backed workspace search、project index、replace-in-files、recent 和 session 工作流。
@@ -345,7 +345,10 @@
   - 验证：`swift test --package-path swift --filter AttoRuntimeConfigurationSettingsTests`
   - 验证：`swift test --package-path swift --filter 'AttoEditorCommandTests/test(CommandRegistry|CommandSurfaces|RegisteredCommands|DefaultCommandPalette)'`
   - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testMainMenuItemsUseCommandIDsAndResolvedKeymap`
-- [ ] 完成跨 schema 字段迁移和无效配置降级反馈。
+- [x] 完成跨 schema 字段迁移和无效配置降级反馈。
+  - 交付：旧 settings 字段别名会迁移并写回当前 schema；settings store 暴露 load outcome，Settings 页和 AppDelegate 会在 invalid settings 被备份并降级到 fallback 配置时反馈状态。
+  - 验证：`swift test --package-path swift --filter AttoConfigurationSettingsMigrationFeedbackTests`
+  - 验证：`swift test --package-path swift --filter 'AttoConfigurationSettingsMigrationFeedbackTests|AttoConfigurationSettingsTests|AttoConfigurationSettingsSelectorTests|AttoSettingsSchemaPageTests|AttoRuntimeConfigurationSettingsTests|AttoEditorSettingsCommandTests|AttoEditorPreferencesApplicationTests'`
 
 ## 阶段 10：Result Envelope、错误模型与 Host Capability
 
