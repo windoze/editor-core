@@ -93,13 +93,67 @@ extension AttoEditorAreaViewController {
         guard let owner else { return true }
         switch owner.scope {
         case .document:
-            return lspResultOwnerMatchesActiveDocument(owner)
+            return lspResultOwnerMatchesCurrentWorkspace(owner)
         case .workspace:
-            guard let ownerWorkspaceRootURI = owner.workspaceRootURI else { return true }
-            return ownerWorkspaceRootURI == workspaceRootURI
+            return lspResultOwnerMatchesCurrentWorkspace(owner)
         case .global:
             return true
         }
+    }
+
+    @discardableResult
+    func restoreLspResultOwnerSelection(_ owner: AttoLspResultOwner?) -> Bool {
+        guard let owner else { return true }
+        switch owner.scope {
+        case .document:
+            return restoreLspDocumentResultOwnerSelection(owner)
+        case .workspace:
+            return lspResultOwnerMatchesCurrentWorkspace(owner)
+        case .global:
+            return true
+        }
+    }
+
+    private func restoreLspDocumentResultOwnerSelection(_ owner: AttoLspResultOwner) -> Bool {
+        guard lspResultOwnerMatchesCurrentWorkspace(owner) else { return false }
+        if let tab = lspResultOwnerTab(owner) {
+            if activeTab?.id != tab.id {
+                selectTab(id: tab.id)
+            }
+            return true
+        }
+
+        guard let documentURI = owner.documentURI,
+              let documentURL = URL(string: documentURI),
+              documentURL.isFileURL,
+              FileManager.default.fileExists(atPath: documentURL.path)
+        else {
+            return false
+        }
+        return openFile(url: documentURL.standardizedFileURL, mode: .pinned)
+    }
+
+    private func lspResultOwnerTab(_ owner: AttoLspResultOwner) -> AttoEditorTab? {
+        if let tabID = owner.tabID,
+           let tab = tabs.first(where: { $0.id == tabID }) {
+            return tab
+        }
+        if let coreTabID = owner.coreTabID,
+           let tab = tabs.first(where: { $0.coreTabID == coreTabID }) {
+            return tab
+        }
+        if let documentURI = owner.documentURI,
+           let documentURL = URL(string: documentURI)?.standardizedFileURL {
+            return tabs.first {
+                projectedFileURL(for: $0).standardizedFileURL == documentURL
+            }
+        }
+        return nil
+    }
+
+    private func lspResultOwnerMatchesCurrentWorkspace(_ owner: AttoLspResultOwner) -> Bool {
+        guard let ownerWorkspaceRootURI = owner.workspaceRootURI else { return true }
+        return ownerWorkspaceRootURI == workspaceRootURI
     }
 
     var workspaceRootURI: String {

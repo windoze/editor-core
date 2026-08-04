@@ -17,7 +17,7 @@ extension AttoEditorAreaViewController {
         countText: String,
         eventSequence: UInt64
     ) -> String? {
-        guard let event = lspResultEventStream.events.first(where: { $0.sequence == eventSequence }) else {
+        guard let event = lspResultEvent(sequence: eventSequence) else {
             return nil
         }
         return AttoLspResultMetadataText.event(event, countText: countText)
@@ -46,5 +46,10 @@ extension AttoEditorAreaViewController {
         case .workspace:
             return lspResultOwnerMatchesWorkspace(entry.owner)
         }
+    }
+
+    func lspResultEvent(sequence: UInt64) -> AttoLspResultLifecycleEvent? {
+        lspResultEventStream.events.first { $0.sequence == sequence }
+            ?? lspResultEventStream.pinnedEventsByFamily.values.first { $0.sequence == sequence }
     }
 }

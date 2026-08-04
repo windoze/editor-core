@@ -522,13 +522,16 @@ extension AttoEditorAreaViewController {
             ? lastDocumentColorItems
             : []
         let documentColorCount = documentColorItems.count
-        let documentColorStatus = lspWorkbenchDocumentColorStatus(count: documentColorCount)
+        let documentColorStatus = lspWorkbenchDocumentColorStatus(
+            count: documentColorCount,
+            eventSequence: documentColorItems.isEmpty ? nil : lastDocumentColorEventSequence
+        )
         let currentHierarchySnapshot = lspWorkbenchHierarchySnapshot()
         let hierarchyCount = currentHierarchySnapshot?.entries.count ?? 0
-        let hierarchyStatus = lspWorkbenchResultEventStatus(
-            countText: hierarchyCount == 1 ? "1 result" : "\(hierarchyCount) results",
-            family: "hierarchy"
-        ) ?? (hierarchyCount == 1 ? "1 result" : "\(hierarchyCount) results")
+        let hierarchyStatus = lspWorkbenchHierarchyStatus(
+            count: hierarchyCount,
+            eventSequence: currentHierarchySnapshot == nil ? nil : hierarchyPanelEventSequence
+        )
 
         return [
             .init(
@@ -707,15 +710,45 @@ extension AttoEditorAreaViewController {
         return AttoLspResultMetadataText.entry(entry, countText: countText)
     }
 
-    private func lspWorkbenchDocumentColorStatus(count: Int) -> String {
+    private func lspWorkbenchDocumentColorStatus(count: Int, eventSequence: UInt64?) -> String {
         guard count > 0 else { return "request on open" }
         let countText = count == 1 ? "1 color" : "\(count) colors"
+        if let eventSequence,
+           let status = lspResultEventPanelMetadata(countText: countText, eventSequence: eventSequence) {
+            return status
+        }
         return lspWorkbenchResultEventStatus(countText: countText, family: "document_colors") ?? "\(count) cached"
     }
 
+    private func lspWorkbenchHierarchyStatus(count: Int, eventSequence: UInt64?) -> String {
+        let countText = count == 1 ? "1 result" : "\(count) results"
+        if let eventSequence,
+           let status = lspResultEventPanelMetadata(countText: countText, eventSequence: eventSequence) {
+            return status
+        }
+        return lspWorkbenchResultEventStatus(countText: countText, family: "hierarchy") ?? countText
+    }
+
     private func lspWorkbenchResultEvent(family: String) -> AttoLspResultLifecycleEvent? {
-        lspResultEventStream.events.reversed().first {
+        if let eventSequence = lspWorkbenchCurrentAuxiliaryEventSequence(family: family),
+           let event = lspResultEvent(sequence: eventSequence),
+           event.family == family,
+           lspResultOwnerMatchesActiveDocument(event.owner) {
+            return event
+        }
+        return lspResultEventStream.events.reversed().first {
             $0.family == family && lspResultOwnerMatchesActiveDocument($0.owner)
+        }
+    }
+
+    private func lspWorkbenchCurrentAuxiliaryEventSequence(family: String) -> UInt64? {
+        switch family {
+        case "document_colors":
+            return lspResultOwnerMatchesActiveDocument(lastDocumentColorOwner) ? lastDocumentColorEventSequence : nil
+        case "hierarchy":
+            return lspResultOwnerMatchesActiveDocument(hierarchyPanelOwner) ? hierarchyPanelEventSequence : nil
+        default:
+            return nil
         }
     }
 

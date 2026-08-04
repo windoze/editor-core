@@ -1214,6 +1214,7 @@ final class AttoEditorAreaViewController: NSViewController {
     var hierarchyResultsController: AttoCommandPaletteController?
     var hierarchyPanelSnapshot: AttoHierarchyPanelController.Snapshot?
     var hierarchyPanelOwner: AttoLspResultOwner?
+    var hierarchyPanelEventSequence: UInt64?
     var hierarchyPanelRefreshRequest: HierarchyPanelRefreshRequest?
     var hierarchyPanelController: AttoHierarchyPanelController?
     var lspWorkbenchPanelController: AttoLspWorkbenchPanelController?
@@ -1321,6 +1322,7 @@ final class AttoEditorAreaViewController: NSViewController {
     var documentColorPanelContext: DocumentColorPanelContext?
     var lastDocumentColorItems: [AttoLspDocumentColorParser.Item] = []
     var lastDocumentColorOwner: AttoLspResultOwner?
+    var lastDocumentColorEventSequence: UInt64?
     var documentColorPanelController: AttoDocumentColorPanelController?
     var documentColorPickerForTesting: ((NSColor) -> NSColor?)?
     var lspEnvironmentProvider: () -> [String: String] = {

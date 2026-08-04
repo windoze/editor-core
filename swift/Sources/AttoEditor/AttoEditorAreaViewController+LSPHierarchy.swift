@@ -573,6 +573,7 @@ extension AttoEditorAreaViewController {
             owner: owner,
             payload: .hierarchy(title: title, itemCount: entries.count)
         )
+        hierarchyPanelEventSequence = event.sequence
         lspWorkbenchAuxiliaryHistoryStore.record(
             event: event,
             payload: .hierarchy(snapshot)

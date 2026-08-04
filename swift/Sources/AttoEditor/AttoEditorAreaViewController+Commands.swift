@@ -1237,6 +1237,7 @@ extension AttoEditorAreaViewController {
             event: event,
             payload: .documentColors(items)
         )
+        lastDocumentColorEventSequence = event.sequence
     }
 
     func showDocumentColorResults(_ items: [AttoLspDocumentColorParser.Item], tabID: UUID) {

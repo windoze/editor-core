@@ -48,6 +48,9 @@ extension AttoEditorAreaViewController {
         case .documentColors(let items):
             let controller = documentColorPanelController ?? makeDocumentColorPanelController()
             documentColorPanelController = controller
+            lastDocumentColorItems = items
+            lastDocumentColorOwner = entry.owner
+            lastDocumentColorEventSequence = entry.eventSequence
             controller.update(
                 items: items,
                 metadataText: lspWorkbenchAuxiliaryMetadata(
@@ -62,6 +65,8 @@ extension AttoEditorAreaViewController {
             let controller = hierarchyPanelController ?? makeHierarchyPanelController()
             hierarchyPanelController = controller
             hierarchyPanelSnapshot = snapshot
+            hierarchyPanelOwner = entry.owner
+            hierarchyPanelEventSequence = entry.eventSequence
             controller.update(
                 snapshot: snapshot,
                 metadataText: lspWorkbenchAuxiliaryMetadata(
@@ -144,6 +149,9 @@ extension AttoEditorAreaViewController {
             }
             let controller = documentColorPanelController ?? makeDocumentColorPanelController()
             documentColorPanelController = controller
+            lastDocumentColorItems = items
+            lastDocumentColorOwner = entry.owner
+            lastDocumentColorEventSequence = entry.eventSequence
             return controller.show(
                 relativeTo: window,
                 items: items,
@@ -163,6 +171,8 @@ extension AttoEditorAreaViewController {
             let controller = hierarchyPanelController ?? makeHierarchyPanelController()
             hierarchyPanelController = controller
             hierarchyPanelSnapshot = snapshot
+            hierarchyPanelOwner = entry.owner
+            hierarchyPanelEventSequence = entry.eventSequence
             return controller.show(
                 relativeTo: window,
                 snapshot: snapshot,

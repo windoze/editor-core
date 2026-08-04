@@ -300,6 +300,7 @@ extension AttoEditorAreaViewController {
             }) ?? pinnedLspLocationHistoryEntry(sequence: item.resultSequence) else {
                 return false
             }
+            guard restoreLspResultOwnerSelection(entry.owner) else { return false }
             lspLocationResultStore.makeCurrent(entry)
             lspLocationPanelController?.update(entry: entry)
             updateVisibleLspWorkbenchPanel()
@@ -313,6 +314,7 @@ extension AttoEditorAreaViewController {
             }) ?? pinnedLspSymbolHistoryEntry(family: item.family, sequence: item.resultSequence) else {
                 return false
             }
+            guard restoreLspResultOwnerSelection(entry.owner) else { return false }
             lspSymbolResultStore.makeCurrent(entry)
             lspSymbolPanelController?.update(entry: entry)
             updateVisibleLspWorkbenchPanel()
@@ -325,6 +327,7 @@ extension AttoEditorAreaViewController {
             }) ?? pinnedDiagnosticsHistoryEntry(key: "diagnostics.active", sequence: item.resultSequence) else {
                 return false
             }
+            guard restoreLspResultOwnerSelection(entry.owner) else { return false }
             diagnosticsLifecycleStore.makeCurrent(entry)
             updateVisibleLspWorkbenchPanel()
             updateVisibleLspWorkbenchHistoryPanel()
@@ -336,6 +339,7 @@ extension AttoEditorAreaViewController {
             }) ?? pinnedDiagnosticsHistoryEntry(key: "diagnostics.workspace", sequence: item.resultSequence) else {
                 return false
             }
+            guard restoreLspResultOwnerSelection(entry.owner) else { return false }
             diagnosticsLifecycleStore.makeCurrent(entry)
             updateVisibleLspWorkbenchPanel()
             updateVisibleLspWorkbenchHistoryPanel()
@@ -347,6 +351,7 @@ extension AttoEditorAreaViewController {
             else {
                 return false
             }
+            guard restoreLspResultOwnerSelection(entry.owner) else { return false }
             restoreLspWorkbenchAuxiliaryHistoryEntry(entry)
             updateVisibleLspWorkbenchPanel()
             updateVisibleLspWorkbenchHistoryPanel()
