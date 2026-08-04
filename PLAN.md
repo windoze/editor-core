@@ -310,7 +310,9 @@
 - [x] 建立 command/menu/keymap/palette 行为矩阵，并标出 App 主路径和测试覆盖。
   - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testCommandSurfacesReferenceRegisteredCommandIDs`
   - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testMainMenuItemsUseCommandIDsAndResolvedKeymap`
-- [ ] 补齐 Sublime keymap 文件解析、context、selector、conflict 和 fallback 行为。
+- [x] 补齐 Sublime keymap 文件解析、context、selector、conflict 和 fallback 行为。
+  - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testSublimeKeymap`
+  - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testKeymap`
 - [ ] 产品化 snippets、macros、build systems、package resources、quick panels、input panels、output panels。
 - [ ] 确保新增命令都有 palette/menu/keymap 入口、可发现反馈和测试。
 

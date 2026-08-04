@@ -189,7 +189,7 @@ enum AttoKeymap {
 
         do {
             let data = try Data(contentsOf: url)
-            let root = try JSONDecoder().decode(UserKeymapRoot.self, from: data)
+            let root = try JSONDecoder().decode(UserKeymapRoot.self, from: sublimeCompatibleJSONData(from: data))
             return root.entries.filter { $0.applies(to: context) }
         } catch {
             NSLog("AttoEditor: failed to load keymap %@: %@", url.path, String(describing: error))
@@ -673,9 +673,9 @@ private struct AttoKeymapCondition: Decodable, Equatable {
     private func matchesSingleValue(_ actual: AttoKeymapContextValue) -> Bool {
         switch op {
         case .equal:
-            return actual == operand
+            return valuesMatch(actual: actual, operand: operand)
         case .notEqual:
-            return actual != operand
+            return valuesMatch(actual: actual, operand: operand) == false
         case .regexMatch:
             return regexMatches(actual: actual, operand: operand, mode: .full)
         case .notRegexMatch:
@@ -687,6 +687,34 @@ private struct AttoKeymapCondition: Decodable, Equatable {
         case .unknown:
             return false
         }
+    }
+
+    private func valuesMatch(actual: AttoKeymapContextValue, operand: AttoKeymapContextValue) -> Bool {
+        if key == "selector",
+           let actualSelector = actual.stringValue,
+           let operandSelector = operand.stringValue
+        {
+            return selector(actualSelector, contains: operandSelector)
+        }
+        return actual == operand
+    }
+
+    private func selector(_ actualSelector: String, contains operandSelector: String) -> Bool {
+        let requiredScopes = selectorScopes(in: operandSelector)
+        guard requiredScopes.isEmpty == false else { return actualSelector == operandSelector }
+        let actualScopes = selectorScopes(in: actualSelector)
+        return requiredScopes.allSatisfy { requiredScope in
+            actualScopes.contains { actualScope in
+                actualScope == requiredScope || actualScope.hasPrefix("\(requiredScope).")
+            }
+        }
+    }
+
+    private func selectorScopes(in selector: String) -> [String] {
+        selector
+            .split { $0.isWhitespace || $0 == "," }
+            .map(String.init)
+            .filter { $0.isEmpty == false }
     }
 
     private enum RegexMatchMode {

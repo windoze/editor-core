@@ -42,7 +42,7 @@ fallback for commands that intentionally do not have a default shortcut.
 
 ## Current Follow-Up Areas
 
-- Sublime keymap compatibility still needs broader file parsing, selector/context semantics, conflict reporting, and fallback behavior.
+- Sublime keymap compatibility covers comment/trailing-comma parsing, selector scope containment, context matching, conflict reporting, chord dispatch, argument routing, and malformed-file fallback.
 - Snippets, macros, build systems, package resources, quick panels, input panels, and output panels still need product-level boundaries and tests.
 - Commands without default key bindings are intentional only when the palette/menu path remains discoverable and tested.
 
