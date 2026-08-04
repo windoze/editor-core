@@ -37,7 +37,10 @@ final class AttoEditorAreaViewController: NSViewController {
     let findReplaceBarView = AttoFindReplaceBarView()
     var findReplaceBarHeightConstraint: NSLayoutConstraint?
     let contentHostView = NSView(frame: .zero)
+    var contentHostBottomToStatusConstraint: NSLayoutConstraint?
+    var contentHostBottomToWorkbenchDockConstraint: NSLayoutConstraint?
     let statusBarView = AttoStatusBarView()
+    var lspWorkbenchDockHeightConstraint: NSLayoutConstraint?
     let derivedStateStore = AttoDerivedStateStore()
     let emptyStateLabel = NSTextField(labelWithString: "Open a file to start editing")
     var lastPresentedLspFailureDetail: String?
@@ -1213,6 +1216,7 @@ final class AttoEditorAreaViewController: NSViewController {
     var hierarchyPanelRefreshRequest: HierarchyPanelRefreshRequest?
     var hierarchyPanelController: AttoHierarchyPanelController?
     var lspWorkbenchPanelController: AttoLspWorkbenchPanelController?
+    var lspWorkbenchDockView: AttoLspWorkbenchDockView?
     var lspWorkbenchHistoryPanelController: AttoLspWorkbenchHistoryPanelController?
     var lspWorkbenchHistoryPanelFamilyFilter: String?
     var lspWorkbenchHistoryPanelPinnedOnly = false
@@ -1419,6 +1423,11 @@ final class AttoEditorAreaViewController: NSViewController {
         contentHostView.wantsLayer = true
         contentHostView.layer?.backgroundColor = NSColor(ecuRgba8: theme.editorBackground).cgColor
 
+        let lspWorkbenchDockView = makeLspWorkbenchDockView()
+        lspWorkbenchDockView.translatesAutoresizingMaskIntoConstraints = false
+        lspWorkbenchDockView.isHidden = true
+        self.lspWorkbenchDockView = lspWorkbenchDockView
+
         emptyStateLabel.font = NSFont.systemFont(ofSize: 13, weight: .regular)
         emptyStateLabel.textColor = NSColor(attoHex: 0x8A8A8A)
         emptyStateLabel.alignment = .center
@@ -1434,10 +1443,18 @@ final class AttoEditorAreaViewController: NSViewController {
         view.addSubview(tabBarView)
         view.addSubview(findReplaceBarView)
         view.addSubview(contentHostView)
+        view.addSubview(lspWorkbenchDockView)
         view.addSubview(statusBarView)
 
         findReplaceBarHeightConstraint = findReplaceBarView.heightAnchor.constraint(equalToConstant: 0)
         findReplaceBarHeightConstraint?.isActive = true
+        let dockHeightConstraint = lspWorkbenchDockView.heightAnchor.constraint(equalToConstant: 240)
+        lspWorkbenchDockHeightConstraint = dockHeightConstraint
+        contentHostBottomToStatusConstraint = contentHostView.bottomAnchor.constraint(equalTo: statusBarView.topAnchor)
+        contentHostBottomToWorkbenchDockConstraint = contentHostView.bottomAnchor.constraint(
+            equalTo: lspWorkbenchDockView.topAnchor
+        )
+        contentHostBottomToWorkbenchDockConstraint?.isActive = false
 
         NSLayoutConstraint.activate([
             tabBarView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -1454,10 +1471,15 @@ final class AttoEditorAreaViewController: NSViewController {
             statusBarView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             statusBarView.heightAnchor.constraint(equalToConstant: 20),
 
+            lspWorkbenchDockView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            lspWorkbenchDockView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            lspWorkbenchDockView.bottomAnchor.constraint(equalTo: statusBarView.topAnchor),
+            dockHeightConstraint,
+
             contentHostView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             contentHostView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             contentHostView.topAnchor.constraint(equalTo: findReplaceBarView.bottomAnchor),
-            contentHostView.bottomAnchor.constraint(equalTo: statusBarView.topAnchor),
+            contentHostBottomToStatusConstraint!,
         ])
 
         showEmptyState()

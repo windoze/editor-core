@@ -242,7 +242,14 @@
 
 ### 剩余任务
 
-- [ ] 建立统一 dock/workbench 容器，减少 feature-local floating panel。
+- [x] 建立统一 dock/workbench 容器，减少 feature-local floating panel。
+  - [x] 新增嵌入 editor area 的 LSP Workbench Dock，复用现有 result family item、lifecycle metadata、stale/error、history/pin 和 jump target summary。
+  - [x] 新增 `lsp.show_workbench_dock` command、主菜单入口和稳定 accessibility identifiers；现有 floating panel 保留为兼容入口，后续 feature-local panel 可逐步迁移到 dock。
+  - 验证：`swift test --package-path swift --filter 'AttoEditorCommandTests/testLspWorkbench(DockSummarizesResultFamiliesInline|PanelSummarizesResultFamilies)'`
+  - 验证：`swift test --package-path swift --filter AttoLspWorkbenchDockViewTests/testDockViewExposesStableIdentifiersAndFiltersRows`
+  - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testDefaultCommandPaletteIncludesCoreEditorCommandIDs`
+  - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testMainMenuItemsUseCommandIDsAndResolvedKeymap`
+  - 验证：`swift test --package-path swift --filter Workbench`
 - [ ] 让 Locations、Symbols、Problems、Workspace Outline、Code Lens、Inlay Hints、Document Links、Document Colors、Hierarchy 统一消费 lifecycle metadata。
 - [ ] 完成跨 tab/project 的 result ownership、history、pin、refresh、cancel、timeout、stale 和 error 行为。
 - [ ] 补齐 keyboard navigation、focus restore、selection restore 和 panel persistence。

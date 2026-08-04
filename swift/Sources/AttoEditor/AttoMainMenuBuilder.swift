@@ -173,6 +173,7 @@ enum AttoMainMenuBuilder {
         goMenu.addItem(commandItem(title: "Show Location History...", commandID: "lsp.show_location_history", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Show Locations Panel", commandID: "lsp.show_locations_panel", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Show LSP Workbench Panel", commandID: "lsp.show_workbench_panel", appDelegate: appDelegate))
+        goMenu.addItem(commandItem(title: "Show LSP Workbench Dock", commandID: "lsp.show_workbench_dock", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Show LSP Workbench History", commandID: "lsp.show_workbench_history", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Show LSP Workbench Pinned Results", commandID: "lsp.show_workbench_pinned_results", appDelegate: appDelegate))
         goMenu.addItem(commandItem(title: "Show LSP Workbench Selected History", commandID: "lsp.show_workbench_selected_history", appDelegate: appDelegate))

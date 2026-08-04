@@ -188,6 +188,17 @@ enum AttoAccessibilityID {
     static let lspWorkbenchPanelRowDetail = "AttoEditor.LSP.WorkbenchPanel.RowDetail"
     static let lspWorkbenchPanelRowStatus = "AttoEditor.LSP.WorkbenchPanel.RowStatus"
 
+    static let lspWorkbenchDock = "AttoEditor.LSP.WorkbenchDock.Root"
+    static let lspWorkbenchDockSearchField = "AttoEditor.LSP.WorkbenchDock.SearchField"
+    static let lspWorkbenchDockCloseButton = "AttoEditor.LSP.WorkbenchDock.CloseButton"
+    static let lspWorkbenchDockMetadataLabel = "AttoEditor.LSP.WorkbenchDock.Metadata"
+    static let lspWorkbenchDockTable = "AttoEditor.LSP.WorkbenchDock.Table"
+    static let lspWorkbenchDockScrollView = "AttoEditor.LSP.WorkbenchDock.ScrollView"
+    static let lspWorkbenchDockRow = "AttoEditor.LSP.WorkbenchDock.Row"
+    static let lspWorkbenchDockRowTitle = "AttoEditor.LSP.WorkbenchDock.RowTitle"
+    static let lspWorkbenchDockRowDetail = "AttoEditor.LSP.WorkbenchDock.RowDetail"
+    static let lspWorkbenchDockRowStatus = "AttoEditor.LSP.WorkbenchDock.RowStatus"
+
     static let lspWorkbenchHistoryPanel = "AttoEditor.LSP.WorkbenchHistory.Panel"
     static let lspWorkbenchHistoryPanelRoot = "AttoEditor.LSP.WorkbenchHistory.Root"
     static let lspWorkbenchHistoryPanelSearchField = "AttoEditor.LSP.WorkbenchHistory.SearchField"

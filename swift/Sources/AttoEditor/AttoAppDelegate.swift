@@ -1233,6 +1233,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .init(id: "lsp.show_workbench_panel", title: "LSP: Show Workbench Panel") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showLspWorkbenchPanel()
             },
+            .init(id: "lsp.show_workbench_dock", title: "LSP: Show Workbench Dock") { [weak self] in
+                self?.activeWindow()?.editorAreaController.showLspWorkbenchDock()
+            },
             .init(id: "lsp.show_workbench_history", title: "LSP: Show Workbench History") { [weak self] in
                 self?.activeWindow()?.editorAreaController.showLspWorkbenchHistoryPanel()
             },

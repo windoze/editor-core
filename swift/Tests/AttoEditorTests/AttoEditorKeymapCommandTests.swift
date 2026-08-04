@@ -693,6 +693,7 @@ extension AttoEditorCommandTests {
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_last_locations", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_location_history", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_workbench_panel", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "lsp.show_workbench_dock", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_workbench_history", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_workbench_pinned_results", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "lsp.show_workbench_selected_history", in: menu))

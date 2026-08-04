@@ -47,7 +47,7 @@ extension AttoEditorCommandTests {
         let table = try XCTUnwrap(
             findView(identifier: AttoAccessibilityID.lspWorkbenchPanelTable, in: root) as? NSTableView
         )
-        XCTAssertEqual(metadata.stringValue, "4 available | 10 result families")
+        XCTAssertEqual(metadata.stringValue, "4 available | 10 result families | 1 history entry")
         XCTAssertEqual(table.numberOfRows, 10)
         XCTAssertEqual(vc._lspWorkbenchPanelRowCountForTesting(), 10)
 
@@ -58,6 +58,61 @@ extension AttoEditorCommandTests {
         XCTAssertEqual(statuses["Document Colors"], "request on open")
         XCTAssertEqual(statuses["Locations"], "0 locations")
         XCTAssertTrue(vc._lspWorkbenchPanelIsVisibleForTesting())
+    }
+
+    func testLspWorkbenchDockSummarizesResultFamiliesInline() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("workbench-dock.txt")
+        try "docs\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let window = attachToWindow(vc)
+        defer { window.close() }
+        vc.openFile(url: fileURL, mode: .pinned)
+
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        try editorView.editor.lspApplyDocumentLinksJSON("""
+        [
+          {
+            "range": {
+              "start": { "line": 0, "character": 0 },
+              "end": { "line": 0, "character": 4 }
+            },
+            "target": "https://example.com/docs",
+            "tooltip": "Open docs"
+          }
+        ]
+        """)
+
+        XCTAssertFalse(vc._lspWorkbenchDockIsVisibleForTesting())
+        XCTAssertTrue(vc.showLspWorkbenchDock())
+        let dockRoot = try XCTUnwrap(findView(identifier: AttoAccessibilityID.lspWorkbenchDock, in: vc.view))
+        let metadata = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.lspWorkbenchDockMetadataLabel, in: dockRoot) as? NSTextField
+        )
+        let table = try XCTUnwrap(
+            findView(identifier: AttoAccessibilityID.lspWorkbenchDockTable, in: dockRoot) as? NSTableView
+        )
+
+        XCTAssertEqual(metadata.stringValue, "4 available | 10 result families | 1 history entry")
+        XCTAssertEqual(table.numberOfRows, 10)
+        XCTAssertEqual(vc._lspWorkbenchDockRowCountForTesting(), 10)
+
+        let statuses = Dictionary(uniqueKeysWithValues: vc._lspWorkbenchDockItemsForTesting().map {
+            ($0.title, $0.status)
+        })
+        XCTAssertEqual(statuses["Document Links"], "1 link")
+        XCTAssertEqual(statuses["Document Colors"], "request on open")
+        XCTAssertTrue(vc._selectLspWorkbenchDockItemForTesting(id: "document_links"))
+        XCTAssertEqual(vc._lspWorkbenchDockSelectedItemForTesting()?.id, "document_links")
+        XCTAssertTrue(vc._lspWorkbenchDockIsVisibleForTesting())
+
+        vc.hideLspWorkbenchDock()
+        XCTAssertFalse(vc._lspWorkbenchDockIsVisibleForTesting())
     }
 
     func testLspWorkbenchPanelShowsLifecycleStateForLocationsAndSymbols() throws {

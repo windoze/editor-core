@@ -79,6 +79,7 @@ extension AttoEditorCommandTests {
         XCTAssertTrue(ids.contains("lsp.show_location_history"))
         XCTAssertTrue(ids.contains("lsp.show_locations_panel"))
         XCTAssertTrue(ids.contains("lsp.show_workbench_panel"))
+        XCTAssertTrue(ids.contains("lsp.show_workbench_dock"))
         XCTAssertTrue(ids.contains("lsp.show_workbench_history"))
         XCTAssertTrue(ids.contains("lsp.show_workbench_pinned_results"))
         XCTAssertTrue(ids.contains("lsp.show_workbench_selected_history"))

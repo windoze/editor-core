@@ -36,9 +36,37 @@ extension AttoEditorAreaViewController {
         return controller.show(relativeTo: window, items: lspWorkbenchItems())
     }
 
+    @discardableResult
+    func showLspWorkbenchDock() -> Bool {
+        _ = view
+        guard let dockView = lspWorkbenchDockView else {
+            NSSound.beep()
+            return false
+        }
+
+        dockView.update(items: lspWorkbenchItems())
+        dockView.isHidden = false
+        contentHostBottomToStatusConstraint?.isActive = false
+        contentHostBottomToWorkbenchDockConstraint?.isActive = true
+        view.layoutSubtreeIfNeeded()
+        dockView.focusSearchField()
+        return true
+    }
+
+    func hideLspWorkbenchDock() {
+        guard let dockView = lspWorkbenchDockView else { return }
+        dockView.isHidden = true
+        contentHostBottomToWorkbenchDockConstraint?.isActive = false
+        contentHostBottomToStatusConstraint?.isActive = true
+        view.layoutSubtreeIfNeeded()
+    }
+
     func updateVisibleLspWorkbenchPanel() {
         if lspWorkbenchPanelController?.isVisible == true {
             lspWorkbenchPanelController?.update(items: lspWorkbenchItems())
+        }
+        if lspWorkbenchDockView?.isVisible == true {
+            lspWorkbenchDockView?.update(items: lspWorkbenchItems())
         }
         updateVisibleLspWorkbenchHistoryPanel()
     }
@@ -76,7 +104,7 @@ extension AttoEditorAreaViewController {
 
     @discardableResult
     func clearSelectedLspWorkbenchStaleResult() -> Bool {
-        guard let item = lspWorkbenchPanelController?.selectedItem else {
+        guard let item = selectedLspWorkbenchItem() else {
             setTransientStatusText("LSP workbench stale clear: no selected family")
             NSSound.beep()
             return false
@@ -193,7 +221,7 @@ extension AttoEditorAreaViewController {
 
     @discardableResult
     func pinSelectedLspWorkbenchResult() -> Bool {
-        guard let item = lspWorkbenchPanelController?.selectedItem else {
+        guard let item = selectedLspWorkbenchItem() else {
             setTransientStatusText("LSP workbench pin: no selected family")
             NSSound.beep()
             return false
@@ -203,7 +231,7 @@ extension AttoEditorAreaViewController {
 
     @discardableResult
     func unpinSelectedLspWorkbenchResult() -> Bool {
-        guard let item = lspWorkbenchPanelController?.selectedItem else {
+        guard let item = selectedLspWorkbenchItem() else {
             setTransientStatusText("LSP workbench unpin: no selected family")
             NSSound.beep()
             return false
@@ -341,7 +369,7 @@ extension AttoEditorAreaViewController {
 
     @discardableResult
     func refreshSelectedLspWorkbenchResult() -> Bool {
-        guard let item = lspWorkbenchPanelController?.selectedItem else {
+        guard let item = selectedLspWorkbenchItem() else {
             setTransientStatusText("LSP workbench refresh: no selected family")
             NSSound.beep()
             return false
@@ -391,7 +419,7 @@ extension AttoEditorAreaViewController {
 
     @discardableResult
     func jumpToSelectedLspWorkbenchResult() -> Bool {
-        guard let item = lspWorkbenchPanelController?.selectedItem else {
+        guard let item = selectedLspWorkbenchItem() else {
             setTransientStatusText("LSP workbench jump: no selected family")
             NSSound.beep()
             return false
@@ -407,7 +435,7 @@ extension AttoEditorAreaViewController {
 
     @discardableResult
     func showSelectedLspWorkbenchHistory() -> Bool {
-        guard let item = lspWorkbenchPanelController?.selectedItem else {
+        guard let item = selectedLspWorkbenchItem() else {
             setTransientStatusText("LSP workbench history: no selected family")
             NSSound.beep()
             return false
@@ -767,6 +795,20 @@ extension AttoEditorAreaViewController {
         }
     }
 
+    func makeLspWorkbenchDockView() -> AttoLspWorkbenchDockView {
+        AttoLspWorkbenchDockView(
+            onOpen: { [weak self] item in
+                self?.openLspWorkbenchItem(item)
+            },
+            onOpenHistory: { [weak self] item in
+                self?.showLspWorkbenchHistoryPanel(family: item.id)
+            },
+            onClose: { [weak self] in
+                self?.hideLspWorkbenchDock()
+            }
+        )
+    }
+
     private func makeLspWorkbenchPanelController() -> AttoLspWorkbenchPanelController {
         AttoLspWorkbenchPanelController(
             onOpen: { [weak self] item in
@@ -776,6 +818,17 @@ extension AttoEditorAreaViewController {
                 self?.showLspWorkbenchHistoryPanel(family: item.id)
             }
         )
+    }
+
+    private func selectedLspWorkbenchItem() -> AttoLspWorkbenchPanelController.Item? {
+        if lspWorkbenchDockView?.isVisible == true,
+           let item = lspWorkbenchDockView?.selectedItem {
+            return item
+        }
+        if let item = lspWorkbenchPanelController?.selectedItem {
+            return item
+        }
+        return nil
     }
 
     private func openLspWorkbenchItem(_ item: AttoLspWorkbenchPanelController.Item) {
