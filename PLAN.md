@@ -512,7 +512,17 @@
   - 验证：`swift/scripts/update-visual-baselines.sh`
   - 验证：`swift/scripts/check-visual-baselines.sh`
   - 验证：`git diff --check`
-- [ ] 修复 focus、keyboard navigation、selection、hover、scroll、overlay stacking 的产品细节。
+- [x] 修复 focus、keyboard navigation、selection、hover、scroll、overlay stacking 的产品细节。
+  - [x] completion popup 显式 dismiss 后恢复触发它的 editor view 焦点；窗口自然失焦路径不抢回焦点。
+  - [x] 新增 AppKit interaction regression，覆盖 completion popup child-window stacking、dismiss 后移除和 editor focus restore。
+  - [x] 复跑 keyboard navigation、selection、hover、command-hover 和 keyboard-scroll focused tests，确认底层编辑交互不回退。
+  - 验证：`swift test --package-path swift --filter AttoEditorInteractionPolishTests`
+  - 验证：`swift test --package-path swift --filter AttoEditorChromePolishLayoutTests`
+  - 验证：`swift test --package-path swift --filter EditorCoreSkiaViewKeyboardScrollTests`
+  - 验证：`swift test --package-path swift --filter EditorCoreSkiaViewNavigationTests`
+  - 验证：`swift test --package-path swift --filter EditorCoreSkiaViewHoverTests`
+  - 验证：`swift test --package-path swift --filter EditorCoreSkiaViewCommandHoverTests`
+  - 验证：`git diff --check`
 
 ## 阶段 15：最终审计与全量验证
 

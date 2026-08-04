@@ -17,6 +17,7 @@ final class AttoCompletionListController: NSObject, NSTableViewDataSource, NSTab
     private var items: [AttoLspCompletionParser.Item] = []
     private var visibleItems: [AttoLspCompletionParser.Item] = []
     private var onCommit: ((AttoLspCompletionParser.Item, String?) -> Void)?
+    private weak var restoreFocusView: NSView?
     var onTextInput: ((String) -> Bool)?
     var onDeleteBackward: (() -> Bool)?
     var onDismiss: (() -> Void)?
@@ -36,6 +37,7 @@ final class AttoCompletionListController: NSObject, NSTableViewDataSource, NSTab
         self.items = items
         self.visibleItems = items
         self.onCommit = onCommit
+        restoreFocusView = editorView
 
         if panel == nil {
             panel = buildPanel()
@@ -73,11 +75,17 @@ final class AttoCompletionListController: NSObject, NSTableViewDataSource, NSTab
         return true
     }
 
-    func hide() {
-        guard let panel else { return }
+    func hide(restoreFocus: Bool = true) {
+        guard let panel else {
+            restoreFocusView = nil
+            return
+        }
+        let focusView = restoreFocus ? restoreFocusView : nil
         panel.orderOut(nil)
         panel.parent?.removeChildWindow(panel)
         previewTextView.string = ""
+        restoreFocusView = nil
+        focusView?.window?.makeFirstResponder(focusView)
         onDismiss?()
     }
 
@@ -298,7 +306,7 @@ final class AttoCompletionListController: NSObject, NSTableViewDataSource, NSTab
     }
 
     func windowDidResignKey(_ notification: Notification) {
-        hide()
+        hide(restoreFocus: false)
     }
 }
 
