@@ -751,7 +751,8 @@ extension AttoEditorAreaViewController {
 
     func syncAppTabsFromCoreWorkspaceEditTransaction(
         _ coreDocuments: MultiDocumentEditorUI,
-        projectedURLsBeforeSync: [UUID: URL] = [:]
+        projectedURLsBeforeSync: [UUID: URL] = [:],
+        excludingTabIDs excludedTabIDs: Set<UUID> = []
     ) throws {
         let snapshot = try coreDocuments.snapshot()
         let coreTabsByID = Dictionary(uniqueKeysWithValues: snapshot.tabs.map { ($0.id, $0) })
@@ -771,6 +772,9 @@ extension AttoEditorAreaViewController {
         }
 
         for tab in tabs {
+            if excludedTabIDs.contains(tab.id) {
+                continue
+            }
             guard let coreTabID = tab.coreTabID,
                   let snapshotTab = coreTabsByID[coreTabID]
             else {

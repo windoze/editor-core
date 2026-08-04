@@ -22,6 +22,36 @@ enum AttoLspCompletionParser {
         let text: String
         let isSnippet: Bool
         let additionalEdits: [EcuTextEdit]
+        let additionalDocumentEdits: [DocumentTextEdits]
+    }
+
+    struct DocumentTextEdits: Equatable {
+        let documentURI: String
+        let edits: [RawTextEdit]
+    }
+
+    struct RawTextEdit: Equatable {
+        let startLine: UInt32
+        let startUTF16Character: UInt32
+        let endLine: UInt32
+        let endUTF16Character: UInt32
+        let text: String
+
+        var jsonObject: [String: Any] {
+            [
+                "range": [
+                    "start": [
+                        "line": Int(startLine),
+                        "character": Int(startUTF16Character),
+                    ],
+                    "end": [
+                        "line": Int(endLine),
+                        "character": Int(endUTF16Character),
+                    ],
+                ],
+                "newText": text,
+            ]
+        }
     }
 
     static func items(fromCompletionResultJSON json: String) -> [Item] {
@@ -189,6 +219,7 @@ enum AttoLspCompletionParser {
 
         let isSnippet = intValue(item.object["insertTextFormat"]) == 2
         let additionalEdits = textEdits(from: item.object["additionalTextEdits"], documentText: documentText)
+        let additionalDocumentEdits = textDocumentEdits(from: item.object)
 
         if let edit = mainTextEdit(from: item.object["textEdit"], documentText: documentText) {
             return ApplicationPlan(
@@ -196,7 +227,8 @@ enum AttoLspCompletionParser {
                 end: edit.end,
                 text: edit.text,
                 isSnippet: isSnippet,
-                additionalEdits: additionalEdits
+                additionalEdits: additionalEdits,
+                additionalDocumentEdits: additionalDocumentEdits
             )
         }
 
@@ -206,7 +238,8 @@ enum AttoLspCompletionParser {
             end: max(fallbackStart, fallbackEnd),
             text: fallbackText,
             isSnippet: isSnippet,
-            additionalEdits: additionalEdits
+            additionalEdits: additionalEdits,
+            additionalDocumentEdits: additionalDocumentEdits
         )
     }
 
@@ -218,6 +251,8 @@ enum AttoLspCompletionParser {
     ) -> ApplicationPlan? {
         let isSnippet = item.insertTextFormatKind == .snippet
         let additionalEdits = textEdits(from: item.additionalTextEdits, documentText: documentText)
+        let rawObject = item.raw.flatMap(jsonObject(from:)) as? [String: Any] ?? [:]
+        let additionalDocumentEdits = textDocumentEdits(from: rawObject)
 
         if let edit = textEdit(from: item.textEdit, documentText: documentText) {
             return ApplicationPlan(
@@ -225,7 +260,8 @@ enum AttoLspCompletionParser {
                 end: edit.end,
                 text: edit.text,
                 isSnippet: isSnippet,
-                additionalEdits: additionalEdits
+                additionalEdits: additionalEdits,
+                additionalDocumentEdits: additionalDocumentEdits
             )
         }
 
@@ -235,7 +271,8 @@ enum AttoLspCompletionParser {
             end: max(fallbackStart, fallbackEnd),
             text: fallbackText,
             isSnippet: isSnippet,
-            additionalEdits: additionalEdits
+            additionalEdits: additionalEdits,
+            additionalDocumentEdits: additionalDocumentEdits
         )
     }
 
@@ -305,6 +342,78 @@ enum AttoLspCompletionParser {
         edits.compactMap { edit in
             textEdit(range: edit.range, text: edit.newText, documentText: documentText)
         }
+    }
+
+    private static func textDocumentEdits(from object: [String: Any]) -> [DocumentTextEdits] {
+        // LSP additionalTextEdits are current-document only; these optional extension shapes
+        // carry raw LSP text edits for other documents and are applied through WorkspaceEdit.
+        let candidates = [
+            object["attoAdditionalTextDocumentEdits"],
+            object["atto_additional_text_document_edits"],
+            object["additionalTextDocumentEdits"],
+            object["additional_text_document_edits"],
+            object["additionalTextEditsByDocument"],
+            object["additional_text_edits_by_document"],
+        ]
+        guard let source = candidates.compactMap({ $0 }).first else { return [] }
+
+        if let grouped = source as? [String: Any] {
+            return grouped.keys.sorted().compactMap { uri in
+                let edits = rawTextEdits(from: grouped[uri])
+                return edits.isEmpty ? nil : DocumentTextEdits(documentURI: uri, edits: edits)
+            }
+        }
+
+        guard let entries = source as? [Any] else { return [] }
+        return entries.compactMap { entry in
+            guard let dict = entry as? [String: Any] else { return nil }
+            let uri = stringValue(dict["documentURI"])
+                ?? stringValue(dict["document_uri"])
+                ?? stringValue(dict["uri"])
+                ?? ((dict["textDocument"] as? [String: Any]).flatMap { stringValue($0["uri"]) })
+            guard let uri, uri.isEmpty == false else { return nil }
+
+            let edits = rawTextEdits(
+                from: dict["edits"]
+                    ?? dict["textEdits"]
+                    ?? dict["text_edits"]
+                    ?? dict["additionalTextEdits"]
+                    ?? dict["additional_text_edits"]
+            )
+            return edits.isEmpty ? nil : DocumentTextEdits(documentURI: uri, edits: edits)
+        }
+    }
+
+    private static func rawTextEdits(from any: Any?) -> [RawTextEdit] {
+        guard let arr = any as? [Any] else { return [] }
+        return arr.compactMap(rawTextEdit(from:))
+    }
+
+    private static func rawTextEdit(from any: Any) -> RawTextEdit? {
+        guard let dict = any as? [String: Any],
+              let range = dict["range"] as? [String: Any],
+              let start = range["start"] as? [String: Any],
+              let end = range["end"] as? [String: Any],
+              let startLine = intValue(start["line"]),
+              let startCharacter = intValue(start["character"]),
+              let endLine = intValue(end["line"]),
+              let endCharacter = intValue(end["character"]),
+              startLine >= 0,
+              startCharacter >= 0,
+              endLine >= 0,
+              endCharacter >= 0,
+              let text = stringValue(dict["newText"])
+        else {
+            return nil
+        }
+
+        return RawTextEdit(
+            startLine: UInt32(clamping: startLine),
+            startUTF16Character: UInt32(clamping: startCharacter),
+            endLine: UInt32(clamping: endLine),
+            endUTF16Character: UInt32(clamping: endCharacter),
+            text: text
+        )
     }
 
     private static func textEdit(range: [String: Any], text: String, documentText: String) -> EcuTextEdit? {

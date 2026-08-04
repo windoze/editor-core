@@ -218,6 +218,68 @@ final class AttoLspCompletionParserTests: XCTestCase {
         XCTAssertEqual(plan.additionalEdits, [EcuTextEdit(start: 0, end: 0, text: "import x\n")])
     }
 
+    func testApplicationPlanParsesAdditionalTextDocumentEdits() throws {
+        let json = """
+        [
+          {
+            "label": "print",
+            "insertTextFormat": 2,
+            "textEdit": {
+              "range": {
+                "start": { "line": 0, "character": 0 },
+                "end": { "line": 0, "character": 3 }
+              },
+              "newText": "print(${1:value})$0"
+            },
+            "attoAdditionalTextDocumentEdits": [
+              {
+                "textDocument": { "uri": "file:///tmp/Imports.swift" },
+                "edits": [
+                  {
+                    "range": {
+                      "start": { "line": 0, "character": 0 },
+                      "end": { "line": 0, "character": 10 }
+                    },
+                    "newText": "import Foundation"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+        """
+        let item = try XCTUnwrap(AttoLspCompletionParser.items(fromCompletionResultJSON: json).first)
+        let plan = try XCTUnwrap(AttoLspCompletionParser.applicationPlan(
+            for: item,
+            documentText: "pri\n",
+            fallbackStart: 0,
+            fallbackEnd: 3
+        ))
+
+        XCTAssertEqual(plan.start, 0)
+        XCTAssertEqual(plan.end, 3)
+        XCTAssertEqual(plan.text, "print(${1:value})$0")
+        XCTAssertTrue(plan.isSnippet)
+        XCTAssertTrue(plan.additionalEdits.isEmpty)
+        XCTAssertEqual(
+            plan.additionalDocumentEdits,
+            [
+                AttoLspCompletionParser.DocumentTextEdits(
+                    documentURI: "file:///tmp/Imports.swift",
+                    edits: [
+                        AttoLspCompletionParser.RawTextEdit(
+                            startLine: 0,
+                            startUTF16Character: 0,
+                            endLine: 0,
+                            endUTF16Character: 10,
+                            text: "import Foundation"
+                        ),
+                    ]
+                ),
+            ]
+        )
+    }
+
     func testApplicationPlanUsesInsertRangeForInsertReplaceEdit() throws {
         let json = """
         [

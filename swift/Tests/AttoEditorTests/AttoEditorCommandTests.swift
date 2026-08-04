@@ -4371,6 +4371,73 @@ final class AttoEditorCommandTests: XCTestCase {
         XCTAssertFalse(try editorView.editor.hasActiveSnippetSession())
     }
 
+    func testSnippetCompletionAdditionalDocumentEditsUseWorkspaceEditTransaction() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("completion-snippet-cross-file.swift")
+        let otherURL = tempDir.appendingPathComponent("completion-snippet-imports.swift")
+        try "pri\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        try "import Old\n".write(to: otherURL, atomically: true, encoding: .utf8)
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        _ = attachToWindow(vc)
+        vc.openFile(url: otherURL, mode: .pinned)
+        let otherTab = try XCTUnwrap(vc.activeTab)
+        vc.openFile(url: fileURL, mode: .pinned)
+        allowWorkspaceEditPreviewConfirmation(vc)
+        let tab = try XCTUnwrap(vc.activeTab)
+        let editorView = try XCTUnwrap(findSubview(of: EditorCoreSkiaView.self, in: vc.view))
+        try editorView.editor.setSelections([EcuSelectionRange(start: 3, end: 3)], primaryIndex: 0)
+        let context = try vc.completionRequestContextForCurrentSelection(tab, beepOnFailure: false, showFeedback: true)
+        let coreTransactionCursor = try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting())
+        let item = try XCTUnwrap(AttoLspCompletionParser.items(fromCompletionResultJSON: """
+        [
+          {
+            "label": "print",
+            "insertTextFormat": 2,
+            "textEdit": {
+              "range": {
+                "start": { "line": 0, "character": 0 },
+                "end": { "line": 0, "character": 3 }
+              },
+              "newText": "print(${1:value})$0"
+            },
+            "attoAdditionalTextDocumentEdits": [
+              {
+                "textDocument": { "uri": "\(otherURL.absoluteString)" },
+                "edits": [
+                  {
+                    "range": {
+                      "start": { "line": 0, "character": 0 },
+                      "end": { "line": 0, "character": 10 }
+                    },
+                    "newText": "import Foundation"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+        """).first)
+
+        XCTAssertTrue(vc.applyCompletionItem(item, context: context, beepOnFailure: false))
+        XCTAssertEqual(try editorView.editor.text(), "print(value)\n")
+        XCTAssertEqual(try otherTab.editCore.editor.text(), "import Foundation\n")
+        XCTAssertEqual(
+            try XCTUnwrap(vc._coreWorkspaceEditTransactionLatestSequenceForTesting()),
+            coreTransactionCursor + 1
+        )
+        XCTAssertTrue(try editorView.editor.hasActiveSnippetSession())
+
+        XCTAssertTrue(vc._undoLastCoreWorkspaceEditTransactionForTesting())
+        XCTAssertEqual(try editorView.editor.text(), "pri\n")
+        XCTAssertEqual(try otherTab.editCore.editor.text(), "import Old\n")
+        XCTAssertFalse(try editorView.editor.hasActiveSnippetSession())
+    }
+
     func testCompletionWorkspaceEditRetryOwnerRerunsCompletionRequest() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

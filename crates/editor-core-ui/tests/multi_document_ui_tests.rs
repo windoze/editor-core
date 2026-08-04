@@ -1518,6 +1518,167 @@ fn multi_document_ui_applies_snippet_completion_workspace_edit_as_single_transac
 }
 
 #[test]
+fn multi_document_ui_applies_cross_file_snippet_completion_workspace_edit_as_single_transaction() {
+    let root = unique_test_dir("editor-core-ui-workspace-edit-cross-file-snippet-completion");
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    let other_path = root.join("src").join("Imports.swift");
+    std::fs::write(&other_path, "import Old\n").unwrap();
+
+    let root_uri = path_to_file_uri(root.as_path());
+    let open_uri = path_to_file_uri(root.join("src").join("Open.swift").as_path());
+    let other_uri = path_to_file_uri(other_path.as_path());
+
+    let mut ui = MultiDocumentEditorUi::new();
+    ui.set_workspace_roots([root_uri]);
+    let tab = ui.open_tab("pri\n", 80);
+    ui.set_tab_document_uri(tab, Some(open_uri.clone()))
+        .unwrap();
+
+    let snippet = "print(${1:value})$0";
+    let main_edit = json!({
+        "range": {
+            "start": { "line": 0, "character": 0 },
+            "end": { "line": 0, "character": 3 }
+        },
+        "newText": snippet
+    });
+    let other_edit = json!({
+        "range": {
+            "start": { "line": 0, "character": 0 },
+            "end": { "line": 0, "character": 10 }
+        },
+        "newText": "import Foundation"
+    });
+    let edit = json!({
+        "applyMode": "atomic",
+        "workspaceEdit": {
+            "changes": {
+                (open_uri.as_str()): [main_edit.clone()],
+                (other_uri.as_str()): [other_edit]
+            }
+        },
+        "attoSnippetCompletion": {
+            "documentURI": open_uri.as_str(),
+            "textEdit": main_edit,
+            "snippet": snippet,
+            "additionalTextEdits": []
+        }
+    })
+    .to_string();
+
+    let preview = ui.preview_workspace_edit_transaction(&edit).unwrap();
+    assert_eq!(
+        preview
+            .documents
+            .iter()
+            .map(|doc| doc.edit_count)
+            .sum::<usize>(),
+        2
+    );
+
+    let applied = ui.apply_workspace_edit_transaction(&edit).unwrap();
+    assert!(applied.applied);
+    assert_eq!(applied.applied_edit_count, 2);
+    assert_eq!(ui.tab_text(tab).unwrap(), "print(value)\n");
+    assert_eq!(
+        std::fs::read_to_string(&other_path).unwrap(),
+        "import Foundation\n"
+    );
+    assert!(
+        ui.editor_for_tab(tab)
+            .unwrap()
+            .has_active_snippet_session()
+            .unwrap()
+    );
+
+    let undone = ui.undo_last_workspace_edit_transaction().unwrap();
+    assert!(undone.undone);
+    assert_eq!(ui.tab_text(tab).unwrap(), "pri\n");
+    assert_eq!(
+        std::fs::read_to_string(&other_path).unwrap(),
+        "import Old\n"
+    );
+    assert!(
+        !ui.editor_for_tab(tab)
+            .unwrap()
+            .has_active_snippet_session()
+            .unwrap()
+    );
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn multi_document_ui_rolls_back_cross_file_snippet_completion_after_runtime_failure() {
+    let root = unique_test_dir("editor-core-ui-workspace-edit-cross-file-snippet-rollback");
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    let bad_path = root.join("src").join("ZBad.swift");
+    std::fs::write(&bad_path, [0xff]).unwrap();
+
+    let root_uri = path_to_file_uri(root.as_path());
+    let open_uri = path_to_file_uri(root.join("src").join("AOpen.swift").as_path());
+    let bad_uri = path_to_file_uri(bad_path.as_path());
+
+    let mut ui = MultiDocumentEditorUi::new();
+    ui.set_workspace_roots([root_uri]);
+    let tab = ui.open_tab("pri\n", 80);
+    ui.set_tab_document_uri(tab, Some(open_uri.clone()))
+        .unwrap();
+
+    let snippet = "print(${1:value})$0";
+    let main_edit = json!({
+        "range": {
+            "start": { "line": 0, "character": 0 },
+            "end": { "line": 0, "character": 3 }
+        },
+        "newText": snippet
+    });
+    let bad_edit = json!({
+        "range": {
+            "start": { "line": 0, "character": 0 },
+            "end": { "line": 0, "character": 0 }
+        },
+        "newText": "import Foundation"
+    });
+    let edit = json!({
+        "applyMode": "atomic",
+        "workspaceEdit": {
+            "changes": {
+                (open_uri.as_str()): [main_edit.clone()],
+                (bad_uri.as_str()): [bad_edit]
+            }
+        },
+        "attoSnippetCompletion": {
+            "documentURI": open_uri.as_str(),
+            "textEdit": main_edit,
+            "snippet": snippet,
+            "additionalTextEdits": []
+        }
+    })
+    .to_string();
+
+    let applied = ui.apply_workspace_edit_transaction(&edit).unwrap();
+    assert!(!applied.applied);
+    assert_eq!(applied.apply_mode, "atomic");
+    assert_eq!(applied.applied_edit_count, 0);
+    assert!(applied.skipped_details.iter().any(|detail| {
+        detail.uri == bad_uri
+            && detail.operation.as_deref() == Some("text_edit")
+            && detail.reason == "file_text_edit_read_failed"
+    }));
+    assert_eq!(ui.tab_text(tab).unwrap(), "pri\n");
+    assert_eq!(std::fs::read(&bad_path).unwrap(), vec![0xff]);
+    assert!(
+        !ui.editor_for_tab(tab)
+            .unwrap()
+            .has_active_snippet_session()
+            .unwrap()
+    );
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn multi_document_ui_redoes_last_workspace_edit_transaction() {
     let root = unique_test_dir("editor-core-ui-workspace-edit-redo");
     std::fs::create_dir_all(root.join("src")).unwrap();

@@ -63,7 +63,14 @@
   - 验证：`swift test --package-path swift --filter AttoLspCompletionParserTests`
   - 验证：`swift test --package-path swift --filter 'AttoEditorCommandTests/test.*Completion.*'`
   - 验证：`swift test --package-path swift --filter AttoWorkspaceEdit`
-- [ ] 支持跨文件 snippet `additionalTextEdits` 的 transaction apply，并定义与 snippet placeholder session 的交互边界。
+- [x] 支持跨文件 snippet `additionalTextEdits` 的 transaction apply，并定义与 snippet placeholder session 的交互边界。
+  - 验证：`cargo test -p editor-core-ui multi_document_ui_applies_cross_file_snippet_completion_workspace_edit_as_single_transaction`
+  - 验证：`cargo test -p editor-core-ui multi_document_ui_rolls_back_cross_file_snippet_completion_after_runtime_failure`
+  - 验证：`cargo test -p editor-core-ui`
+  - 验证：`cargo test -p editor-core-ui-ffi`
+  - 验证：`swift test --package-path swift --filter AttoLspCompletionParserTests`
+  - 验证：`swift test --package-path swift --filter 'AttoEditorCommandTests/test.*Completion.*'`
+  - 验证：`swift test --package-path swift --filter AttoWorkspaceEdit`
 - [ ] 扩展 conflict 检测：dirty 与 stale version、overlapping edits、resource dependency、打开/未打开文件混合失败、unsupported URI、secondary rollback failure。
 - [ ] 扩展 conflict 解决 UI：open/save/discard/retry/rerun/reapply 的可用状态、分组文案和失败反馈。
 - [ ] 补齐 Rust、FFI、Swift wrapper、AppKit panel 和 targeted tests。

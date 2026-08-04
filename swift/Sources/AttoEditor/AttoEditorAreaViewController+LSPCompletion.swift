@@ -488,22 +488,28 @@ extension AttoEditorAreaViewController {
         tab: AttoEditorTab,
         context: CompletionRequestContext
     ) -> CompletionSnippetAdditionalEditsOutcome? {
-        guard plan.additionalEdits.isEmpty == false else { return nil }
-        guard let coreDocuments else { return nil }
+        let hasCurrentDocumentAdditionalEdits = plan.additionalEdits.isEmpty == false
+        let hasAdditionalDocumentEdits = plan.additionalDocumentEdits.isEmpty == false
+        guard hasCurrentDocumentAdditionalEdits || hasAdditionalDocumentEdits else { return nil }
+        guard let coreDocuments else {
+            return hasAdditionalDocumentEdits ? .stopped : nil
+        }
         let documentURI = projectedFileURL(for: tab).absoluteString
         guard let workspaceEditJSON = completionSnippetWorkspaceEditJSON(
             for: plan,
             documentText: documentText,
             documentURI: documentURI
         ) else {
-            return nil
+            return hasAdditionalDocumentEdits ? .stopped : nil
         }
         guard let parsed = AttoWorkspaceEditParser.parse(workspaceEditJSON) else {
-            return nil
+            return hasAdditionalDocumentEdits ? .stopped : nil
         }
 
         let requestRetryOwner = completionWorkspaceEditRequestRetryOwner(context: context)
         var coreTransactionApplied = false
+        var appSnippetApplied = false
+        var projectedURLsBeforeApply: [UUID: URL] = [:]
         do {
             try syncOpenTabsToCoreBeforeWorkspaceEditApply(coreDocuments)
             let transientStatusBeforeConfirmation = transientStatusText
@@ -530,6 +536,7 @@ extension AttoEditorAreaViewController {
                 return rerunWorkspaceEditRequest(requestRetryOwner) ? .requestRerunStarted : .stopped
             }
 
+            projectedURLsBeforeApply = projectedFileURLsByTabID()
             let coreResult = try coreDocuments.applyWorkspaceEditTransaction(workspaceEditJSON)
             coreTransactionApplied = coreResult.applied
             guard coreResult.applied else {
@@ -559,12 +566,18 @@ extension AttoEditorAreaViewController {
                 return .stopped
             }
 
+            try syncAppTabsFromCoreWorkspaceEditTransaction(
+                coreDocuments,
+                projectedURLsBeforeSync: projectedURLsBeforeApply,
+                excludingTabIDs: [tab.id]
+            )
             _ = try tab.editCore.editor.applySnippet(
                 start: plan.start,
                 end: plan.end,
                 snippet: plan.text,
                 additionalEdits: plan.additionalEdits
             )
+            appSnippetApplied = true
             recordWorkspaceEditRequestRetryOwner(
                 requestRetryOwner,
                 forLatestTransactionIn: coreDocuments
@@ -575,6 +588,13 @@ extension AttoEditorAreaViewController {
         } catch {
             if coreTransactionApplied {
                 _ = try? coreDocuments.undoLastWorkspaceEditTransaction()
+                if appSnippetApplied == false {
+                    try? syncAppTabsFromCoreWorkspaceEditTransaction(
+                        coreDocuments,
+                        projectedURLsBeforeSync: projectedURLsBeforeApply,
+                        excludingTabIDs: [tab.id]
+                    )
+                }
             }
             NSLog(
                 "AttoEditor: snippet completion WorkspaceEdit transaction apply failed: %@",
@@ -640,13 +660,20 @@ extension AttoEditorAreaViewController {
         }
         guard additionalEditObjects.count == plan.additionalEdits.count else { return nil }
 
-        let editObjects = [mainEditObject] + additionalEditObjects
+        var changes: [String: [[String: Any]]] = [
+            documentURI: [mainEditObject] + additionalEditObjects,
+        ]
+        for documentEdits in plan.additionalDocumentEdits {
+            guard documentEdits.documentURI != documentURI else { return nil }
+            let editObjects = documentEdits.edits.map(\.jsonObject)
+            guard editObjects.isEmpty == false else { continue }
+            changes[documentEdits.documentURI, default: []].append(contentsOf: editObjects)
+        }
+
         let root: [String: Any] = [
             "applyMode": "atomic",
             "workspaceEdit": [
-                "changes": [
-                    documentURI: editObjects,
-                ],
+                "changes": changes,
             ],
             "attoSnippetCompletion": [
                 "documentURI": documentURI,
