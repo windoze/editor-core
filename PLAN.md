@@ -364,7 +364,12 @@
   - 验证：`cargo build -p editor-core-ui-ffi`
   - 验证：`swift test --package-path swift --filter 'EditorCoreUIFFIWorkspaceFileTests|EditorCoreUIFFIRuntimeSmokeTests|EditorCoreUIFFIRuntimeCompatibilityTests|AttoRuntimeCompatibilityTests'`
   - 验证：`swift test --package-path swift --filter 'testMultiDocumentWorkspaceFile|testMultiDocumentProjectFileIndex|testLoadsLibraryAndVersion|testRuntimeInfoJSONDescriptorsCoverKnownFeatures'`
-- [ ] 统一 Rust、C ABI、Swift wrapper 和 App 层错误模型。
+- [x] 统一 Rust、C ABI、Swift wrapper 和 App 层错误模型。
+  - 交付：补齐 UI FFI `EcuStatus` C ABI 枚举和 Rust 单一映射源，使 `EcfStatus` / `EcuStatus` 共享数值与 JSON `error.code` label；Swift headless/UI wrapper 暴露统一 `abiLabel`，App 可见错误描述携带 ABI 符号与共享 label；更新 ABI 文档。
+  - 验证：`cargo test -p editor-core-ui-ffi ffi_status_labels_match_shared_error_model`
+  - 验证：`cargo build -p editor-core-ui-ffi --release`
+  - 验证：`swift test --package-path swift --filter EditorCoreFFIErrorModelTests`
+  - 验证：`cargo test -p editor-core-ui-ffi --lib`
 - [ ] 建立 host capability negotiation：feature availability、version、unsupported reason、runtime feature flag。
 - [ ] 清理或隔离过渡 raw JSON API。
 

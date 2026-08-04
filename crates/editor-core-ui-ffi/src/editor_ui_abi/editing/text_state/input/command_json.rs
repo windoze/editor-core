@@ -33,7 +33,7 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_execute_command_json(
 /// as JSON instead of a null pointer:
 ///
 /// `{ "ok": true, "value": <command result>, "error": null, "version": ECU_ABI_VERSION }`
-/// `{ "ok": false, "value": null, "error": { "code": "...", "status": N, "message": "..." }, "version": ECU_ABI_VERSION }`
+/// `{ "ok": false, "value": null, "error": { ... }, "version": ECU_ABI_VERSION }`
 ///
 /// Caller owns the returned string and must free it with `editor_core_ui_ffi_string_free`.
 #[unsafe(no_mangle)]
@@ -75,20 +75,11 @@ fn command_envelope_error(status: c_int, message: String) -> String {
         "ok": false,
         "value": null,
         "error": {
-            "code": status_code_label(status),
+            "code": status_code_name(status),
             "status": status,
             "message": message,
         },
         "version": ECU_ABI_VERSION,
     })
     .to_string()
-}
-
-fn status_code_label(status: c_int) -> &'static str {
-    match status {
-        ECU_ERR_INVALID_ARGUMENT => "invalid_argument",
-        ECU_ERR_BUFFER_TOO_SMALL => "buffer_too_small",
-        ECU_ERR_INTERNAL => "internal",
-        _ => "unknown",
-    }
 }

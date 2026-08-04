@@ -4,15 +4,62 @@ import Foundation
 public enum EcuStatus: Int32, CustomStringConvertible, Sendable {
     case ok = 0
     case invalidArgument = 1
+    case invalidUtf8 = 2
+    case notFound = 3
     case bufferTooSmall = 4
+    case parse = 5
+    case commandFailed = 6
     case `internal` = 7
+    case unsupported = 8
+    case versionMismatch = 9
+
+    public var abiLabel: String {
+        switch self {
+        case .ok:
+            return "ok"
+        case .invalidArgument:
+            return "invalid_argument"
+        case .invalidUtf8:
+            return "invalid_utf8"
+        case .notFound:
+            return "not_found"
+        case .bufferTooSmall:
+            return "buffer_too_small"
+        case .parse:
+            return "parse"
+        case .commandFailed:
+            return "command_failed"
+        case .internal:
+            return "internal"
+        case .unsupported:
+            return "unsupported"
+        case .versionMismatch:
+            return "version_mismatch"
+        }
+    }
 
     public var description: String {
         switch self {
-        case .ok: return "ok"
-        case .invalidArgument: return "invalidArgument"
-        case .bufferTooSmall: return "bufferTooSmall"
-        case .internal: return "internal"
+        case .ok:
+            return "ECU_OK"
+        case .invalidArgument:
+            return "ECU_ERR_INVALID_ARGUMENT"
+        case .invalidUtf8:
+            return "ECU_ERR_INVALID_UTF8"
+        case .notFound:
+            return "ECU_ERR_NOT_FOUND"
+        case .bufferTooSmall:
+            return "ECU_ERR_BUFFER_TOO_SMALL"
+        case .parse:
+            return "ECU_ERR_PARSE"
+        case .commandFailed:
+            return "ECU_ERR_COMMAND_FAILED"
+        case .internal:
+            return "ECU_ERR_INTERNAL"
+        case .unsupported:
+            return "ECU_ERR_UNSUPPORTED"
+        case .versionMismatch:
+            return "ECU_ERR_VERSION_MISMATCH"
         }
     }
 }

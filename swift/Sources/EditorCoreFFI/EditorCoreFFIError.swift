@@ -14,6 +14,31 @@ public enum EcfStatus: Int32, Sendable {
 }
 
 extension EcfStatus: CustomStringConvertible {
+    public var abiLabel: String {
+        switch self {
+        case .ok:
+            return "ok"
+        case .invalidArgument:
+            return "invalid_argument"
+        case .invalidUtf8:
+            return "invalid_utf8"
+        case .notFound:
+            return "not_found"
+        case .bufferTooSmall:
+            return "buffer_too_small"
+        case .parse:
+            return "parse"
+        case .commandFailed:
+            return "command_failed"
+        case .internal:
+            return "internal"
+        case .unsupported:
+            return "unsupported"
+        case .versionMismatch:
+            return "version_mismatch"
+        }
+    }
+
     public var description: String {
         switch self {
         case .ok:
@@ -69,11 +94,10 @@ public enum EditorCoreFFIError: Error, CustomStringConvertible {
             return "FFI call returned null (\(context)): \(message)"
 
         case .ffiStatus(let code, let context, let message):
-            return "FFI call failed (\(context)): \(code) — \(message)"
+            return "FFI call failed (\(context)): \(code) [\(code.abiLabel)] - \(message)"
 
         case .invalidViewportBlob(let reason):
             return "Invalid viewport blob: \(reason)"
         }
     }
 }
-

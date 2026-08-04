@@ -10,6 +10,19 @@ extern "C" {
 typedef struct EditorUi EditorUi;
 typedef struct MultiDocumentEditorUi MultiDocumentEditorUi;
 
+typedef enum EcuStatus {
+  ECU_OK = 0,
+  ECU_ERR_INVALID_ARGUMENT = 1,
+  ECU_ERR_INVALID_UTF8 = 2,
+  ECU_ERR_NOT_FOUND = 3,
+  ECU_ERR_BUFFER_TOO_SMALL = 4,
+  ECU_ERR_PARSE = 5,
+  ECU_ERR_COMMAND_FAILED = 6,
+  ECU_ERR_INTERNAL = 7,
+  ECU_ERR_UNSUPPORTED = 8,
+  ECU_ERR_VERSION_MISMATCH = 9,
+} EcuStatus;
+
 typedef struct EcuRgba8 {
   uint8_t r;
   uint8_t g;

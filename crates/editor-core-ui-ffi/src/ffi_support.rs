@@ -174,18 +174,71 @@ pub(crate) fn classify_error(err: String) -> (c_int, String) {
     }
 }
 
-pub(crate) const ECU_OK: c_int = 0;
-pub(crate) const ECU_ERR_INVALID_ARGUMENT: c_int = 1;
-pub(crate) const ECU_ERR_BUFFER_TOO_SMALL: c_int = 4;
-pub(crate) const ECU_ERR_INTERNAL: c_int = 7;
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EcuStatus {
+    Ok = 0,
+    InvalidArgument = 1,
+    InvalidUtf8 = 2,
+    NotFound = 3,
+    BufferTooSmall = 4,
+    Parse = 5,
+    CommandFailed = 6,
+    Internal = 7,
+    Unsupported = 8,
+    VersionMismatch = 9,
+}
+
+impl EcuStatus {
+    const fn code(self) -> c_int {
+        self as c_int
+    }
+
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Ok => "ok",
+            Self::InvalidArgument => "invalid_argument",
+            Self::InvalidUtf8 => "invalid_utf8",
+            Self::NotFound => "not_found",
+            Self::BufferTooSmall => "buffer_too_small",
+            Self::Parse => "parse",
+            Self::CommandFailed => "command_failed",
+            Self::Internal => "internal",
+            Self::Unsupported => "unsupported",
+            Self::VersionMismatch => "version_mismatch",
+        }
+    }
+
+    fn from_code(status: c_int) -> Option<Self> {
+        match status {
+            ECU_OK => Some(Self::Ok),
+            ECU_ERR_INVALID_ARGUMENT => Some(Self::InvalidArgument),
+            ECU_ERR_INVALID_UTF8 => Some(Self::InvalidUtf8),
+            ECU_ERR_NOT_FOUND => Some(Self::NotFound),
+            ECU_ERR_BUFFER_TOO_SMALL => Some(Self::BufferTooSmall),
+            ECU_ERR_PARSE => Some(Self::Parse),
+            ECU_ERR_COMMAND_FAILED => Some(Self::CommandFailed),
+            ECU_ERR_INTERNAL => Some(Self::Internal),
+            ECU_ERR_UNSUPPORTED => Some(Self::Unsupported),
+            ECU_ERR_VERSION_MISMATCH => Some(Self::VersionMismatch),
+            _ => None,
+        }
+    }
+}
+
+pub(crate) const ECU_OK: c_int = EcuStatus::Ok.code();
+pub(crate) const ECU_ERR_INVALID_ARGUMENT: c_int = EcuStatus::InvalidArgument.code();
+pub(crate) const ECU_ERR_INVALID_UTF8: c_int = EcuStatus::InvalidUtf8.code();
+pub(crate) const ECU_ERR_NOT_FOUND: c_int = EcuStatus::NotFound.code();
+pub(crate) const ECU_ERR_BUFFER_TOO_SMALL: c_int = EcuStatus::BufferTooSmall.code();
+pub(crate) const ECU_ERR_PARSE: c_int = EcuStatus::Parse.code();
+pub(crate) const ECU_ERR_COMMAND_FAILED: c_int = EcuStatus::CommandFailed.code();
+pub(crate) const ECU_ERR_INTERNAL: c_int = EcuStatus::Internal.code();
+pub(crate) const ECU_ERR_UNSUPPORTED: c_int = EcuStatus::Unsupported.code();
+pub(crate) const ECU_ERR_VERSION_MISMATCH: c_int = EcuStatus::VersionMismatch.code();
 
 pub(crate) fn status_code_name(status: c_int) -> &'static str {
-    match status {
-        ECU_ERR_INVALID_ARGUMENT => "invalid_argument",
-        ECU_ERR_BUFFER_TOO_SMALL => "buffer_too_small",
-        ECU_ERR_INTERNAL => "internal",
-        _ => "unknown",
-    }
+    EcuStatus::from_code(status).map_or("unknown", EcuStatus::label)
 }
 
 pub(crate) fn status_from_invalid_argument(err: String) -> c_int {

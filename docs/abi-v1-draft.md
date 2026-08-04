@@ -103,7 +103,25 @@ typedef enum EcfStatus {
   ECF_ERR_UNSUPPORTED = 8,
   ECF_ERR_VERSION_MISMATCH = 9,
 } EcfStatus;
+
+typedef enum EcuStatus {
+  ECU_OK = 0,
+  ECU_ERR_INVALID_ARGUMENT = 1,
+  ECU_ERR_INVALID_UTF8 = 2,
+  ECU_ERR_NOT_FOUND = 3,
+  ECU_ERR_BUFFER_TOO_SMALL = 4,
+  ECU_ERR_PARSE = 5,
+  ECU_ERR_COMMAND_FAILED = 6,
+  ECU_ERR_INTERNAL = 7,
+  ECU_ERR_UNSUPPORTED = 8,
+  ECU_ERR_VERSION_MISMATCH = 9,
+} EcuStatus;
 ```
+
+`EcfStatus` and `EcuStatus` intentionally share numeric values and envelope `error.code`
+labels (`invalid_argument`, `invalid_utf8`, `not_found`, `buffer_too_small`, `parse`,
+`command_failed`, `internal`, `unsupported`, `version_mismatch`) so Rust, C ABI callers,
+Swift wrappers, and app diagnostics can compare failures without layer-specific translation.
 
 ## Memory Ownership
 

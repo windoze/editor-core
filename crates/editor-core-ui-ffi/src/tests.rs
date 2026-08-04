@@ -228,6 +228,29 @@ fn ffi_feature_flags_include_semantic_tokens_requests() {
 }
 
 #[test]
+fn ffi_status_labels_match_shared_error_model() {
+    assert_eq!(status_code_name(ECU_OK), "ok");
+    assert_eq!(
+        status_code_name(ECU_ERR_INVALID_ARGUMENT),
+        "invalid_argument"
+    );
+    assert_eq!(status_code_name(ECU_ERR_INVALID_UTF8), "invalid_utf8");
+    assert_eq!(status_code_name(ECU_ERR_NOT_FOUND), "not_found");
+    assert_eq!(
+        status_code_name(ECU_ERR_BUFFER_TOO_SMALL),
+        "buffer_too_small"
+    );
+    assert_eq!(status_code_name(ECU_ERR_PARSE), "parse");
+    assert_eq!(status_code_name(ECU_ERR_COMMAND_FAILED), "command_failed");
+    assert_eq!(status_code_name(ECU_ERR_INTERNAL), "internal");
+    assert_eq!(status_code_name(ECU_ERR_UNSUPPORTED), "unsupported");
+    assert_eq!(
+        status_code_name(ECU_ERR_VERSION_MISMATCH),
+        "version_mismatch"
+    );
+}
+
+#[test]
 fn ffi_runtime_info_json_reports_version_and_feature_descriptors() {
     let runtime_json = take_owned_string(editor_core_ui_ffi_runtime_info_json());
     let runtime: serde_json::Value = serde_json::from_str(&runtime_json).unwrap();
