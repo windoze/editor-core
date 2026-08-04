@@ -2,11 +2,7 @@
 
 完整历史、已完成提交记录和旧矩阵已归档到 `docs/archive/2026-08-04-swift-gaps-1/SWIFT-GAPS.md`。
 
-本文只保留尚未完成的目标和任务边界。执行顺序以 `PLAN.md` 为准：当前按阶段 11 到阶段 15 逐步推进。完成项不再在本文重复记录。
-
-## 阶段 11：Tree-sitter + LSP 语言体验
-
-- 产品化 Tree-sitter + LSP 主路线的 highlighting、outline、folding、language mode 和降级体验。
+本文只保留尚未完成的目标和任务边界。执行顺序以 `PLAN.md` 为准：当前按阶段 12 到阶段 15 逐步推进。完成项不再在本文重复记录。
 
 ## 阶段 12：Workspace Search、Project Index 与 Session Workflows
 

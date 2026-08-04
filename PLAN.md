@@ -404,7 +404,10 @@
   - 验证：`swift test --package-path swift --filter AttoDocumentLoadPolicyTests`
   - 验证：`swift test --package-path swift --filter AttoLanguageFallbackExperienceTests`
   - 验证：`git diff --check`
-- [ ] 补齐 outline、folding、高亮、diagnostics 和 status bar 的跨语言测试。
+- [x] 补齐 outline、folding、高亮、diagnostics 和 status bar 的跨语言测试。
+  - [x] 新增 `AttoLanguageCrossLanguageExperienceTests`，用 Rust/LSP semantic、Swift/LSP + Tree-sitter fallback、Markdown/Sublime baseline 三种语言来源覆盖 diagnostics、folding、semantic highlighting、document symbols/workspace outline 和 status bar tooltip。
+  - 验证：`swift test --package-path swift --filter AttoLanguageCrossLanguageExperienceTests`
+  - 验证：`git diff --check`
 
 ## 阶段 12：Workspace Search / Project Index / Session
 
