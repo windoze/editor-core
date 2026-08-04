@@ -145,7 +145,13 @@
   - [x] 将 workspace root session snapshot、recent files、recent projects 的 core-backed 回归拆到独立 recent/root 测试。
   - 验证：`swift test --package-path swift --filter AttoCoreWorkspaceDirtyStateTests`
   - 验证：`swift test --package-path swift --filter AttoCoreWorkspaceRecentRootTests`
-- [ ] 建立迁移期测试：同一操作同时断言 core snapshot、Swift wrapper 和 AppKit projection。
+- [x] 建立迁移期测试：同一操作同时断言 core snapshot、Swift wrapper 和 AppKit projection。
+  - [x] 已按职责拆为 core workspace command / session restore / drag projection / dirty state / recent-root focused tests，避免继续扩张 `AttoEditorCommandTests.swift`。
+  - 验证：`swift test --package-path swift --filter AttoCoreWorkspaceCommandTests`
+  - 验证：`swift test --package-path swift --filter AttoCoreWorkspaceSessionRestoreTests`
+  - 验证：`swift test --package-path swift --filter AttoCoreWorkspaceDragProjectionTests`
+  - 验证：`swift test --package-path swift --filter AttoCoreWorkspaceDirtyStateTests`
+  - 验证：`swift test --package-path swift --filter AttoCoreWorkspaceRecentRootTests`
 
 ## 阶段 6：Project / LSP Lifecycle 产品化
 
