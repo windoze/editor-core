@@ -295,7 +295,9 @@
     - 验证：`swift test --package-path swift --filter Workbench`
   - [x] 再补 Workbench floating panel / dock 的 focus restore 与可见性持久化。
     - 验证：`swift test --package-path swift --filter Workbench`
-- [ ] 拆分继续增长的 Workbench/AppKit 测试文件。
+- [x] 拆分继续增长的 Workbench/AppKit 测试文件。
+  - 验证：`swift test --package-path swift --filter AttoAccessibilityIdentifierTests`
+  - 验证：`swift test --package-path swift --filter Workbench`
 
 ## 阶段 8：Command / Keymap / Sublime 行为
 
