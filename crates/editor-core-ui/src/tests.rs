@@ -1858,6 +1858,7 @@ fn multi_document_tracks_project_lsp_server_configs() {
                 command: " /bin/rust-analyzer ".to_string(),
                 args: vec![" ".to_string(), "--stdio ".to_string()],
                 language_id: " rust ".to_string(),
+                language_name: " Rust Language ".to_string(),
                 workspace_roots: vec![
                     " file:///workspace ".to_string(),
                     "file:///workspace".to_string(),
@@ -1875,6 +1876,7 @@ fn multi_document_tracks_project_lsp_server_configs() {
                 command: "/bin/sourcekit-lsp".to_string(),
                 args: vec![],
                 language_id: "swift".to_string(),
+                language_name: "".to_string(),
                 workspace_roots: vec![],
                 workspace_folders: vec![],
                 auto_start: false,
@@ -1887,6 +1889,8 @@ fn multi_document_tracks_project_lsp_server_configs() {
     assert_eq!(configs[0].key, "rust");
     assert_eq!(configs[0].command, "/bin/rust-analyzer");
     assert_eq!(configs[0].args, vec!["--stdio"]);
+    assert_eq!(configs[0].language_name, "Rust Language");
+    assert_eq!(configs[1].language_name, "swift");
     assert_eq!(
         configs[0].workspace_roots,
         vec!["file:///other", "file:///workspace"]
@@ -2135,6 +2139,7 @@ fn multi_document_builds_project_lsp_start_plan_from_open_tabs() {
                 command: "/bin/rust-analyzer".to_string(),
                 args: vec!["--stdio".to_string()],
                 language_id: "rust".to_string(),
+                language_name: "Rust".to_string(),
                 workspace_roots: vec![],
                 workspace_folders: vec![],
                 auto_start: true,
@@ -2144,6 +2149,7 @@ fn multi_document_builds_project_lsp_start_plan_from_open_tabs() {
                 command: "/bin/sourcekit-lsp".to_string(),
                 args: vec![],
                 language_id: "swift".to_string(),
+                language_name: "".to_string(),
                 workspace_roots: vec!["file:///swift-root".to_string()],
                 workspace_folders: vec![],
                 auto_start: false,
@@ -2158,6 +2164,7 @@ fn multi_document_builds_project_lsp_start_plan_from_open_tabs() {
     assert_eq!(plan[0].active_view_index, 0);
     assert_eq!(plan[0].document_uri, "file:///workspace/main.rs");
     assert_eq!(plan[0].language_id, "rust");
+    assert_eq!(plan[0].language_name, "Rust");
     assert_eq!(plan[0].server_key, "rust");
     assert_eq!(plan[0].command, "/bin/rust-analyzer");
     assert_eq!(plan[0].args, vec!["--stdio"]);
@@ -2208,6 +2215,7 @@ fn multi_document_builds_project_lsp_stop_plan_from_open_tabs() {
                 command: "/bin/rust-analyzer".to_string(),
                 args: vec!["--stdio".to_string()],
                 language_id: "rust".to_string(),
+                language_name: "".to_string(),
                 workspace_roots: vec![],
                 workspace_folders: vec![],
                 auto_start: true,
@@ -2217,6 +2225,7 @@ fn multi_document_builds_project_lsp_stop_plan_from_open_tabs() {
                 command: "/bin/sourcekit-lsp".to_string(),
                 args: vec![],
                 language_id: "swift".to_string(),
+                language_name: "Swift".to_string(),
                 workspace_roots: vec!["file:///swift-root".to_string()],
                 workspace_folders: vec![ProjectLspWorkspaceFolder {
                     uri: " file:///swift-root ".to_string(),
@@ -2234,11 +2243,13 @@ fn multi_document_builds_project_lsp_stop_plan_from_open_tabs() {
     assert_eq!(plan[0].tab_id, rust_tab.get());
     assert_eq!(plan[0].document_uri, "file:///workspace/main.rs");
     assert_eq!(plan[0].server_key, "rust");
+    assert_eq!(plan[0].language_name, "rust");
     assert_eq!(plan[0].workspace_roots, vec!["file:///workspace"]);
     assert_eq!(plan[0].workspace_folders[0].name, "workspace");
     assert_eq!(plan[1].tab_id, swift_tab.get());
     assert_eq!(plan[1].document_uri, "file:///workspace/App.swift");
     assert_eq!(plan[1].server_key, "swift");
+    assert_eq!(plan[1].language_name, "Swift");
     assert_eq!(plan[1].workspace_roots, vec!["file:///swift-root"]);
     assert_eq!(
         plan[1].workspace_folders,
@@ -2286,6 +2297,7 @@ fn multi_document_builds_project_lsp_restart_plan_from_open_tabs() {
                 command: "/bin/rust-analyzer".to_string(),
                 args: vec!["--stdio".to_string()],
                 language_id: "rust".to_string(),
+                language_name: "Rust".to_string(),
                 workspace_roots: vec![],
                 workspace_folders: vec![],
                 auto_start: true,
@@ -2295,6 +2307,7 @@ fn multi_document_builds_project_lsp_restart_plan_from_open_tabs() {
                 command: "/bin/sourcekit-lsp".to_string(),
                 args: vec![],
                 language_id: "swift".to_string(),
+                language_name: "".to_string(),
                 workspace_roots: vec!["file:///swift-root".to_string()],
                 workspace_folders: vec![],
                 auto_start: false,
@@ -2308,11 +2321,13 @@ fn multi_document_builds_project_lsp_restart_plan_from_open_tabs() {
     assert_eq!(plan[0].tab_id, rust_tab.get());
     assert_eq!(plan[0].document_uri, "file:///workspace/main.rs");
     assert_eq!(plan[0].server_key, "rust");
+    assert_eq!(plan[0].language_name, "Rust");
     assert_eq!(plan[0].workspace_roots, vec!["file:///workspace"]);
     assert_eq!(plan[0].workspace_folders[0].uri, "file:///workspace");
     assert_eq!(plan[1].tab_id, swift_tab.get());
     assert_eq!(plan[1].document_uri, "file:///workspace/App.swift");
     assert_eq!(plan[1].server_key, "swift");
+    assert_eq!(plan[1].language_name, "swift");
     assert_eq!(plan[1].workspace_roots, vec!["file:///swift-root"]);
     assert_eq!(plan[1].workspace_folders[0].name, "swift-root");
 
@@ -2341,6 +2356,7 @@ fn multi_document_records_project_lsp_start_outcomes() {
             operation: "start".to_string(),
             document_uri: "file:///workspace/main.rs".to_string(),
             language_id: "rust".to_string(),
+            language_name: " Rust ".to_string(),
             server_key: "rust".to_string(),
             command: "/bin/rust-analyzer".to_string(),
             args: vec!["--stdio".to_string()],
@@ -2360,6 +2376,7 @@ fn multi_document_records_project_lsp_start_outcomes() {
     assert_eq!(started.operation, "start");
     assert_eq!(started.status, "started");
     assert_eq!(started.tab_id, tab_id.get());
+    assert_eq!(started.language_name, "Rust");
     assert_eq!(
         started.workspace_folders,
         vec![ProjectLspWorkspaceFolder {
@@ -2376,6 +2393,7 @@ fn multi_document_records_project_lsp_start_outcomes() {
             operation: " restart ".to_string(),
             document_uri: "file:///workspace/main.rs".to_string(),
             language_id: "rust".to_string(),
+            language_name: "".to_string(),
             server_key: "rust".to_string(),
             command: "/bin/rust-analyzer".to_string(),
             args: vec![],
@@ -2391,6 +2409,7 @@ fn multi_document_records_project_lsp_start_outcomes() {
     assert_eq!(restarted.operation, "restart");
     assert_eq!(restarted.trigger, "manual_restart");
     assert_eq!(restarted.status, "started");
+    assert_eq!(restarted.language_name, "rust");
 
     let stopped = multi
         .record_project_lsp_start_outcome(ProjectLspStartOutcome {
@@ -2399,6 +2418,7 @@ fn multi_document_records_project_lsp_start_outcomes() {
             operation: " stop ".to_string(),
             document_uri: "file:///workspace/main.rs".to_string(),
             language_id: "rust".to_string(),
+            language_name: "".to_string(),
             server_key: "rust".to_string(),
             command: "/bin/rust-analyzer".to_string(),
             args: vec![],
@@ -2422,6 +2442,7 @@ fn multi_document_records_project_lsp_start_outcomes() {
             operation: "restart".to_string(),
             document_uri: "file:///workspace/main.rs".to_string(),
             language_id: "rust".to_string(),
+            language_name: "".to_string(),
             server_key: "rust".to_string(),
             command: "/bin/rust-analyzer".to_string(),
             args: vec![],
@@ -2447,6 +2468,7 @@ fn multi_document_records_project_lsp_start_outcomes() {
             operation: "restart".to_string(),
             document_uri: "file:///workspace/main.rs".to_string(),
             language_id: "rust".to_string(),
+            language_name: "".to_string(),
             server_key: "rust".to_string(),
             command: "/bin/rust-analyzer".to_string(),
             args: vec![],
@@ -2471,6 +2493,7 @@ fn multi_document_records_project_lsp_start_outcomes() {
             operation: " restart ".to_string(),
             document_uri: "file:///workspace/main.rs".to_string(),
             language_id: "rust".to_string(),
+            language_name: "".to_string(),
             server_key: "rust".to_string(),
             command: "/bin/rust-analyzer".to_string(),
             args: vec![],
@@ -2524,6 +2547,7 @@ fn multi_document_records_project_lsp_start_outcomes() {
             operation: "stop".to_string(),
             document_uri: "file:///workspace/missing.rs".to_string(),
             language_id: "rust".to_string(),
+            language_name: "".to_string(),
             server_key: "rust".to_string(),
             command: "/bin/rust-analyzer".to_string(),
             args: vec![],
@@ -2550,6 +2574,7 @@ fn multi_document_records_project_lsp_start_outcomes() {
                 operation: "start".to_string(),
                 document_uri: "file:///workspace/main.rs".to_string(),
                 language_id: "rust".to_string(),
+                language_name: "".to_string(),
                 server_key: "rust".to_string(),
                 command: "/bin/rust-analyzer".to_string(),
                 args: vec![],

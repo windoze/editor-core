@@ -262,6 +262,7 @@ extension AttoEditorCommandTests {
         XCTAssertEqual(projectedRust.command, "/usr/bin/rust-analyzer")
         XCTAssertEqual(projectedRust.args, ["--stdio", "--log-file"])
         XCTAssertEqual(projectedRust.languageId, "rust")
+        XCTAssertEqual(projectedRust.languageName, "rust")
         XCTAssertEqual(projectedRust.workspaceRoots, [rootURI])
         XCTAssertTrue(projectedRust.autoStart)
 
@@ -282,7 +283,9 @@ extension AttoEditorCommandTests {
         )
         let swiftKey = "swift:/usr/bin/sourcekit-lsp"
         XCTAssertEqual(Set(configsByKey.keys), [rustKey, swiftKey])
-        XCTAssertFalse(try XCTUnwrap(configsByKey[swiftKey]).autoStart)
+        let projectedSwift = try XCTUnwrap(configsByKey[swiftKey])
+        XCTAssertEqual(projectedSwift.languageName, "swift")
+        XCTAssertFalse(projectedSwift.autoStart)
 
         vc.closeTab(id: rustTab.id)
         configsByKey = Dictionary(
@@ -593,6 +596,7 @@ extension AttoEditorCommandTests {
         XCTAssertEqual(lifecycle.events[1].documentURI, fileURL.standardizedFileURL.absoluteString)
         XCTAssertEqual(lifecycle.events[0].languageId, "plaintext")
         XCTAssertEqual(lifecycle.events[1].languageId, "plaintext")
+        XCTAssertEqual(lifecycle.events.map(\.languageName), ["plaintext", "plaintext"])
         XCTAssertEqual(lifecycle.events[0].command, scriptURL.path)
         XCTAssertEqual(lifecycle.events[1].command, scriptURL.path)
         let attemptId = try XCTUnwrap(lifecycle.events[0].attemptId)

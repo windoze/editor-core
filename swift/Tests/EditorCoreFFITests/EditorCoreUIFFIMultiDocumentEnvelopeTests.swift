@@ -177,6 +177,7 @@ extension EditorCoreUIFFITests {
                 command: " /bin/rust-analyzer ",
                 args: [" ", "--stdio "],
                 languageId: " rust ",
+                languageName: " Rust Language ",
                 workspaceRoots: ["file:///workspace", " file:///workspace ", "file:///other"],
                 workspaceFolders: [
                     EcuProjectLspWorkspaceFolder(
@@ -211,6 +212,7 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(first["command"], .string("/bin/rust-analyzer"))
         XCTAssertEqual(first["args"], .array([.string("--stdio")]))
         XCTAssertEqual(first["language_id"], .string("rust"))
+        XCTAssertEqual(first["language_name"], .string("Rust Language"))
         XCTAssertEqual(first["workspace_roots"], .array([.string("file:///other"), .string("file:///workspace")]))
         XCTAssertEqual(first["workspace_folders"], .array([
             .object([
@@ -228,6 +230,7 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(second["command"], .string("/bin/sourcekit-lsp"))
         XCTAssertEqual(second["args"], .array([]))
         XCTAssertEqual(second["language_id"], .string("swift"))
+        XCTAssertEqual(second["language_name"], .string("swift"))
         XCTAssertEqual(second["workspace_roots"], .array([]))
         XCTAssertEqual(second["workspace_folders"], .array([]))
         XCTAssertEqual(second["auto_start"], .bool(false))
@@ -317,6 +320,7 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(firstStart["tab_id"], .number(Double(tab)))
         XCTAssertEqual(firstStart["document_uri"], .string("file:///project/main.rs"))
         XCTAssertEqual(firstStart["server_key"], .string("rust"))
+        XCTAssertEqual(firstStart["language_name"], .string("rust"))
 
         let stop = try multi.projectLspStopPlanEnvelope()
         XCTAssertTrue(stop.ok)
@@ -328,6 +332,7 @@ extension EditorCoreUIFFITests {
             return
         }
         XCTAssertEqual(firstStop["server_key"], .string("rust"))
+        XCTAssertEqual(firstStop["language_name"], .string("rust"))
 
         let restart = try multi.projectLspRestartPlanEnvelope()
         XCTAssertTrue(restart.ok)
@@ -339,6 +344,7 @@ extension EditorCoreUIFFITests {
             return
         }
         XCTAssertEqual(firstRestart["server_key"], .string("rust"))
+        XCTAssertEqual(firstRestart["language_name"], .string("rust"))
 
         try multi.recordProjectLspStartOutcome(EcuProjectLspStartOutcome(
             tabId: tab,
@@ -363,6 +369,7 @@ extension EditorCoreUIFFITests {
         }
         XCTAssertEqual(latestSequence, 1)
         XCTAssertEqual(firstEvent["operation"], .string("start"))
+        XCTAssertEqual(firstEvent["language_name"], .string("rust"))
         XCTAssertEqual(firstEvent["status"], .string("started"))
 
         let failure = try multi.projectLspLifecycleEnvelope(operationRawValue: "future_operation")

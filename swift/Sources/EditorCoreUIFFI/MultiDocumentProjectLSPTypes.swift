@@ -5,6 +5,7 @@ public struct EcuProjectLspServerConfig: Codable, Equatable, Sendable {
     public let command: String
     public let args: [String]
     public let languageId: String
+    public let languageName: String
     public let workspaceRoots: [String]
     public let workspaceFolders: [EcuProjectLspWorkspaceFolder]
     public let autoStart: Bool
@@ -14,6 +15,7 @@ public struct EcuProjectLspServerConfig: Codable, Equatable, Sendable {
         case command
         case args
         case languageId = "language_id"
+        case languageName = "language_name"
         case workspaceRoots = "workspace_roots"
         case workspaceFolders = "workspace_folders"
         case autoStart = "auto_start"
@@ -24,6 +26,7 @@ public struct EcuProjectLspServerConfig: Codable, Equatable, Sendable {
         command: String,
         args: [String] = [],
         languageId: String,
+        languageName: String = "",
         workspaceRoots: [String] = [],
         workspaceFolders: [EcuProjectLspWorkspaceFolder] = [],
         autoStart: Bool = true
@@ -32,6 +35,7 @@ public struct EcuProjectLspServerConfig: Codable, Equatable, Sendable {
         self.command = command
         self.args = args
         self.languageId = languageId
+        self.languageName = languageName
         self.workspaceRoots = workspaceRoots
         self.workspaceFolders = workspaceFolders
         self.autoStart = autoStart
@@ -43,6 +47,7 @@ public struct EcuProjectLspServerConfig: Codable, Equatable, Sendable {
         command = try container.decode(String.self, forKey: .command)
         args = try container.decodeIfPresent([String].self, forKey: .args) ?? []
         languageId = try container.decodeIfPresent(String.self, forKey: .languageId) ?? ""
+        languageName = try container.decodeIfPresent(String.self, forKey: .languageName) ?? languageId
         workspaceRoots = try container.decodeIfPresent([String].self, forKey: .workspaceRoots) ?? []
         workspaceFolders = try container.decodeIfPresent(
             [EcuProjectLspWorkspaceFolder].self,
@@ -87,6 +92,7 @@ public struct EcuProjectLspStartPlanEntry: Decodable, Equatable, Sendable {
     public let activeViewIndex: UInt32
     public let documentURI: String
     public let languageId: String
+    public let languageName: String
     public let serverKey: String
     public let command: String
     public let args: [String]
@@ -99,6 +105,7 @@ public struct EcuProjectLspStartPlanEntry: Decodable, Equatable, Sendable {
         case activeViewIndex = "active_view_index"
         case documentURI = "document_uri"
         case languageId = "language_id"
+        case languageName = "language_name"
         case serverKey = "server_key"
         case command
         case args
@@ -113,6 +120,7 @@ public struct EcuProjectLspStartPlanEntry: Decodable, Equatable, Sendable {
         activeViewIndex = try container.decodeIfPresent(UInt32.self, forKey: .activeViewIndex) ?? 0
         documentURI = try container.decodeIfPresent(String.self, forKey: .documentURI) ?? ""
         languageId = try container.decodeIfPresent(String.self, forKey: .languageId) ?? ""
+        languageName = try container.decodeIfPresent(String.self, forKey: .languageName) ?? languageId
         serverKey = try container.decodeIfPresent(String.self, forKey: .serverKey) ?? ""
         command = try container.decode(String.self, forKey: .command)
         args = try container.decodeIfPresent([String].self, forKey: .args) ?? []
@@ -130,6 +138,7 @@ public struct EcuProjectLspStopPlanEntry: Decodable, Equatable, Sendable {
     public let activeViewIndex: UInt32
     public let documentURI: String
     public let languageId: String
+    public let languageName: String
     public let serverKey: String
     public let command: String
     public let args: [String]
@@ -142,6 +151,7 @@ public struct EcuProjectLspStopPlanEntry: Decodable, Equatable, Sendable {
         case activeViewIndex = "active_view_index"
         case documentURI = "document_uri"
         case languageId = "language_id"
+        case languageName = "language_name"
         case serverKey = "server_key"
         case command
         case args
@@ -156,6 +166,7 @@ public struct EcuProjectLspStopPlanEntry: Decodable, Equatable, Sendable {
         activeViewIndex = try container.decodeIfPresent(UInt32.self, forKey: .activeViewIndex) ?? 0
         documentURI = try container.decodeIfPresent(String.self, forKey: .documentURI) ?? ""
         languageId = try container.decodeIfPresent(String.self, forKey: .languageId) ?? ""
+        languageName = try container.decodeIfPresent(String.self, forKey: .languageName) ?? languageId
         serverKey = try container.decodeIfPresent(String.self, forKey: .serverKey) ?? ""
         command = try container.decode(String.self, forKey: .command)
         args = try container.decodeIfPresent([String].self, forKey: .args) ?? []
@@ -173,6 +184,7 @@ public struct EcuProjectLspRestartPlanEntry: Decodable, Equatable, Sendable {
     public let activeViewIndex: UInt32
     public let documentURI: String
     public let languageId: String
+    public let languageName: String
     public let serverKey: String
     public let command: String
     public let args: [String]
@@ -185,6 +197,7 @@ public struct EcuProjectLspRestartPlanEntry: Decodable, Equatable, Sendable {
         case activeViewIndex = "active_view_index"
         case documentURI = "document_uri"
         case languageId = "language_id"
+        case languageName = "language_name"
         case serverKey = "server_key"
         case command
         case args
@@ -199,6 +212,7 @@ public struct EcuProjectLspRestartPlanEntry: Decodable, Equatable, Sendable {
         activeViewIndex = try container.decodeIfPresent(UInt32.self, forKey: .activeViewIndex) ?? 0
         documentURI = try container.decodeIfPresent(String.self, forKey: .documentURI) ?? ""
         languageId = try container.decodeIfPresent(String.self, forKey: .languageId) ?? ""
+        languageName = try container.decodeIfPresent(String.self, forKey: .languageName) ?? languageId
         serverKey = try container.decodeIfPresent(String.self, forKey: .serverKey) ?? ""
         command = try container.decode(String.self, forKey: .command)
         args = try container.decodeIfPresent([String].self, forKey: .args) ?? []
@@ -216,6 +230,7 @@ public struct EcuProjectLspStartOutcome: Encodable, Equatable, Sendable {
     public let operation: String
     public let documentURI: String
     public let languageId: String
+    public let languageName: String
     public let serverKey: String
     public let command: String
     public let args: [String]
@@ -232,6 +247,7 @@ public struct EcuProjectLspStartOutcome: Encodable, Equatable, Sendable {
         case operation
         case documentURI = "document_uri"
         case languageId = "language_id"
+        case languageName = "language_name"
         case serverKey = "server_key"
         case command
         case args
@@ -249,6 +265,7 @@ public struct EcuProjectLspStartOutcome: Encodable, Equatable, Sendable {
         operation: String = "start",
         documentURI: String,
         languageId: String,
+        languageName: String? = nil,
         serverKey: String,
         command: String,
         args: [String] = [],
@@ -264,6 +281,7 @@ public struct EcuProjectLspStartOutcome: Encodable, Equatable, Sendable {
         self.operation = operation
         self.documentURI = documentURI
         self.languageId = languageId
+        self.languageName = languageName ?? languageId
         self.serverKey = serverKey
         self.command = command
         self.args = args
@@ -285,6 +303,7 @@ public struct EcuProjectLspLifecycleEvent: Decodable, Equatable, Sendable {
     public let activeViewIndex: UInt32
     public let documentURI: String
     public let languageId: String
+    public let languageName: String
     public let serverKey: String
     public let command: String
     public let args: [String]
@@ -302,6 +321,7 @@ public struct EcuProjectLspLifecycleEvent: Decodable, Equatable, Sendable {
         case activeViewIndex = "active_view_index"
         case documentURI = "document_uri"
         case languageId = "language_id"
+        case languageName = "language_name"
         case serverKey = "server_key"
         case command
         case args
@@ -309,6 +329,29 @@ public struct EcuProjectLspLifecycleEvent: Decodable, Equatable, Sendable {
         case workspaceFolders = "workspace_folders"
         case attemptId = "attempt_id"
         case errorMessage = "error_message"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sequence = try container.decodeIfPresent(UInt64.self, forKey: .sequence) ?? 0
+        operation = try container.decodeIfPresent(String.self, forKey: .operation) ?? "start"
+        trigger = try container.decodeIfPresent(String.self, forKey: .trigger) ?? "auto_start"
+        status = try container.decodeIfPresent(String.self, forKey: .status) ?? ""
+        tabId = try container.decodeIfPresent(UInt64.self, forKey: .tabId) ?? 0
+        activeViewIndex = try container.decodeIfPresent(UInt32.self, forKey: .activeViewIndex) ?? 0
+        documentURI = try container.decodeIfPresent(String.self, forKey: .documentURI) ?? ""
+        languageId = try container.decodeIfPresent(String.self, forKey: .languageId) ?? ""
+        languageName = try container.decodeIfPresent(String.self, forKey: .languageName) ?? languageId
+        serverKey = try container.decodeIfPresent(String.self, forKey: .serverKey) ?? ""
+        command = try container.decodeIfPresent(String.self, forKey: .command) ?? ""
+        args = try container.decodeIfPresent([String].self, forKey: .args) ?? []
+        workspaceRoots = try container.decodeIfPresent([String].self, forKey: .workspaceRoots) ?? []
+        workspaceFolders = try container.decodeIfPresent(
+            [EcuProjectLspWorkspaceFolder].self,
+            forKey: .workspaceFolders
+        ) ?? []
+        attemptId = try container.decodeIfPresent(UInt64.self, forKey: .attemptId)
+        errorMessage = try container.decodeIfPresent(String.self, forKey: .errorMessage)
     }
 }
 

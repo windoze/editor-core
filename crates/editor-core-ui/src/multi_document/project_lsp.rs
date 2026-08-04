@@ -19,6 +19,8 @@ pub struct ProjectLspServerConfig {
     #[serde(default)]
     pub language_id: String,
     #[serde(default)]
+    pub language_name: String,
+    #[serde(default)]
     pub workspace_roots: Vec<String>,
     #[serde(default)]
     pub workspace_folders: Vec<ProjectLspWorkspaceFolder>,
@@ -33,6 +35,7 @@ pub struct ProjectLspStartPlanEntry {
     pub active_view_index: usize,
     pub document_uri: String,
     pub language_id: String,
+    pub language_name: String,
     pub server_key: String,
     pub command: String,
     #[serde(default)]
@@ -50,6 +53,7 @@ pub struct ProjectLspStopPlanEntry {
     pub active_view_index: usize,
     pub document_uri: String,
     pub language_id: String,
+    pub language_name: String,
     pub server_key: String,
     pub command: String,
     #[serde(default)]
@@ -67,6 +71,7 @@ pub struct ProjectLspRestartPlanEntry {
     pub active_view_index: usize,
     pub document_uri: String,
     pub language_id: String,
+    pub language_name: String,
     pub server_key: String,
     pub command: String,
     #[serde(default)]
@@ -140,6 +145,7 @@ pub(crate) fn project_lsp_start_plan(
                 active_view_index: document.active_view_index,
                 document_uri: document_uri.clone(),
                 language_id: language_id.clone(),
+                language_name: config.language_name.clone(),
                 server_key: config.key.clone(),
                 command: config.command.clone(),
                 args: config.args.clone(),
@@ -190,6 +196,7 @@ pub(crate) fn project_lsp_stop_plan(
                 active_view_index: document.active_view_index,
                 document_uri: document_uri.clone(),
                 language_id: language_id.clone(),
+                language_name: config.language_name.clone(),
                 server_key: config.key.clone(),
                 command: config.command.clone(),
                 args: config.args.clone(),
@@ -240,6 +247,7 @@ pub(crate) fn project_lsp_restart_plan(
                 active_view_index: document.active_view_index,
                 document_uri: document_uri.clone(),
                 language_id: language_id.clone(),
+                language_name: config.language_name.clone(),
                 server_key: config.key.clone(),
                 command: config.command.clone(),
                 args: config.args.clone(),
@@ -263,6 +271,7 @@ fn normalize_project_lsp_server(
     }
 
     let language_id = config.language_id.trim().to_string();
+    let language_name = normalize_project_lsp_language_name(&config.language_name, &language_id);
     let key = normalize_project_lsp_server_key(&config.key, &language_id, &command)?;
     let args = config
         .args
@@ -278,6 +287,7 @@ fn normalize_project_lsp_server(
         command,
         args,
         language_id,
+        language_name,
         workspace_roots,
         workspace_folders,
         auto_start: config.auto_start,
@@ -289,6 +299,13 @@ fn normalize_non_empty(value: Option<&str>) -> Option<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned)
+}
+
+pub(crate) fn normalize_project_lsp_language_name(
+    language_name: &str,
+    language_id: &str,
+) -> String {
+    normalize_non_empty(Some(language_name)).unwrap_or_else(|| language_id.to_string())
 }
 
 fn normalize_project_lsp_server_key(

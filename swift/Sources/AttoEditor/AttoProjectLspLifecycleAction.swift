@@ -8,6 +8,7 @@ struct AttoProjectLspLifecycleAction {
     let activeViewIndex: UInt32
     let documentURI: String
     let languageId: String
+    let languageName: String
     let serverKey: String
     let command: String
     let args: [String]
@@ -32,6 +33,7 @@ struct AttoProjectLspLifecycleAction {
             activeViewIndex: planEntry?.activeViewIndex ?? UInt32(clamping: tab.activePaneIndex),
             documentURI: planEntry?.documentURI ?? documentURL.standardizedFileURL.absoluteString,
             languageId: planEntry?.languageId ?? config.languageId,
+            languageName: planEntry?.languageName ?? config.languageId,
             serverKey: planEntry?.serverKey ?? AttoEditorAreaViewController.projectLspServerConfigKey(for: config),
             command: planEntry?.command ?? config.command,
             args: planEntry?.args ?? AttoEditorAreaViewController.projectLspServerConfigArgs(from: config.args),
@@ -58,6 +60,7 @@ struct AttoProjectLspLifecycleAction {
             activeViewIndex: planEntry?.activeViewIndex ?? UInt32(clamping: tab.activePaneIndex),
             documentURI: planEntry?.documentURI ?? documentURL.standardizedFileURL.absoluteString,
             languageId: planEntry?.languageId ?? config.languageId,
+            languageName: planEntry?.languageName ?? config.languageId,
             serverKey: planEntry?.serverKey ?? AttoEditorAreaViewController.projectLspServerConfigKey(for: config),
             command: planEntry?.command ?? config.command,
             args: planEntry?.args ?? AttoEditorAreaViewController.projectLspServerConfigArgs(from: config.args),
@@ -84,6 +87,7 @@ struct AttoProjectLspLifecycleAction {
             activeViewIndex: planEntry?.activeViewIndex ?? UInt32(clamping: tab.activePaneIndex),
             documentURI: planEntry?.documentURI ?? documentURL.standardizedFileURL.absoluteString,
             languageId: planEntry?.languageId ?? config.languageId,
+            languageName: planEntry?.languageName ?? config.languageId,
             serverKey: planEntry?.serverKey ?? AttoEditorAreaViewController.projectLspServerConfigKey(for: config),
             command: planEntry?.command ?? config.command,
             args: planEntry?.args ?? AttoEditorAreaViewController.projectLspServerConfigArgs(from: config.args),
@@ -104,6 +108,7 @@ struct AttoProjectLspLifecycleAction {
             operation: operation,
             documentURI: documentURI,
             languageId: languageId,
+            languageName: languageName,
             serverKey: serverKey,
             command: command,
             args: args,

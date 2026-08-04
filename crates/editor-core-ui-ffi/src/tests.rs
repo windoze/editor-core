@@ -1365,6 +1365,7 @@ fn ffi_project_lsp_servers_envelope_json_reports_success_and_errors() {
             "command": " /bin/rust-analyzer ",
             "args": [" ", "--stdio "],
             "language_id": " rust ",
+            "language_name": " Rust Language ",
             "workspace_roots": ["file:///workspace", " file:///workspace ", "file:///other"],
             "workspace_folders": [
               { "uri": " file:///workspace ", "name": " Workspace ", "root_alias": " main " }
@@ -1401,6 +1402,7 @@ fn ffi_project_lsp_servers_envelope_json_reports_success_and_errors() {
                 "command": "/bin/rust-analyzer",
                 "args": ["--stdio"],
                 "language_id": "rust",
+                "language_name": "Rust Language",
                 "workspace_roots": ["file:///other", "file:///workspace"],
                 "workspace_folders": [
                     {
@@ -1420,6 +1422,7 @@ fn ffi_project_lsp_servers_envelope_json_reports_success_and_errors() {
                 "command": "/bin/sourcekit-lsp",
                 "args": [],
                 "language_id": "swift",
+                "language_name": "swift",
                 "workspace_roots": [],
                 "workspace_folders": [],
                 "auto_start": false
@@ -1503,6 +1506,7 @@ fn ffi_project_lsp_lifecycle_envelope_json_reports_success_and_errors() {
         "file:///project/main.rs"
     );
     assert_eq!(start_envelope["value"][0]["server_key"], "rust");
+    assert_eq!(start_envelope["value"][0]["language_name"], "rust");
 
     let stop = CString::new("stop_plan").unwrap();
     let stop_json = take_owned_string(
@@ -1536,6 +1540,7 @@ fn ffi_project_lsp_lifecycle_envelope_json_reports_success_and_errors() {
             "active_view_index": 0,
             "document_uri": "file:///project/main.rs",
             "language_id": "rust",
+            "language_name": "Rust",
             "server_key": "rust",
             "command": "/bin/rust-analyzer",
             "args": ["--stdio"],
@@ -1568,6 +1573,10 @@ fn ffi_project_lsp_lifecycle_envelope_json_reports_success_and_errors() {
     assert_eq!(events_envelope["value"]["latest_sequence"], 1);
     assert_eq!(events_envelope["value"]["events"][0]["operation"], "start");
     assert_eq!(events_envelope["value"]["events"][0]["status"], "started");
+    assert_eq!(
+        events_envelope["value"]["events"][0]["language_name"],
+        "Rust"
+    );
 
     let unknown = CString::new("future_operation").unwrap();
     let unknown_json = take_owned_string(
@@ -2062,6 +2071,7 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
             "command": " /bin/rust-analyzer ",
             "args": [" ", "--stdio "],
             "language_id": " rust ",
+            "language_name": " Rust Language ",
             "workspace_roots": ["file:///new", "file:///new", " file:///other "],
             "auto_start": true
           },
@@ -2093,6 +2103,7 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                 "command": "/bin/rust-analyzer",
                 "args": ["--stdio"],
                 "language_id": "rust",
+                "language_name": "Rust Language",
                 "workspace_roots": ["file:///new", "file:///other"],
                 "workspace_folders": [
                     {
@@ -2111,6 +2122,7 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                 "command": "/bin/sourcekit-lsp",
                 "args": [],
                 "language_id": "swift",
+                "language_name": "swift",
                 "workspace_roots": [],
                 "workspace_folders": [],
                 "auto_start": false
@@ -2135,6 +2147,7 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                 "active_view_index": 0,
                 "document_uri": "file:///project/main.rs",
                 "language_id": "rust",
+                "language_name": "Rust Language",
                 "server_key": "rust",
                 "command": "/bin/rust-analyzer",
                 "args": ["--stdio"],
@@ -2169,6 +2182,7 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                 "active_view_index": 0,
                 "document_uri": "file:///project/main.rs",
                 "language_id": "rust",
+                "language_name": "Rust Language",
                 "server_key": "rust",
                 "command": "/bin/rust-analyzer",
                 "args": ["--stdio"],
@@ -2190,6 +2204,7 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                 "active_view_index": 0,
                 "document_uri": "file:///project/Beta.swift",
                 "language_id": "swift",
+                "language_name": "swift",
                 "server_key": "swift",
                 "command": "/bin/sourcekit-lsp",
                 "args": [],
@@ -2226,6 +2241,7 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                 "active_view_index": 0,
                 "document_uri": "file:///project/main.rs",
                 "language_id": "rust",
+                "language_name": "Rust Language",
                 "server_key": "rust",
                 "command": "/bin/rust-analyzer",
                 "args": ["--stdio"],
@@ -2247,6 +2263,7 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                 "active_view_index": 0,
                 "document_uri": "file:///project/Beta.swift",
                 "language_id": "swift",
+                "language_name": "swift",
                 "server_key": "swift",
                 "command": "/bin/sourcekit-lsp",
                 "args": [],

@@ -460,6 +460,7 @@ extension AttoEditorAreaViewController {
                     command: existing.command,
                     args: existing.args,
                     languageId: existing.languageId,
+                    languageName: existing.languageName,
                     workspaceRoots: workspaceRoots,
                     autoStart: existing.autoStart || autoStart
                 )
