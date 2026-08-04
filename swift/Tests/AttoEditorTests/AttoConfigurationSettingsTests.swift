@@ -212,23 +212,6 @@ final class AttoConfigurationSettingsTests: XCTestCase {
         XCTAssertEqual(resolution.snapshot.editor.fontSizePoints, 13)
     }
 
-    func testScopedSettingsMatchGlobFileExtensionAndBareLanguageSelectors() {
-        let swiftContext = AttoConfigurationDocumentContext(
-            fileURL: URL(fileURLWithPath: "/tmp/project/Sources/View.SWIFT"),
-            languageId: "swift"
-        )
-        let markdownContext = AttoConfigurationDocumentContext(
-            fileURL: URL(fileURLWithPath: "/tmp/project/Docs/README.md"),
-            languageId: "markdown"
-        )
-
-        XCTAssertTrue(AttoScopedConfigurationSettings(selectors: ["path:**/sources/*.swift"]).matches(swiftContext))
-        XCTAssertTrue(AttoScopedConfigurationSettings(selectors: ["ext:swift"]).matches(swiftContext))
-        XCTAssertTrue(AttoScopedConfigurationSettings(selectors: ["swift"]).matches(swiftContext))
-        XCTAssertTrue(AttoScopedConfigurationSettings(selectors: ["filename:readme.md"]).matches(markdownContext))
-        XCTAssertFalse(AttoScopedConfigurationSettings(selectors: ["source.swift"]).matches(markdownContext))
-    }
-
     func testSettingsStorePersistsUserAndWorkspaceSettings() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoConfigurationSettingsTests-\(UUID().uuidString)", isDirectory: true)

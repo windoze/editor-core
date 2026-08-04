@@ -23,10 +23,12 @@ enum AttoConfigurationSettingsScope: String, Codable, Equatable {
 struct AttoConfigurationDocumentContext: Equatable {
     var fileURL: URL?
     var languageId: String?
+    var scopeName: String?
 
-    init(fileURL: URL? = nil, languageId: String? = nil) {
+    init(fileURL: URL? = nil, languageId: String? = nil, scopeName: String? = nil) {
         self.fileURL = fileURL
         self.languageId = languageId
+        self.scopeName = scopeName
     }
 
     var normalizedLanguageId: String? {
@@ -51,6 +53,14 @@ struct AttoConfigurationDocumentContext: Equatable {
         return path.isEmpty ? nil : path
     }
 
+    var normalizedScopeName: String? {
+        if let explicit = Self.normalizedScopeName(scopeName) {
+            return explicit
+        }
+        guard let normalizedLanguageId else { return nil }
+        return "source.\(normalizedLanguageId)"
+    }
+
     static func normalizedIdentifier(_ value: String?) -> String? {
         guard let value else { return nil }
         let normalized = value
@@ -61,6 +71,15 @@ struct AttoConfigurationDocumentContext: Equatable {
     }
 
     private static func normalizedPathComponent(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let normalized = value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\\", with: "/")
+            .lowercased()
+        return normalized.isEmpty ? nil : normalized
+    }
+
+    private static func normalizedScopeName(_ value: String?) -> String? {
         guard let value else { return nil }
         let normalized = value
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -169,7 +188,7 @@ struct AttoScopedConfigurationSettings: Codable, Equatable {
     }
 
     func matches(_ context: AttoConfigurationDocumentContext) -> Bool {
-        selectors.contains { Self.selector($0, matches: context) }
+        selectors.contains { AttoSettingsSelector.matches($0, context: context) }
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -202,137 +221,6 @@ struct AttoScopedConfigurationSettings: Codable, Equatable {
         try container.encodeIfPresent(language, forKey: .language)
     }
 
-    private static func selector(
-        _ rawSelector: String,
-        matches context: AttoConfigurationDocumentContext
-    ) -> Bool {
-        let selector = rawSelector
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-        guard selector.isEmpty == false else { return false }
-        if selector == "*" || selector == "all" {
-            return true
-        }
-
-        let languageId = context.normalizedLanguageId
-        let fileExtension = context.normalizedFileExtension
-        let fileName = context.normalizedFileName
-        let filePath = context.normalizedPath
-
-        if let value = prefixedValue(selector, prefixes: ["language:", "lang:"]) {
-            return languageId == normalizedIdentifier(value)
-        }
-        if let value = prefixedValue(selector, prefixes: ["extension:", "ext:"]) {
-            return fileExtension == normalizedExtension(value)
-        }
-        if let value = prefixedValue(selector, prefixes: ["filename:", "file:"]) {
-            return fileName == normalizedPathComponent(value)
-        }
-        if let value = prefixedValue(selector, prefixes: ["glob:", "path:"]) {
-            return pathMatches(pattern: value, fileName: fileName, filePath: filePath)
-        }
-        if let value = prefixedValue(selector, prefixes: ["scope:"]) {
-            return sublimeScope(value, matchesLanguageId: languageId)
-        }
-
-        if selector.hasPrefix(".") {
-            return fileExtension == normalizedExtension(selector)
-        }
-        if selector.hasPrefix("*.") && selector.dropFirst(2).contains("/") == false {
-            return fileExtension == normalizedExtension(String(selector.dropFirst(1)))
-        }
-        if selector.contains("*") || selector.contains("?") {
-            return pathMatches(pattern: selector, fileName: fileName, filePath: filePath)
-        }
-        if selector.hasPrefix("source.") || selector.hasPrefix("text.") {
-            return sublimeScope(selector, matchesLanguageId: languageId)
-        }
-
-        let normalized = normalizedIdentifier(selector)
-        return languageId == normalized || fileExtension == normalized
-    }
-
-    private static func prefixedValue(_ selector: String, prefixes: [String]) -> String? {
-        for prefix in prefixes where selector.hasPrefix(prefix) {
-            return String(selector.dropFirst(prefix.count))
-        }
-        return nil
-    }
-
-    private static func sublimeScope(_ scope: String, matchesLanguageId languageId: String?) -> Bool {
-        guard let languageId else { return false }
-        let normalizedScope = scope.trimmingCharacters(in: CharacterSet(charactersIn: "."))
-        if normalizedScope == languageId {
-            return true
-        }
-        return normalizedScope
-            .split(separator: ".")
-            .contains { String($0) == languageId }
-    }
-
-    private static func pathMatches(
-        pattern: String,
-        fileName: String?,
-        filePath: String?
-    ) -> Bool {
-        let normalizedPattern = normalizedPathComponent(pattern) ?? ""
-        if let filePath, glob(normalizedPattern, matches: filePath) {
-            return true
-        }
-        if let fileName, glob(normalizedPattern, matches: fileName) {
-            return true
-        }
-        return false
-    }
-
-    private static func glob(_ pattern: String, matches text: String) -> Bool {
-        let patternChars = Array(pattern)
-        let textChars = Array(text)
-        var memo: [String: Bool] = [:]
-
-        func match(_ patternIndex: Int, _ textIndex: Int) -> Bool {
-            let key = "\(patternIndex):\(textIndex)"
-            if let cached = memo[key] {
-                return cached
-            }
-
-            let result: Bool
-            if patternIndex == patternChars.count {
-                result = textIndex == textChars.count
-            } else if patternChars[patternIndex] == "*" {
-                result = match(patternIndex + 1, textIndex)
-                    || (textIndex < textChars.count && match(patternIndex, textIndex + 1))
-            } else if textIndex < textChars.count,
-                      patternChars[patternIndex] == "?"
-                        || patternChars[patternIndex] == textChars[textIndex]
-            {
-                result = match(patternIndex + 1, textIndex + 1)
-            } else {
-                result = false
-            }
-
-            memo[key] = result
-            return result
-        }
-
-        return match(0, 0)
-    }
-
-    private static func normalizedIdentifier(_ value: String) -> String {
-        AttoConfigurationDocumentContext.normalizedIdentifier(value) ?? ""
-    }
-
-    private static func normalizedExtension(_ value: String) -> String {
-        normalizedIdentifier(value.trimmingCharacters(in: CharacterSet(charactersIn: ".")))
-    }
-
-    private static func normalizedPathComponent(_ value: String) -> String? {
-        let normalized = value
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "\\", with: "/")
-            .lowercased()
-        return normalized.isEmpty ? nil : normalized
-    }
 }
 
 struct AttoEditorPreferenceSettings: Codable, Equatable {

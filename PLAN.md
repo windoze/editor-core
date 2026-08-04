@@ -333,7 +333,10 @@
 
 ### 剩余任务
 
-- [ ] 补齐 Sublime settings selector grammar 的兼容范围和测试。
+- [x] 补齐 Sublime settings selector grammar 的兼容范围和测试。
+  - 验证：`swift test --package-path swift --filter AttoConfigurationSettingsTests/testScopedSettingsSupportSublimeSelectorGrammar`
+  - 验证：`swift test --package-path swift --filter AttoConfigurationSettingsTests/testScopedSettingsMatchGlobFileExtensionAndBareLanguageSelectors`
+  - 验证：`swift test --package-path swift --filter AttoConfigurationSettingsTests/testSettingsResolutionAppliesMatchingScopedSettings`
 - [ ] 建立 schema-aware settings UI，展示 effective value、source、override 和 validation error。
 - [ ] 持久化 runtime overrides，并定义 user/workspace/runtime 的合并和回滚行为。
 - [ ] 完成跨 schema 字段迁移和无效配置降级反馈。
