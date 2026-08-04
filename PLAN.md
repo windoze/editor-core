@@ -547,5 +547,18 @@
   - 验证：`swift test --package-path swift --filter MultiDocumentWorkspaceFile`
   - 验证：`swift test --package-path swift --filter AttoCoreWorkspaceRecentRootTests`
   - 验证：`git diff --check`
-- [ ] 运行全量 Rust、Swift、AppKit、visual 和 opt-in smoke 验证。
+- [x] 运行全量 Rust、Swift、AppKit、visual 和 opt-in smoke 验证。
+  - [x] 修复未保存 untitled session 恢复路径：`openFile(..., isUntitled: true)` 现在通过空文本创建内存文档，不再尝试读取不存在的占位文件。
+  - [x] `swift test --package-path swift --list-tests` 枚举 947 个 Swift 测试；当前 AppKit-heavy 单进程 `swift test --package-path swift` 仍会触发 XCTest `signal 11`，因此用小批次和单测尾部分片覆盖同一 test list。
+  - 验证：`cargo test`
+  - 受限验证：`swift test --package-path swift` 已尝试；当前环境中全量单一 XCTest 进程以 `xctest ... exited with unexpected signal code 11` 退出。
+  - 验证：`ruby ... target/swift-split-tests-small` 分片运行 `swift test --package-path swift --list-tests` 的完整列表；非 command 批次和 `AttoEditorCommandTests` 前 28 个小块通过，失败批次后的 command 测试降到单测粒度后全部通过。
+  - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testSessionSnapshotRestoresUnsavedUntitledBuffers`
+  - 验证：`swift test --package-path swift --filter AttoSessionStoreTests`
+  - 验证：`swift/scripts/check-visual-baselines.sh`
+  - 验证：`swift/scripts/build-attoeditor-app.sh --debug --out /tmp/attoeditor-final-xcui`
+  - 受限验证：`ATTO_XCUI_SMOKE_TESTS=1 ATTO_XCUI_APP_PATH=/tmp/attoeditor-final-xcui/AttoEditor.app swift test --package-path swift --filter AttoEditorXCUIApplicationSmokeTests` 在当前 SwiftPM unit-test bundle 中返回 `Device is not configured for UI testing`。
+  - 验证：`swift test --package-path swift --filter AttoEditorXCUIApplicationSmokeTests` 默认 opt-in smoke 跳过并通过。
+  - 验证：`cargo fmt --check`
+  - 验证：`git diff --check`
 - [ ] 将仍未完成的内容明确标为 out-of-scope 或 deferred，并从本计划中移除。

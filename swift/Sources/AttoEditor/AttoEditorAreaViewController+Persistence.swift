@@ -228,6 +228,8 @@ extension AttoEditorAreaViewController {
         let loadResult: AttoDocumentLoadResult
         if let initialTextOverride {
             loadResult = AttoDocumentLoadPolicy.overriddenText(initialTextOverride)
+        } else if isUntitled {
+            loadResult = AttoDocumentLoadPolicy.overriddenText("")
         } else {
             loadResult = try AttoDocumentLoadPolicy.loadText(
                 from: url,
