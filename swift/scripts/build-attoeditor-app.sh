@@ -93,7 +93,9 @@ fi
 echo "==> 构建 Rust staticlib（在 SwiftPM plugin sandbox 之外，需要联网构建 Skia）"
 (
   cd "${ROOT_DIR}/.."
-  cargo build -p editor-core-ffi -p editor-core-ui-ffi "${CARGO_PROFILE_ARGS[@]}"
+  # macOS 自带 bash 3.2 在 `set -u` 下展开空数组会报 unbound variable
+  # （debug 构建时 CARGO_PROFILE_ARGS 为空），故用 ${arr[@]+...} 形式。
+  cargo build -p editor-core-ffi -p editor-core-ui-ffi ${CARGO_PROFILE_ARGS[@]+"${CARGO_PROFILE_ARGS[@]}"}
 )
 
 RUST_LIB_DIR="${ROOT_DIR}/../target/${CARGO_OUT_SUBDIR}"
@@ -207,12 +209,17 @@ fi
 # - Bundle names are not part of a strict public API, so we copy any bundle that matches `*AttoEditor*.bundle`.
 #
 # This is required for AttoEditor built-in themes shipped as JSON resources.
-mapfile -t RESOURCE_BUNDLES < <(find "${BIN_DIR}" -maxdepth 1 -name "*AttoEditor*.bundle" -print 2>/dev/null || true)
-if [[ ${#RESOURCE_BUNDLES[@]} -gt 0 ]]; then
-  for b in "${RESOURCE_BUNDLES[@]}"; do
-    cp -R "${b}" "${CONTENTS}/Resources/"
-  done
-else
+#
+# 注意：不要用 `mapfile`/`readarray` —— 那是 bash 4+ 的内建命令，而 macOS 自带的
+# /bin/bash 仍是 3.2（GitHub runner 上就是它），会直接 `command not found`。
+RESOURCE_BUNDLE_COUNT=0
+while IFS= read -r bundle; do
+  [[ -n "${bundle}" ]] || continue
+  cp -R "${bundle}" "${CONTENTS}/Resources/"
+  RESOURCE_BUNDLE_COUNT=$((RESOURCE_BUNDLE_COUNT + 1))
+done < <(find "${BIN_DIR}" -maxdepth 1 -name "*AttoEditor*.bundle" -print 2>/dev/null || true)
+
+if [[ "${RESOURCE_BUNDLE_COUNT}" -eq 0 ]]; then
   echo "warning: 未找到 AttoEditor 资源 bundle（*.bundle）；Bundle.module 资源可能不可用" 1>&2
 fi
 

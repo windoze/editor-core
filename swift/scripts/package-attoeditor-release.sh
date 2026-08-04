@@ -165,6 +165,10 @@ DMG_PATH="${OUT_DIR}/${APP_NAME}-${EFFECTIVE_VERSION}.dmg"
 # --------------------------------------------------------------- 3. 签名 .app
 
 # codesign / hdiutil 在 CI 临时 keychain 场景下需要显式 --keychain。
+#
+# 注意：macOS 自带 bash 3.2 在 `set -u` 下展开**空数组** `"${arr[@]}"` 会报
+# unbound variable（bash 4.4+ 才允许）。所以下面所有可能为空的数组都用
+# `${arr[@]+"${arr[@]}"}` 的写法展开。
 CODESIGN_KEYCHAIN_ARGS=()
 if [[ -n "${KEYCHAIN_PATH:-}" ]]; then
   CODESIGN_KEYCHAIN_ARGS=(--keychain "${KEYCHAIN_PATH}")
@@ -175,8 +179,15 @@ ENTITLEMENTS="${APPLE_ENTITLEMENTS_PATH:-${ROOT_DIR}/Sources/AttoEditor/AppBundl
 # keychain 里可能存在同名证书的多份拷贝（例如续期后旧证书没删），此时按名字
 # 签名会失败：`... : ambiguous (matches ... and ...)`。
 # 解析成唯一的 SHA-1 指纹再传给 codesign 可以规避。
+#
+# 注意：这里用 while read 而不是 `mapfile` —— 后者是 bash 4+ 内建，
+# macOS 自带的 /bin/bash 是 3.2，在 GitHub runner 上会 command not found。
 if [[ "${SKIP_SIGN}" -eq 0 && ! "${APPLE_SIGNING_IDENTITY}" =~ ^[0-9A-Fa-f]{40}$ ]]; then
-  mapfile -t IDENTITY_HASHES < <(
+  IDENTITY_HASHES=()
+  while IFS= read -r hash; do
+    [[ -n "${hash}" ]] || continue
+    IDENTITY_HASHES+=("${hash}")
+  done < <(
     security find-identity -v -p codesigning ${KEYCHAIN_PATH:+"${KEYCHAIN_PATH}"} 2>/dev/null \
       | awk -v want="${APPLE_SIGNING_IDENTITY}" 'index($0, want) { print $2 }'
   )
@@ -193,7 +204,7 @@ sign() {
   local target="$1"
   shift
   codesign --force --timestamp --options runtime \
-    "${CODESIGN_KEYCHAIN_ARGS[@]}" \
+    ${CODESIGN_KEYCHAIN_ARGS[@]+"${CODESIGN_KEYCHAIN_ARGS[@]}"} \
     --sign "${APPLE_SIGNING_IDENTITY}" \
     "$@" \
     "${target}"
@@ -290,7 +301,7 @@ if [[ "${SKIP_SIGN}" -eq 0 ]]; then
   echo "==> 签名 DMG"
   # DMG 是容器，不吃 entitlements / hardened runtime。
   codesign --force --timestamp \
-    "${CODESIGN_KEYCHAIN_ARGS[@]}" \
+    ${CODESIGN_KEYCHAIN_ARGS[@]+"${CODESIGN_KEYCHAIN_ARGS[@]}"} \
     --sign "${APPLE_SIGNING_IDENTITY}" \
     "${DMG_PATH}"
 fi
