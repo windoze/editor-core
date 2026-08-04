@@ -194,7 +194,10 @@
   - 验证：`swift test --package-path swift --filter 'AttoEditorCommandTests/test(ProjectLspLaunchConfigsSyncToCoreProjectStore|ShutdownLspServerStopsActiveSessionAndRecordsOutcome)'`
   - 验证：`cargo fmt --check`
   - 验证：`git diff --check`
-- [ ] 让 auto-start、manual restart/shutdown、project restart/shutdown、auto-restart 和 user stop 共享同一 core plan/execution/outcome 模型。
+- [x] 让 auto-start、manual restart/shutdown、project restart/shutdown、auto-restart 和 user stop 共享同一 core plan/execution/outcome 模型。
+  - [x] 将 Swift Project LSP 配置同步与 lifecycle 执行从 `Persistence.swift` 拆到 `ProjectLspConfig` / `ProjectLspLifecycle` extension，保留所有路径共用 core start/stop/restart plan entry、`AttoProjectLspLifecycleAction` 和 requested/terminal outcome 写回模型。
+  - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testProjectLspLaunchConfigsSyncToCoreProjectStore`
+  - 验证：`swift test --package-path swift --filter 'AttoEditorCommandTests/test(WorkspaceRootChangeAutoStartsConfiguredOpenTabLsp|ClosingConfiguredProjectLspTabRecordsStopOutcome|PlainTextSyntaxSwitchRecordsProjectLspStopOutcome|ProjectLspAutoRestartUsesCoreRestartPlanRoot|RestartLspServerInActiveTabUsesCoreRestartPlanRoot|RestartLspServerRestartsActiveTabSession|ShutdownLspServerStopsActiveSessionAndRecordsOutcome|ShutdownProjectLspServersStopsConfiguredOpenTabsAndRecordsOutcomes|RestartProjectLspServersRestartsConfiguredOpenTabs|ProjectLspProcessHealthAutoRestartsExitedConfiguredTab)'`
 - [ ] 将 recovery policy 变为 core 可解释、可执行或可校验的策略。
 - [ ] 产品化 Project LSP Dashboard：server health、events、stderr tail、trend、recovery policy、manual actions、query/export/clear。
 - [ ] 明确跨独立 project session 的合并、隔离、去重和 shutdown 策略。
