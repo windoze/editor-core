@@ -2867,6 +2867,28 @@ fn ffi_multi_document_atomic_workspace_edit_preflight_skips_without_mutating() {
         ECU_OK
     );
     assert_eq!(sequence, 1);
+    let events_ptr =
+        editor_core_ui_ffi_multi_document_workspace_edit_transaction_events_json(multi, 0);
+    assert!(!events_ptr.is_null());
+    let events_json = unsafe { std::ffi::CStr::from_ptr(events_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { editor_core_ui_ffi_string_free(events_ptr) };
+    let events_value: serde_json::Value = serde_json::from_str(&events_json).unwrap();
+    assert_eq!(events_value["latest_sequence"], 1);
+    assert_eq!(events_value["events"][0]["operation"], "apply");
+    assert_eq!(
+        events_value["events"][0]["workspace_edit_json"],
+        workspace_edit.to_string_lossy().as_ref()
+    );
+    assert_eq!(
+        events_value["events"][0]["result"]["conflicts"][0]["kind"],
+        "dirty_document"
+    );
+    assert_eq!(
+        events_value["events"][0]["result"]["conflicts"][0]["resolution"],
+        "save_or_discard"
+    );
 
     unsafe { editor_core_ui_ffi_multi_document_free(multi) };
 }

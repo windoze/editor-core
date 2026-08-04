@@ -87,7 +87,15 @@
   - 验证：`cargo test -p editor-core-ui-ffi`
   - 验证：`cargo fmt --check`
   - 验证：`git diff --check`
-- [ ] 补齐 Rust、FFI、Swift wrapper、AppKit panel 和 targeted tests。
+- [x] 补齐 Rust、FFI、Swift wrapper、AppKit panel 和 targeted tests。
+  - 验证：`cargo test -p editor-core-ui-ffi ffi_multi_document_atomic_workspace_edit_preflight_skips_without_mutating`
+  - 验证：`cargo build -p editor-core-ui-ffi --release`
+  - 验证：`cargo build -p editor-core-ui-ffi`
+  - 验证：`swift test --package-path swift --filter AttoWorkspaceEditTransactionWrapperTests`
+  - 验证：`swift test --package-path swift --filter AttoWorkspaceEdit`
+  - 验证：`cargo test -p editor-core-ui-ffi`
+  - 验证：`cargo fmt --check`
+  - 验证：`git diff --check`
 
 ### 验证
 
