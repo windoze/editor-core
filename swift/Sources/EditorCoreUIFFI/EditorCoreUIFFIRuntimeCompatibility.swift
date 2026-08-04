@@ -174,6 +174,11 @@ public enum EditorCoreUIFFIRuntimeCompatibility {
             reason: "Swift hosts can query core-owned project file indexes with fuzzy path matching."
         ),
         EditorCoreUIFFIRuntimeFeature(
+            feature: .multiDocumentWorkspaceFileOperationEnvelope,
+            name: "multi-document workspace file operation envelope",
+            reason: "Swift hosts can read workspace file list, project index, and replacement results through structured result envelopes."
+        ),
+        EditorCoreUIFFIRuntimeFeature(
             feature: .multiDocumentWorkspaceFileReplacement,
             name: "multi-document workspace file replacement",
             reason: "Swift hosts can generate WorkspaceEdit payloads for replacing local project file search matches."

@@ -80,6 +80,21 @@ fn project_file_index_query_value(
     })
 }
 
+fn refresh_project_file_index_value(
+    multi: &mut MultiDocumentEditorUi,
+    max_results: u32,
+) -> Result<Value, String> {
+    let snapshot = multi
+        .refresh_project_file_index(WorkspaceFileListOptions {
+            include_globs: Vec::new(),
+            exclude_globs: Vec::new(),
+            max_results: max_results as usize,
+        })
+        .map_err(|err| format!("project file index refresh failed: {err}"))?;
+    serde_json::to_value(snapshot)
+        .map_err(|err| format!("failed to encode project file index: {err}"))
+}
+
 fn parse_globs_json(ptr: *const c_char, name: &'static str) -> Result<Vec<String>, String> {
     if ptr.is_null() {
         return Ok(Vec::new());
@@ -106,6 +121,33 @@ fn parse_apply_mode(ptr: *const c_char) -> Result<String, String> {
             "apply_mode_utf8 must be partial or atomic, got {other}"
         ))),
     }
+}
+
+fn workspace_file_replacement_workspace_edit_value(
+    multi: &mut MultiDocumentEditorUi,
+    query: &str,
+    replacement: &str,
+    options: SearchOptions,
+    include_globs: Vec<String>,
+    exclude_globs: Vec<String>,
+    apply_mode: String,
+    max_results: u32,
+) -> Result<Value, String> {
+    let workspace_edit_json = multi
+        .workspace_file_replacement_workspace_edit_json(
+            query,
+            replacement,
+            options,
+            WorkspaceFileReplacementOptions {
+                include_globs,
+                exclude_globs,
+                max_results: max_results as usize,
+                apply_mode,
+            },
+        )
+        .map_err(|err| format!("workspace file replacement failed: {err}"))?;
+    serde_json::from_str(&workspace_edit_json)
+        .map_err(|err| format!("workspace file replacement returned invalid JSON: {err}"))
 }
 
 /// Search all open tabs and return JSON results.
@@ -156,7 +198,7 @@ pub extern "C" fn editor_core_ui_ffi_multi_document_search_all_tabs_envelope_jso
             regex: regex != 0,
         };
         let value = search_all_tabs_value(multi, query, options)?;
-        Ok(multi_document_search_envelope_success(value))
+        Ok(multi_document_json_envelope_success(value))
     }) {
         Ok(envelope) => {
             clear_last_error();
@@ -165,7 +207,7 @@ pub extern "C" fn editor_core_ui_ffi_multi_document_search_all_tabs_envelope_jso
         Err(err) => {
             let (status, message) = classify_error(err);
             set_last_error(message.clone());
-            multi_document_search_envelope_error(status, message)
+            multi_document_json_envelope_error(status, message)
         }
     };
     make_c_string_ptr(envelope)
@@ -242,6 +284,34 @@ pub extern "C" fn editor_core_ui_ffi_multi_document_list_workspace_files_json(
     }
 }
 
+/// List local files under the configured workspace roots and return a structured envelope.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_multi_document_list_workspace_files_envelope_json(
+    multi: *mut MultiDocumentEditorUi,
+    include_globs_json_utf8: *const c_char,
+    exclude_globs_json_utf8: *const c_char,
+    max_results: u32,
+) -> *mut c_char {
+    let envelope = match ffi_catch(|| {
+        let multi = require_mut(multi, "multi")?;
+        let include_globs = parse_globs_json(include_globs_json_utf8, "include_globs_json_utf8")?;
+        let exclude_globs = parse_globs_json(exclude_globs_json_utf8, "exclude_globs_json_utf8")?;
+        let value = workspace_file_list_value(multi, include_globs, exclude_globs, max_results)?;
+        Ok(multi_document_json_envelope_success(value))
+    }) {
+        Ok(envelope) => {
+            clear_last_error();
+            envelope
+        }
+        Err(err) => {
+            let (status, message) = classify_error(err);
+            set_last_error(message.clone());
+            multi_document_json_envelope_error(status, message)
+        }
+    };
+    make_c_string_ptr(envelope)
+}
+
 /// Refresh the core-owned project file index and return its JSON snapshot.
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_multi_document_refresh_project_file_index_json(
@@ -250,15 +320,7 @@ pub extern "C" fn editor_core_ui_ffi_multi_document_refresh_project_file_index_j
 ) -> *mut c_char {
     match ffi_catch(|| {
         let multi = require_mut(multi, "multi")?;
-        let snapshot = multi
-            .refresh_project_file_index(WorkspaceFileListOptions {
-                include_globs: Vec::new(),
-                exclude_globs: Vec::new(),
-                max_results: max_results as usize,
-            })
-            .map_err(|err| format!("project file index refresh failed: {err}"))?;
-        serde_json::to_string(&snapshot)
-            .map_err(|err| format!("failed to encode project file index: {err}"))
+        Ok(refresh_project_file_index_value(multi, max_results)?.to_string())
     }) {
         Ok(json) => {
             clear_last_error();
@@ -269,6 +331,30 @@ pub extern "C" fn editor_core_ui_ffi_multi_document_refresh_project_file_index_j
             ptr::null_mut()
         }
     }
+}
+
+/// Refresh the core-owned project file index and return a structured envelope.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_multi_document_refresh_project_file_index_envelope_json(
+    multi: *mut MultiDocumentEditorUi,
+    max_results: u32,
+) -> *mut c_char {
+    let envelope = match ffi_catch(|| {
+        let multi = require_mut(multi, "multi")?;
+        let value = refresh_project_file_index_value(multi, max_results)?;
+        Ok(multi_document_json_envelope_success(value))
+    }) {
+        Ok(envelope) => {
+            clear_last_error();
+            envelope
+        }
+        Err(err) => {
+            let (status, message) = classify_error(err);
+            set_last_error(message.clone());
+            multi_document_json_envelope_error(status, message)
+        }
+    };
+    make_c_string_ptr(envelope)
 }
 
 /// Return the last core-owned project file index JSON snapshot.
@@ -289,6 +375,30 @@ pub extern "C" fn editor_core_ui_ffi_multi_document_project_file_index_snapshot_
             ptr::null_mut()
         }
     }
+}
+
+/// Return the last core-owned project file index snapshot through a structured envelope.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_multi_document_project_file_index_snapshot_envelope_json(
+    multi: *mut MultiDocumentEditorUi,
+) -> *mut c_char {
+    let envelope = match ffi_catch(|| {
+        let multi = require_mut(multi, "multi")?;
+        Ok(multi_document_json_envelope_success(
+            project_file_index_snapshot_value(multi),
+        ))
+    }) {
+        Ok(envelope) => {
+            clear_last_error();
+            envelope
+        }
+        Err(err) => {
+            let (status, message) = classify_error(err);
+            set_last_error(message.clone());
+            multi_document_json_envelope_error(status, message)
+        }
+    };
+    make_c_string_ptr(envelope)
 }
 
 /// Clear the core-owned project file index snapshot.
@@ -332,6 +442,33 @@ pub extern "C" fn editor_core_ui_ffi_multi_document_query_project_file_index_jso
     }
 }
 
+/// Query the last core-owned project file index snapshot through a structured envelope.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_multi_document_query_project_file_index_envelope_json(
+    multi: *mut MultiDocumentEditorUi,
+    query_utf8: *const c_char,
+    max_results: u32,
+) -> *mut c_char {
+    let envelope = match ffi_catch(|| {
+        let multi = require_mut(multi, "multi")?;
+        let query = require_str(query_utf8, "query_utf8")?;
+        Ok(multi_document_json_envelope_success(
+            project_file_index_query_value(multi, query, max_results),
+        ))
+    }) {
+        Ok(envelope) => {
+            clear_last_error();
+            envelope
+        }
+        Err(err) => {
+            let (status, message) = classify_error(err);
+            set_last_error(message.clone());
+            multi_document_json_envelope_error(status, message)
+        }
+    };
+    make_c_string_ptr(envelope)
+}
+
 /// Search local files under the configured workspace roots and return a structured envelope.
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_multi_document_search_workspace_files_envelope_json(
@@ -362,7 +499,7 @@ pub extern "C" fn editor_core_ui_ffi_multi_document_search_workspace_files_envel
             exclude_globs,
             max_results,
         )?;
-        Ok(multi_document_search_envelope_success(value))
+        Ok(multi_document_json_envelope_success(value))
     }) {
         Ok(envelope) => {
             clear_last_error();
@@ -371,7 +508,7 @@ pub extern "C" fn editor_core_ui_ffi_multi_document_search_workspace_files_envel
         Err(err) => {
             let (status, message) = classify_error(err);
             set_last_error(message.clone());
-            multi_document_search_envelope_error(status, message)
+            multi_document_json_envelope_error(status, message)
         }
     };
     make_c_string_ptr(envelope)
@@ -428,7 +565,58 @@ pub extern "C" fn editor_core_ui_ffi_multi_document_workspace_file_replacement_w
     }
 }
 
-fn multi_document_search_envelope_success(value: Value) -> String {
+/// Build a WorkspaceEdit JSON payload for replacements and return it through a structured envelope.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_multi_document_workspace_file_replacement_workspace_edit_envelope_json(
+    multi: *mut MultiDocumentEditorUi,
+    query_utf8: *const c_char,
+    replacement_utf8: *const c_char,
+    include_globs_json_utf8: *const c_char,
+    exclude_globs_json_utf8: *const c_char,
+    apply_mode_utf8: *const c_char,
+    case_sensitive: u8,
+    whole_word: u8,
+    regex: u8,
+    max_results: u32,
+) -> *mut c_char {
+    let envelope = match ffi_catch(|| {
+        let multi = require_mut(multi, "multi")?;
+        let query = require_str(query_utf8, "query_utf8")?;
+        let replacement = require_str(replacement_utf8, "replacement_utf8")?;
+        let include_globs = parse_globs_json(include_globs_json_utf8, "include_globs_json_utf8")?;
+        let exclude_globs = parse_globs_json(exclude_globs_json_utf8, "exclude_globs_json_utf8")?;
+        let apply_mode = parse_apply_mode(apply_mode_utf8)?;
+        let options = SearchOptions {
+            case_sensitive: case_sensitive != 0,
+            whole_word: whole_word != 0,
+            regex: regex != 0,
+        };
+        let value = workspace_file_replacement_workspace_edit_value(
+            multi,
+            query,
+            replacement,
+            options,
+            include_globs,
+            exclude_globs,
+            apply_mode,
+            max_results,
+        )?;
+        Ok(multi_document_json_envelope_success(value))
+    }) {
+        Ok(envelope) => {
+            clear_last_error();
+            envelope
+        }
+        Err(err) => {
+            let (status, message) = classify_error(err);
+            set_last_error(message.clone());
+            multi_document_json_envelope_error(status, message)
+        }
+    };
+    make_c_string_ptr(envelope)
+}
+
+fn multi_document_json_envelope_success(value: Value) -> String {
     json!({
         "ok": true,
         "status": "success",
@@ -439,7 +627,7 @@ fn multi_document_search_envelope_success(value: Value) -> String {
     .to_string()
 }
 
-fn multi_document_search_envelope_error(status: c_int, message: String) -> String {
+fn multi_document_json_envelope_error(status: c_int, message: String) -> String {
     json!({
         "ok": false,
         "status": "error",

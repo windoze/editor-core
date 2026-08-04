@@ -134,6 +134,9 @@ final class EditorCoreUIFFIRuntimeCompatibilityTests: XCTestCase {
         XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .multiDocumentProjectFileIndex })
         XCTAssertTrue(report.missingRequiredFeatures.contains { $0.feature == .multiDocumentProjectFileIndexQuery })
         XCTAssertTrue(report.missingRequiredFeatures.contains {
+            $0.feature == .multiDocumentWorkspaceFileOperationEnvelope
+        })
+        XCTAssertTrue(report.missingRequiredFeatures.contains {
             $0.feature == .lspWorkspaceEditApplicationEnvelope
         })
         XCTAssertTrue(report.missingRequiredFeatures.contains {

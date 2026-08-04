@@ -2540,7 +2540,7 @@ public final class MultiDocumentEditorUI {
         try library.ensureStatus(status, context: "multi_document_clear_workspace_diagnostics")
     }
 
-    private static func encodeStringArray(_ values: [String], context: String) throws -> String {
+    static func encodeStringArray(_ values: [String], context: String) throws -> String {
         do {
             let data = try JSONEncoder().encode(values)
             guard let json = String(data: data, encoding: .utf8) else {

@@ -133,6 +133,7 @@ public struct EditorCoreUIFFIFeatures: OptionSet, Equatable, Sendable {
     public static let multiDocumentRecentProjects = Self(rawValue: 1 << 53)
     public static let multiDocumentProjectFileIndex = Self(rawValue: 1 << 54)
     public static let multiDocumentProjectFileIndexQuery = Self(rawValue: 1 << 55)
+    public static let multiDocumentWorkspaceFileOperationEnvelope = Self(rawValue: 1 << 56)
 }
 
 public struct EditorCoreUIFFIRuntimeInfo: Equatable, Sendable {

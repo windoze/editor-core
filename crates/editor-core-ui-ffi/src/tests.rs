@@ -220,6 +220,11 @@ fn ffi_feature_flags_include_semantic_tokens_requests() {
         editor_core_ui_ffi_feature_flags() & ECU_FEATURE_MULTI_DOCUMENT_PROJECT_FILE_INDEX_QUERY,
         0
     );
+    assert_ne!(
+        editor_core_ui_ffi_feature_flags()
+            & ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_OPERATION_ENVELOPE,
+        0
+    );
 }
 
 #[test]
@@ -387,6 +392,11 @@ fn ffi_runtime_info_json_reports_version_and_feature_descriptors() {
         feature["name"] == "multi_document_project_file_index_query"
             && feature["bit"] == 55
             && feature["flag"] == ECU_FEATURE_MULTI_DOCUMENT_PROJECT_FILE_INDEX_QUERY
+    }));
+    assert!(features.iter().any(|feature| {
+        feature["name"] == "multi_document_workspace_file_operation_envelope"
+            && feature["bit"] == 56
+            && feature["flag"] == ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_OPERATION_ENVELOPE
     }));
     assert!(features.iter().any(|feature| {
         feature["name"] == "multi_document_workspace_edit_transaction"
@@ -968,6 +978,19 @@ fn ffi_multi_document_workspace_file_list_reports_files_and_errors() {
         files[0]["path"].as_str().unwrap(),
         root.join("src").join("lib.rs").to_string_lossy()
     );
+    let envelope_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_list_workspace_files_envelope_json(
+            multi,
+            include.as_ptr(),
+            exclude.as_ptr(),
+            10,
+        ),
+    );
+    let envelope: serde_json::Value = serde_json::from_str(&envelope_json).unwrap();
+    assert_eq!(envelope["ok"], true);
+    assert_eq!(envelope["status"], "success");
+    assert!(envelope["error"].is_null());
+    assert_eq!(envelope["value"]["files"].as_array().unwrap().len(), 1);
 
     let invalid_globs = CString::new("{}").unwrap();
     let invalid = editor_core_ui_ffi_multi_document_list_workspace_files_json(
@@ -979,6 +1002,24 @@ fn ffi_multi_document_workspace_file_list_reports_files_and_errors() {
     assert!(invalid.is_null());
     let last_error = take_owned_string(editor_core_ui_ffi_last_error_message());
     assert!(last_error.contains("include_globs_json_utf8 must be a JSON string array"));
+    let invalid_envelope = take_owned_string(
+        editor_core_ui_ffi_multi_document_list_workspace_files_envelope_json(
+            multi,
+            invalid_globs.as_ptr(),
+            exclude.as_ptr(),
+            10,
+        ),
+    );
+    let invalid_value: serde_json::Value = serde_json::from_str(&invalid_envelope).unwrap();
+    assert_eq!(invalid_value["ok"], false);
+    assert_eq!(invalid_value["status"], "error");
+    assert_eq!(invalid_value["error"]["code"], "invalid_argument");
+    assert!(
+        invalid_value["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("include_globs_json_utf8 must be a JSON string array")
+    );
 
     unsafe { editor_core_ui_ffi_multi_document_free(multi) };
     let _ = std::fs::remove_dir_all(root);
@@ -1016,6 +1057,14 @@ fn ffi_multi_document_project_file_index_refreshes_and_snapshots_files() {
     let snapshot: serde_json::Value = serde_json::from_str(&snapshot_json).unwrap();
     assert_eq!(snapshot["is_built"], false);
     assert_eq!(snapshot["files"], serde_json::json!([]));
+    let snapshot_envelope_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_project_file_index_snapshot_envelope_json(multi),
+    );
+    let snapshot_envelope: serde_json::Value =
+        serde_json::from_str(&snapshot_envelope_json).unwrap();
+    assert_eq!(snapshot_envelope["ok"], true);
+    assert_eq!(snapshot_envelope["status"], "success");
+    assert_eq!(snapshot_envelope["value"]["is_built"], false);
 
     let query = CString::new("cm").unwrap();
     let query_json = take_owned_string(
@@ -1032,6 +1081,20 @@ fn ffi_multi_document_project_file_index_refreshes_and_snapshots_files() {
     assert_eq!(refreshed["max_results"], 10);
     assert_eq!(refreshed["files"].as_array().unwrap().len(), 2);
     assert_eq!(refreshed["files"][0]["relative_path"], "src/core_model.rs");
+    let refreshed_envelope_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_refresh_project_file_index_envelope_json(multi, 10),
+    );
+    let refreshed_envelope: serde_json::Value =
+        serde_json::from_str(&refreshed_envelope_json).unwrap();
+    assert_eq!(refreshed_envelope["ok"], true);
+    assert_eq!(refreshed_envelope["value"]["is_built"], true);
+    assert_eq!(
+        refreshed_envelope["value"]["files"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
 
     let query_json = take_owned_string(
         editor_core_ui_ffi_multi_document_query_project_file_index_json(multi, query.as_ptr(), 10),
@@ -1043,6 +1106,19 @@ fn ffi_multi_document_project_file_index_refreshes_and_snapshots_files() {
         "src/core_model.rs"
     );
     assert!(query_value["results"][0]["score"].as_i64().unwrap() > 0);
+    let query_envelope_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_query_project_file_index_envelope_json(
+            multi,
+            query.as_ptr(),
+            10,
+        ),
+    );
+    let query_envelope: serde_json::Value = serde_json::from_str(&query_envelope_json).unwrap();
+    assert_eq!(query_envelope["ok"], true);
+    assert_eq!(
+        query_envelope["value"]["results"][0]["relative_path"],
+        "src/core_model.rs"
+    );
 
     std::fs::write(root.join("src").join("main.rs"), "fn main() {}\n").unwrap();
     let snapshot_json = take_owned_string(
@@ -1266,6 +1342,30 @@ fn ffi_multi_document_workspace_file_replacement_builds_workspace_edit() {
         .unwrap();
     assert_eq!(document_changes.len(), 1);
     assert_eq!(document_changes[0]["edits"].as_array().unwrap().len(), 2);
+    let envelope_json = take_owned_string(
+        editor_core_ui_ffi_multi_document_workspace_file_replacement_workspace_edit_envelope_json(
+            multi,
+            query.as_ptr(),
+            replacement.as_ptr(),
+            include.as_ptr(),
+            exclude.as_ptr(),
+            apply_mode.as_ptr(),
+            1,
+            0,
+            1,
+            10,
+        ),
+    );
+    let envelope: serde_json::Value = serde_json::from_str(&envelope_json).unwrap();
+    assert_eq!(envelope["ok"], true);
+    assert_eq!(envelope["status"], "success");
+    assert_eq!(
+        envelope["value"]["workspaceEdit"]["documentChanges"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
 
     let workspace_edit_c = CString::new(workspace_edit).unwrap();
     let applied_json = take_owned_string(

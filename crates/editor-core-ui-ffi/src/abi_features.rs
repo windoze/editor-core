@@ -116,6 +116,8 @@ pub const ECU_FEATURE_MULTI_DOCUMENT_RECENT_PROJECTS: u64 = 1 << 53;
 pub const ECU_FEATURE_MULTI_DOCUMENT_PROJECT_FILE_INDEX: u64 = 1 << 54;
 /// Feature bit: multi-document core-owned project file index fuzzy queries are available.
 pub const ECU_FEATURE_MULTI_DOCUMENT_PROJECT_FILE_INDEX_QUERY: u64 = 1 << 55;
+/// Feature bit: multi-document workspace file/index operations can return structured result envelopes.
+pub const ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_OPERATION_ENVELOPE: u64 = 1 << 56;
 
 pub const ECU_FEATURE_FLAGS: u64 = ECU_FEATURE_JSON_COMMAND_DISPATCH
     | ECU_FEATURE_TYPED_DERIVED_SNAPSHOTS
@@ -172,7 +174,8 @@ pub const ECU_FEATURE_FLAGS: u64 = ECU_FEATURE_JSON_COMMAND_DISPATCH
     | ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_LIST
     | ECU_FEATURE_MULTI_DOCUMENT_RECENT_PROJECTS
     | ECU_FEATURE_MULTI_DOCUMENT_PROJECT_FILE_INDEX
-    | ECU_FEATURE_MULTI_DOCUMENT_PROJECT_FILE_INDEX_QUERY;
+    | ECU_FEATURE_MULTI_DOCUMENT_PROJECT_FILE_INDEX_QUERY
+    | ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_OPERATION_ENVELOPE;
 
 struct FeatureDescriptor {
     bit: u8,
@@ -517,6 +520,12 @@ const FEATURE_DESCRIPTORS: &[FeatureDescriptor] = &[
         flag: ECU_FEATURE_MULTI_DOCUMENT_PROJECT_FILE_INDEX_QUERY,
         name: "multi_document_project_file_index_query",
         description: "Multi-document core-owned project file index fuzzy path queries.",
+    },
+    FeatureDescriptor {
+        bit: 56,
+        flag: ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_OPERATION_ENVELOPE,
+        name: "multi_document_workspace_file_operation_envelope",
+        description: "Multi-document workspace file list, project index, and replacement helpers can return structured result envelopes.",
     },
 ];
 

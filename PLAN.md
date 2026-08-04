@@ -358,7 +358,12 @@
 
 ### 剩余任务
 
-- [ ] 找出仍只走 raw JSON 的主路径并补 typed result envelope。
+- [x] 找出仍只走 raw JSON 的主路径并补 typed result envelope。
+  - 交付：为 workspace file list、project file index refresh/snapshot/query 和 workspace file replacement 增加 UI FFI `_envelope_json` 导出、Swift typed envelope wrapper、append-only capability bit 和 ABI 文档；旧 raw JSON API 保留为兼容入口。
+  - 验证：`cargo test -p editor-core-ui-ffi --lib`
+  - 验证：`cargo build -p editor-core-ui-ffi`
+  - 验证：`swift test --package-path swift --filter 'EditorCoreUIFFIWorkspaceFileTests|EditorCoreUIFFIRuntimeSmokeTests|EditorCoreUIFFIRuntimeCompatibilityTests|AttoRuntimeCompatibilityTests'`
+  - 验证：`swift test --package-path swift --filter 'testMultiDocumentWorkspaceFile|testMultiDocumentProjectFileIndex|testLoadsLibraryAndVersion|testRuntimeInfoJSONDescriptorsCoverKnownFeatures'`
 - [ ] 统一 Rust、C ABI、Swift wrapper 和 App 层错误模型。
 - [ ] 建立 host capability negotiation：feature availability、version、unsupported reason、runtime feature flag。
 - [ ] 清理或隔离过渡 raw JSON API。

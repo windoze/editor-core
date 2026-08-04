@@ -208,6 +208,11 @@ struct AttoRuntimeCompatibility {
             reason: "Quick Open and project file panels can query core-owned project file indexes with fuzzy path matching; Swift keeps local palette filtering as a fallback."
         ),
         RuntimeFeature(
+            feature: .multiDocumentWorkspaceFileOperationEnvelope,
+            name: "multi-document workspace file operation envelope",
+            reason: "Quick Open, project file panels, and Replace in Files can read workspace file/index/replacement results through structured envelopes; Swift falls back to legacy typed wrappers when unavailable."
+        ),
+        RuntimeFeature(
             feature: .multiDocumentWorkspaceFileReplacement,
             name: "multi-document workspace file replacement",
             reason: "Replace in Files can generate core WorkspaceEdit payloads for project search matches; Swift keeps replacement UI disabled when unavailable."

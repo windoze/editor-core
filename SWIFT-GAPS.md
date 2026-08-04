@@ -29,7 +29,6 @@
 
 ## 阶段 10：Result Envelope、错误模型与 Host Capability
 
-- 补齐剩余 JSON result envelope 覆盖，避免主路径依赖 raw JSON escape hatch。
 - 统一 Rust、C ABI、Swift wrapper 和 App 层错误模型。
 - 建立 host capability negotiation：功能可用性、版本、降级、unsupported reason 和 runtime feature flag 应一致可查。
 - 清理或隔离过渡 raw JSON API，保留兼容路径但不作为完成标准。

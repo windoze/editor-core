@@ -90,6 +90,21 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(files[0].relativePath, "src/lib.rs")
         XCTAssertEqual(URL(string: files[0].uri)?.isFileURL, true)
 
+        let envelope = try multi.listWorkspaceFilesEnvelope(
+            includeGlobs: ["src/**"],
+            excludeGlobs: ["*.swift"],
+            maxResults: 10
+        )
+        XCTAssertTrue(envelope.ok)
+        XCTAssertEqual(envelope.statusKind, .success)
+        guard case .object(let listValue)? = envelope.value,
+              case .array(let envelopeFiles)? = listValue["files"]
+        else {
+            XCTFail("expected workspace file list envelope")
+            return
+        }
+        XCTAssertEqual(envelopeFiles.count, 1)
+
         let limited = try multi.listWorkspaceFiles(maxResults: 1)
         XCTAssertEqual(limited.count, 1)
         XCTAssertEqual(limited[0].relativePath, "README.md")
@@ -117,14 +132,40 @@ extension EditorCoreUIFFITests {
         XCTAssertFalse(initial.isBuilt)
         XCTAssertTrue(initial.files.isEmpty)
         XCTAssertTrue(try multi.queryProjectFileIndex(query: "cm").isEmpty)
+        let initialEnvelope = try multi.projectFileIndexSnapshotEnvelope()
+        XCTAssertTrue(initialEnvelope.ok)
+        guard case .object(let initialValue)? = initialEnvelope.value,
+              initialValue["is_built"] == .bool(false)
+        else {
+            XCTFail("expected initial project file index snapshot envelope")
+            return
+        }
 
         let refreshed = try multi.refreshProjectFileIndex(maxResults: 10)
         XCTAssertTrue(refreshed.isBuilt)
         XCTAssertEqual(refreshed.maxResults, 10)
         XCTAssertEqual(refreshed.files.map(\.relativePath), ["src/core_model.rs", "src/lib.rs"])
+        let refreshedEnvelope = try multi.refreshProjectFileIndexEnvelope(maxResults: 10)
+        XCTAssertTrue(refreshedEnvelope.ok)
+        guard case .object(let refreshedValue)? = refreshedEnvelope.value,
+              case .array(let refreshedFiles)? = refreshedValue["files"]
+        else {
+            XCTFail("expected refreshed project file index envelope")
+            return
+        }
+        XCTAssertEqual(refreshedFiles.count, 2)
         let queryMatches = try multi.queryProjectFileIndex(query: "cm")
         XCTAssertEqual(queryMatches.map(\.relativePath), ["src/core_model.rs"])
         XCTAssertGreaterThan(try XCTUnwrap(queryMatches.first?.score), 0)
+        let queryEnvelope = try multi.queryProjectFileIndexEnvelope(query: "cm")
+        XCTAssertTrue(queryEnvelope.ok)
+        guard case .object(let queryValue)? = queryEnvelope.value,
+              case .array(let envelopeMatches)? = queryValue["results"]
+        else {
+            XCTFail("expected project file index query envelope")
+            return
+        }
+        XCTAssertEqual(envelopeMatches.count, 1)
 
         try "fn main() {}\n".write(to: secondURL, atomically: true, encoding: .utf8)
         XCTAssertEqual(
@@ -169,6 +210,27 @@ extension EditorCoreUIFFITests {
             applyMode: "atomic",
             maxResults: 10
         )
+        let replacementEnvelope = try multi.workspaceFileReplacementWorkspaceEditEnvelope(
+            query: #"alpha(\d)"#,
+            replacement: "beta$1",
+            options: EcuSearchOptions(caseSensitive: true, regex: true),
+            includeGlobs: ["*.rs"],
+            excludeGlobs: [],
+            applyMode: "atomic",
+            maxResults: 10
+        )
+        XCTAssertTrue(replacementEnvelope.ok)
+        XCTAssertEqual(replacementEnvelope.statusKind, .success)
+        guard case .object(let workspaceEditValue)? = replacementEnvelope.value else {
+            XCTFail("expected workspace replacement envelope value object")
+            return
+        }
+        guard case .object(let editPayload)? = workspaceEditValue["workspaceEdit"] else {
+            XCTFail("expected workspace replacement envelope workspaceEdit object")
+            return
+        }
+        XCTAssertTrue(editPayload["changes"] != nil || editPayload["documentChanges"] != nil)
+
         let preview = try multi.previewWorkspaceEditTransaction(workspaceEdit)
         XCTAssertFalse(preview.applied)
         XCTAssertEqual(preview.documents.count, 1)

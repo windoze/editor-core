@@ -267,6 +267,11 @@ ordered by descending score with stable path tie-breaks. The index snapshot uses
 boundary, skip rules, stable sorting, and bounded result semantics as workspace file listing,
 reports `workspace_roots`, `files`, `is_built`, and `max_results`, and is cleared when workspace
 roots change.
+The list, project file index refresh/snapshot/query, and workspace file replacement helpers also
+provide `_envelope_json` variants gated by
+`ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_OPERATION_ENVELOPE`; these wrap successful payloads in
+`value` and invalid arguments or runtime failures in the shared `{ ok, status, error, version }`
+result envelope.
 
 Open-tab metadata is part of the same core-owned multi-document model. Hosts can set or clear
 document URI metadata with `editor_core_ui_ffi_multi_document_set_tab_document_uri(...)` and
@@ -399,8 +404,10 @@ Guidelines:
   `ECU_FEATURE_LSP_DERIVED_STATE_APPLICATION_ENVELOPE` /
   `ECU_FEATURE_LSP_SEMANTIC_TOKENS_APPLICATION_ENVELOPE` /
   `ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_SEARCH` /
-  `ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_REPLACEMENT` mark availability of the corresponding
-  JSON envelope symbols, workspace file search/replacement symbols, and stream/result coverage.
+  `ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_REPLACEMENT` /
+  `ECU_FEATURE_MULTI_DOCUMENT_WORKSPACE_FILE_OPERATION_ENVELOPE` mark availability of the
+  corresponding JSON envelope symbols, workspace file search/replacement symbols, and
+  stream/result coverage.
 - The current cycle is still pre-v1; breaking fixed-width cleanup is allowed before tagging v1, and `editor_core_ffi.h` is the authoritative declaration of the current C surface.
 - Compatible additions:
   - new functions
@@ -560,9 +567,11 @@ char* editor_core_ui_ffi_editor_ui_event_stream_envelope_json(EditorUi* ui, cons
 char* editor_core_ui_ffi_multi_document_snapshot_envelope_json(MultiDocumentEditorUi* multi);
 char* editor_core_ui_ffi_multi_document_search_all_tabs_envelope_json(MultiDocumentEditorUi* multi, const char* query_utf8, uint8_t case_sensitive, uint8_t whole_word, uint8_t regex);
 char* editor_core_ui_ffi_multi_document_list_workspace_files_json(MultiDocumentEditorUi* multi, const char* include_globs_json_utf8, const char* exclude_globs_json_utf8, uint32_t max_results);
+char* editor_core_ui_ffi_multi_document_list_workspace_files_envelope_json(MultiDocumentEditorUi* multi, const char* include_globs_json_utf8, const char* exclude_globs_json_utf8, uint32_t max_results);
 char* editor_core_ui_ffi_multi_document_search_workspace_files_json(MultiDocumentEditorUi* multi, const char* query_utf8, const char* include_globs_json_utf8, const char* exclude_globs_json_utf8, uint8_t case_sensitive, uint8_t whole_word, uint8_t regex, uint32_t max_results);
 char* editor_core_ui_ffi_multi_document_search_workspace_files_envelope_json(MultiDocumentEditorUi* multi, const char* query_utf8, const char* include_globs_json_utf8, const char* exclude_globs_json_utf8, uint8_t case_sensitive, uint8_t whole_word, uint8_t regex, uint32_t max_results);
 char* editor_core_ui_ffi_multi_document_workspace_file_replacement_workspace_edit_json(MultiDocumentEditorUi* multi, const char* query_utf8, const char* replacement_utf8, const char* include_globs_json_utf8, const char* exclude_globs_json_utf8, const char* apply_mode_utf8, uint8_t case_sensitive, uint8_t whole_word, uint8_t regex, uint32_t max_results);
+char* editor_core_ui_ffi_multi_document_workspace_file_replacement_workspace_edit_envelope_json(MultiDocumentEditorUi* multi, const char* query_utf8, const char* replacement_utf8, const char* include_globs_json_utf8, const char* exclude_globs_json_utf8, const char* apply_mode_utf8, uint8_t case_sensitive, uint8_t whole_word, uint8_t regex, uint32_t max_results);
 int32_t editor_core_ui_ffi_multi_document_remember_recent_file_uri(MultiDocumentEditorUi* multi, const char* uri_utf8);
 int32_t editor_core_ui_ffi_multi_document_restore_recent_files_json(MultiDocumentEditorUi* multi, const char* uris_json_utf8);
 int32_t editor_core_ui_ffi_multi_document_clear_recent_files(MultiDocumentEditorUi* multi);
@@ -572,9 +581,12 @@ int32_t editor_core_ui_ffi_multi_document_restore_recent_projects_json(MultiDocu
 int32_t editor_core_ui_ffi_multi_document_clear_recent_projects(MultiDocumentEditorUi* multi);
 char* editor_core_ui_ffi_multi_document_recent_projects_json(MultiDocumentEditorUi* multi);
 char* editor_core_ui_ffi_multi_document_refresh_project_file_index_json(MultiDocumentEditorUi* multi, uint32_t max_results);
+char* editor_core_ui_ffi_multi_document_refresh_project_file_index_envelope_json(MultiDocumentEditorUi* multi, uint32_t max_results);
 char* editor_core_ui_ffi_multi_document_project_file_index_snapshot_json(MultiDocumentEditorUi* multi);
+char* editor_core_ui_ffi_multi_document_project_file_index_snapshot_envelope_json(MultiDocumentEditorUi* multi);
 int32_t editor_core_ui_ffi_multi_document_clear_project_file_index(MultiDocumentEditorUi* multi);
 char* editor_core_ui_ffi_multi_document_query_project_file_index_json(MultiDocumentEditorUi* multi, const char* query_utf8, uint32_t max_results);
+char* editor_core_ui_ffi_multi_document_query_project_file_index_envelope_json(MultiDocumentEditorUi* multi, const char* query_utf8, uint32_t max_results);
 char* editor_core_ui_ffi_multi_document_set_workspace_roots_with_change_envelope_json(MultiDocumentEditorUi* multi, const char* roots_json_utf8);
 char* editor_core_ui_ffi_multi_document_project_lsp_servers_envelope_json(MultiDocumentEditorUi* multi);
 char* editor_core_ui_ffi_multi_document_event_stream_envelope_json(MultiDocumentEditorUi* multi, const char* stream_utf8, uint64_t after_sequence);

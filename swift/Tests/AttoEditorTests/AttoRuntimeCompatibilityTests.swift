@@ -75,6 +75,9 @@ final class AttoRuntimeCompatibilityTests: XCTestCase {
         XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .multiDocumentProjectFileIndex })
         XCTAssertTrue(report.missingOptionalFeatures.contains { $0.feature == .multiDocumentProjectFileIndexQuery })
         XCTAssertTrue(report.missingOptionalFeatures.contains {
+            $0.feature == .multiDocumentWorkspaceFileOperationEnvelope
+        })
+        XCTAssertTrue(report.missingOptionalFeatures.contains {
             $0.feature == .multiDocumentWorkspaceRootsChangeEnvelope
         })
         XCTAssertTrue(report.missingOptionalFeatures.contains {
@@ -143,6 +146,7 @@ final class AttoRuntimeCompatibilityTests: XCTestCase {
                 EditorCoreUIFFIFeatures.multiDocumentRecentProjects.rawValue,
                 EditorCoreUIFFIFeatures.multiDocumentProjectFileIndex.rawValue,
                 EditorCoreUIFFIFeatures.multiDocumentProjectFileIndexQuery.rawValue,
+                EditorCoreUIFFIFeatures.multiDocumentWorkspaceFileOperationEnvelope.rawValue,
                 EditorCoreUIFFIFeatures.multiDocumentWorkspaceRootsChangeEnvelope.rawValue,
                 EditorCoreUIFFIFeatures.multiDocumentProjectLSPServersEnvelope.rawValue,
                 EditorCoreUIFFIFeatures.multiDocumentProjectLSPStartPlan.rawValue,

@@ -64,6 +64,7 @@ extension EditorCoreUIFFITests {
         XCTAssertTrue(info.supports(.multiDocumentRecentProjects))
         XCTAssertTrue(info.supports(.multiDocumentProjectFileIndex))
         XCTAssertTrue(info.supports(.multiDocumentProjectFileIndexQuery))
+        XCTAssertTrue(info.supports(.multiDocumentWorkspaceFileOperationEnvelope))
 
         let runtimeJSON = try JSONTestHelpers.object(try lib.runtimeInfoJSON())
         XCTAssertEqual(runtimeJSON["kind"] as? String, "editor-core-ui-ffi")
@@ -246,6 +247,12 @@ extension EditorCoreUIFFITests {
                 && (feature["bit"] as? NSNumber)?.uint8Value == 55
                 && (feature["flag"] as? NSNumber)?.uint64Value
                     == EditorCoreUIFFIFeatures.multiDocumentProjectFileIndexQuery.rawValue
+        })
+        XCTAssertTrue(features.contains { feature in
+            feature["name"] as? String == "multi_document_workspace_file_operation_envelope"
+                && (feature["bit"] as? NSNumber)?.uint8Value == 56
+                && (feature["flag"] as? NSNumber)?.uint64Value
+                    == EditorCoreUIFFIFeatures.multiDocumentWorkspaceFileOperationEnvelope.rawValue
         })
     }
 
