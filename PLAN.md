@@ -13,7 +13,7 @@
 - [已完成] 阶段 10：完成剩余 JSON result envelope 覆盖、错误模型统一和 host capability negotiation。
 - [已完成] 阶段 11：产品化 Tree-sitter + LSP 主路线的高亮、outline、folding、语言模式和降级体验。
 - [已完成] 阶段 12：完成 core-backed workspace search、project index、replace-in-files、recent 和 session 工作流。
-- [待办] 阶段 13：合入首批经批准机器生成的 PNG baselines；CI 已具备 PNG 合入后自动 strict PR 门禁。
+- [进行中] 阶段 13：合入首批经批准机器生成的 PNG baselines；CI 已具备 PNG 合入后自动 strict PR 门禁。
 - [待办] 阶段 14：在测试保护下打磨 Sublime-like chrome、minimap、gutter、overlay、focus 和编辑交互。
 - [待办] 阶段 15：完成最终文档审计、ABI/README 更新、过渡 API 清理和全量验证。
 
@@ -457,7 +457,14 @@
 
 ### 剩余任务
 
-- [ ] 生成、审核并提交首批 PNG golden baselines。
+- [x] 生成、审核并提交首批 PNG golden baselines。
+  - [x] 通过 `swift/scripts/update-visual-baselines.sh` 生成 39 个 manifest 声明的 PNG baselines。
+  - [x] 修复 visual snapshot harness：PNG 读回保留写出的 RGBA bytes，AppKit capture 额外合成 `EditorCoreSkiaView` 的 CPU raster，避免 Metal-backed editor 正文在基线中空白。
+  - [x] 抽样审核 editor chrome、floating popup 和 WorkspaceEdit 失败摘要 PNG，确认正文/浮层/状态内容可见且 strict 可重复。
+  - 验证：`swift test --package-path swift --filter AttoEditorVisualSnapshotHarnessTests`
+  - 验证：`swift/scripts/update-visual-baselines.sh`
+  - 验证：`swift/scripts/check-visual-baselines.sh`
+  - 验证：`git diff --check`
 - [ ] PNG 合入后确认 strict visual baseline PR 门禁默认生效。
 - [ ] 扩展 WorkspaceEdit rollback secondary failure、更多 conflict/failure 边界和跨 theme/window-size fixtures。
 - [ ] 扩展 opt-in `XCUIApplication` smoke tests：真实 LSP server、多文件 workspace、多 root/project session、server 错误/延迟/重启后的 panels。

@@ -91,6 +91,26 @@ final class AttoEditorVisualSnapshotHarnessTests: XCTestCase {
         }
     }
 
+    func testSnapshotReadPNGRetainsWrittenRGBABytes() throws {
+        let tempDir = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let snapshot = AttoVisualSnapshot(
+            width: 2,
+            height: 2,
+            rgba: [
+                50, 50, 50, 255,
+                252, 252, 252, 255,
+                30, 40, 200, 255,
+                200, 80, 30, 128,
+            ]
+        )
+        let url = tempDir.appendingPathComponent("roundtrip.png")
+        try snapshot.writePNG(to: url)
+
+        XCTAssertEqual(try AttoVisualSnapshot.readPNG(from: url), snapshot)
+    }
+
     private func makeTemporaryDirectory() throws -> URL {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorVisualSnapshotHarnessTests-\(UUID().uuidString)", isDirectory: true)

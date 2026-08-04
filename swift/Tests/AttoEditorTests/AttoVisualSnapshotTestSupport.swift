@@ -31,7 +31,12 @@ struct AttoVisualSnapshot: Equatable {
         rep.size = bounds.size
         view.cacheDisplay(in: bounds, to: rep)
 
-        return try Self(rep: rep, width: pixelWidth, height: pixelHeight)
+        let snapshot = try Self(rep: rep, width: pixelWidth, height: pixelHeight)
+        return try AttoVisualSnapshotEditorRasterOverlay.compositeEditorRasters(
+            in: view,
+            rootSnapshot: snapshot,
+            scale: scale
+        )
     }
 
     static func readPNG(from url: URL) throws -> Self {
@@ -39,7 +44,7 @@ struct AttoVisualSnapshot: Equatable {
         guard let rep = NSBitmapImageRep(data: data) else {
             throw AttoVisualSnapshotError.captureFailed("failed to decode PNG at \(url.path)")
         }
-        return try Self(rep: rep, width: rep.pixelsWide, height: rep.pixelsHigh)
+        return try Self(pngRep: rep)
     }
 
     func writePNG(to url: URL) throws {
@@ -90,6 +95,55 @@ struct AttoVisualSnapshot: Equatable {
 
     private static func rep(_ rep: NSBitmapImageRep, colorAtX x: Int, y: Int) -> NSColor {
         (rep.colorAt(x: x, y: y) ?? .clear).usingColorSpace(.deviceRGB) ?? .clear
+    }
+
+    private static func rawRGBAPixels(from rep: NSBitmapImageRep) -> [UInt8]? {
+        guard rep.pixelsWide > 0,
+              rep.pixelsHigh > 0,
+              rep.bitsPerSample == 8,
+              rep.samplesPerPixel == 4,
+              rep.bitsPerPixel == 32,
+              rep.hasAlpha,
+              rep.isPlanar == false,
+              rep.bytesPerRow >= rep.pixelsWide * 4,
+              let bitmapData = rep.bitmapData
+        else {
+            return nil
+        }
+
+        let format = rep.bitmapFormat
+        guard format.contains(.alphaFirst) == false,
+              format.contains(.floatingPointSamples) == false,
+              format.contains(.sixteenBitLittleEndian) == false,
+              format.contains(.sixteenBitBigEndian) == false,
+              format.contains(.thirtyTwoBitLittleEndian) == false,
+              format.contains(.thirtyTwoBitBigEndian) == false
+        else {
+            return nil
+        }
+
+        var rgba = [UInt8]()
+        rgba.reserveCapacity(rep.pixelsWide * rep.pixelsHigh * 4)
+        for y in 0..<rep.pixelsHigh {
+            let row = bitmapData.advanced(by: y * rep.bytesPerRow)
+            for x in 0..<rep.pixelsWide {
+                let pixel = row.advanced(by: x * 4)
+                rgba.append(pixel[0])
+                rgba.append(pixel[1])
+                rgba.append(pixel[2])
+                rgba.append(pixel[3])
+            }
+        }
+        return rgba
+    }
+
+    private init(pngRep rep: NSBitmapImageRep) throws {
+        if let rgba = Self.rawRGBAPixels(from: rep) {
+            self.init(width: rep.pixelsWide, height: rep.pixelsHigh, rgba: rgba)
+            return
+        }
+
+        try self.init(rep: rep, width: rep.pixelsWide, height: rep.pixelsHigh)
     }
 
     private init(rep: NSBitmapImageRep, width: Int, height: Int) throws {
