@@ -7,8 +7,6 @@
 ## 阶段 4：WorkspaceEdit 剩余缺口
 
 - 建立真正跨 session / project-level 的 WorkspaceEdit request 与 conflict owner 归属模型。
-- 将 typed request retry descriptor 从当前 session 内存 owner 推进到 project/session 可恢复、可共享、可审计的 store。
-- 将 request owner 与 transaction sequence、descriptor、不可重跑原因和可重跑能力关联起来，并在没有可执行闭包时仍能展示归属。
 - 让 WorkspaceEdit History / Preview / Conflict UI 能在重新打开 panel、切换 tab/project 或 session restore 后展示归属信息，并在可安全重跑时触发 request rerun。
 - 明确不能重跑的历史请求状态：源 tab 关闭、document URI 失效、workspace root 不匹配、server capability 变化、request 参数缺失或已过期。
 - 完成 snippet completion 的 `additionalTextEdits` 与 snippet 主体编辑的统一 transaction / undo 语义。

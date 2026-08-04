@@ -1,7 +1,7 @@
 import Foundation
 
-struct AttoWorkspaceEditRequestRetryDescriptor: Equatable {
-    enum Kind: String, Equatable {
+struct AttoWorkspaceEditRequestRetryDescriptor: Codable, Equatable {
+    enum Kind: String, Codable, Equatable {
         case unknown
         case formatDocument = "format_document"
         case formatSelection = "format_selection"
@@ -13,26 +13,34 @@ struct AttoWorkspaceEditRequestRetryDescriptor: Equatable {
         case colorPresentation = "color_presentation"
     }
 
-    enum InvalidationReason: String, Equatable {
+    enum InvalidationReason: String, Codable, Equatable {
         case sourceTabClosed = "source_tab_closed"
         case documentURIUnavailable = "document_uri_unavailable"
         case workspaceRootUnavailable = "workspace_root_unavailable"
         case lspUnavailable = "lsp_unavailable"
         case requestParametersUnavailable = "request_parameters_unavailable"
+        case requestClosureUnavailable = "request_closure_unavailable"
         case serverCapabilityChanged = "server_capability_changed"
         case expired
     }
 
-    struct Parameter: Equatable {
+    struct Parameter: Codable, Equatable {
         let name: String
         let value: String
     }
 
-    struct Source: Equatable {
+    struct Source: Codable, Equatable {
         let tabID: UUID?
         let coreTabID: UInt64?
         let title: String?
         let documentURI: String?
+
+        private enum CodingKeys: String, CodingKey {
+            case tabID = "tab_id"
+            case coreTabID = "core_tab_id"
+            case title
+            case documentURI = "document_uri"
+        }
 
         static let unavailable = Source(
             tabID: nil,
@@ -49,6 +57,16 @@ struct AttoWorkspaceEditRequestRetryDescriptor: Equatable {
     let source: Source
     let parameterSummary: [Parameter]
     let invalidationReason: InvalidationReason?
+
+    private enum CodingKeys: String, CodingKey {
+        case kind
+        case label
+        case workspaceRootURI = "workspace_root_uri"
+        case documentURI = "document_uri"
+        case source
+        case parameterSummary = "parameter_summary"
+        case invalidationReason = "invalidation_reason"
+    }
 
     var canRerun: Bool {
         invalidationReason == nil

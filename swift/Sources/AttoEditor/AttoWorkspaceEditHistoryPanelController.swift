@@ -17,7 +17,12 @@ final class AttoWorkspaceEditHistoryPanelController: NSObject, NSTableViewDataSo
         let workspaceEditJSON: String?
         let requestRetryLabel: String?
         let requestRetryDescriptor: AttoWorkspaceEditRequestRetryDescriptor?
+        let requestRetryUnavailableReason: String?
         let canUndoLatest: Bool
+
+        var canRerunRequest: Bool {
+            requestRetryDescriptor?.canRerun == true
+        }
     }
 
     private var items: [Item] = []
@@ -356,6 +361,7 @@ final class AttoWorkspaceEditHistoryPanelController: NSObject, NSTableViewDataSo
                     || item.firstSaveableConflictURI?.localizedCaseInsensitiveContains(query) == true
                     || item.firstDiscardableConflictURI?.localizedCaseInsensitiveContains(query) == true
                     || item.requestRetryLabel?.localizedCaseInsensitiveContains(query) == true
+                    || item.requestRetryUnavailableReason?.localizedCaseInsensitiveContains(query) == true
                     || item.requestRetryDescriptor?.searchableText.localizedCaseInsensitiveContains(query) == true
             }
         }
@@ -462,7 +468,8 @@ final class AttoWorkspaceEditHistoryPanelController: NSObject, NSTableViewDataSo
 
     private func selectedRerunRequestSequence() -> UInt64? {
         guard let item = selectedItem(),
-              item.requestRetryLabel?.isEmpty == false
+              item.requestRetryLabel?.isEmpty == false,
+              item.canRerunRequest
         else {
             return nil
         }
@@ -499,6 +506,7 @@ final class AttoWorkspaceEditHistoryPanelController: NSObject, NSTableViewDataSo
         guard let item = selectedItem(),
               item.status == "Rejected",
               item.requestRetryLabel?.isEmpty == false,
+              item.canRerunRequest,
               let uri = item.firstSaveableConflictURI
         else {
             return nil
@@ -510,6 +518,7 @@ final class AttoWorkspaceEditHistoryPanelController: NSObject, NSTableViewDataSo
         guard let item = selectedItem(),
               item.status == "Rejected",
               item.requestRetryLabel?.isEmpty == false,
+              item.canRerunRequest,
               let uri = item.firstDiscardableConflictURI
         else {
             return nil
@@ -616,6 +625,9 @@ enum AttoWorkspaceEditHistoryFormatter {
             let editCount = result.appliedEditCount
             let resourceCount = result.appliedResourceOperationCount
             let requestRetryDescriptor = requestRetryDescriptorsBySequence[event.sequence]
+            let requestRetryUnavailableReason = requestRetryDescriptor?.invalidationReason.map(
+                requestRetryUnavailableReasonText
+            )
             return AttoWorkspaceEditHistoryPanelController.Item(
                 sequence: event.sequence,
                 operation: event.operation,
@@ -623,7 +635,9 @@ enum AttoWorkspaceEditHistoryFormatter {
                 detail: detailText(
                     editCount: editCount,
                     resourceCount: resourceCount,
-                    result: result
+                    result: result,
+                    requestRetryDescriptor: requestRetryDescriptor,
+                    requestRetryUnavailableReason: requestRetryUnavailableReason
                 ),
                 status: status(for: result),
                 conflictCount: result.conflicts.count,
@@ -633,6 +647,7 @@ enum AttoWorkspaceEditHistoryFormatter {
                 workspaceEditJSON: event.workspaceEditJSON,
                 requestRetryLabel: requestRetryDescriptor?.label,
                 requestRetryDescriptor: requestRetryDescriptor,
+                requestRetryUnavailableReason: requestRetryUnavailableReason,
                 canUndoLatest: event.sequence == latestUndoableSequence
             )
         }
@@ -671,7 +686,9 @@ enum AttoWorkspaceEditHistoryFormatter {
     private static func detailText(
         editCount: Int,
         resourceCount: Int,
-        result: EcuWorkspaceEditTransactionResult
+        result: EcuWorkspaceEditTransactionResult,
+        requestRetryDescriptor: AttoWorkspaceEditRequestRetryDescriptor?,
+        requestRetryUnavailableReason: String?
     ) -> String {
         var parts = [
             "\(editCount) text edits, \(resourceCount) resource ops",
@@ -679,8 +696,47 @@ enum AttoWorkspaceEditHistoryFormatter {
         if result.conflicts.isEmpty == false {
             parts.append(conflictSummary(for: result.conflicts))
         }
+        if let requestRetryDescriptor {
+            parts.append(requestSummary(
+                descriptor: requestRetryDescriptor,
+                unavailableReason: requestRetryUnavailableReason
+            ))
+        }
         parts.append(uriSummary(for: result))
         return parts.joined(separator: " | ")
+    }
+
+    private static func requestSummary(
+        descriptor: AttoWorkspaceEditRequestRetryDescriptor,
+        unavailableReason: String?
+    ) -> String {
+        guard let unavailableReason else {
+            return "Request: \(descriptor.label)"
+        }
+        return "Request: \(descriptor.label) unavailable (\(unavailableReason))"
+    }
+
+    private static func requestRetryUnavailableReasonText(
+        _ reason: AttoWorkspaceEditRequestRetryDescriptor.InvalidationReason
+    ) -> String {
+        switch reason {
+        case .sourceTabClosed:
+            return "source tab closed"
+        case .documentURIUnavailable:
+            return "document URI unavailable"
+        case .workspaceRootUnavailable:
+            return "workspace root unavailable"
+        case .lspUnavailable:
+            return "LSP unavailable"
+        case .requestParametersUnavailable:
+            return "request parameters unavailable"
+        case .requestClosureUnavailable:
+            return "retry closure unavailable"
+        case .serverCapabilityChanged:
+            return "server capability changed"
+        case .expired:
+            return "request expired"
+        }
     }
 
     private static func conflictSummary(for conflicts: [EcuWorkspaceEditTransactionConflict]) -> String {

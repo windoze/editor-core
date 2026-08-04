@@ -94,7 +94,7 @@ extension AttoEditorAreaViewController {
             return AttoWorkspaceEditHistoryFormatter.items(
                 from: snapshot,
                 consumedUndoSequences: workspaceEditConsumedUndoSequences,
-                requestRetryDescriptorsBySequence: workspaceEditRequestRetryDescriptorsBySequence()
+                requestRetryDescriptorsBySequence: workspaceEditRequestRetryDescriptorsBySequence(for: snapshot)
             )
         } catch {
             NSLog("AttoEditor: failed to load WorkspaceEdit transaction history: %@", String(describing: error))
@@ -134,7 +134,13 @@ extension AttoEditorAreaViewController {
     @discardableResult
     func rerunWorkspaceEditHistoryRequest(_ sequence: UInt64) -> Bool {
         guard let owner = workspaceEditRequestRetryOwnersByTransactionSequence[sequence] else {
-            setTransientStatusText("WorkspaceEdit request retry source unavailable")
+            if let descriptor = workspaceEditRequestRetryDescriptorForHistorySequence(sequence) {
+                let reason = descriptor.invalidationReason.map(workspaceEditRequestRetryUnavailableReasonText)
+                    ?? "Retry closure unavailable"
+                setTransientStatusText("WorkspaceEdit request retry unavailable: \(descriptor.label) (\(reason))")
+            } else {
+                setTransientStatusText("WorkspaceEdit request retry source unavailable")
+            }
             NSSound.beep()
             return false
         }
@@ -239,9 +245,20 @@ extension AttoEditorAreaViewController {
     ) {
         guard let owner else { return }
         do {
-            let sequence = try coreDocuments.workspaceEditTransactionEventsLatestSequence()
+            let snapshot = try coreDocuments.workspaceEditTransactionEvents()
+            guard let event = snapshot.events.last else { return }
+            let sequence = event.sequence
             guard sequence > 0 else { return }
             workspaceEditRequestRetryOwnersByTransactionSequence[sequence] = owner
+            try workspaceEditRequestOwnerStore.append(
+                record: AttoWorkspaceEditRequestOwnerRecord(
+                    recordedAt: Date(),
+                    workspaceRootURI: workspaceRootURL.standardizedFileURL.absoluteString,
+                    transactionSequence: sequence,
+                    workspaceEditJSON: event.workspaceEditJSON,
+                    descriptor: owner.descriptor
+                )
+            )
             pruneWorkspaceEditRequestRetryOwners(maxCount: 64)
         } catch {
             NSLog(
@@ -251,10 +268,77 @@ extension AttoEditorAreaViewController {
         }
     }
 
-    private func workspaceEditRequestRetryDescriptorsBySequence()
-        -> [UInt64: AttoWorkspaceEditRequestRetryDescriptor]
-    {
-        workspaceEditRequestRetryOwnersByTransactionSequence.mapValues(\.descriptor)
+    private func workspaceEditRequestRetryDescriptorsBySequence(
+        for snapshot: EcuWorkspaceEditTransactionEventsSnapshot
+    ) -> [UInt64: AttoWorkspaceEditRequestRetryDescriptor] {
+        var descriptors: [UInt64: AttoWorkspaceEditRequestRetryDescriptor] = [:]
+        let eventsBySequence = Dictionary(uniqueKeysWithValues: snapshot.events.map { ($0.sequence, $0) })
+        let persistedRecords = workspaceEditRequestOwnerStore.loadRecent(
+            workspaceRootURL: workspaceRootURL,
+            limit: max(snapshot.events.count, 64)
+        )
+        for record in persistedRecords {
+            guard let event = eventsBySequence[record.transactionSequence],
+                  workspaceEditOwnerRecord(record, matches: event)
+            else {
+                continue
+            }
+            descriptors[record.transactionSequence] = persistedUnavailableDescriptor(record.descriptor)
+        }
+
+        for (sequence, owner) in workspaceEditRequestRetryOwnersByTransactionSequence {
+            descriptors[sequence] = owner.descriptor
+        }
+        return descriptors
+    }
+
+    private func workspaceEditRequestRetryDescriptorForHistorySequence(
+        _ sequence: UInt64
+    ) -> AttoWorkspaceEditRequestRetryDescriptor? {
+        guard let coreDocuments,
+              let snapshot = try? coreDocuments.workspaceEditTransactionEvents()
+        else {
+            return nil
+        }
+        return workspaceEditRequestRetryDescriptorsBySequence(for: snapshot)[sequence]
+    }
+
+    private func workspaceEditOwnerRecord(
+        _ record: AttoWorkspaceEditRequestOwnerRecord,
+        matches event: EcuWorkspaceEditTransactionEvent
+    ) -> Bool {
+        guard let recordWorkspaceEditJSON = record.workspaceEditJSON else { return true }
+        return recordWorkspaceEditJSON == event.workspaceEditJSON
+    }
+
+    private func persistedUnavailableDescriptor(
+        _ descriptor: AttoWorkspaceEditRequestRetryDescriptor
+    ) -> AttoWorkspaceEditRequestRetryDescriptor {
+        guard descriptor.invalidationReason == nil else { return descriptor }
+        return descriptor.invalidated(.requestClosureUnavailable)
+    }
+
+    private func workspaceEditRequestRetryUnavailableReasonText(
+        _ reason: AttoWorkspaceEditRequestRetryDescriptor.InvalidationReason
+    ) -> String {
+        switch reason {
+        case .sourceTabClosed:
+            return "Source tab closed"
+        case .documentURIUnavailable:
+            return "Document URI unavailable"
+        case .workspaceRootUnavailable:
+            return "Workspace root unavailable"
+        case .lspUnavailable:
+            return "LSP unavailable"
+        case .requestParametersUnavailable:
+            return "Request parameters unavailable"
+        case .requestClosureUnavailable:
+            return "Retry closure unavailable"
+        case .serverCapabilityChanged:
+            return "Server capability changed"
+        case .expired:
+            return "Request expired"
+        }
     }
 
     private func pruneWorkspaceEditRequestRetryOwners(retaining validSequences: Set<UInt64>) {

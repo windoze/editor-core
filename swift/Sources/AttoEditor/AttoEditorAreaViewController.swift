@@ -600,6 +600,10 @@ final class AttoEditorAreaViewController: NSViewController {
         workspaceEditRequestRetryOwnersByTransactionSequence.mapValues(\.descriptor)
     }
 
+    func _workspaceEditRequestOwnerRecordsForTesting() -> [AttoWorkspaceEditRequestOwnerRecord] {
+        workspaceEditRequestOwnerStore.loadRecent(workspaceRootURL: workspaceRootURL, limit: 100)
+    }
+
     func _workspaceEditHistoryPanelRowCountForTesting() -> Int {
         workspaceEditHistoryPanelController?.rowCount ?? 0
     }
@@ -1316,6 +1320,7 @@ final class AttoEditorAreaViewController: NSViewController {
     var lspEnvironmentProvider: () -> [String: String] = {
         ProcessInfo.processInfo.environment
     }
+    let workspaceEditRequestOwnerStore: AttoWorkspaceEditRequestOwnerStore
 
     init(
         library: EditorCoreUIFFILibrary,
@@ -1325,7 +1330,8 @@ final class AttoEditorAreaViewController: NSViewController {
         configurationSnapshotProvider: ((URL, AttoConfigurationDocumentContext?) -> AttoConfigurationSnapshot)? = nil,
         themeResolver: ((String) -> EditorCoreSkiaTheme)? = nil,
         preferences: AttoPreferences = .shared,
-        projectLspProcessHealthLogStore: AttoProjectLspProcessHealthLogStore = AttoProjectLspProcessHealthLogStore()
+        projectLspProcessHealthLogStore: AttoProjectLspProcessHealthLogStore = AttoProjectLspProcessHealthLogStore(),
+        workspaceEditRequestOwnerStore: AttoWorkspaceEditRequestOwnerStore = AttoWorkspaceEditRequestOwnerStore()
     ) {
         self.library = library
         self.theme = theme
@@ -1336,6 +1342,7 @@ final class AttoEditorAreaViewController: NSViewController {
         self.configurationSnapshot = configurationSnapshot
             ?? preferences.effectiveConfigurationSnapshot(workspaceRootURL: workspaceRootURL)
         self.projectLspProcessHealthLogStore = projectLspProcessHealthLogStore
+        self.workspaceEditRequestOwnerStore = workspaceEditRequestOwnerStore
         do {
             let coreDocuments = try MultiDocumentEditorUI(library: library)
             self.coreDocuments = coreDocuments
