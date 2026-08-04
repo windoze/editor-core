@@ -453,6 +453,70 @@ extension AttoEditorCommandTests {
         XCTAssertEqual(vc._transientStatusTextForTesting(), "LSP auto-restart enabled")
     }
 
+    func testProjectLspDashboardShowsCoreRecoveryPolicyFromLifecycleEvents() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let vc = makeEditorArea(workspaceRootURL: tempDir)
+        let window = attachToWindow(vc)
+        defer { window.close() }
+
+        let lifecycleEvent = try JSONDecoder().decode(EcuProjectLspLifecycleEvent.self, from: Data("""
+        {
+          "sequence": 42,
+          "operation": "restart",
+          "trigger": "auto_restart",
+          "status": "requested",
+          "tab_id": 7,
+          "active_view_index": 0,
+          "document_uri": "file:///project/main.rs",
+          "language_id": "rust",
+          "language_name": "Rust",
+          "server_key": "rust",
+          "command": "/bin/rust-analyzer",
+          "args": ["--stdio"],
+          "workspace_roots": ["file:///project"],
+          "recovery_policy": {
+            "enabled": false,
+            "max_attempts": 2,
+            "base_delay_millis": 1500
+          },
+          "attempt_id": 41
+        }
+        """.utf8))
+        vc.projectLspLifecycleEventStore.record(lifecycleEvent)
+
+        XCTAssertTrue(vc.showProjectLspDashboardPanel())
+        let panel = try XCTUnwrap(window.childWindows?.first {
+            $0.identifier?.rawValue == AttoAccessibilityID.commandPalettePanel(prefix: "AttoEditor.LSP.ProjectDashboard")
+        })
+        let root = try XCTUnwrap(panel.contentView)
+        let table = try XCTUnwrap(
+            findView(
+                identifier: AttoAccessibilityID.commandPaletteTable(prefix: "AttoEditor.LSP.ProjectDashboard"),
+                in: root
+            ) as? NSTableView
+        )
+        let titles = (0..<table.numberOfRows).compactMap { row in
+            (table.view(atColumn: 0, row: row, makeIfNecessary: true) as? NSTableCellView)?
+                .textField?
+                .stringValue
+        }
+
+        XCTAssertTrue(titles.contains { title in
+            title.contains("Server - rust")
+                && title.contains("lifecycle events 1 failed 0")
+                && title.contains("core policy disabled, max attempts 2, base delay 1.5s")
+        }, titles.joined(separator: "\n"))
+        XCTAssertTrue(titles.contains { title in
+            title.contains("Lifecycle -")
+                && title.contains("attempt #41")
+                && title.contains("recovery disabled, max attempts 2, base delay 1.5s")
+        }, titles.joined(separator: "\n"))
+    }
+
     func testProjectLspProcessHealthPanelFallsBackToPersistedLog() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AttoEditorCommandTests-\(UUID().uuidString)", isDirectory: true)

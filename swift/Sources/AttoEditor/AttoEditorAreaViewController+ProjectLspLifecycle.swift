@@ -30,6 +30,7 @@ extension AttoEditorAreaViewController {
         if let attemptId = event.attemptId {
             details.append("attempt #\(attemptId)")
         }
+        details.append("recovery \(projectLspRecoveryPolicyDescription(event.recoveryPolicy))")
         if let error = compactProjectLspPanelText(event.errorMessage) {
             details.append(error)
         }

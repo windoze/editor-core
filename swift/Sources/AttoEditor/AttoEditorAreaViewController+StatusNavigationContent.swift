@@ -666,7 +666,8 @@ extension AttoEditorAreaViewController {
 
         let serverGroups = projectLspDashboardServerGroups(
             healthEvents: healthEvents,
-            persistedEntries: persistedEntries
+            persistedEntries: persistedEntries,
+            lifecycleEvents: lifecycleEvents
         )
 
         commands.append(contentsOf: serverGroups.enumerated().map { idx, group in
@@ -834,7 +835,8 @@ extension AttoEditorAreaViewController {
 
     private func projectLspDashboardServerGroups(
         healthEvents: [AttoProjectLspProcessHealthEvent],
-        persistedEntries: [AttoProjectLspProcessHealthLogEntry]
+        persistedEntries: [AttoProjectLspProcessHealthLogEntry],
+        lifecycleEvents: [EcuProjectLspLifecycleEvent]
     ) -> [ProjectLspDashboardServerGroup] {
         var groups: [String: ProjectLspDashboardServerGroup] = [:]
 
@@ -864,6 +866,20 @@ extension AttoEditorAreaViewController {
                 state: entry.state,
                 processState: entry.process.state,
                 sequence: entry.sequence
+            )
+            groups[identity.key] = group
+        }
+
+        for event in lifecycleEvents {
+            let identity = Self.projectLspDashboardServerIdentity(
+                serverName: event.serverKey,
+                serverCommand: event.command
+            )
+            var group = groups[identity.key] ?? ProjectLspDashboardServerGroup(identity: identity)
+            group.recordLifecycle(
+                status: event.status,
+                sequence: event.sequence,
+                recoveryPolicy: event.recoveryPolicy
             )
             groups[identity.key] = group
         }
@@ -903,6 +919,10 @@ extension AttoEditorAreaViewController {
         var healthFailedCount: Int = 0
         var persistedLogCount: Int = 0
         var persistedFailedCount: Int = 0
+        var lifecycleEventCount: Int = 0
+        var lifecycleFailedCount: Int = 0
+        var latestRecoveryPolicy: EcuProjectLspRecoveryPolicy?
+        var latestLifecycleSequence: UInt64 = 0
         var latestProcessState: String?
         var latestSequence: UInt64 = 0
         var recoveryDisabled: Bool = false
@@ -922,6 +942,22 @@ extension AttoEditorAreaViewController {
                 healthFailedCount += 1
             }
             recordLatest(processState: processState, sequence: sequence)
+        }
+
+        mutating func recordLifecycle(
+            status: String,
+            sequence: UInt64,
+            recoveryPolicy: EcuProjectLspRecoveryPolicy
+        ) {
+            lifecycleEventCount += 1
+            if status == "failed" {
+                lifecycleFailedCount += 1
+            }
+            if sequence >= latestLifecycleSequence {
+                latestLifecycleSequence = sequence
+                latestRecoveryPolicy = recoveryPolicy
+            }
+            latestSequence = max(latestSequence, sequence)
         }
 
         mutating func recordPersistedLog(availability: String, state: String, processState: String, sequence: UInt64) {
@@ -973,7 +1009,13 @@ extension AttoEditorAreaViewController {
         let recovery = group.recoveryDisabled ? "recovery disabled" : "recovery enabled"
         let baseDelay = formatProjectLspDashboardSeconds(group.recoveryBaseDelaySeconds)
         let policySource = group.recoveryHasOverride ? "custom policy" : "global policy"
-        return "Server - \(group.displayName): health events \(group.healthEventCount) failed \(group.healthFailedCount), persisted logs \(group.persistedLogCount) failed \(group.persistedFailedCount), \(recovery), max attempts \(group.recoveryMaxAttempts), base delay \(baseDelay), \(policySource)\(latestProcess)"
+        let lifecycle = group.lifecycleEventCount > 0
+            ? ", lifecycle events \(group.lifecycleEventCount) failed \(group.lifecycleFailedCount)"
+            : ""
+        let corePolicy = group.latestRecoveryPolicy.map {
+            ", core policy \(projectLspRecoveryPolicyDescription($0))"
+        } ?? ""
+        return "Server - \(group.displayName): health events \(group.healthEventCount) failed \(group.healthFailedCount), persisted logs \(group.persistedLogCount) failed \(group.persistedFailedCount)\(lifecycle), \(recovery), max attempts \(group.recoveryMaxAttempts), base delay \(baseDelay), \(policySource)\(corePolicy)\(latestProcess)"
     }
 
     private func projectLspDashboardServerRecoveryActionCommands(

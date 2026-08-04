@@ -213,7 +213,11 @@
   - 验证：`swift test --package-path swift --filter 'AttoEditorCommandTests/test(WorkspaceRootChangeAutoStartsConfiguredOpenTabLsp|ClosingConfiguredProjectLspTabRecordsStopOutcome|PlainTextSyntaxSwitchRecordsProjectLspStopOutcome|ProjectLspAutoRestartUsesCoreRestartPlanRoot|RestartLspServerInActiveTabUsesCoreRestartPlanRoot|RestartLspServerRestartsActiveTabSession|ShutdownLspServerStopsActiveSessionAndRecordsOutcome|ShutdownProjectLspServersStopsConfiguredOpenTabsAndRecordsOutcomes|RestartProjectLspServersRestartsConfiguredOpenTabs|ProjectLspProcessHealthAutoRestartsExitedConfiguredTab)'`
   - 验证：`swift test --package-path swift --filter AttoLspResultLifecycleStoreTests/testProjectLspLifecycleEventStoreBoundsAndFiltersBySequence`
   - 验证：`cargo fmt --check`
-- [ ] 产品化 Project LSP Dashboard：server health、events、stderr tail、trend、recovery policy、manual actions、query/export/clear。
+- [x] 产品化 Project LSP Dashboard：server health、events、stderr tail、trend、recovery policy、manual actions、query/export/clear。
+  - [x] Dashboard 汇总 status failures、core lifecycle events/attempts、process health、persisted logs、active recovery retry state，并展示 server-level health/log failed 计数、stderr tail、趋势窗口和 manual recovery actions。
+  - [x] Dashboard server 行和 lifecycle 行展示 core lifecycle event 携带的 typed `recovery_policy`，让执行时使用的恢复策略能在排障入口中直接审计。
+  - [x] Process health log 面板保留 field filter query，并提供当前 workspace 的 clear/export 操作；Dashboard 继续复用同一日志和事件模型。
+  - 验证：`swift test --package-path swift --filter 'AttoEditorCommandTests/test(ProjectLspDashboardPanelShowsStatusAndHealthSnapshots|ProjectLspDashboardShowsCoreRecoveryPolicyFromLifecycleEvents|ProjectLspProcessHealthLogPanelUsesFieldFilterQuery|ClearProjectLspProcessHealthLogClearsCurrentWorkspaceOnly|ExportProjectLspProcessHealthLogExportsCurrentWorkspaceOnly)'`
 - [ ] 明确跨独立 project session 的合并、隔离、去重和 shutdown 策略。
 
 ## 阶段 7：Result Panels 与 Workbench

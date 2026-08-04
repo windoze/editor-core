@@ -14,9 +14,6 @@
 ## 阶段 6：Project / LSP Lifecycle Ownership
 
 - 将 LSP start / restart / stop / shutdown 的实际执行 ownership 从 Swift/AppKit 过渡到 core-owned typed lifecycle。
-- 完成 project-level LSP server ownership schema，覆盖 workspace roots、language metadata、server capability、workspaceFolders、root alias、shared session、manual/auto trigger 和 attempt id。
-- 将恢复策略从 Swift dashboard 配置推进到 core 可解释、可执行或可校验的策略模型。
-- 产品化 Project LSP Dashboard：server-level health、recent failures、stderr tail、trend、recovery policy、manual actions、export/clear/query 的一致展示。
 - 明确跨独立 project session 的合并、隔离、去重和 shutdown 策略。
 
 ## 阶段 7：Result Panels 与 Workbench

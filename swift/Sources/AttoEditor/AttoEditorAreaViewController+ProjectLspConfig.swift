@@ -198,6 +198,19 @@ extension AttoEditorAreaViewController {
         Double(millis) / 1_000.0
     }
 
+    static func projectLspRecoveryPolicyDescription(_ policy: EcuProjectLspRecoveryPolicy) -> String {
+        let enabled = policy.enabled ? "enabled" : "disabled"
+        let baseDelay = formatProjectLspRecoverySeconds(projectLspRecoveryBaseDelaySeconds(policy.baseDelayMillis))
+        return "\(enabled), max attempts \(policy.maxAttempts), base delay \(baseDelay)"
+    }
+
+    static func formatProjectLspRecoverySeconds(_ seconds: TimeInterval) -> String {
+        if seconds.rounded() == seconds {
+            return "\(Int(seconds))s"
+        }
+        return "\(seconds)s"
+    }
+
     @discardableResult
     func enableLspSupport(
         for url: URL,
