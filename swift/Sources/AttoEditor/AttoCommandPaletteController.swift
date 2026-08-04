@@ -91,6 +91,10 @@ struct AttoCommandPaletteCommand {
 
 @MainActor
 final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate, NSWindowDelegate {
+    private static let preferredPanelSize = NSSize(width: 640, height: 360)
+    private static let minimumPanelSize = NSSize(width: 340, height: 240)
+    private static let visibleFrameInset: CGFloat = 20
+
     private let commandsProvider: () -> [AttoCommandPaletteCommand]
     private let accessibilityPrefix: String
     private let filtersCommands: Bool
@@ -199,8 +203,10 @@ final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTab
         let col = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("cmd"))
         col.title = "Command"
         col.width = 600
+        col.resizingMask = .autoresizingMask
         tableView.addTableColumn(col)
         tableView.headerView = nil
+        tableView.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
         tableView.dataSource = self
         tableView.delegate = self
         tableView.rowHeight = 26
@@ -241,8 +247,9 @@ final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTab
     private func position(panel: NSPanel, relativeTo window: NSWindow) {
         guard let screen = window.screen ?? NSScreen.main else { return }
 
-        let width: CGFloat = 640
-        let height: CGFloat = 360
+        let size = Self.panelSize(relativeTo: window, visibleFrame: screen.visibleFrame)
+        let width = size.width
+        let height = size.height
 
         let winFrame = window.frame
         var x = winFrame.midX - width / 2
@@ -254,6 +261,19 @@ final class AttoCommandPaletteController: NSObject, NSTableViewDataSource, NSTab
         y = max(visible.minY + 20, min(y, visible.maxY - height - 20))
 
         panel.setFrame(NSRect(x: x, y: y, width: width, height: height), display: true)
+        tableView.tableColumns.first?.width = max(1, width - 24)
+    }
+
+    private static func panelSize(relativeTo window: NSWindow, visibleFrame: NSRect) -> NSSize {
+        let visibleWidth = max(minimumPanelSize.width, visibleFrame.width - visibleFrameInset * 2)
+        let visibleHeight = max(minimumPanelSize.height, visibleFrame.height - visibleFrameInset * 2)
+        let windowWidth = max(minimumPanelSize.width, window.frame.width - 32)
+        let windowHeight = max(minimumPanelSize.height, window.frame.height - 120)
+
+        return NSSize(
+            width: min(preferredPanelSize.width, visibleWidth, windowWidth),
+            height: min(preferredPanelSize.height, visibleHeight, windowHeight)
+        )
     }
 
     // MARK: - Filtering

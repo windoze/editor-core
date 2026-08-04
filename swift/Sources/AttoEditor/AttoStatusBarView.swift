@@ -57,10 +57,16 @@ final class AttoStatusBarView: NSView {
         languagePopUp.target = self
         languagePopUp.action = #selector(languageChanged(_:))
         languagePopUp.translatesAutoresizingMaskIntoConstraints = false
+        languagePopUp.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+        NSLayoutConstraint.activate([
+            languagePopUp.widthAnchor.constraint(lessThanOrEqualToConstant: 140),
+        ])
 
         for l in [positionLabel, selectionLabel, fileSizeLabel] {
             l.font = NSFont.systemFont(ofSize: 11, weight: .regular)
             l.textColor = NSColor(attoHex: 0xB5B5B5)
+            l.lineBreakMode = .byTruncatingTail
+            l.setContentCompressionResistancePriority(.required, for: .horizontal)
             l.translatesAutoresizingMaskIntoConstraints = false
         }
         positionLabel.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.statusBarPositionLabel)
@@ -77,6 +83,7 @@ final class AttoStatusBarView: NSView {
         leftStack.orientation = .horizontal
         leftStack.alignment = .centerY
         leftStack.spacing = 12
+        leftStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         leftStack.translatesAutoresizingMaskIntoConstraints = false
         leftStack.addArrangedSubview(leftLabel)
         leftStack.addArrangedSubview(lspLabel)
@@ -84,6 +91,7 @@ final class AttoStatusBarView: NSView {
         rightStack.orientation = .horizontal
         rightStack.alignment = .centerY
         rightStack.spacing = 12
+        rightStack.setContentCompressionResistancePriority(.required, for: .horizontal)
         rightStack.translatesAutoresizingMaskIntoConstraints = false
         rightStack.addArrangedSubview(languageSourceLabel)
         rightStack.addArrangedSubview(languagePopUp)

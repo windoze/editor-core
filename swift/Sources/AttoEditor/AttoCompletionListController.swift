@@ -3,11 +3,16 @@ import Foundation
 
 @MainActor
 final class AttoCompletionListController: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSWindowDelegate {
+    private static let preferredPanelWidth: CGFloat = 680
+    private static let minimumPanelWidth: CGFloat = 360
+    private static let visibleFrameInset: CGFloat = 8
+
     private var panel: NSPanel?
     private let tableView = AttoCompletionTableView(frame: .zero)
     private let scrollView = NSScrollView(frame: .zero)
     private let previewScrollView = NSScrollView(frame: .zero)
     private let previewTextView = NSTextView(frame: .zero)
+    private var listWidthConstraint: NSLayoutConstraint?
 
     private var items: [AttoLspCompletionParser.Item] = []
     private var visibleItems: [AttoLspCompletionParser.Item] = []
@@ -101,8 +106,10 @@ final class AttoCompletionListController: NSObject, NSTableViewDataSource, NSTab
 
         let col = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("completion"))
         col.width = 388
+        col.resizingMask = .autoresizingMask
         tableView.addTableColumn(col)
         tableView.headerView = nil
+        tableView.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
         tableView.dataSource = self
         tableView.delegate = self
         tableView.rowHeight = 24
@@ -164,11 +171,13 @@ final class AttoCompletionListController: NSObject, NSTableViewDataSource, NSTab
         root.addSubview(scrollView)
         root.addSubview(separator)
         root.addSubview(previewScrollView)
+        let listWidthConstraint = scrollView.widthAnchor.constraint(equalToConstant: 400)
+        self.listWidthConstraint = listWidthConstraint
         NSLayoutConstraint.activate([
             scrollView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             scrollView.topAnchor.constraint(equalTo: root.topAnchor),
             scrollView.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-            scrollView.widthAnchor.constraint(equalToConstant: 400),
+            listWidthConstraint,
 
             separator.leadingAnchor.constraint(equalTo: scrollView.trailingAnchor),
             separator.topAnchor.constraint(equalTo: root.topAnchor, constant: 6),
@@ -188,8 +197,15 @@ final class AttoCompletionListController: NSObject, NSTableViewDataSource, NSTab
         guard let window = editorView.window else { return }
         let screen = window.screen ?? NSScreen.main
 
-        let width: CGFloat = 680
+        let width = Self.panelWidth(relativeTo: window, visibleFrame: screen?.visibleFrame)
         let height = min(CGFloat(12 * 24 + 10), max(96, CGFloat(min(itemCount, 12)) * 24 + 10))
+        let listWidth = min(400, max(220, (width * 0.58).rounded(.down)))
+        listWidthConstraint?.constant = listWidth
+        tableView.tableColumns.first?.width = max(1, listWidth - 1)
+        previewTextView.textContainer?.containerSize = NSSize(
+            width: max(120, width - listWidth - 1),
+            height: CGFloat.greatestFiniteMagnitude
+        )
 
         let rectInWindow = editorView.convert(anchorRect, to: nil)
         let rectInScreen = window.convertToScreen(rectInWindow)
@@ -206,6 +222,14 @@ final class AttoCompletionListController: NSObject, NSTableViewDataSource, NSTab
         }
 
         panel.setFrame(NSRect(x: x, y: y, width: width, height: height), display: true)
+    }
+
+    private static func panelWidth(relativeTo window: NSWindow, visibleFrame: NSRect?) -> CGFloat {
+        var width = min(preferredPanelWidth, max(minimumPanelWidth, window.frame.width - 16))
+        if let visibleFrame {
+            width = min(width, max(minimumPanelWidth, visibleFrame.width - visibleFrameInset * 2))
+        }
+        return width
     }
 
     func numberOfRows(in tableView: NSTableView) -> Int {

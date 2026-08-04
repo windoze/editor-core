@@ -494,7 +494,15 @@
 
 ### 剩余任务
 
-- [ ] 打磨 tab bar、sidebar、status bar、quick panel、completion popup、find/replace、split panes、minimap 和 gutter marker。
+- [x] 打磨 tab bar、sidebar、status bar、quick panel、completion popup、find/replace、split panes、minimap 和 gutter marker。
+  - [x] tab chip 增加最大宽度和中间截断；status bar 右侧状态、语言选择和文件信息在窄窗口下保持边界稳定。
+  - [x] find/replace 搜索和替换字段改为 min/preferred/max 宽度约束，clear action 使用图标按钮并补齐 toggle tooltips。
+  - [x] quick panel 和 completion popup 根据窗口/屏幕可见区域收缩，并同步 table column、completion list 和 preview 宽度。
+  - [x] 新增阶段 14 chrome polish layout 测试，覆盖窄 editor area、浮层 panel、窗口级 sidebar + minimap + gutter marker 组合边界。
+  - 验证：`swift test --package-path swift --filter AttoEditorChromePolishLayoutTests`
+  - 验证：`swift test --package-path swift --filter AttoEditorVisualLayoutTests`
+  - 验证：`swift test --package-path swift --filter EditorCoreSkiaMinimapTests`
+  - 验证：`swift test --package-path swift --filter EditorCoreSkiaViewGutterWidthTests`
 - [ ] 覆盖窄窗口、多 pane、长文件、多 cursor、diagnostics、folding、semantic overlays 的布局与视觉测试。
 - [ ] 修复 focus、keyboard navigation、selection、hover、scroll、overlay stacking 的产品细节。
 

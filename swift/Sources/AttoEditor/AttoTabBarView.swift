@@ -321,6 +321,7 @@ private final class AttoTabChipView: NSView {
 
     // Sublime-ish sizing.
     private let minWidth: CGFloat = 96
+    private let maxWidth: CGFloat = 220
     private let dragThreshold: CGFloat = 6
 
     init(
@@ -370,8 +371,7 @@ private final class AttoTabChipView: NSView {
             ? NSFontManager.shared.convert(baseFont, toHaveTrait: .italicFontMask)
             : baseFont
         titleLabel.textColor = selected ? NSColor(attoHex: 0xE6E6E6) : NSColor(attoHex: 0xB5B5B5)
-        // Never insert ellipses (especially not in the middle); overflow is handled by the tab bar.
-        titleLabel.lineBreakMode = .byClipping
+        titleLabel.lineBreakMode = .byTruncatingMiddle
         titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
@@ -388,6 +388,7 @@ private final class AttoTabChipView: NSView {
 
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: 26),
+            widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth),
 
             titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
             titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
@@ -412,7 +413,7 @@ private final class AttoTabChipView: NSView {
         let gap: CGFloat = closeButton.isHidden ? 0 : 8
 
         let desired = paddingLeft + labelWidth + gap + closeWidth + paddingRight
-        return NSSize(width: max(minWidth, desired), height: 26)
+        return NSSize(width: min(maxWidth, max(minWidth, desired)), height: 26)
     }
 
     override func updateTrackingAreas() {
