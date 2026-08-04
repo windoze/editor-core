@@ -6,6 +6,7 @@ extension AttoEditorAreaViewController {
     struct LspSupportConfiguration {
         let languageId: String
         let source: AttoLanguageSupportSource
+        let fallbackReasons: [String]
     }
 
     func lspLaunchConfig(
@@ -240,14 +241,17 @@ extension AttoEditorAreaViewController {
         if supportsSemanticTokens {
             editCore.editor.treeSitterDisable()
             editCore.editor.sublimeDisable()
-            return LspSupportConfiguration(languageId: config.languageId, source: .lspSemantic)
+            return LspSupportConfiguration(languageId: config.languageId, source: .lspSemantic, fallbackReasons: [])
         } else {
             var enabledTreeSitterFallback = false
+            var fallbackReasons = ["LSP semantic tokens are unavailable."]
             do {
                 try editCore.editor.treeSitterEnableForPath(url.path)
                 editCore.editorView.kickProcessingPoll()
                 enabledTreeSitterFallback = true
+                fallbackReasons.append("Tree-sitter syntax fallback is active.")
             } catch {
+                fallbackReasons.append("Tree-sitter syntax fallback is unavailable.")
                 NSLog(
                     "AttoEditor: Tree-sitter enable failed for %@ (fallback after LSP without semantic tokens): %@",
                     url.path,
@@ -257,7 +261,8 @@ extension AttoEditorAreaViewController {
             editCore.editor.sublimeDisable()
             return LspSupportConfiguration(
                 languageId: config.languageId,
-                source: enabledTreeSitterFallback ? .lspTreeSitter : .lspServices
+                source: enabledTreeSitterFallback ? .lspTreeSitter : .lspServices,
+                fallbackReasons: fallbackReasons
             )
         }
     }

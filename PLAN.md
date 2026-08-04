@@ -391,7 +391,13 @@
 
 ### 剩余任务
 
-- [ ] 明确 Tree-sitter highlighting、LSP semantic tokens、diagnostics、symbols、folding ranges 的优先级和 fallback。
+- [x] 明确 Tree-sitter highlighting、LSP semantic tokens、diagnostics、symbols、folding ranges 的优先级和 fallback。
+  - [x] 新增 `AttoLanguageExperiencePolicy`，用可测试模型定义 highlighting、semantic tokens、diagnostics、symbols、folding 的主来源与 fallback：LSP semantic tokens / LSP diagnostics-symbols-folding、Tree-sitter highlighting/folds、Sublime baseline 和 plain text/unavailable。
+  - [x] 状态栏 language source tooltip 展示当前 feature 归属和 fallback 链路；tab 记录 LSP、Tree-sitter、Sublime 降级原因，LSP semantic tokens 缺失时显示 Tree-sitter fallback 是否生效。
+  - 验证：`swift test --package-path swift --filter AttoLanguageSourceIndicatorTests`
+  - 验证：`swift test --package-path swift --filter AttoStatusBarSelectionTests/testStatusBarShowsLanguageSourceIndicator`
+  - 验证：`swift test --package-path swift --filter 'AttoEditorCommandTests/test(ProjectLspAutoStartUsesCoreStartPlanLanguageFilter|ShutdownLspServerInActiveTabRequiresCoreStopPlanMatch)'`
+  - 验证：`git diff --check`
 - [ ] 产品化 language mode 切换、parser/server 不可用、大文件、binary/invalid UTF-8 的降级体验。
 - [ ] 补齐 outline、folding、高亮、diagnostics 和 status bar 的跨语言测试。
 

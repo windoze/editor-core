@@ -2020,6 +2020,7 @@ final class AttoEditorTab {
     var isDirty: Bool
     var syntaxLanguageId: String?
     var languageSupportSource: AttoLanguageSupportSource
+    var languageFallbackReasons: [String]
     var panes: [EditCoreUI]
     var activePaneIndex: Int
     var lspServerConfig: AttoLspServerLaunchConfig?
@@ -2048,6 +2049,7 @@ final class AttoEditorTab {
         isDirty: Bool,
         syntaxLanguageId: String?,
         languageSupportSource: AttoLanguageSupportSource = .plainText,
+        languageFallbackReasons: [String] = [],
         editCore: EditCoreUI
     ) {
         self.id = id
@@ -2058,6 +2060,7 @@ final class AttoEditorTab {
         self.isDirty = isDirty
         self.syntaxLanguageId = syntaxLanguageId
         self.languageSupportSource = languageSupportSource
+        self.languageFallbackReasons = languageFallbackReasons
         self.panes = [editCore]
         self.activePaneIndex = 0
         self.lspServerConfig = nil

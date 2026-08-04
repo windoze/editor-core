@@ -207,18 +207,25 @@ extension AttoEditorAreaViewController {
             }
         }()
 
+        let lspIsEnabled = (try? editor.lspIsEnabled()) == true
+        let activeLspStatus: EcuLspStatusSnapshot? = {
+            guard lspIsEnabled else {
+                return derivedStateStore.activeLspStatus
+            }
+            return derivedStateStore.activeLspStatus ?? (try? editor.lspStatusSnapshot())
+        }()
+
         let lspText: String? = {
             // Keep the status bar clean unless LSP is likely relevant.
             //
             // - Historically, AttoEditor only auto-enabled LSP for Rust.
             // - With configurable LSPs, show LSP status when it is enabled (any language), or for Rust files.
             let isRustFile = (documentURL.pathExtension.lowercased() == "rs")
-            let isEnabled = (try? editor.lspIsEnabled()) == true
-            guard isRustFile || isEnabled else { return nil }
+            guard isRustFile || lspIsEnabled else { return nil }
 
             do {
-                let status = try derivedStateStore.activeLspStatus ?? editor.lspStatusSnapshot()
-                let display = AttoLspStatusFormatter.display(status: status, fallbackEnabled: isEnabled)
+                let status = try activeLspStatus ?? editor.lspStatusSnapshot()
+                let display = AttoLspStatusFormatter.display(status: status, fallbackEnabled: lspIsEnabled)
                 if let detail = display.failureDetail {
                     presentLspFailureDetailIfNeeded(detail, editorView: tab.editCore.editorView)
                 } else {
@@ -227,13 +234,15 @@ extension AttoEditorAreaViewController {
                 return display.text
             } catch {
                 // Best-effort: never break status bar rendering because of FFI errors.
-                return (try? editor.lspIsEnabled()) == true ? "LSP: on" : "LSP: off"
+                return lspIsEnabled ? "LSP: on" : "LSP: off"
             }
         }()
 
         let languageSourceIndicator = AttoLanguageSourceIndicator(
             source: tab.languageSupportSource,
-            languageId: tab.syntaxLanguageId
+            languageId: tab.syntaxLanguageId,
+            lspCapabilities: activeLspStatus?.capabilities,
+            fallbackReasons: tab.languageFallbackReasons
         )
         statusBarView.update(
             leftText: transientStatusText ?? statusBarLeftText(for: tab, diagnostics: diagnosticsSnapshot),
@@ -1670,6 +1679,7 @@ extension AttoEditorAreaViewController {
             syncProjectLspServerConfigsToCore()
             tab.syntaxLanguageId = nil
             tab.languageSupportSource = .plainText
+            tab.languageFallbackReasons = []
             applyLanguageConfiguration(for: tab)
             updateAlwaysPollProcessingForSelectedTab()
             updateStatusBar()
@@ -1700,6 +1710,7 @@ extension AttoEditorAreaViewController {
             try tab.editCore.editor.treeSitterEnableLanguage(lang)
             tab.syntaxLanguageId = lang
             tab.languageSupportSource = .treeSitter
+            tab.languageFallbackReasons = []
             applyLanguageConfiguration(for: tab)
             tab.editCore.editorView.kickProcessingPoll()
             updateAlwaysPollProcessingForSelectedTab()

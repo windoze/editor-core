@@ -134,8 +134,10 @@ extension AttoEditorAreaViewController {
         switch tab.languageSupportSource {
         case .lspTreeSitter:
             tab.languageSupportSource = .treeSitter
+            tab.languageFallbackReasons = ["LSP server stopped; Tree-sitter syntax remains active."]
         case .lspSemantic, .lspServices:
             tab.languageSupportSource = .plainText
+            tab.languageFallbackReasons = ["LSP server stopped; language services are unavailable."]
         case .plainText, .treeSitter, .sublimeSyntax:
             break
         }

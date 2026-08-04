@@ -95,6 +95,7 @@ extension AttoEditorAreaViewController {
                 )
                 tab.syntaxLanguageId = lspSupport.languageId
                 tab.languageSupportSource = lspSupport.source
+                tab.languageFallbackReasons = lspSupport.fallbackReasons
                 tab.lspServerConfig = config
                 tab.suppressesAutomaticLspStart = false
                 applyLanguageConfiguration(for: tab)
@@ -574,6 +575,7 @@ extension AttoEditorAreaViewController {
         )
         tab.syntaxLanguageId = lspSupport.languageId
         tab.languageSupportSource = lspSupport.source
+        tab.languageFallbackReasons = lspSupport.fallbackReasons
         tab.lspServerConfig = config
         tab.suppressesAutomaticLspStart = false
         syncProjectLspServerConfigsToCore()

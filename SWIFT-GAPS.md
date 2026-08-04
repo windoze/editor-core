@@ -7,7 +7,6 @@
 ## 阶段 11：Tree-sitter + LSP 语言体验
 
 - 产品化 Tree-sitter + LSP 主路线的 highlighting、outline、folding、language mode 和降级体验。
-- 明确 Tree-sitter、LSP semantic tokens、diagnostics、symbols、folding ranges 之间的优先级和 fallback。
 - 补齐语言模式切换、server 不可用、parser 不可用、large file、binary/invalid UTF-8 等场景。
 
 ## 阶段 12：Workspace Search、Project Index 与 Session Workflows

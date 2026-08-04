@@ -8,6 +8,7 @@ extension AttoEditorAreaViewController {
         let syntaxLanguageId: String?
         let lspServerConfig: AttoLspServerLaunchConfig?
         let source: AttoLanguageSupportSource
+        let fallbackReasons: [String]
     }
 
     // MARK: - Content
@@ -230,6 +231,7 @@ extension AttoEditorAreaViewController {
             isDirty: false,
             syntaxLanguageId: syntaxSupport.syntaxLanguageId,
             languageSupportSource: syntaxSupport.source,
+            languageFallbackReasons: syntaxSupport.fallbackReasons,
             editCore: editCore
         )
         tab.lspServerConfig = syntaxSupport.lspServerConfig
@@ -294,6 +296,7 @@ extension AttoEditorAreaViewController {
         // 1) LSP (configurable by extension).
         let env = lspEnvironmentProvider()
         let disableLSP = isLspDisabled(environment: env)
+        var fallbackReasons: [String] = []
 
         if disableLSP == false {
             if let config = lspLaunchConfig(for: url, environment: env) {
@@ -302,12 +305,20 @@ extension AttoEditorAreaViewController {
                     return SyntaxSupportConfiguration(
                         syntaxLanguageId: lspSupport.languageId,
                         lspServerConfig: config,
-                        source: lspSupport.source
+                        source: lspSupport.source,
+                        fallbackReasons: lspSupport.fallbackReasons
                     )
                 } catch {
+                    fallbackReasons.append("LSP server could not start; trying syntax-only fallback.")
                     NSLog("AttoEditor: LSP enable failed for %@: %@", url.path, String(describing: error))
                 }
+            } else {
+                let ext = url.pathExtension.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                let target = ext.isEmpty ? "this file" : ".\(ext)"
+                fallbackReasons.append("No LSP server is configured for \(target).")
             }
+        } else {
+            fallbackReasons.append("LSP is disabled by environment.")
         }
 
         // 2) Tree-sitter.
@@ -319,9 +330,11 @@ extension AttoEditorAreaViewController {
             return SyntaxSupportConfiguration(
                 syntaxLanguageId: inferredTreeSitterLanguageId(for: url),
                 lspServerConfig: nil,
-                source: .treeSitter
+                source: .treeSitter,
+                fallbackReasons: fallbackReasons
             )
         } catch {
+            fallbackReasons.append("Tree-sitter parser is unavailable; trying Sublime syntax fallback.")
             NSLog("AttoEditor: Tree-sitter enable failed for %@: %@", url.path, String(describing: error))
         }
 
@@ -330,23 +343,40 @@ extension AttoEditorAreaViewController {
             for: url,
             workspaceRootURL: workspaceRootURL
         ) else {
+            fallbackReasons.append("No Sublime syntax fallback was found.")
             NSLog("AttoEditor: no Sublime syntax found for %@ (ext=%@)", url.path, url.pathExtension)
-            return SyntaxSupportConfiguration(syntaxLanguageId: nil, lspServerConfig: nil, source: .plainText)
+            return SyntaxSupportConfiguration(
+                syntaxLanguageId: nil,
+                lspServerConfig: nil,
+                source: .plainText,
+                fallbackReasons: fallbackReasons
+            )
         }
 
         do {
             try editCore.editor.sublimeSetSyntaxPath(syntaxPath)
             editCore.editor.treeSitterDisable()
             editCore.editorView.needsDisplay = true
-            return SyntaxSupportConfiguration(syntaxLanguageId: nil, lspServerConfig: nil, source: .sublimeSyntax)
+            return SyntaxSupportConfiguration(
+                syntaxLanguageId: nil,
+                lspServerConfig: nil,
+                source: .sublimeSyntax,
+                fallbackReasons: fallbackReasons
+            )
         } catch {
+            fallbackReasons.append("Sublime syntax fallback failed.")
             NSLog(
                 "AttoEditor: Sublime syntax enable failed (path=%@) for %@: %@",
                 syntaxPath,
                 url.path,
                 String(describing: error)
             )
-            return SyntaxSupportConfiguration(syntaxLanguageId: nil, lspServerConfig: nil, source: .plainText)
+            return SyntaxSupportConfiguration(
+                syntaxLanguageId: nil,
+                lspServerConfig: nil,
+                source: .plainText,
+                fallbackReasons: fallbackReasons
+            )
         }
     }
 

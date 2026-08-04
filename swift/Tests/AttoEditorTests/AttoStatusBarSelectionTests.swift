@@ -121,6 +121,7 @@ final class AttoStatusBarSelectionTests: XCTestCase {
         let tab = try XCTUnwrap(vc.tabs.first)
         tab.languageSupportSource = .treeSitter
         tab.syntaxLanguageId = "rust"
+        tab.languageFallbackReasons = ["No LSP server is configured for .rs."]
         vc._updateStatusBarForTesting()
 
         let statusBar = try XCTUnwrap(findSubview(of: AttoStatusBarView.self, in: vc.view))
@@ -129,7 +130,11 @@ final class AttoStatusBarSelectionTests: XCTestCase {
             $0.identifier?.rawValue == AttoAccessibilityID.statusBarLanguageSourceLabel
         })
         XCTAssertEqual(sourceLabel.stringValue, "Tree-sitter")
-        XCTAssertEqual(sourceLabel.toolTip, "Language source: Tree-sitter syntax (rust)")
+        let tooltip = try XCTUnwrap(sourceLabel.toolTip)
+        XCTAssertTrue(tooltip.contains("Language source: Tree-sitter syntax (rust)"), tooltip)
+        XCTAssertTrue(tooltip.contains("Highlighting: Tree-sitter"), tooltip)
+        XCTAssertTrue(tooltip.contains("Folding: Tree-sitter folds"), tooltip)
+        XCTAssertTrue(tooltip.contains("Fallback: No LSP server is configured for .rs."), tooltip)
     }
 
     func testStatusBarConsumesActiveDerivedDiagnostics() throws {
