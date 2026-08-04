@@ -33,6 +33,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # workspace 要求 rust-version = 1.91 / edition 2024；runner 预装版本可能偏旧。
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
       - name: Toolchain versions
         run: |
           sw_vers
@@ -58,13 +64,20 @@ jobs:
           echo "build=${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
           echo "Resolved version='${version}' build='${GITHUB_RUN_NUMBER}'"
 
-      - name: Cache cargo registry and build
+      # skia-bindings 的 build.rs 会联网下载预编译二进制并解包到 ~/.cache/skia-binaries，
+      # 这一步很慢，值得单独缓存。
+      #
+      # 注意：这里刻意**不缓存** target/ 目录。plugin 用 mtime 判断 .a 是否过期，而缓存
+      # 恢复的 mtime 与 git checkout 的 .rs mtime 之间没有可靠顺序关系，容易导致误判；
+      # 且 target/ 里的 staticlib 有 100MB+，缓存收益不划算。
+      - name: Cache cargo registry and skia binaries
         uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
+            ~/.cache/skia-binaries/
           key: ${{ runner.os }}-release-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-release-cargo-

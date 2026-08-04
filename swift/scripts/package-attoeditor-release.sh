@@ -172,6 +172,23 @@ fi
 
 ENTITLEMENTS="${APPLE_ENTITLEMENTS_PATH:-${ROOT_DIR}/Sources/AttoEditor/AppBundle/AttoEditor.entitlements}"
 
+# keychain 里可能存在同名证书的多份拷贝（例如续期后旧证书没删），此时按名字
+# 签名会失败：`... : ambiguous (matches ... and ...)`。
+# 解析成唯一的 SHA-1 指纹再传给 codesign 可以规避。
+if [[ "${SKIP_SIGN}" -eq 0 && ! "${APPLE_SIGNING_IDENTITY}" =~ ^[0-9A-Fa-f]{40}$ ]]; then
+  mapfile -t IDENTITY_HASHES < <(
+    security find-identity -v -p codesigning ${KEYCHAIN_PATH:+"${KEYCHAIN_PATH}"} 2>/dev/null \
+      | awk -v want="${APPLE_SIGNING_IDENTITY}" 'index($0, want) { print $2 }'
+  )
+  if [[ "${#IDENTITY_HASHES[@]}" -gt 1 ]]; then
+    echo "note: identity \"${APPLE_SIGNING_IDENTITY}\" 在 keychain 里有 ${#IDENTITY_HASHES[@]} 份匹配，"
+    echo "      改用指纹 ${IDENTITY_HASHES[0]} 以消除歧义。"
+    APPLE_SIGNING_IDENTITY="${IDENTITY_HASHES[0]}"
+  elif [[ "${#IDENTITY_HASHES[@]}" -eq 1 ]]; then
+    APPLE_SIGNING_IDENTITY="${IDENTITY_HASHES[0]}"
+  fi
+fi
+
 sign() {
   local target="$1"
   shift

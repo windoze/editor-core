@@ -72,6 +72,57 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Rust staticlib 必须先在仓库根目录构建，不能交给 SwiftPM build plugin。
+#
+# 原因：`editor-core-ui-ffi` 依赖 skia-safe，skia-bindings 的 build.rs 需要联网
+# （下载 skia-binaries 预编译包或 skia 源码），而 SwiftPM 的 plugin sandbox 禁止
+# 网络访问。所以 plugin 对 CEditorCoreUIFFI 只做“复制已构建好的 .a”，找不到
+# 或发现过期就直接报错。
+#
+# 这里在 sandbox 之外先跑 cargo，plugin 随后复用产物。
+#
+# 注意：plugin 的新鲜度检查比较 .a 与 .rs 的 mtime，且要求 .a 不旧于源码；
+# 它优先取 target/debug，其次 target/release，所以两种配置都构建到对应目录。
+CARGO_PROFILE_ARGS=()
+CARGO_OUT_SUBDIR="debug"
+if [[ "${CONFIGURATION}" == "release" ]]; then
+  CARGO_PROFILE_ARGS=(--release)
+  CARGO_OUT_SUBDIR="release"
+fi
+
+echo "==> 构建 Rust staticlib（在 SwiftPM plugin sandbox 之外，需要联网构建 Skia）"
+(
+  cd "${ROOT_DIR}/.."
+  cargo build -p editor-core-ffi -p editor-core-ui-ffi "${CARGO_PROFILE_ARGS[@]}"
+)
+
+RUST_LIB_DIR="${ROOT_DIR}/../target/${CARGO_OUT_SUBDIR}"
+RUST_LIB="${RUST_LIB_DIR}/libeditor_core_ui_ffi.a"
+if [[ ! -f "${RUST_LIB}" ]]; then
+  echo "error: cargo 构建后仍找不到 ${RUST_LIB}" 1>&2
+  exit 1
+fi
+
+# plugin 的新鲜度检查是「.a 的 mtime 不得早于任何 .rs 的 mtime」。
+# cargo 判定无需重建时不会重新链接，.a 会保留旧 mtime；而 git checkout /
+# 缓存恢复后 .rs 往往带更新的 mtime —— 两者叠加会让 plugin 误判「已过期」而报错。
+#
+# 此刻 cargo 刚成功返回，即已确认 .a 与源码一致，因此显式 touch 是准确的。
+touch "${RUST_LIB}" "${RUST_LIB_DIR}/libeditor_core_ffi.a" 2>/dev/null || true
+
+# plugin 优先取 target/debug、其次 target/release，两边都存在时会选 debug。
+# 构建 release .app 时如果 target/debug 里躺着一个更新的 .a，就会静默链接
+# 到 debug 产物。这里把非当前配置的那个挪开，避免拿错。
+if [[ "${CARGO_OUT_SUBDIR}" == "release" ]]; then
+  OTHER_LIB="${ROOT_DIR}/../target/debug/libeditor_core_ui_ffi.a"
+  if [[ -f "${OTHER_LIB}" ]]; then
+    echo "note: 为避免 plugin 误选 debug 产物，暂时移开 target/debug/libeditor_core_ui_ffi.a"
+    mv -f "${OTHER_LIB}" "${OTHER_LIB}.aside"
+    # shellcheck disable=SC2064
+    trap "mv -f '${OTHER_LIB}.aside' '${OTHER_LIB}' 2>/dev/null || true" EXIT
+  fi
+fi
+
 swift build -c "${CONFIGURATION}" --product "${APP_NAME}"
 swift build -c "${CONFIGURATION}" --product "${CLI_NAME}"
 
