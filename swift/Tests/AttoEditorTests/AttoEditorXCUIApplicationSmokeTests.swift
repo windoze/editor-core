@@ -5,10 +5,10 @@ import XCTest
 
 @MainActor
 final class AttoEditorXCUIApplicationSmokeTests: XCTestCase {
-    private static let enabledEnvKey = "ATTO_XCUI_SMOKE_TESTS"
-    private static let appPathEnvKey = "ATTO_XCUI_APP_PATH"
-    private static let timeout: TimeInterval = 12
-    private static let pollInterval: TimeInterval = 0.05
+    static let enabledEnvKey = "ATTO_XCUI_SMOKE_TESTS"
+    static let appPathEnvKey = "ATTO_XCUI_APP_PATH"
+    static let timeout: TimeInterval = 12
+    static let pollInterval: TimeInterval = 0.05
 
     func testLaunchShowsMainChromeAccessibilityNodes() throws {
         let launched = try launchAttoEditor()
@@ -455,7 +455,7 @@ final class AttoEditorXCUIApplicationSmokeTests: XCTestCase {
         )
     }
 
-    private func launchAttoEditor(
+    func launchAttoEditor(
         resultFixtures: Bool = false,
         environment: [String: String] = [:]
     ) throws -> LaunchedAttoApp {
@@ -530,16 +530,16 @@ final class AttoEditorXCUIApplicationSmokeTests: XCTestCase {
         return url
     }
 
-    private func assertElementExists(_ identifier: String, in app: XCUIApplication) {
+    func assertElementExists(_ identifier: String, in app: XCUIApplication) {
         let element = element(identifier: identifier, in: app)
         XCTAssertTrue(element.waitForExistence(timeout: Self.timeout), "missing AX element: \(identifier)")
     }
 
-    private func element(identifier: String, in app: XCUIApplication) -> XCUIElement {
+    func element(identifier: String, in app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any).matching(identifier: identifier).firstMatch
     }
 
-    private func requiredElement(identifier: String, in app: XCUIApplication) throws -> XCUIElement {
+    func requiredElement(identifier: String, in app: XCUIApplication) throws -> XCUIElement {
         let element = element(identifier: identifier, in: app)
         guard element.waitForExistence(timeout: Self.timeout) else {
             XCTFail("missing AX element: \(identifier)")
@@ -548,7 +548,7 @@ final class AttoEditorXCUIApplicationSmokeTests: XCTestCase {
         return element
     }
 
-    private func runCommandPaletteCommand(_ query: String, in app: XCUIApplication) throws {
+    func runCommandPaletteCommand(_ query: String, in app: XCUIApplication) throws {
         let prefix = "AttoEditor.CommandPalette"
         app.typeKey("p", modifierFlags: [.command, .shift])
         let searchField = try requiredElement(
@@ -561,7 +561,7 @@ final class AttoEditorXCUIApplicationSmokeTests: XCTestCase {
         app.typeKey(.return, modifierFlags: [])
     }
 
-    private func enqueueOpenFileRequest(_ fileURL: URL, launched: LaunchedAttoApp) throws {
+    func enqueueOpenFileRequest(_ fileURL: URL, launched: LaunchedAttoApp) throws {
         try FileManager.default.createDirectory(at: launched.spoolDir, withIntermediateDirectories: true)
         let requestID = UUID().uuidString
         let request = AttoIpcOpenRequest(
@@ -578,7 +578,7 @@ final class AttoEditorXCUIApplicationSmokeTests: XCTestCase {
         try data.write(to: requestURL, options: [.atomic])
     }
 
-    private func waitForFileText(at url: URL, contains expected: String) -> String? {
+    func waitForFileText(at url: URL, contains expected: String) -> String? {
         let deadline = Date().addingTimeInterval(Self.timeout)
         repeat {
             if let text = try? String(contentsOf: url, encoding: .utf8),
@@ -591,7 +591,7 @@ final class AttoEditorXCUIApplicationSmokeTests: XCTestCase {
         return nil
     }
 
-    private func waitForElementText(
+    func waitForElementText(
         identifier: String,
         contains expected: String,
         in app: XCUIApplication
@@ -610,7 +610,7 @@ final class AttoEditorXCUIApplicationSmokeTests: XCTestCase {
         return nil
     }
 
-    private func waitForAnyElementText(
+    func waitForAnyElementText(
         identifier: String,
         contains expected: String,
         in app: XCUIApplication
@@ -631,7 +631,7 @@ final class AttoEditorXCUIApplicationSmokeTests: XCTestCase {
         return nil
     }
 
-    private func text(from element: XCUIElement) -> String {
+    func text(from element: XCUIElement) -> String {
         if let value = element.value as? String, value.isEmpty == false {
             return value
         }
@@ -763,7 +763,7 @@ final class AttoEditorXCUIApplicationSmokeTests: XCTestCase {
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
     }
 
-    private func assertElementCount(
+    func assertElementCount(
         atLeast expected: Int,
         identifierPrefix: String,
         in app: XCUIApplication
@@ -776,7 +776,7 @@ final class AttoEditorXCUIApplicationSmokeTests: XCTestCase {
         )
     }
 
-    private func firstElement(
+    func firstElement(
         identifierPrefix: String,
         in app: XCUIApplication
     ) throws -> XCUIElement {
@@ -792,7 +792,7 @@ final class AttoEditorXCUIApplicationSmokeTests: XCTestCase {
         throw AttoXCUISmokeConfigurationError.missingElementPrefix(identifierPrefix)
     }
 
-    private func waitForElementCount(
+    func waitForElementCount(
         atLeast expected: Int,
         identifierPrefix: String,
         in app: XCUIApplication
@@ -809,18 +809,18 @@ final class AttoEditorXCUIApplicationSmokeTests: XCTestCase {
         return lastCount
     }
 
-    private func elements(identifierPrefix: String, in app: XCUIApplication) -> [XCUIElement] {
+    func elements(identifierPrefix: String, in app: XCUIApplication) -> [XCUIElement] {
         app.descendants(matching: .any).allElementsBoundByIndex.filter {
             $0.identifier.hasPrefix(identifierPrefix)
         }
     }
 
-    private func dynamicIdentifierPrefix(_ makeIdentifier: (UUID) -> String) -> String {
+    func dynamicIdentifierPrefix(_ makeIdentifier: (UUID) -> String) -> String {
         let id = UUID()
         return makeIdentifier(id).replacingOccurrences(of: id.uuidString, with: "")
     }
 
-    private struct LaunchedAttoApp {
+    struct LaunchedAttoApp {
         let app: XCUIApplication
         let runtimeRoot: URL
         let spoolDir: URL

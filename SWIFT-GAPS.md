@@ -2,14 +2,7 @@
 
 完整历史、已完成提交记录和旧矩阵已归档到 `docs/archive/2026-08-04-swift-gaps-1/SWIFT-GAPS.md`。
 
-本文只保留尚未完成的目标和任务边界。执行顺序以 `PLAN.md` 为准：当前按阶段 13 到阶段 15 逐步推进。完成项不再在本文重复记录。
-
-## 阶段 13：Visual Baselines 与黑盒自动化
-
-- 合入首批经批准的机器生成 PNG golden baselines。
-- PNG 合入后启用 strict visual baseline PR 门禁。
-- 继续扩展 visual fixtures：WorkspaceEdit rollback secondary failure、自身再次失败的极端路径、更多 conflict/failure 边界、跨 theme/window-size 的真实 baseline。
-- 扩展 opt-in `XCUIApplication` smoke tests：外部真实语言服务器、多文件 workspace、多 root/project session、真实 server 错误/延迟/重启后的 Locations/Symbols/Workspace Outline panel 行为。
+本文只保留尚未完成的目标和任务边界。执行顺序以 `PLAN.md` 为准：当前按阶段 14 到阶段 15 逐步推进。完成项不再在本文重复记录。
 
 ## 阶段 14：Sublime-like UI 打磨
 

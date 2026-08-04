@@ -13,8 +13,8 @@
 - [已完成] 阶段 10：完成剩余 JSON result envelope 覆盖、错误模型统一和 host capability negotiation。
 - [已完成] 阶段 11：产品化 Tree-sitter + LSP 主路线的高亮、outline、folding、语言模式和降级体验。
 - [已完成] 阶段 12：完成 core-backed workspace search、project index、replace-in-files、recent 和 session 工作流。
-- [进行中] 阶段 13：合入首批经批准机器生成的 PNG baselines；CI 已具备 PNG 合入后自动 strict PR 门禁。
-- [待办] 阶段 14：在测试保护下打磨 Sublime-like chrome、minimap、gutter、overlay、focus 和编辑交互。
+- [已完成] 阶段 13：合入首批经批准机器生成的 PNG baselines；CI 已具备 PNG 合入后自动 strict PR 门禁。
+- [进行中] 阶段 14：在测试保护下打磨 Sublime-like chrome、minimap、gutter、overlay、focus 和编辑交互。
 - [待办] 阶段 15：完成最终文档审计、ABI/README 更新、过渡 API 清理和全量验证。
 
 ## 执行规则
@@ -478,7 +478,13 @@
   - 验证：`swift/scripts/update-visual-baselines.sh`
   - 验证：`swift/scripts/check-visual-baselines.sh`
   - 验证：`git diff --check`
-- [ ] 扩展 opt-in `XCUIApplication` smoke tests：真实 LSP server、多文件 workspace、多 root/project session、server 错误/延迟/重启后的 panels。
+- [x] 扩展 opt-in `XCUIApplication` smoke tests：真实 LSP server、多文件 workspace、多 root/project session、server 错误/延迟/重启后的 panels。
+  - [x] 新增真实 Python LSP fixture：记录 `initialize` / `workspaceFolders` / `didOpen` / request events，支持多文档 symbol、delayed workspace symbol、JSON-RPC error 和重启进程计数。
+  - [x] 新增多文件 workspace 黑盒场景：目录窗口通过 Quick Open 打开两份 `.rs` 文件，真实 `documentSymbol` 聚合进 Workspace Outline，并通过 Workspace Symbol Search 发出真实 `workspace/symbol`。
+  - [x] 新增多 root/project session 黑盒场景：两个 project root 各自启动真实 LSP session，覆盖 delayed workspace symbol、`documentSymbol` server error、Project Status Events panel 和手动 restart lifecycle。
+  - 验证：`swift test --package-path swift --filter AttoEditorXCUIApplicationSmokeTests`
+  - 验证：`swift/scripts/build-attoeditor-app.sh --debug --out /tmp/attoeditor-xcui-advanced`
+  - 受限验证：`ATTO_XCUI_SMOKE_TESTS=1 ATTO_XCUI_APP_PATH=/tmp/attoeditor-xcui-advanced/AttoEditor.app swift test --package-path swift --filter testRealLspServerMulti` 当前 SwiftPM unit-test 环境返回 `Device is not configured for UI testing`，无法实际执行 `XCUIApplication`。
 
 ## 阶段 14：Sublime-like UI 打磨
 
