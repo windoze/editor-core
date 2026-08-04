@@ -2,26 +2,7 @@
 
 完整历史、已完成提交记录和旧矩阵已归档到 `docs/archive/2026-08-04-swift-gaps-1/SWIFT-GAPS.md`。
 
-本文只保留尚未完成的目标和任务边界。执行顺序以 `PLAN.md` 为准：当前按阶段 5 到阶段 15 逐步推进。完成项不再在本文重复记录。
-
-## 阶段 5：Core Workspace Ownership
-
-- 将 AttoEditor 的 tabs、splits、project、session 和 dirty/close 语义继续迁移为 core workspace state 的 AppKit 投影。
-- 按 `docs/core-workspace-ownership-audit.md` 中标记为 transitional fact cache / 待迁移事实源的项继续下沉；新增 workspace/tab/session/project 行为必须优先落在 `editor-core` / `editor-core-ui` / `MultiDocumentEditorUI`。
-- 补齐 split drag/drop 和 project/session 归属。
-- 继续让迁移期测试同时断言 core snapshot、Swift wrapper query 和 AppKit projection，避免双事实源漂移。
-
-## 阶段 7：Result Panels 与 Workbench
-
-- 完成跨 tab / project 的 result panels，并继续将 result family 迁移到已建立的统一 dock/workbench 容器。
-- 继续让 Locations、Symbols、Problems、Workspace Outline、Code Lens、Inlay Hints、Document Links、Document Colors、Hierarchy 等 result family 统一消费 stale/error 状态、refresh 和 history/pin 策略。
-- 补齐跨 result family 的刷新、过期、取消、超时、错误、空结果和 stale 展示策略。
-- 将仍依赖独立 floating panel 或 feature-local polling 的路径迁移到统一 workbench 入口。
-
-## 阶段 9：Settings Selector 与配置 UI
-
-- 补齐 schema-aware settings UI 中 user / workspace / runtime override 的可编辑状态，以及 user / workspace 文件级回滚体验；当前已具备 effective value、source、override、validation error 可见性和 runtime override 清空回滚。
-- 补齐 per-document / per-language / per-workspace settings 应用的测试。
+本文只保留尚未完成的目标和任务边界。执行顺序以 `PLAN.md` 为准：当前按阶段 11 到阶段 15 逐步推进。完成项不再在本文重复记录。
 
 ## 阶段 11：Tree-sitter + LSP 语言体验
 
