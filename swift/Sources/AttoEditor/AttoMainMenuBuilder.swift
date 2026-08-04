@@ -109,6 +109,10 @@ enum AttoMainMenuBuilder {
         toolsMenu.addItem(commandItem(title: "Clear Deleted Macro History…", commandID: "macro.clear_delete_history", appDelegate: appDelegate))
         toolsMenu.addItem(commandItem(title: "Import Macro File…", commandID: "macro.import_file", appDelegate: appDelegate))
         toolsMenu.addItem(commandItem(title: "Export Named Macro…", commandID: "macro.export_named", appDelegate: appDelegate))
+        toolsMenu.addItem(.separator())
+        for feature in AttoSublimeFeatureBoundary.allCases {
+            toolsMenu.addItem(commandItem(title: feature.menuTitle, commandID: feature.commandID, appDelegate: appDelegate))
+        }
 
         let viewMenuItem = NSMenuItem()
         viewMenuItem.identifier = NSUserInterfaceItemIdentifier(AttoAccessibilityID.menu("View"))

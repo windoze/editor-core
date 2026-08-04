@@ -314,6 +314,10 @@
   - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testSublimeKeymap`
   - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testKeymap`
 - [ ] 产品化 snippets、macros、build systems、package resources、quick panels、input panels、output panels。
+  - [x] 建立 build/package/panel 的 command/menu/palette 边界和可发现反馈，保留 snippets/macros 现有产品化路径。
+    - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testSublimeBoundaryCommandsExposeDiscoverableFeedback`
+    - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testDefaultCommandPaletteIncludesCoreEditorCommandIDs`
+    - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testMainMenuItemsUseCommandIDsAndResolvedKeymap`
 - [ ] 确保新增命令都有 palette/menu/keymap 入口、可发现反馈和测试。
 
 ## 阶段 9：Settings Selector 与配置 UI

@@ -59,6 +59,9 @@ extension AttoEditorCommandTests {
         XCTAssertTrue(ids.contains("macro.clear_delete_history"))
         XCTAssertTrue(ids.contains("macro.import_file"))
         XCTAssertTrue(ids.contains("macro.export_named"))
+        for feature in AttoSublimeFeatureBoundary.allCases {
+            XCTAssertTrue(ids.contains(feature.commandID), feature.commandID)
+        }
         for command in AttoEditorAreaViewController.CursorMovementCommand.allCases {
             XCTAssertTrue(ids.contains(command.id), command.id)
         }

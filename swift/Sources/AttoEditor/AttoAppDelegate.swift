@@ -932,6 +932,10 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         }
     }
 
+    private func reportSublimeFeatureBoundary(_ feature: AttoSublimeFeatureBoundary) {
+        activeWindow()?.editorAreaController.setTransientStatusText(feature.statusText)
+    }
+
     private func keymapResolutionForCurrentContext() -> AttoKeymapResolution {
         guard let keymapResolver else {
             return AttoKeymapResolution(
@@ -1443,11 +1447,20 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             },
         ]
 
+        commands.append(contentsOf: sublimeFeatureBoundaryCommands())
         commands.append(contentsOf: cursorMovementCommands())
         commands.append(contentsOf: editorCommandPaletteCommands())
         let contextualCommands = commands.map(commandWithCurrentContext(_:))
         guard orderForCommandPalette else { return contextualCommands }
         return commandsOrderedForCommandPalette(contextualCommands)
+    }
+
+    private func sublimeFeatureBoundaryCommands() -> [AttoCommandPaletteCommand] {
+        AttoSublimeFeatureBoundary.allCases.map { feature in
+            AttoCommandPaletteCommand(id: feature.commandID, title: feature.commandTitle) { [weak self] in
+                self?.reportSublimeFeatureBoundary(feature)
+            }
+        }
     }
 
     func _defaultCommandsForTesting() -> [AttoCommandPaletteCommand] {
@@ -2647,10 +2660,17 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             if commandID.hasPrefix("lsp.") { return "LSP" }
             if commandID.hasPrefix("workspace.") { return "Workspace" }
             if commandID.hasPrefix("workbench.") { return "AttoEditor" }
+            if commandID.hasPrefix("build.") { return "Build" }
+            if commandID.hasPrefix("package.") { return "Package" }
+            if commandID.hasPrefix("panel.") { return "Panel" }
             return "General"
         }()
 
         let requirement: CommandAvailabilityRequirement = {
+            if AttoSublimeFeatureBoundary.commandIDs.contains(commandID) {
+                return .activeWindow
+            }
+
             switch commandID {
             case "file.open_folder", "file.open_recent_project", "file.open_file", "file.new",
                  "workbench.command_palette", "workbench.preferences":

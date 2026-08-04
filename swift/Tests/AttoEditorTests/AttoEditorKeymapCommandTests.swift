@@ -677,6 +677,9 @@ extension AttoEditorCommandTests {
         XCTAssertNotNil(findMenuItem(commandID: "macro.clear_delete_history", in: toolsMenu))
         XCTAssertNotNil(findMenuItem(commandID: "macro.import_file", in: toolsMenu))
         XCTAssertNotNil(findMenuItem(commandID: "macro.export_named", in: toolsMenu))
+        for feature in AttoSublimeFeatureBoundary.allCases {
+            XCTAssertNotNil(findMenuItem(commandID: feature.commandID, in: toolsMenu), feature.commandID)
+        }
 
         XCTAssertNotNil(findMenuItem(commandID: "view.wrap.word", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "view.split_right", in: menu))
