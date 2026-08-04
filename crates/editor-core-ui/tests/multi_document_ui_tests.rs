@@ -1434,6 +1434,90 @@ fn multi_document_ui_undoes_last_workspace_edit_transaction() {
 }
 
 #[test]
+fn multi_document_ui_applies_snippet_completion_workspace_edit_as_single_transaction() {
+    let root = unique_test_dir("editor-core-ui-workspace-edit-snippet-completion");
+    std::fs::create_dir_all(root.join("src")).unwrap();
+
+    let root_uri = path_to_file_uri(root.as_path());
+    let open_uri = path_to_file_uri(root.join("src").join("Open.swift").as_path());
+
+    let mut ui = MultiDocumentEditorUi::new();
+    ui.set_workspace_roots([root_uri]);
+    let tab = ui.open_tab("import Old\npri\n", 80);
+    ui.set_tab_document_uri(tab, Some(open_uri.clone()))
+        .unwrap();
+
+    let snippet = "print(${1:value})$0";
+    let main_edit = json!({
+        "range": {
+            "start": { "line": 1, "character": 0 },
+            "end": { "line": 1, "character": 3 }
+        },
+        "newText": snippet
+    });
+    let additional_edit = json!({
+        "range": {
+            "start": { "line": 0, "character": 0 },
+            "end": { "line": 0, "character": 10 }
+        },
+        "newText": "import Foundation"
+    });
+    let edit = json!({
+        "applyMode": "atomic",
+        "workspaceEdit": {
+            "changes": {
+                (open_uri.as_str()): [
+                    main_edit.clone(),
+                    additional_edit.clone()
+                ]
+            }
+        },
+        "attoSnippetCompletion": {
+            "documentURI": open_uri.as_str(),
+            "textEdit": main_edit,
+            "snippet": snippet,
+            "additionalTextEdits": [additional_edit]
+        }
+    })
+    .to_string();
+
+    let preview = ui.preview_workspace_edit_transaction(&edit).unwrap();
+    assert_eq!(preview.documents[0].edit_count, 2);
+
+    let applied = ui.apply_workspace_edit_transaction(&edit).unwrap();
+    assert!(applied.applied);
+    assert_eq!(applied.applied_edit_count, 2);
+    assert_eq!(
+        ui.tab_text(tab).unwrap(),
+        "import Foundation\nprint(value)\n"
+    );
+    assert!(
+        ui.editor_for_tab(tab)
+            .unwrap()
+            .has_active_snippet_session()
+            .unwrap()
+    );
+    assert_eq!(
+        ui.workspace_edit_transaction_events_after(0)
+            .latest_sequence,
+        1
+    );
+
+    let undone = ui.undo_last_workspace_edit_transaction().unwrap();
+    assert!(undone.undone);
+    assert_eq!(undone.restored_open_tab_count, 1);
+    assert_eq!(ui.tab_text(tab).unwrap(), "import Old\npri\n");
+    assert!(
+        !ui.editor_for_tab(tab)
+            .unwrap()
+            .has_active_snippet_session()
+            .unwrap()
+    );
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn multi_document_ui_redoes_last_workspace_edit_transaction() {
     let root = unique_test_dir("editor-core-ui-workspace-edit-redo");
     std::fs::create_dir_all(root.join("src")).unwrap();

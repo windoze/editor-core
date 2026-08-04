@@ -54,7 +54,15 @@
   - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testWorkspaceEditPreviewDiscardAndRetryDecisionAppliesAfterReloadingTargetTab`
   - 验证：`cargo test -p editor-core-ui`
   - 验证：`cargo test -p editor-core-ui-ffi`
-- [ ] 为 snippet completion 建立单一 WorkspaceEdit transaction / undo 单元：`additionalTextEdits` 与 snippet 主体编辑必须一起 preview、apply、rollback、undo。
+- [x] 为 snippet completion 建立单一 WorkspaceEdit transaction / undo 单元：`additionalTextEdits` 与 snippet 主体编辑必须一起 preview、apply、rollback、undo。
+  - 验证：`cargo test -p editor-core snippets`
+  - 验证：`cargo test -p editor-core-lsp test_apply_completion_item_groups_edits_into_single_undo_step`
+  - 验证：`cargo test -p editor-core-ui multi_document_ui_applies_snippet_completion_workspace_edit_as_single_transaction`
+  - 验证：`cargo test -p editor-core-ui`
+  - 验证：`cargo test -p editor-core-ui-ffi`
+  - 验证：`swift test --package-path swift --filter AttoLspCompletionParserTests`
+  - 验证：`swift test --package-path swift --filter 'AttoEditorCommandTests/test.*Completion.*'`
+  - 验证：`swift test --package-path swift --filter AttoWorkspaceEdit`
 - [ ] 支持跨文件 snippet `additionalTextEdits` 的 transaction apply，并定义与 snippet placeholder session 的交互边界。
 - [ ] 扩展 conflict 检测：dirty 与 stale version、overlapping edits、resource dependency、打开/未打开文件混合失败、unsupported URI、secondary rollback failure。
 - [ ] 扩展 conflict 解决 UI：open/save/discard/retry/rerun/reapply 的可用状态、分组文案和失败反馈。

@@ -8,7 +8,6 @@
 
 - 将 WorkspaceEdit owner store 继续收敛为真正 project-level 模型，覆盖跨 app session restore、workspace root 迁移和 core history retention 后的归属 reconciliation。
 - 明确不能重跑的历史请求状态：源 tab 关闭、document URI 失效、workspace root 不匹配、server capability 变化、request 参数缺失或已过期。
-- 完成 snippet completion 的 `additionalTextEdits` 与 snippet 主体编辑的统一 transaction / undo 语义。
 - 支持跨文件 snippet `additionalTextEdits` 的 preview、apply、failure rollback 和 conflict summary。
 - 扩展更深层 conflict 检测与解决语义：dirty/stale 版本、overlapping edits、resource dependency、打开/未打开文件混合失败和 secondary rollback failure。
 - 补齐阶段 4 的 Rust、FFI、Swift wrapper、AppKit panel 和回归测试。

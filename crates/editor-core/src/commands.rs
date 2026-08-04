@@ -1068,7 +1068,10 @@ impl CommandExecutor {
             || matches!(
                 &command,
                 Command::Edit(
-                    EditCommand::Undo | EditCommand::Redo | EditCommand::ApplyTextEdits { .. }
+                    EditCommand::Undo
+                        | EditCommand::Redo
+                        | EditCommand::Replace { .. }
+                        | EditCommand::ApplyTextEdits { .. }
                 )
             )
         {

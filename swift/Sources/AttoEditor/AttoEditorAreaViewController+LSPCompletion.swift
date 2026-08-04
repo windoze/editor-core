@@ -403,12 +403,8 @@ extension AttoEditorAreaViewController {
                     context: context
                 ) {
                     switch outcome {
-                    case let .applied(start, end):
-                        _ = try tab.editCore.editor.applySnippet(
-                            start: start,
-                            end: end,
-                            snippet: plan.text
-                        )
+                    case .applied:
+                        break
                     case .requestRerunStarted:
                         return true
                     case .stopped:
@@ -481,7 +477,7 @@ extension AttoEditorAreaViewController {
     }
 
     enum CompletionSnippetAdditionalEditsOutcome {
-        case applied(start: UInt32, end: UInt32)
+        case applied
         case requestRerunStarted
         case stopped
     }
@@ -493,17 +489,10 @@ extension AttoEditorAreaViewController {
         context: CompletionRequestContext
     ) -> CompletionSnippetAdditionalEditsOutcome? {
         guard plan.additionalEdits.isEmpty == false else { return nil }
-        guard let transformedRange = completionSnippetRangeAfterApplyingAdditionalEdits(
-            start: plan.start,
-            end: plan.end,
-            additionalEdits: plan.additionalEdits
-        ) else {
-            return nil
-        }
-
+        guard let coreDocuments else { return nil }
         let documentURI = projectedFileURL(for: tab).absoluteString
-        guard let workspaceEditJSON = completionWorkspaceEditJSON(
-            edits: plan.additionalEdits,
+        guard let workspaceEditJSON = completionSnippetWorkspaceEditJSON(
+            for: plan,
             documentText: documentText,
             documentURI: documentURI
         ) else {
@@ -513,59 +502,88 @@ extension AttoEditorAreaViewController {
             return nil
         }
 
-        let outcome = applyWorkspaceEditToActiveTab(
-            parsed,
-            workspaceEditJSON: workspaceEditJSON,
-            documentURI: documentURI,
-            requestRetryOwner: completionWorkspaceEditRequestRetryOwner(context: context)
-        )
-        switch outcome {
-        case .applied:
-            return .applied(start: transformedRange.start, end: transformedRange.end)
-        case .requestRerunStarted:
-            return .requestRerunStarted
-        case .stopped:
+        let requestRetryOwner = completionWorkspaceEditRequestRetryOwner(context: context)
+        var coreTransactionApplied = false
+        do {
+            try syncOpenTabsToCoreBeforeWorkspaceEditApply(coreDocuments)
+            let transientStatusBeforeConfirmation = transientStatusText
+            let previewResolution = try confirmCoreWorkspaceEditPreviewIfNeeded(
+                coreDocuments,
+                workspaceEdit: parsed,
+                workspaceEditJSON: workspaceEditJSON,
+                editorView: tab.editCore.editorView,
+                requestRetryOwner: requestRetryOwner
+            )
+            switch previewResolution {
+            case .apply:
+                break
+            case .stop:
+                if transientStatusText == transientStatusBeforeConfirmation {
+                    setTransientStatusText("Workspace edit cancelled")
+                }
+                return .stopped
+            case .retry:
+                setTransientStatusText("WorkspaceEdit retry limit reached")
+                NSSound.beep()
+                return .stopped
+            case .rerunRequest:
+                return rerunWorkspaceEditRequest(requestRetryOwner) ? .requestRerunStarted : .stopped
+            }
+
+            let coreResult = try coreDocuments.applyWorkspaceEditTransaction(workspaceEditJSON)
+            coreTransactionApplied = coreResult.applied
+            guard coreResult.applied else {
+                let result = AttoWorkspaceEditApplyResult(
+                    applied: coreResult.applied,
+                    appliedURI: coreResult.appliedURI ?? documentURI,
+                    appliedEditCount: coreResult.appliedEditCount + coreResult.appliedResourceOperationCount,
+                    skippedURIs: coreResult.skippedURIs,
+                    skippedDetails: coreResult.skippedDetails.map {
+                        AttoWorkspaceEditApplyResult.SkippedDetail(
+                            uri: $0.uri,
+                            reason: $0.reason,
+                            operation: $0.operation
+                        )
+                    },
+                    unsupportedURIs: coreResult.unsupportedOperationURIs,
+                    documents: coreResult.documents.map {
+                        AttoWorkspaceEditApplyResult.Document(
+                            uri: $0.uri,
+                            editCount: $0.editCount,
+                            hasOverlappingEdits: $0.hasOverlappingEdits
+                        )
+                    }
+                )
+                showWorkspaceEditSummaryIfNeeded(result, editorView: tab.editCore.editorView)
+                refreshWorkspaceEditHistoryPanelIfVisible()
+                return .stopped
+            }
+
+            _ = try tab.editCore.editor.applySnippet(
+                start: plan.start,
+                end: plan.end,
+                snippet: plan.text,
+                additionalEdits: plan.additionalEdits
+            )
+            recordWorkspaceEditRequestRetryOwner(
+                requestRetryOwner,
+                forLatestTransactionIn: coreDocuments
+            )
+            registerWorkspaceEditUndoManagerAction()
+            refreshWorkspaceEditHistoryPanelIfVisible()
+            return .applied
+        } catch {
+            if coreTransactionApplied {
+                _ = try? coreDocuments.undoLastWorkspaceEditTransaction()
+            }
+            NSLog(
+                "AttoEditor: snippet completion WorkspaceEdit transaction apply failed: %@",
+                String(describing: error)
+            )
+            showWorkspaceEditApplyFailure(error, editorView: tab.editCore.editorView)
+            NSSound.beep()
             return .stopped
         }
-    }
-
-    func completionSnippetRangeAfterApplyingAdditionalEdits(
-        start: UInt32,
-        end: UInt32,
-        additionalEdits: [EcuTextEdit]
-    ) -> (start: UInt32, end: UInt32)? {
-        guard start <= end else { return nil }
-        let sortedEdits = additionalEdits.sorted {
-            if $0.start != $1.start { return $0.start < $1.start }
-            return $0.end < $1.end
-        }
-
-        var previousEnd: UInt32 = 0
-        var deltaBeforeSnippet: Int64 = 0
-        for edit in sortedEdits {
-            guard edit.start <= edit.end else { return nil }
-            guard edit.start >= previousEnd else { return nil }
-            previousEnd = max(previousEnd, edit.end)
-
-            let isBeforeSnippet = edit.end <= start
-            let isAfterSnippet = edit.start >= end
-            guard isBeforeSnippet || isAfterSnippet else { return nil }
-
-            if isBeforeSnippet {
-                deltaBeforeSnippet += Int64(edit.text.unicodeScalars.count) - Int64(edit.end - edit.start)
-            }
-        }
-
-        let transformedStart = Int64(start) + deltaBeforeSnippet
-        let transformedEnd = Int64(end) + deltaBeforeSnippet
-        guard transformedStart >= 0,
-              transformedEnd >= transformedStart,
-              transformedStart <= Int64(UInt32.max),
-              transformedEnd <= Int64(UInt32.max)
-        else {
-            return nil
-        }
-        return (start: UInt32(transformedStart), end: UInt32(transformedEnd))
     }
 
     func applyCompletionPlanWithWorkspaceEdit(
@@ -605,6 +623,44 @@ extension AttoEditorAreaViewController {
             documentText: documentText,
             documentURI: documentURI
         )
+    }
+
+    func completionSnippetWorkspaceEditJSON(
+        for plan: AttoLspCompletionParser.ApplicationPlan,
+        documentText: String,
+        documentURI: String
+    ) -> String? {
+        let mainEdit = EcuTextEdit(start: plan.start, end: plan.end, text: plan.text)
+        guard let mainEditObject = completionTextEditObject(mainEdit, documentText: documentText) else {
+            return nil
+        }
+
+        let additionalEditObjects = plan.additionalEdits.compactMap {
+            completionTextEditObject($0, documentText: documentText)
+        }
+        guard additionalEditObjects.count == plan.additionalEdits.count else { return nil }
+
+        let editObjects = [mainEditObject] + additionalEditObjects
+        let root: [String: Any] = [
+            "applyMode": "atomic",
+            "workspaceEdit": [
+                "changes": [
+                    documentURI: editObjects,
+                ],
+            ],
+            "attoSnippetCompletion": [
+                "documentURI": documentURI,
+                "textEdit": mainEditObject,
+                "snippet": plan.text,
+                "additionalTextEdits": additionalEditObjects,
+            ],
+        ]
+        guard JSONSerialization.isValidJSONObject(root),
+              let data = try? JSONSerialization.data(withJSONObject: root, options: [])
+        else {
+            return nil
+        }
+        return String(data: data, encoding: .utf8)
     }
 
     func completionWorkspaceEditJSON(

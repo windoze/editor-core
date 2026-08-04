@@ -1,6 +1,6 @@
 use super::{TabEntry, TabId};
 use crate::{EditorUi, UiError};
-use editor_core::LineIndex;
+use editor_core::{Command, EditCommand, LineIndex, TextEditSpec};
 use editor_core_lsp::{
     LspTextEdit, char_offsets_for_lsp_range, file_uri_to_path, summarize_workspace_edit,
     text_edits_from_value, workspace_edit_expected_versions,
@@ -545,15 +545,33 @@ pub(super) fn apply(
                 }
 
                 if let Some(tab_id) = tab_id_for_uri(tabs, tab_order, uri.as_str()) {
-                    match apply_open_tab_text_edits(
-                        tabs,
-                        tab_order,
-                        *active_tab,
-                        *preview_tab,
-                        &mut open_tab_rollback,
-                        tab_id,
-                        &edits,
-                    ) {
+                    let snippet_completion = input
+                        .snippet_completion
+                        .as_ref()
+                        .filter(|snippet| snippet.matches_text_edits(uri.as_str(), &edits));
+                    let apply_result = if let Some(snippet_completion) = snippet_completion {
+                        apply_open_tab_snippet_completion(
+                            tabs,
+                            tab_order,
+                            *active_tab,
+                            *preview_tab,
+                            &mut open_tab_rollback,
+                            tab_id,
+                            snippet_completion,
+                        )
+                    } else {
+                        apply_open_tab_text_edits(
+                            tabs,
+                            tab_order,
+                            *active_tab,
+                            *preview_tab,
+                            &mut open_tab_rollback,
+                            tab_id,
+                            &edits,
+                        )
+                    };
+
+                    match apply_result {
                         Ok(true) => {
                             applied_uris.insert(uri.clone());
                             applied_edit_count = applied_edit_count.saturating_add(edits.len());
@@ -683,6 +701,30 @@ struct WorkspaceEditTransactionPlan {
 struct WorkspaceEditTransactionInput {
     workspace_edit: Value,
     apply_mode: WorkspaceEditApplyMode,
+    snippet_completion: Option<WorkspaceEditTransactionSnippetCompletion>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct WorkspaceEditTransactionSnippetCompletion {
+    document_uri: String,
+    text_edit: LspTextEdit,
+    snippet: String,
+    additional_text_edits: Vec<LspTextEdit>,
+}
+
+impl WorkspaceEditTransactionSnippetCompletion {
+    fn matches_text_edits(&self, uri: &str, edits: &[LspTextEdit]) -> bool {
+        if uri != self.document_uri {
+            return false;
+        }
+        if edits.len() != self.additional_text_edits.len().saturating_add(1) {
+            return false;
+        }
+        if edits.first() != Some(&self.text_edit) {
+            return false;
+        }
+        &edits[1..] == self.additional_text_edits.as_slice()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1308,6 +1350,7 @@ fn workspace_edit_input(
     workspace_edit_json: &str,
 ) -> Result<WorkspaceEditTransactionInput, UiError> {
     let value = workspace_edit_value(workspace_edit_json)?;
+    let snippet_completion = workspace_edit_snippet_completion(&value);
     let apply_mode = workspace_edit_apply_mode(&value)?;
     let workspace_edit = match value.get("workspaceEdit") {
         Some(workspace_edit) if workspace_edit.is_object() => workspace_edit.clone(),
@@ -1321,6 +1364,37 @@ fn workspace_edit_input(
     Ok(WorkspaceEditTransactionInput {
         workspace_edit,
         apply_mode,
+        snippet_completion,
+    })
+}
+
+fn workspace_edit_snippet_completion(
+    value: &Value,
+) -> Option<WorkspaceEditTransactionSnippetCompletion> {
+    let object = value
+        .get("attoSnippetCompletion")
+        .or_else(|| value.get("atto_snippet_completion"))?;
+    let document_uri = object
+        .get("documentURI")
+        .or_else(|| object.get("document_uri"))
+        .and_then(Value::as_str)?
+        .to_string();
+    let text_edit = object
+        .get("textEdit")
+        .or_else(|| object.get("text_edit"))
+        .and_then(LspTextEdit::from_value)?;
+    let snippet = object.get("snippet").and_then(Value::as_str)?.to_string();
+    let additional_text_edits = object
+        .get("additionalTextEdits")
+        .or_else(|| object.get("additional_text_edits"))
+        .map(text_edits_from_value)
+        .unwrap_or_default();
+
+    Some(WorkspaceEditTransactionSnippetCompletion {
+        document_uri,
+        text_edit,
+        snippet,
+        additional_text_edits,
     })
 }
 
@@ -2119,6 +2193,52 @@ fn apply_open_tab_text_edits(
         .ok_or_else(|| UiError::Processor(format!("tab {} has no active view", tab_id.get())))?;
     let buffer_id = view.buffer_id;
     view.lsp_apply_lsp_text_edits(buffer_id, edits)
+}
+
+fn apply_open_tab_snippet_completion(
+    tabs: &mut BTreeMap<TabId, TabEntry>,
+    tab_order: &[TabId],
+    active_tab: Option<TabId>,
+    preview_tab: Option<TabId>,
+    open_tab_rollback: &mut OpenTabRollback,
+    tab_id: TabId,
+    snippet_completion: &WorkspaceEditTransactionSnippetCompletion,
+) -> Result<bool, UiError> {
+    open_tab_rollback.backup_text(tabs, tab_order, active_tab, preview_tab, tab_id)?;
+    let tab = tabs
+        .get_mut(&tab_id)
+        .ok_or_else(|| UiError::Processor(format!("unknown tab id {}", tab_id.get())))?;
+    let view = tab
+        .active_view_mut()
+        .ok_or_else(|| UiError::Processor(format!("tab {} has no active view", tab_id.get())))?;
+    let line_index = {
+        let doc = view.lock_doc();
+        doc.ws
+            .buffer_line_index(view.buffer_id)
+            .map_err(|err| UiError::Processor(format!("{err:?}")))?
+            .clone()
+    };
+    let (start, end) = char_offsets_for_lsp_range(&line_index, &snippet_completion.text_edit.range);
+    let additional_edits = snippet_completion
+        .additional_text_edits
+        .iter()
+        .map(|edit| {
+            let (start, end) = char_offsets_for_lsp_range(&line_index, &edit.range);
+            TextEditSpec {
+                start,
+                end,
+                text: edit.new_text.clone(),
+            }
+        })
+        .collect();
+
+    view.execute(Command::Edit(EditCommand::ApplySnippet {
+        start,
+        end,
+        snippet: snippet_completion.snippet.clone(),
+        additional_edits,
+    }))?;
+    Ok(true)
 }
 
 fn apply_unopened_file_text_edits(

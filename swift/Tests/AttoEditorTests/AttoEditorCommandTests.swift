@@ -4365,6 +4365,10 @@ final class AttoEditorCommandTests: XCTestCase {
         )
         XCTAssertTrue(try editorView.editor.hasActiveSnippetSession())
         XCTAssertTrue(window.title.contains("●"))
+
+        XCTAssertTrue(vc._undoLastCoreWorkspaceEditTransactionForTesting())
+        XCTAssertEqual(try editorView.editor.text(), "import Old\npri\n")
+        XCTAssertFalse(try editorView.editor.hasActiveSnippetSession())
     }
 
     func testCompletionWorkspaceEditRetryOwnerRerunsCompletionRequest() throws {
