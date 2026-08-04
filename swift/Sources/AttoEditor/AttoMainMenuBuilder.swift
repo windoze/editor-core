@@ -16,8 +16,11 @@ enum AttoMainMenuBuilder {
         appMenu.addItem(commandItem(title: "Preferences...", commandID: "workbench.preferences", appDelegate: appDelegate))
         appMenu.addItem(commandItem(title: "Open User Settings", commandID: "settings.open_user_settings", appDelegate: appDelegate))
         appMenu.addItem(commandItem(title: "Open Workspace Settings", commandID: "settings.open_workspace_settings", appDelegate: appDelegate))
+        appMenu.addItem(commandItem(title: "Open Runtime Overrides", commandID: "settings.open_runtime_overrides", appDelegate: appDelegate))
         appMenu.addItem(commandItem(title: "Validate User Settings", commandID: "settings.validate_user_settings", appDelegate: appDelegate))
         appMenu.addItem(commandItem(title: "Validate Workspace Settings", commandID: "settings.validate_workspace_settings", appDelegate: appDelegate))
+        appMenu.addItem(commandItem(title: "Validate Runtime Overrides", commandID: "settings.validate_runtime_overrides", appDelegate: appDelegate))
+        appMenu.addItem(commandItem(title: "Clear Runtime Overrides", commandID: "settings.clear_runtime_overrides", appDelegate: appDelegate))
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Quit AttoEditor", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 

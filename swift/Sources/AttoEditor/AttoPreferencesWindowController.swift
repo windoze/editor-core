@@ -117,13 +117,17 @@ final class AttoPreferencesWindowController: NSWindowController {
         showPage(.settings)
     }
 
+    func reloadSettingsPage() {
+        (cachedPages[.settings] as? AttoSettingsSchemaPageViewController)?.reloadRows()
+    }
+
     func _settingsSchemaRowsForTesting() -> [AttoSettingsSchemaRow] {
         showPage(.settings)
         guard let page = cachedPages[.settings] as? AttoSettingsSchemaPageViewController else {
             return []
         }
         _ = page.view
-        page.reloadRows()
+        reloadSettingsPage()
         return page.rowsForTesting()
     }
 }

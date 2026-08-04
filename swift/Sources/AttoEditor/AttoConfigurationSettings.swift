@@ -383,13 +383,17 @@ struct AttoWorkspacePreferenceSettings: Codable, Equatable {
 
 struct AttoConfigurationSettingsStore {
     let userSettingsURL: URL
+    let runtimeSettingsURL: URL
     let fileManager: FileManager
 
     init(
         userSettingsURL: URL = AttoConfigurationSettingsStore.defaultUserSettingsURL(),
+        runtimeSettingsURL: URL? = nil,
         fileManager: FileManager = .default
     ) {
         self.userSettingsURL = userSettingsURL
+        self.runtimeSettingsURL = runtimeSettingsURL
+            ?? AttoConfigurationSettingsStore.defaultRuntimeSettingsURL(userSettingsURL: userSettingsURL)
         self.fileManager = fileManager
     }
 
@@ -406,6 +410,14 @@ struct AttoConfigurationSettingsStore {
             .appendingPathComponent("settings.json", isDirectory: false)
     }
 
+    static func defaultRuntimeSettingsURL(
+        userSettingsURL: URL = AttoConfigurationSettingsStore.defaultUserSettingsURL()
+    ) -> URL {
+        userSettingsURL
+            .deletingLastPathComponent()
+            .appendingPathComponent("runtime-overrides.json", isDirectory: false)
+    }
+
     static func workspaceSettingsURL(forWorkspaceRootURL workspaceRootURL: URL) -> URL {
         workspaceRootURL
             .standardizedFileURL
@@ -419,6 +431,19 @@ struct AttoConfigurationSettingsStore {
 
     func saveUserSettings(_ settings: AttoConfigurationSettings) throws {
         try save(settings, to: userSettingsURL)
+    }
+
+    func loadRuntimeSettings() throws -> AttoConfigurationSettings? {
+        try load(from: runtimeSettingsURL)
+    }
+
+    func saveRuntimeSettings(_ settings: AttoConfigurationSettings) throws {
+        try save(settings, to: runtimeSettingsURL)
+    }
+
+    func clearRuntimeSettings() throws {
+        guard fileManager.fileExists(atPath: runtimeSettingsURL.path) else { return }
+        try fileManager.removeItem(at: runtimeSettingsURL)
     }
 
     func loadWorkspaceSettings(workspaceRootURL: URL) throws -> AttoConfigurationSettings? {

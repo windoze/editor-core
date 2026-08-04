@@ -630,8 +630,11 @@ extension AttoEditorCommandTests {
         XCTAssertNotNil(findMenuItem(commandID: "editor.format_selection", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "settings.open_user_settings", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "settings.open_workspace_settings", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "settings.open_runtime_overrides", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "settings.validate_user_settings", in: menu))
         XCTAssertNotNil(findMenuItem(commandID: "settings.validate_workspace_settings", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "settings.validate_runtime_overrides", in: menu))
+        XCTAssertNotNil(findMenuItem(commandID: "settings.clear_runtime_overrides", in: menu))
         let workspaceUndo = try XCTUnwrap(findMenuItem(commandID: "workspace.undo_last_workspace_edit", in: menu))
         XCTAssertEqual(workspaceUndo.keyEquivalent, "z")
         XCTAssertEqual(

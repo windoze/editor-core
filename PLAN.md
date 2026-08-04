@@ -340,7 +340,11 @@
 - [x] 建立 schema-aware settings UI，展示 effective value、source、override 和 validation error。
   - 交付：Preferences 增加 Settings 页，按当前 schema 展示全局 effective value、source、user/workspace/runtime override、scoped override 摘要和 validation error。
   - 验证：`swift test --package-path swift --filter AttoSettingsSchemaPageTests`
-- [ ] 持久化 runtime overrides，并定义 user/workspace/runtime 的合并和回滚行为。
+- [x] 持久化 runtime overrides，并定义 user/workspace/runtime 的合并和回滚行为。
+  - 交付：runtime overrides 启动时从 `runtime-overrides.json` 加载，设置后自动保存；合并顺序为 base preferences -> user settings -> workspace settings -> runtime overrides；清空 runtime overrides 会删除持久化文件并回滚到 user/workspace 生效值。
+  - 验证：`swift test --package-path swift --filter AttoRuntimeConfigurationSettingsTests`
+  - 验证：`swift test --package-path swift --filter 'AttoEditorCommandTests/test(CommandRegistry|CommandSurfaces|RegisteredCommands|DefaultCommandPalette)'`
+  - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testMainMenuItemsUseCommandIDsAndResolvedKeymap`
 - [ ] 完成跨 schema 字段迁移和无效配置降级反馈。
 
 ## 阶段 10：Result Envelope、错误模型与 Host Capability

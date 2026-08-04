@@ -237,6 +237,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             maxCommands: Self.maxRecordedMacroCommandCount
         ) ?? []
         super.init()
+        self.runtimeConfigurationSettings = Self.loadPersistedRuntimeConfigurationSettings(from: settingsStore)
     }
 
     init(
@@ -268,6 +269,7 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             maxCommands: Self.maxRecordedMacroCommandCount
         ) ?? []
         super.init()
+        self.runtimeConfigurationSettings = Self.loadPersistedRuntimeConfigurationSettings(from: settingsStore)
     }
 
     private struct StaticEditorJSONCommand {
@@ -1208,6 +1210,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             .init(id: "settings.open_workspace_settings", title: "Settings: Open Workspace Settings") { [weak self] in
                 self?.openWorkspaceSettingsFile()
             },
+            .init(id: "settings.open_runtime_overrides", title: "Settings: Open Runtime Overrides") { [weak self] in
+                self?.openRuntimeSettingsFile()
+            },
             .init(id: "settings.validate_user_settings", title: "Settings: Validate User Settings") { [weak self] in
                 self?.validateUserSettingsFile()
             },
@@ -1216,6 +1221,15 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
                 title: "Settings: Validate Workspace Settings"
             ) { [weak self] in
                 self?.validateWorkspaceSettingsFile()
+            },
+            .init(
+                id: "settings.validate_runtime_overrides",
+                title: "Settings: Validate Runtime Overrides"
+            ) { [weak self] in
+                self?.validateRuntimeSettingsFile()
+            },
+            .init(id: "settings.clear_runtime_overrides", title: "Settings: Clear Runtime Overrides") { [weak self] in
+                self?.clearRuntimeSettingsOverrides()
             },
             .init(id: "go.back", title: "Go: Back") { [weak self] in
                 self?.activeWindow()?.editorAreaController.jumpBackInActiveTab()
@@ -2777,8 +2791,9 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         case "file.open_folder", "file.open_recent_project", "file.open_file", "workbench.preferences", "go.file",
              "editor.find", "editor.replace", "workbench.command_palette":
             return AttoCommandSchema(macroPolicy: .promptRequired)
-        case "settings.open_user_settings", "settings.open_workspace_settings",
-             "settings.validate_user_settings", "settings.validate_workspace_settings":
+        case "settings.open_user_settings", "settings.open_workspace_settings", "settings.open_runtime_overrides",
+             "settings.validate_user_settings", "settings.validate_workspace_settings",
+             "settings.validate_runtime_overrides", "settings.clear_runtime_overrides":
             return AttoCommandSchema(macroPolicy: .notRecordable)
         case "macro.save_named":
             return Self.macroNameCommandSchema()
@@ -2887,6 +2902,15 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
         )
     }
 
+    private func openRuntimeSettingsFile() {
+        guard let ctx = ensureActiveWindowForMenuActions() else { return }
+        openSettingsFile(
+            settingsStore.runtimeSettingsURL,
+            displayName: "Runtime Overrides",
+            in: ctx
+        )
+    }
+
     private func validateUserSettingsFile() {
         guard let ctx = ensureActiveWindowForMenuActions() else { return }
         validateSettingsFile(
@@ -2905,6 +2929,21 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
             scope: .workspace,
             in: ctx
         )
+    }
+
+    private func validateRuntimeSettingsFile() {
+        guard let ctx = ensureActiveWindowForMenuActions() else { return }
+        validateSettingsFile(
+            settingsStore.runtimeSettingsURL,
+            displayName: "Runtime Overrides",
+            scope: .runtime,
+            in: ctx
+        )
+    }
+
+    private func clearRuntimeSettingsOverrides() {
+        setRuntimeConfigurationSettings(nil)
+        activeWindow()?.editorAreaController.setTransientStatusText("Cleared Runtime Overrides")
     }
 
     private func openSettingsFile(
@@ -3078,12 +3117,52 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
     }
 
     private func setRuntimeConfigurationSettings(_ settings: AttoConfigurationSettings?) {
-        if let settings, settings.isEmpty == false {
-            runtimeConfigurationSettings = settings
+        let normalizedSettings = settings.flatMap { $0.isEmpty ? nil : $0 }
+        if let normalizedSettings {
+            runtimeConfigurationSettings = normalizedSettings
+            do {
+                try settingsStore.saveRuntimeSettings(normalizedSettings)
+            } catch {
+                NSLog(
+                    "AttoEditor: failed to persist runtime overrides %@: %@",
+                    settingsStore.runtimeSettingsURL.path,
+                    String(describing: error)
+                )
+            }
         } else {
             runtimeConfigurationSettings = nil
+            do {
+                try settingsStore.clearRuntimeSettings()
+            } catch {
+                NSLog(
+                    "AttoEditor: failed to clear runtime overrides %@: %@",
+                    settingsStore.runtimeSettingsURL.path,
+                    String(describing: error)
+                )
+            }
         }
         applyEditorPreferencesToAllWindows()
+        preferencesWindowController?.reloadSettingsPage()
+    }
+
+    private static func loadPersistedRuntimeConfigurationSettings(
+        from settingsStore: AttoConfigurationSettingsStore
+    ) -> AttoConfigurationSettings? {
+        do {
+            guard let settings = try settingsStore.loadRuntimeSettings(),
+                  settings.isEmpty == false
+            else {
+                return nil
+            }
+            return settings
+        } catch {
+            NSLog(
+                "AttoEditor: failed to load runtime overrides %@: %@",
+                settingsStore.runtimeSettingsURL.path,
+                String(describing: error)
+            )
+            return nil
+        }
     }
 
     private func configurationSnapshot(
