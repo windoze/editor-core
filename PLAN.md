@@ -141,6 +141,8 @@
   - [ ] 设计并实现 drag tab to split / split drag/drop 入口；当前代码只发现 tab bar reorder drag 和命令式 split/pane move。
   - 验证：`swift test --package-path swift --filter AttoCoreWorkspaceDragProjectionTests`
 - [ ] 将 dirty state、close prompt、save-all、reload、recent session 和 root change 继续收敛到 core-backed 工作流。
+  - [x] 将 dirty close prompt、open-file dirty projection、reload、save active、save-all 的 core-backed 回归拆到独立 dirty state 测试。
+  - 验证：`swift test --package-path swift --filter AttoCoreWorkspaceDirtyStateTests`
 - [ ] 建立迁移期测试：同一操作同时断言 core snapshot、Swift wrapper 和 AppKit projection。
 
 ## 阶段 6：Project / LSP Lifecycle 产品化
