@@ -503,7 +503,15 @@
   - 验证：`swift test --package-path swift --filter AttoEditorVisualLayoutTests`
   - 验证：`swift test --package-path swift --filter EditorCoreSkiaMinimapTests`
   - 验证：`swift test --package-path swift --filter EditorCoreSkiaViewGutterWidthTests`
-- [ ] 覆盖窄窗口、多 pane、长文件、多 cursor、diagnostics、folding、semantic overlays 的布局与视觉测试。
+- [x] 覆盖窄窗口、多 pane、长文件、多 cursor、diagnostics、folding、semantic overlays 的布局与视觉测试。
+  - [x] 新增 `editor-chrome-dark-long-file-minimap-overlays` visual baseline，覆盖 96 行长文件、collapsed fold、multi-cursor selection、diagnostic marker 和 minimap density。
+  - [x] 新增 `AttoEditorVisualBaselineCoverageTests`，显式断言 manifest 至少覆盖窄窗口、多 pane、长文件、多 cursor、diagnostics、folding 和 semantic overlays。
+  - [x] 重新生成并 strict 校验受 chrome layout clamp 影响的 editor chrome / completion popup PNG baselines。
+  - 验证：`swift test --package-path swift --filter AttoEditorVisualBaselineCoverageTests`
+  - 验证：`swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests/testVisualBaselineManifestDeclaresRunnableFixtures`
+  - 验证：`swift/scripts/update-visual-baselines.sh`
+  - 验证：`swift/scripts/check-visual-baselines.sh`
+  - 验证：`git diff --check`
 - [ ] 修复 focus、keyboard navigation、selection、hover、scroll、overlay stacking 的产品细节。
 
 ## 阶段 15：最终审计与全量验证

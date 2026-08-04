@@ -190,7 +190,7 @@
       "artifactName": "editor-chrome-dark-narrow-minimap-overlays",
       "theme": "demoRustLspDark",
       "window": {
-        "width": 603,
+        "width": 608,
         "height": 380
       },
       "scale": 1.0,
@@ -243,6 +243,55 @@
           "charOffset": 305,
           "severity": "information",
           "source": "workspace"
+        }
+      ],
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "editor-chrome-dark-long-file-minimap-overlays",
+      "description": "Dark editor chrome with a long file, collapsed fold, multi-cursor selections, diagnostics, and dense minimap projection.",
+      "fixture": "VisualFixtures/long-file-minimap-overlays.txt",
+      "baseline": "VisualBaselines/editor-chrome-dark-long-file-minimap-overlays.png",
+      "artifactName": "editor-chrome-dark-long-file-minimap-overlays",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 760,
+        "height": 420
+      },
+      "scale": 1.0,
+      "showFindBar": true,
+      "foldingRanges": [
+        {
+          "startLine": 10,
+          "endLine": 28,
+          "kind": "region",
+          "collapsedText": "fold block ... "
+        }
+      ],
+      "collapsedFolds": [
+        {
+          "startLine": 10,
+          "endLine": 28
+        }
+      ],
+      "selectionRanges": [
+        {
+          "start": 0,
+          "end": 3
+        },
+        {
+          "start": 89,
+          "end": 96
+        }
+      ],
+      "primarySelectionIndex": 1,
+      "diagnosticMarkers": [
+        {
+          "logicalLine": 0,
+          "charOffset": 0,
+          "severity": "warning",
+          "source": "active"
         }
       ],
       "perChannelTolerance": 2,

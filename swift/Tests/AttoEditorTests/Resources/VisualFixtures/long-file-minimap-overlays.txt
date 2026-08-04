@@ -1,0 +1,96 @@
+000: long file visual baseline fixture for minimap density and chrome stability
+001: the first screen keeps text readable while the minimap projects the rest of the document
+002: repeated identifiers alpha beta gamma delta epsilon zeta eta theta iota kappa
+003: multi cursor selections and diagnostic markers should not shift the surrounding chrome
+004: folding a middle range should keep the gutter, minimap, and status bar aligned
+005: line with punctuation {} [] () <> == != && || :: -> => ...
+006: unicode stays visible in the top viewport 视觉 长文件 minimap gutter overlay
+007: marker text marker text marker text marker text marker text marker text
+008: scrolling density is represented in the minimap even when the viewport remains near top
+009: section alpha begins with enough content to draw visible text bars in the minimap
+010: fold block line 010 keeps deterministic wording for collapsed range capture
+011: fold block line 011 keeps deterministic wording for collapsed range capture
+012: fold block line 012 keeps deterministic wording for collapsed range capture
+013: fold block line 013 keeps deterministic wording for collapsed range capture
+014: fold block line 014 keeps deterministic wording for collapsed range capture
+015: fold block line 015 keeps deterministic wording for collapsed range capture
+016: fold block line 016 keeps deterministic wording for collapsed range capture
+017: fold block line 017 keeps deterministic wording for collapsed range capture
+018: fold block line 018 keeps deterministic wording for collapsed range capture
+019: fold block line 019 keeps deterministic wording for collapsed range capture
+020: fold block line 020 keeps deterministic wording for collapsed range capture
+021: fold block line 021 keeps deterministic wording for collapsed range capture
+022: fold block line 022 keeps deterministic wording for collapsed range capture
+023: fold block line 023 keeps deterministic wording for collapsed range capture
+024: fold block line 024 keeps deterministic wording for collapsed range capture
+025: fold block line 025 keeps deterministic wording for collapsed range capture
+026: fold block line 026 keeps deterministic wording for collapsed range capture
+027: fold block line 027 keeps deterministic wording for collapsed range capture
+028: fold block line 028 keeps deterministic wording for collapsed range capture
+029: section beta continues after the collapsed region
+030: minimap density line 030 value value value value value value value value
+031: minimap density line 031 value value value value value value value value
+032: minimap density line 032 value value value value value value value value
+033: minimap density line 033 value value value value value value value value
+034: minimap density line 034 value value value value value value value value
+035: minimap density line 035 value value value value value value value value
+036: minimap density line 036 value value value value value value value value
+037: minimap density line 037 value value value value value value value value
+038: minimap density line 038 value value value value value value value value
+039: minimap density line 039 value value value value value value value value
+040: minimap density line 040 value value value value value value value value
+041: minimap density line 041 value value value value value value value value
+042: minimap density line 042 value value value value value value value value
+043: minimap density line 043 value value value value value value value value
+044: minimap density line 044 value value value value value value value value
+045: minimap density line 045 value value value value value value value value
+046: minimap density line 046 value value value value value value value value
+047: minimap density line 047 value value value value value value value value
+048: minimap density line 048 value value value value value value value value
+049: minimap density line 049 value value value value value value value value
+050: minimap density line 050 value value value value value value value value
+051: minimap density line 051 value value value value value value value value
+052: minimap density line 052 value value value value value value value value
+053: minimap density line 053 value value value value value value value value
+054: minimap density line 054 value value value value value value value value
+055: minimap density line 055 value value value value value value value value
+056: minimap density line 056 value value value value value value value value
+057: minimap density line 057 value value value value value value value value
+058: minimap density line 058 value value value value value value value value
+059: minimap density line 059 value value value value value value value value
+060: minimap density line 060 value value value value value value value value
+061: minimap density line 061 value value value value value value value value
+062: minimap density line 062 value value value value value value value value
+063: minimap density line 063 value value value value value value value value
+064: minimap density line 064 value value value value value value value value
+065: minimap density line 065 value value value value value value value value
+066: minimap density line 066 value value value value value value value value
+067: minimap density line 067 value value value value value value value value
+068: minimap density line 068 value value value value value value value value
+069: minimap density line 069 value value value value value value value value
+070: minimap density line 070 value value value value value value value value
+071: minimap density line 071 value value value value value value value value
+072: minimap density line 072 value value value value value value value value
+073: minimap density line 073 value value value value value value value value
+074: minimap density line 074 value value value value value value value value
+075: minimap density line 075 value value value value value value value value
+076: minimap density line 076 value value value value value value value value
+077: minimap density line 077 value value value value value value value value
+078: minimap density line 078 value value value value value value value value
+079: minimap density line 079 value value value value value value value value
+080: minimap density line 080 value value value value value value value value
+081: minimap density line 081 value value value value value value value value
+082: minimap density line 082 value value value value value value value value
+083: minimap density line 083 value value value value value value value value
+084: minimap density line 084 value value value value value value value value
+085: minimap density line 085 value value value value value value value value
+086: minimap density line 086 value value value value value value value value
+087: minimap density line 087 value value value value value value value value
+088: minimap density line 088 value value value value value value value value
+089: minimap density line 089 value value value value value value value value
+090: minimap density line 090 value value value value value value value value
+091: minimap density line 091 value value value value value value value value
+092: minimap density line 092 value value value value value value value value
+093: minimap density line 093 value value value value value value value value
+094: minimap density line 094 value value value value value value value value
+095: final minimap density line keeps the long-file baseline deterministic
