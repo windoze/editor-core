@@ -539,6 +539,13 @@
   - [x] `SWIFT-GAPS.md` 移除已完成阶段 14，仅保留阶段 15 剩余边界。
   - 验证：`! rg -n "阶段 14|Sublime-like UI|当前按阶段 14|TODO|待办" SWIFT-GAPS.md README.md swift/README.md docs/abi-v1-draft.md crates/editor-core-ui-ffi/README.md`
   - 验证：`git diff --check`
-- [ ] 清理过渡 API、重复状态源、临时 helper、旧 feature flag 和未使用测试 fixture。
+- [x] 清理过渡 API、重复状态源、临时 helper、旧 feature flag 和未使用测试 fixture。
+  - [x] 移除 `MultiDocumentEditorUI` 中已迁移到 envelope 主路径、且无调用点的 deprecated Swift workspace-file raw/decoded convenience wrappers；底层 C ABI legacy JSON 符号继续保留为运行时兼容入口。
+  - [x] 审计 visual fixture / PNG baseline 与 manifest 的双向引用，确认没有未使用或缺失资源。
+  - 验证：`ruby -rjson -e 'root="swift/Tests/AttoEditorTests/Resources"; manifest=JSON.parse(File.read(File.join(root,"VisualBaselines/manifest.json"))); fixtures=manifest.fetch("cases").flat_map{|c| [c["fixture"], c["activeFixture"], *(c["additionalFixtures"]||[])]}.compact.uniq; baselines=manifest.fetch("cases").map{|c| c.fetch("baseline")}.uniq; actual_fixtures=Dir[File.join(root,"VisualFixtures","*")].select{|p| File.file?(p)}.map{|p| p.sub(root+"/","")}.sort; actual_baselines=Dir[File.join(root,"VisualBaselines","*.png")].select{|p| File.file?(p)}.map{|p| p.sub(root+"/","")}.sort; abort("visual resource mismatch") unless (actual_fixtures-fixtures).empty? && (fixtures-actual_fixtures).empty? && (actual_baselines-baselines).empty? && (baselines-actual_baselines).empty?'`
+  - 验证：`! rg -n "@available\(\*, deprecated" swift/Sources/EditorCoreUIFFI/MultiDocumentEditorUI.swift`
+  - 验证：`swift test --package-path swift --filter MultiDocumentWorkspaceFile`
+  - 验证：`swift test --package-path swift --filter AttoCoreWorkspaceRecentRootTests`
+  - 验证：`git diff --check`
 - [ ] 运行全量 Rust、Swift、AppKit、visual 和 opt-in smoke 验证。
 - [ ] 将仍未完成的内容明确标为 out-of-scope 或 deferred，并从本计划中移除。
