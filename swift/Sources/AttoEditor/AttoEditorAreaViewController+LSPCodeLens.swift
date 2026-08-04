@@ -382,7 +382,7 @@ extension AttoEditorAreaViewController {
             let items = self.currentCodeLensItems(in: tab)
             let count = items.count
             if errorMessage == nil {
-                self.recordCodeLensResultEvent(items: items)
+                self.recordCodeLensResultEvent(items: items, tab: tab)
             }
             self.updateVisibleCodeLensPanel(for: tab)
             self.updateStatusBar()
@@ -471,18 +471,19 @@ extension AttoEditorAreaViewController {
         tab.editCore.editorView.needsDisplay = true
         tab.editCore.needsDisplay = true
         derivedStateStore.refreshActive(editor: tab.editCore.editor)
-        recordCodeLensResultEvent(items: currentCodeLensItems(in: tab))
+        recordCodeLensResultEvent(items: currentCodeLensItems(in: tab), tab: tab)
         updateVisibleCodeLensPanel(for: tab)
         updateStatusBar()
         return true
     }
 
-    private func recordCodeLensResultEvent(items: [AttoLspCodeLensParser.Item]) {
+    private func recordCodeLensResultEvent(items: [AttoLspCodeLensParser.Item], tab: AttoEditorTab) {
         let itemCount = items.count
         let countText = itemCount == 1 ? "1 action" : "\(itemCount) actions"
         let event = lspResultEventStream.record(
             family: "code_lens",
             title: "Code Lens: \(countText)",
+            owner: lspDocumentResultOwner(for: tab),
             payload: .codeLens(itemCount: itemCount)
         )
         lspWorkbenchAuxiliaryHistoryStore.record(

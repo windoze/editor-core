@@ -305,6 +305,7 @@ final class AttoLspSymbolPanelController: NSObject, NSTableViewDataSource, NSTab
             title: snapshot.title,
             recordedAt: Date(timeIntervalSince1970: 0),
             state: .fresh,
+            owner: nil,
             snapshot: snapshot
         )
     }

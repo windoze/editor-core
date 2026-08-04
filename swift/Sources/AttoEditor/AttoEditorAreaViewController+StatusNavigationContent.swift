@@ -354,7 +354,10 @@ extension AttoEditorAreaViewController {
                 "document_colors",
                 "hierarchy",
             ],
-            state: state
+            state: state,
+            ownerMatches: { [weak self] owner in
+                self?.lspResultOwnerMatchesActiveDocument(owner) ?? false
+            }
         )
         didUpdate = didUpdate || updatedEvents.isEmpty == false
         if didUpdate {
@@ -383,7 +386,10 @@ extension AttoEditorAreaViewController {
     ) -> Bool {
         let updated = lspResultEventStream.updateLatestStates(
             families: [family],
-            state: .error(message: message.statusText)
+            state: .error(message: message.statusText),
+            ownerMatches: { [weak self] owner in
+                self?.lspResultOwnerMatchesActiveDocument(owner) ?? false
+            }
         )
         guard updated.isEmpty == false else { return false }
         updateVisibleLspWorkbenchPanel()
@@ -1534,6 +1540,7 @@ extension AttoEditorAreaViewController {
             title: entry.title,
             recordedAt: entry.recordedAt,
             sourceSequence: entry.sequence,
+            owner: entry.owner,
             payload: payload
         )
     }
@@ -1553,7 +1560,8 @@ extension AttoEditorAreaViewController {
         guard let entry = diagnosticsLifecycleStore.recordIfChanged(
             lifecycleSnapshot,
             family: "diagnostics.active",
-            title: documentURL.lastPathComponent
+            title: documentURL.lastPathComponent,
+            owner: lspDocumentResultOwner(for: tab)
         ) else { return }
         recordLspResultLifecycleEvent(
             entry,
@@ -1585,7 +1593,8 @@ extension AttoEditorAreaViewController {
         guard let entry = diagnosticsLifecycleStore.recordIfChanged(
             lifecycleSnapshot,
             family: "diagnostics.workspace",
-            title: "Workspace Problems"
+            title: "Workspace Problems",
+            owner: lspWorkspaceResultOwner()
         ) else { return }
         recordLspResultLifecycleEvent(
             entry,

@@ -289,6 +289,7 @@ final class AttoLspLocationPanelController: NSObject, NSTableViewDataSource, NST
             title: snapshot.kind.historyTitle,
             recordedAt: Date(timeIntervalSince1970: 0),
             state: .fresh,
+            owner: nil,
             snapshot: snapshot
         )
     }

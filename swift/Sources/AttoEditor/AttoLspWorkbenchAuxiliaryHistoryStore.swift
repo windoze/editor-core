@@ -15,6 +15,7 @@ final class AttoLspWorkbenchAuxiliaryHistoryStore {
         let family: String
         let title: String
         let recordedAt: Date
+        let owner: AttoLspResultOwner?
         let payload: Payload
     }
 
@@ -37,6 +38,7 @@ final class AttoLspWorkbenchAuxiliaryHistoryStore {
             family: event.family,
             title: event.title,
             recordedAt: event.recordedAt,
+            owner: event.owner,
             payload: payload
         )
 
@@ -55,9 +57,13 @@ final class AttoLspWorkbenchAuxiliaryHistoryStore {
     }
 
     @discardableResult
-    func pinLatest(family: String) -> Entry? {
+    func pinLatest(
+        family: String,
+        ownerMatches: (AttoLspResultOwner?) -> Bool = { _ in true }
+    ) -> Entry? {
         guard let sequence = order.reversed().first(where: {
-            entriesBySequence[$0]?.family == family
+            guard let entry = entriesBySequence[$0] else { return false }
+            return entry.family == family && ownerMatches(entry.owner)
         }),
               let entry = entriesBySequence[sequence]
         else {

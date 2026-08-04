@@ -296,10 +296,10 @@ extension AttoEditorAreaViewController {
             tab.editCore.needsDisplay = true
             self.derivedStateStore.refreshActive(editor: tab.editCore.editor)
             if kind == .inlayHints {
-                self.recordInlayHintResultEvent(items: self.currentInlayHintItems(in: tab))
+                self.recordInlayHintResultEvent(items: self.currentInlayHintItems(in: tab), tab: tab)
                 self.updateVisibleInlayHintPanel(for: tab)
             } else if kind == .documentLinks {
-                self.recordDocumentLinkResultEvent(items: self.currentDocumentLinkItems(in: tab))
+                self.recordDocumentLinkResultEvent(items: self.currentDocumentLinkItems(in: tab), tab: tab)
                 self.updateVisibleDocumentLinkPanel(for: tab)
             }
             self.updateStatusBar()
@@ -677,22 +677,23 @@ extension AttoEditorAreaViewController {
         switch kind {
         case .inlayHints:
             let items = currentInlayHintItems(in: tab)
-            recordInlayHintResultEvent(items: items)
+            recordInlayHintResultEvent(items: items, tab: tab)
             updateVisibleInlayHintPanel(for: tab)
         case .documentLinks:
             let items = currentDocumentLinkItems(in: tab)
-            recordDocumentLinkResultEvent(items: items)
+            recordDocumentLinkResultEvent(items: items, tab: tab)
             updateVisibleDocumentLinkPanel(for: tab)
         }
         updateStatusBar()
         return true
     }
 
-    private func recordInlayHintResultEvent(items: [AttoLspInlayHintParser.Item]) {
+    private func recordInlayHintResultEvent(items: [AttoLspInlayHintParser.Item], tab: AttoEditorTab) {
         let kind = AuxiliaryRefreshKind.inlayHints
         let event = lspResultEventStream.record(
             family: kind.resultEventFamily,
             title: kind.resultEventTitle(count: items.count),
+            owner: lspDocumentResultOwner(for: tab),
             payload: kind.resultEventPayload(count: items.count)
         )
         lspWorkbenchAuxiliaryHistoryStore.record(
@@ -701,11 +702,12 @@ extension AttoEditorAreaViewController {
         )
     }
 
-    private func recordDocumentLinkResultEvent(items: [AttoLspDocumentLinkParser.Item]) {
+    private func recordDocumentLinkResultEvent(items: [AttoLspDocumentLinkParser.Item], tab: AttoEditorTab) {
         let kind = AuxiliaryRefreshKind.documentLinks
         let event = lspResultEventStream.record(
             family: kind.resultEventFamily,
             title: kind.resultEventTitle(count: items.count),
+            owner: lspDocumentResultOwner(for: tab),
             payload: kind.resultEventPayload(count: items.count)
         )
         lspWorkbenchAuxiliaryHistoryStore.record(

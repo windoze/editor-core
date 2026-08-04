@@ -1191,8 +1191,10 @@ extension AttoEditorAreaViewController {
             return false
         }
 
-        recordDocumentColorResultLifecycle(items: items, mode: mode)
+        let owner = lspDocumentResultOwner(for: tab)
+        recordDocumentColorResultLifecycle(items: items, mode: mode, owner: owner)
         lastDocumentColorItems = items
+        lastDocumentColorOwner = owner
         switch mode {
         case .presentations:
             updateVisibleDocumentColorPanel(items: items)
@@ -1222,11 +1224,13 @@ extension AttoEditorAreaViewController {
 
     func recordDocumentColorResultLifecycle(
         items: [AttoLspDocumentColorParser.Item],
-        mode: DocumentColorResultMode
+        mode: DocumentColorResultMode,
+        owner: AttoLspResultOwner? = nil
     ) {
         let event = lspResultEventStream.record(
             family: "document_colors",
             title: items.count == 1 ? "Document Colors: 1 color" : "Document Colors: \(items.count) colors",
+            owner: owner,
             payload: .documentColors(mode: mode.lifecycleMode, itemCount: items.count)
         )
         lspWorkbenchAuxiliaryHistoryStore.record(

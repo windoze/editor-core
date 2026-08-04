@@ -563,11 +563,14 @@ extension AttoEditorAreaViewController {
         refreshRequest: HierarchyPanelRefreshRequest? = nil
     ) {
         let snapshot = AttoHierarchyPanelController.Snapshot(title: title, entries: entries)
+        let owner = lspHierarchyResultOwner(refreshRequest: refreshRequest)
         hierarchyPanelSnapshot = snapshot
+        hierarchyPanelOwner = owner
         hierarchyPanelRefreshRequest = refreshRequest
         let event = lspResultEventStream.record(
             family: "hierarchy",
             title: title,
+            owner: owner,
             payload: .hierarchy(title: title, itemCount: entries.count)
         )
         lspWorkbenchAuxiliaryHistoryStore.record(

@@ -31,6 +31,7 @@ struct AttoLspResultLifecycleEntry<Snapshot> {
     let title: String
     let recordedAt: Date
     let state: AttoLspResultLifecycleState
+    let owner: AttoLspResultOwner?
     let snapshot: Snapshot
 }
 
@@ -66,9 +67,10 @@ final class AttoLspResultLifecycleStore<Snapshot> {
         family: String = "unknown",
         title: String = "",
         recordedAt: Date = Date(),
-        state: AttoLspResultLifecycleState = .fresh
+        state: AttoLspResultLifecycleState = .fresh,
+        owner: AttoLspResultOwner? = nil
     ) -> AttoLspResultLifecycleEntry<Snapshot> {
-        let entry = makeEntry(snapshot, family: family, title: title, recordedAt: recordedAt, state: state)
+        let entry = makeEntry(snapshot, family: family, title: title, recordedAt: recordedAt, state: state, owner: owner)
         currentEntry = entry
         historyEntries.append(entry)
         if historyEntries.count > maxHistoryEntries {
@@ -83,9 +85,10 @@ final class AttoLspResultLifecycleStore<Snapshot> {
         family: String = "unknown",
         title: String = "",
         recordedAt: Date = Date(),
-        state: AttoLspResultLifecycleState = .fresh
+        state: AttoLspResultLifecycleState = .fresh,
+        owner: AttoLspResultOwner? = nil
     ) -> AttoLspResultLifecycleEntry<Snapshot> {
-        let entry = makeEntry(snapshot, family: family, title: title, recordedAt: recordedAt, state: state)
+        let entry = makeEntry(snapshot, family: family, title: title, recordedAt: recordedAt, state: state, owner: owner)
         currentEntry = entry
         return entry
     }
@@ -116,6 +119,7 @@ final class AttoLspResultLifecycleStore<Snapshot> {
             title: existing.title,
             recordedAt: existing.recordedAt,
             state: state,
+            owner: existing.owner,
             snapshot: existing.snapshot
         )
         if currentEntry?.sequence == updated.sequence,
@@ -216,7 +220,8 @@ final class AttoLspResultLifecycleStore<Snapshot> {
         family: String,
         title: String,
         recordedAt: Date,
-        state: AttoLspResultLifecycleState
+        state: AttoLspResultLifecycleState,
+        owner: AttoLspResultOwner?
     ) -> AttoLspResultLifecycleEntry<Snapshot> {
         let entry = AttoLspResultLifecycleEntry(
             sequence: nextSequence,
@@ -224,6 +229,7 @@ final class AttoLspResultLifecycleStore<Snapshot> {
             title: title,
             recordedAt: recordedAt,
             state: state,
+            owner: owner,
             snapshot: snapshot
         )
         nextSequence += 1
@@ -238,12 +244,13 @@ extension AttoLspResultLifecycleStore where Snapshot: Equatable {
         family: String = "unknown",
         title: String = "",
         recordedAt: Date = Date(),
-        state: AttoLspResultLifecycleState = .fresh
+        state: AttoLspResultLifecycleState = .fresh,
+        owner: AttoLspResultOwner? = nil
     ) -> AttoLspResultLifecycleEntry<Snapshot>? {
-        if currentEntry?.snapshot == snapshot, currentEntry?.state == state {
+        if currentEntry?.snapshot == snapshot, currentEntry?.state == state, currentEntry?.owner == owner {
             return nil
         }
-        return record(snapshot, family: family, title: title, recordedAt: recordedAt, state: state)
+        return record(snapshot, family: family, title: title, recordedAt: recordedAt, state: state, owner: owner)
     }
 }
 
@@ -275,6 +282,7 @@ struct AttoLspResultLifecycleEvent: Equatable {
     let recordedAt: Date
     let sourceSequence: UInt64?
     let state: AttoLspResultLifecycleState
+    let owner: AttoLspResultOwner?
     let payload: Payload
 }
 
@@ -299,6 +307,7 @@ final class AttoLspResultEventStream {
         recordedAt: Date = Date(),
         sourceSequence: UInt64? = nil,
         state: AttoLspResultLifecycleState = .fresh,
+        owner: AttoLspResultOwner? = nil,
         payload: AttoLspResultLifecycleEvent.Payload
     ) -> AttoLspResultLifecycleEvent {
         let event = AttoLspResultLifecycleEvent(
@@ -308,6 +317,7 @@ final class AttoLspResultEventStream {
             recordedAt: recordedAt,
             sourceSequence: sourceSequence,
             state: state,
+            owner: owner,
             payload: payload
         )
         nextSequence += 1
@@ -321,7 +331,8 @@ final class AttoLspResultEventStream {
     @discardableResult
     func updateLatestStates(
         families: Set<String>,
-        state: AttoLspResultLifecycleState
+        state: AttoLspResultLifecycleState,
+        ownerMatches: (AttoLspResultOwner?) -> Bool = { _ in true }
     ) -> [AttoLspResultLifecycleEvent] {
         var remaining = families
         var updated: [AttoLspResultLifecycleEvent] = []
@@ -329,6 +340,7 @@ final class AttoLspResultEventStream {
         for index in events.indices.reversed() {
             let event = events[index]
             guard remaining.contains(event.family) else { continue }
+            guard ownerMatches(event.owner) else { continue }
 
             let replacement = AttoLspResultLifecycleEvent(
                 sequence: event.sequence,
@@ -337,6 +349,7 @@ final class AttoLspResultEventStream {
                 recordedAt: event.recordedAt,
                 sourceSequence: event.sourceSequence,
                 state: state,
+                owner: event.owner,
                 payload: event.payload
             )
             events[index] = replacement
@@ -355,7 +368,8 @@ final class AttoLspResultEventStream {
 
     @discardableResult
     func clearLatestStaleStates(
-        families: Set<String>
+        families: Set<String>,
+        ownerMatches: (AttoLspResultOwner?) -> Bool = { _ in true }
     ) -> [AttoLspResultLifecycleEvent] {
         var remaining = families
         var updated: [AttoLspResultLifecycleEvent] = []
@@ -363,6 +377,7 @@ final class AttoLspResultEventStream {
         for index in events.indices.reversed() {
             let event = events[index]
             guard remaining.contains(event.family) else { continue }
+            guard ownerMatches(event.owner) else { continue }
             remaining.remove(event.family)
             guard event.state.isStale else {
                 if remaining.isEmpty {
@@ -378,6 +393,7 @@ final class AttoLspResultEventStream {
                 recordedAt: event.recordedAt,
                 sourceSequence: event.sourceSequence,
                 state: .fresh,
+                owner: event.owner,
                 payload: event.payload
             )
             events[index] = replacement
@@ -394,8 +410,13 @@ final class AttoLspResultEventStream {
     }
 
     @discardableResult
-    func pinLatest(family: String) -> AttoLspResultLifecycleEvent? {
-        guard let event = events.reversed().first(where: { $0.family == family }) else { return nil }
+    func pinLatest(
+        family: String,
+        ownerMatches: (AttoLspResultOwner?) -> Bool = { _ in true }
+    ) -> AttoLspResultLifecycleEvent? {
+        guard let event = events.reversed().first(where: {
+            $0.family == family && ownerMatches($0.owner)
+        }) else { return nil }
         pinnedEventsByFamily[family] = event
         return event
     }

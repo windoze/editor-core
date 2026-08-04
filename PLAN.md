@@ -267,6 +267,12 @@
   - 验证：`swift test --package-path swift --filter AttoAccessibilityIdentifierTests/testWorkspaceProblemsPanelExposesStableIdentifiersAndFiltersRows`
   - 验证：`swift test --package-path swift --filter Workbench`
 - [ ] 完成跨 tab/project 的 result ownership、history、pin、refresh、cancel、timeout、stale 和 error 行为。
+  - [x] 为 result lifecycle entry/event 增加 owner descriptor，并让 Workbench 与 result panel 的 current result 按 active tab / current workspace 过滤；history count 保留跨 tab 可见。
+    - 验证：`swift test --package-path swift --filter AttoLspResultOwnerLifecycleTests`
+    - 验证：`swift test --package-path swift --filter AttoEditorLspWorkbenchOwnershipTests/testLspWorkbenchCurrentResultsFollowActiveTabOwnership`
+    - 验证：`swift test --package-path swift --filter Workbench`
+  - [ ] 补齐 history / pin 在跨 tab/project restore 后的 owner 归属、jump target、selection restore 和 stale/error metadata fallback。
+  - [ ] 统一 refresh / cancel / timeout / error 策略，并覆盖 active tab、workspace、空结果和 stale 展示路径。
 - [ ] 补齐 keyboard navigation、focus restore、selection restore 和 panel persistence。
 - [ ] 拆分继续增长的 Workbench/AppKit 测试文件。
 

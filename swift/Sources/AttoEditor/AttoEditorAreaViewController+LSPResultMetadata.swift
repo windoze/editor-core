@@ -5,7 +5,9 @@ extension AttoEditorAreaViewController {
         countText: String,
         family: String
     ) -> String? {
-        guard let event = lspResultEventStream.events.reversed().first(where: { $0.family == family }) else {
+        guard let event = lspResultEventStream.events.reversed().first(where: {
+            $0.family == family && lspResultOwnerMatchesActiveDocument($0.owner)
+        }) else {
             return nil
         }
         return AttoLspResultMetadataText.event(event, countText: countText)
@@ -25,11 +27,24 @@ extension AttoEditorAreaViewController {
         countText: String,
         family: String
     ) -> String? {
-        guard let entry = diagnosticsLifecycleStore.historyEntries.reversed().first(where: { $0.family == family }) else {
+        guard let entry = diagnosticsLifecycleStore.historyEntries.reversed().first(where: {
+            $0.family == family && lspDiagnosticsResultOwnerMatchesCurrentScope($0)
+        }) else {
             return nil
         }
         let stateText = entry.snapshot.staleReason.map(AttoLspResultMetadataText.diagnosticsStaleText)
             ?? entry.state.displayText
         return AttoLspResultMetadataText.entry(entry, countText: countText, stateText: stateText)
+    }
+
+    private func lspDiagnosticsResultOwnerMatchesCurrentScope(
+        _ entry: AttoLspResultLifecycleEntry<AttoDiagnosticsLifecycleSnapshot>
+    ) -> Bool {
+        switch entry.snapshot.scope {
+        case .activeTab:
+            return lspResultOwnerMatchesActiveDocument(entry.owner)
+        case .workspace:
+            return lspResultOwnerMatchesWorkspace(entry.owner)
+        }
     }
 }

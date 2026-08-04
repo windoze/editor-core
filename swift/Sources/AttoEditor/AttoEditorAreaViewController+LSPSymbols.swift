@@ -324,7 +324,7 @@ extension AttoEditorAreaViewController {
 
     @discardableResult
     func showLastLspSymbolResults() -> Bool {
-        guard let entry = lspSymbolResultStore.currentEntry, entry.snapshot.symbols.isEmpty == false else {
+        guard let entry = lspSymbolResultEntryForActiveDocument(), entry.snapshot.symbols.isEmpty == false else {
             NSSound.beep()
             return false
         }
@@ -364,7 +364,7 @@ extension AttoEditorAreaViewController {
 
     @discardableResult
     func showLspSymbolPanel() -> Bool {
-        guard let entry = lspSymbolResultStore.currentEntry, entry.snapshot.symbols.isEmpty == false else {
+        guard let entry = lspSymbolResultEntryForActiveDocument(), entry.snapshot.symbols.isEmpty == false else {
             NSSound.beep()
             return false
         }
@@ -394,7 +394,8 @@ extension AttoEditorAreaViewController {
         let entry = lspSymbolResultStore.makeCurrent(
             snapshot,
             family: "symbols",
-            title: workspaceOutlineHistoryTitle(for: workspaceOutlineStore.snapshot)
+            title: workspaceOutlineHistoryTitle(for: workspaceOutlineStore.snapshot),
+            owner: lspWorkspaceResultOwner()
         )
         lspSymbolPanelController?.update(entry: entry)
         updateVisibleLspWorkbenchPanel()
@@ -561,7 +562,8 @@ extension AttoEditorAreaViewController {
         let entry = lspSymbolResultStore.record(
             snapshot,
             family: "symbols",
-            title: symbolHistoryTitle(for: snapshot)
+            title: symbolHistoryTitle(for: snapshot),
+            owner: lspSymbolResultOwner(for: snapshot)
         )
         recordLspResultLifecycleEvent(
             entry,
@@ -580,7 +582,8 @@ extension AttoEditorAreaViewController {
         lspSymbolResultStore.makeCurrent(
             snapshot,
             family: "symbols",
-            title: symbolHistoryTitle(for: snapshot)
+            title: symbolHistoryTitle(for: snapshot),
+            owner: lspSymbolResultOwner(for: snapshot)
         )
         showLspSymbolResults(snapshot.symbols, placeholder: snapshot.placeholder)
         return true

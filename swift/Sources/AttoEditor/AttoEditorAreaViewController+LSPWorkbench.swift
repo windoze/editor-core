@@ -121,7 +121,7 @@ extension AttoEditorAreaViewController {
         case LspWorkbenchItemID.workspaceProblems:
             didClear = clearWorkspaceDiagnosticsWorkbenchStaleResult()
         case LspWorkbenchItemID.locations:
-            if let entry = lspLocationResultStore.currentEntry,
+            if let entry = lspWorkbenchLocationEntry(),
                let updated = lspLocationResultStore.clearStaleState(for: entry) {
                 lspLocationPanelController?.update(entry: updated)
                 didClear = true
@@ -133,7 +133,12 @@ extension AttoEditorAreaViewController {
         case LspWorkbenchItemID.workspaceOutline:
             didClear = clearSymbolWorkbenchStaleResult(lspWorkbenchWorkspaceOutlineEntry())
         default:
-            didClear = lspResultEventStream.clearLatestStaleStates(families: [family]).isEmpty == false
+            didClear = lspResultEventStream.clearLatestStaleStates(
+                families: [family],
+                ownerMatches: { [weak self] owner in
+                    self?.lspResultOwnerMatchesActiveDocument(owner) ?? false
+                }
+            ).isEmpty == false
         }
 
         guard updateStatus else { return didClear }
@@ -248,7 +253,7 @@ extension AttoEditorAreaViewController {
         case LspWorkbenchItemID.workspaceProblems:
             didPin = pinDiagnosticsWorkbenchResult(family: "diagnostics.workspace", key: "diagnostics.workspace")
         case LspWorkbenchItemID.locations:
-            if let entry = lspLocationResultStore.currentEntry {
+            if let entry = lspWorkbenchLocationEntry() {
                 lspLocationResultStore.pin(entry, key: LspWorkbenchItemID.locations)
                 didPin = true
             } else {
@@ -269,8 +274,18 @@ extension AttoEditorAreaViewController {
                 didPin = false
             }
         default:
-            if lspResultEventStream.pinLatest(family: family) != nil {
-                lspWorkbenchAuxiliaryHistoryStore.pinLatest(family: family)
+            if lspResultEventStream.pinLatest(
+                family: family,
+                ownerMatches: { [weak self] owner in
+                    self?.lspResultOwnerMatchesActiveDocument(owner) ?? false
+                }
+            ) != nil {
+                lspWorkbenchAuxiliaryHistoryStore.pinLatest(
+                    family: family,
+                    ownerMatches: { [weak self] owner in
+                        self?.lspResultOwnerMatchesActiveDocument(owner) ?? false
+                    }
+                )
                 didPin = true
             } else {
                 didPin = false
@@ -355,13 +370,13 @@ extension AttoEditorAreaViewController {
     func lspWorkbenchJumpTarget(family: String) -> AttoLspDefinitionParser.Target? {
         switch family {
         case LspWorkbenchItemID.locations:
-            return lspLocationResultStore.currentEntry?.snapshot.items.first?.target
+            return lspWorkbenchLocationEntry()?.snapshot.items.first?.target
         case LspWorkbenchItemID.symbols:
             return lspWorkbenchSymbolEntry()?.snapshot.symbols.first?.target
         case LspWorkbenchItemID.workspaceOutline:
             return lspWorkbenchWorkspaceOutlineEntry()?.snapshot.symbols.first?.target
         case LspWorkbenchItemID.hierarchy:
-            return hierarchyPanelSnapshot?.entries.first?.target
+            return lspWorkbenchHierarchySnapshot()?.entries.first?.target
         default:
             return nil
         }
@@ -462,7 +477,7 @@ extension AttoEditorAreaViewController {
         )
         let activeDiagnosticsHistoryCount = lspWorkbenchDiagnosticsHistoryCount(family: "diagnostics.active")
         let workspaceDiagnosticsHistoryCount = lspWorkbenchDiagnosticsHistoryCount(family: "diagnostics.workspace")
-        let locationEntry = lspLocationResultStore.currentEntry
+        let locationEntry = lspWorkbenchLocationEntry()
         let symbolEntry = lspWorkbenchSymbolEntry()
         let locationCount = locationEntry?.snapshot.items.count ?? 0
         let symbolCount = symbolEntry?.snapshot.symbols.count ?? 0
@@ -503,9 +518,13 @@ extension AttoEditorAreaViewController {
             countText: documentLinkCount == 1 ? "1 link" : "\(documentLinkCount) links",
             family: "document_links"
         ) ?? (documentLinkCount == 1 ? "1 link" : "\(documentLinkCount) links")
-        let documentColorCount = lastDocumentColorItems.count
+        let documentColorItems = lspResultOwnerMatchesActiveDocument(lastDocumentColorOwner)
+            ? lastDocumentColorItems
+            : []
+        let documentColorCount = documentColorItems.count
         let documentColorStatus = lspWorkbenchDocumentColorStatus(count: documentColorCount)
-        let hierarchyCount = hierarchyPanelSnapshot?.entries.count ?? 0
+        let currentHierarchySnapshot = lspWorkbenchHierarchySnapshot()
+        let hierarchyCount = currentHierarchySnapshot?.entries.count ?? 0
         let hierarchyStatus = lspWorkbenchResultEventStatus(
             countText: hierarchyCount == 1 ? "1 result" : "\(hierarchyCount) results",
             family: "hierarchy"
@@ -695,7 +714,9 @@ extension AttoEditorAreaViewController {
     }
 
     private func lspWorkbenchResultEvent(family: String) -> AttoLspResultLifecycleEvent? {
-        lspResultEventStream.events.reversed().first { $0.family == family }
+        lspResultEventStream.events.reversed().first {
+            $0.family == family && lspResultOwnerMatchesActiveDocument($0.owner)
+        }
     }
 
     private func lspWorkbenchResultEventIsPinned(family: String) -> Bool {
@@ -720,34 +741,45 @@ extension AttoEditorAreaViewController {
         AttoLspResultMetadataText.event(event, countText: countText)
     }
 
+    private func lspWorkbenchLocationEntry() -> AttoLspResultLifecycleEntry<LspLocationResultSnapshot>? {
+        lspLocationResultEntryForActiveDocument()
+    }
+
     private func lspWorkbenchSymbolEntry() -> AttoLspResultLifecycleEntry<LspSymbolResultSnapshot>? {
-        if let currentEntry = lspSymbolResultStore.currentEntry,
-           isWorkspaceOutlineEntry(currentEntry) == false {
-            return currentEntry
-        }
-        return lspSymbolResultStore.historyEntries.reversed().first {
-            isWorkspaceOutlineEntry($0) == false
-        }
+        lspSymbolResultEntryForActiveDocument()
     }
 
     private func lspWorkbenchWorkspaceOutlineEntry() -> AttoLspResultLifecycleEntry<LspSymbolResultSnapshot>? {
-        if let currentEntry = lspSymbolResultStore.currentEntry,
-           isWorkspaceOutlineEntry(currentEntry) {
-            return currentEntry
-        }
-        return lspSymbolResultStore.historyEntries.reversed().first(where: isWorkspaceOutlineEntry)
+        lspWorkspaceOutlineResultEntryForCurrentWorkspace()
     }
 
     private func isWorkspaceOutlineEntry(
         _ entry: AttoLspResultLifecycleEntry<LspSymbolResultSnapshot>
     ) -> Bool {
-        entry.snapshot.title == "Workspace Outline" || entry.title.hasPrefix("Workspace Outline")
+        lspSymbolResultIsWorkspaceOutline(entry)
     }
 
     private func lspWorkbenchDiagnosticsEntry(
         family: String
     ) -> AttoLspResultLifecycleEntry<AttoDiagnosticsLifecycleSnapshot>? {
-        diagnosticsLifecycleStore.historyEntries.reversed().first { $0.family == family }
+        diagnosticsLifecycleStore.historyEntries.reversed().first {
+            $0.family == family && lspWorkbenchDiagnosticsEntryMatchesCurrentScope($0)
+        }
+    }
+
+    private func lspWorkbenchDiagnosticsEntryMatchesCurrentScope(
+        _ entry: AttoLspResultLifecycleEntry<AttoDiagnosticsLifecycleSnapshot>
+    ) -> Bool {
+        switch entry.snapshot.scope {
+        case .activeTab:
+            return lspResultOwnerMatchesActiveDocument(entry.owner)
+        case .workspace:
+            return lspResultOwnerMatchesWorkspace(entry.owner)
+        }
+    }
+
+    private func lspWorkbenchHierarchySnapshot() -> AttoHierarchyPanelController.Snapshot? {
+        lspResultOwnerMatchesActiveDocument(hierarchyPanelOwner) ? hierarchyPanelSnapshot : nil
     }
 
     private func lspWorkbenchDiagnosticsStatus(

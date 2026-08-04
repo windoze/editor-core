@@ -253,7 +253,7 @@ extension AttoEditorAreaViewController {
 
     @discardableResult
     func showLastLspLocationResults() -> Bool {
-        guard let entry = lspLocationResultStore.currentEntry, entry.snapshot.items.isEmpty == false else {
+        guard let entry = lspLocationResultEntryForActiveDocument(), entry.snapshot.items.isEmpty == false else {
             NSSound.beep()
             return false
         }
@@ -300,7 +300,7 @@ extension AttoEditorAreaViewController {
 
     @discardableResult
     func showLspLocationPanel() -> Bool {
-        guard let entry = lspLocationResultStore.currentEntry, entry.snapshot.items.isEmpty == false else {
+        guard let entry = lspLocationResultEntryForActiveDocument(), entry.snapshot.items.isEmpty == false else {
             NSSound.beep()
             return false
         }
@@ -318,7 +318,8 @@ extension AttoEditorAreaViewController {
         let entry = lspLocationResultStore.record(
             snapshot,
             family: "locations",
-            title: locationHistoryTitle(for: snapshot)
+            title: locationHistoryTitle(for: snapshot),
+            owner: activeTab.map(lspDocumentResultOwner(for:))
         )
         recordLspResultLifecycleEvent(
             entry,
@@ -333,7 +334,8 @@ extension AttoEditorAreaViewController {
         lspLocationResultStore.makeCurrent(
             snapshot,
             family: "locations",
-            title: locationHistoryTitle(for: snapshot)
+            title: locationHistoryTitle(for: snapshot),
+            owner: activeTab.map(lspDocumentResultOwner(for:))
         )
         return presentLspLocationSnapshot(snapshot)
     }
