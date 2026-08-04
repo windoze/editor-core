@@ -7,7 +7,7 @@
 ## 阶段 5：Core Workspace Ownership
 
 - 将 AttoEditor 的 tabs、splits、project、session 和 dirty/close 语义继续迁移为 core workspace state 的 AppKit 投影。
-- 剩余 Swift-only 状态必须分类为 UI 表现缓存或真正状态所有权；真正状态所有权应下沉到 `editor-core` / `editor-core-ui` / `MultiDocumentEditorUi`。
+- 按 `docs/core-workspace-ownership-audit.md` 中标记为 transitional fact cache / 待迁移事实源的项继续下沉；新增 workspace/tab/session/project 行为必须优先落在 `editor-core` / `editor-core-ui` / `MultiDocumentEditorUI`。
 - 补齐 tab drag/drop、split drag/drop、更高层 close/move/session restore command、workspace root 变更、recent session 和 project/session 归属。
 - 继续让迁移期测试同时断言 core snapshot、Swift wrapper query 和 AppKit projection，避免双事实源漂移。
 

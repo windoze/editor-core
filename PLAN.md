@@ -121,7 +121,9 @@
 
 ### 剩余任务
 
-- [ ] 梳理 AttoEditor 仍保留的 Swift-only tab/split/session/project 状态，分类为 UI cache 或待迁移事实源。
+- [x] 梳理 AttoEditor 仍保留的 Swift-only tab/split/session/project 状态，分类为 UI cache 或待迁移事实源。
+  - 产出：`docs/core-workspace-ownership-audit.md`
+  - 验证：`git diff --check`
 - [ ] 将更高层 close/move/select/pin/preview/session restore command 转成 core workspace command/query。
 - [ ] 补齐 tab drag/drop、split drag/drop、pane move、tab move 与 core snapshot 的一致性。
 - [ ] 将 dirty state、close prompt、save-all、reload、recent session 和 root change 继续收敛到 core-backed 工作流。
