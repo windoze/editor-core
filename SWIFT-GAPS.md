@@ -2,11 +2,7 @@
 
 完整历史、已完成提交记录和旧矩阵已归档到 `docs/archive/2026-08-04-swift-gaps-1/SWIFT-GAPS.md`。
 
-本文只保留尚未完成的目标和任务边界。执行顺序以 `PLAN.md` 为准：先收敛阶段 4，再按阶段 5 到阶段 15 逐步推进。完成项不再在本文重复记录。
-
-## 阶段 4：WorkspaceEdit 剩余缺口
-
-- 将 WorkspaceEdit owner store 继续收敛为真正 project-level 模型，覆盖跨 app session restore、workspace root 迁移和 core history retention 后的归属 reconciliation。
+本文只保留尚未完成的目标和任务边界。执行顺序以 `PLAN.md` 为准：当前按阶段 5 到阶段 15 逐步推进。完成项不再在本文重复记录。
 
 ## 阶段 5：Core Workspace Ownership
 

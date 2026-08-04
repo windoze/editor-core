@@ -17,6 +17,11 @@ struct AttoWorkspaceEditRequestOwnerRecord: Codable, Equatable {
 }
 
 struct AttoWorkspaceEditRequestOwnerStore: Sendable {
+    struct ReconciliationEvent: Equatable, Sendable {
+        let transactionSequence: UInt64
+        let workspaceEditJSON: String?
+    }
+
     let logFileURL: URL
     let maxPersistedEntries: Int
     let maxLogFileBytes: Int
@@ -73,20 +78,56 @@ struct AttoWorkspaceEditRequestOwnerStore: Sendable {
         fileManager: FileManager = .default
     ) -> [AttoWorkspaceEditRequestOwnerRecord] {
         guard limit > 0 else { return [] }
-        let rootURI = workspaceRootURL.standardizedFileURL.absoluteString
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        let rootIdentities = Self.workspaceRootIdentities(
+            workspaceRootURL: workspaceRootURL,
+            workspaceRootURIs: []
+        )
 
-        let records = readLines(fileManager: fileManager).compactMap { line -> AttoWorkspaceEditRequestOwnerRecord? in
-            guard let data = line.data(using: .utf8),
-                  let record = try? decoder.decode(AttoWorkspaceEditRequestOwnerRecord.self, from: data),
-                  record.workspaceRootURI == rootURI
-            else {
-                return nil
-            }
-            return record
+        let records = readRecords(fileManager: fileManager).filter { record in
+            rootIdentities.contains(Self.workspaceRootIdentity(forURI: record.workspaceRootURI))
         }
 
+        if records.count > limit {
+            return Array(records.suffix(limit))
+        }
+        return records
+    }
+
+    func loadReconciled(
+        workspaceRootURL: URL,
+        workspaceRootURIs: [String] = [],
+        events: [ReconciliationEvent],
+        limit: Int,
+        fileManager: FileManager = .default
+    ) -> [AttoWorkspaceEditRequestOwnerRecord] {
+        guard limit > 0, events.isEmpty == false else { return [] }
+        let rootIdentities = Self.workspaceRootIdentities(
+            workspaceRootURL: workspaceRootURL,
+            workspaceRootURIs: workspaceRootURIs
+        )
+        var eventsBySequence: [UInt64: ReconciliationEvent] = [:]
+        for event in events {
+            eventsBySequence[event.transactionSequence] = event
+        }
+
+        var latestRecordBySequence: [UInt64: AttoWorkspaceEditRequestOwnerRecord] = [:]
+        var sequenceOrder: [UInt64] = []
+        for record in readRecords(fileManager: fileManager) {
+            guard rootIdentities.contains(Self.workspaceRootIdentity(forURI: record.workspaceRootURI)),
+                  let event = eventsBySequence[record.transactionSequence],
+                  Self.record(record, matches: event)
+            else {
+                continue
+            }
+
+            if latestRecordBySequence[record.transactionSequence] != nil {
+                sequenceOrder.removeAll { $0 == record.transactionSequence }
+            }
+            latestRecordBySequence[record.transactionSequence] = record
+            sequenceOrder.append(record.transactionSequence)
+        }
+
+        let records = sequenceOrder.compactMap { latestRecordBySequence[$0] }
         if records.count > limit {
             return Array(records.suffix(limit))
         }
@@ -101,6 +142,15 @@ struct AttoWorkspaceEditRequestOwnerStore: Sendable {
             return []
         }
         return text.split(whereSeparator: \.isNewline).map(String.init)
+    }
+
+    private func readRecords(fileManager: FileManager) -> [AttoWorkspaceEditRequestOwnerRecord] {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return readLines(fileManager: fileManager).compactMap { line in
+            guard let data = line.data(using: .utf8) else { return nil }
+            return try? decoder.decode(AttoWorkspaceEditRequestOwnerRecord.self, from: data)
+        }
     }
 
     private func prunedLogLines(_ lines: [String]) -> [String] {
@@ -121,9 +171,10 @@ struct AttoWorkspaceEditRequestOwnerStore: Sendable {
                 continue
             }
 
-            let count = countsByWorkspace[record.workspaceRootURI, default: 0]
+            let workspaceIdentity = Self.workspaceRootIdentity(forURI: record.workspaceRootURI)
+            let count = countsByWorkspace[workspaceIdentity, default: 0]
             guard count < maxPersistedEntries else { continue }
-            countsByWorkspace[record.workspaceRootURI] = count + 1
+            countsByWorkspace[workspaceIdentity] = count + 1
             keptReversed.append(line)
         }
         return keptReversed.reversed()
@@ -141,5 +192,48 @@ struct AttoWorkspaceEditRequestOwnerStore: Sendable {
             keptReversed.append(line)
         }
         return keptReversed.reversed()
+    }
+
+    private static func record(
+        _ record: AttoWorkspaceEditRequestOwnerRecord,
+        matches event: ReconciliationEvent
+    ) -> Bool {
+        guard let recordWorkspaceEditJSON = record.workspaceEditJSON else { return true }
+        return recordWorkspaceEditJSON == event.workspaceEditJSON
+    }
+
+    private static func workspaceRootIdentities(
+        workspaceRootURL: URL,
+        workspaceRootURIs: [String]
+    ) -> Set<String> {
+        var identities: Set<String> = [workspaceRootIdentity(forURL: workspaceRootURL)]
+        for uri in workspaceRootURIs {
+            identities.insert(workspaceRootIdentity(forURI: uri))
+        }
+        return identities
+    }
+
+    private static func workspaceRootIdentity(forURL url: URL) -> String {
+        normalizedFilePath(url)
+    }
+
+    private static func workspaceRootIdentity(forURI uri: String) -> String {
+        let trimmed = uri.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else { return trimmed }
+        if let url = URL(string: trimmed), url.isFileURL {
+            return normalizedFilePath(url)
+        }
+        if trimmed.hasPrefix("/") {
+            return normalizedFilePath(URL(fileURLWithPath: trimmed, isDirectory: true))
+        }
+        return trimmed
+    }
+
+    private static func normalizedFilePath(_ url: URL) -> String {
+        let fileURL = url.isFileURL ? url : URL(fileURLWithPath: url.path, isDirectory: true)
+        return fileURL
+            .standardizedFileURL
+            .resolvingSymlinksInPath()
+            .path
     }
 }

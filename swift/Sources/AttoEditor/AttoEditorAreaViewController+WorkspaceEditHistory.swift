@@ -268,17 +268,18 @@ extension AttoEditorAreaViewController {
         for snapshot: EcuWorkspaceEditTransactionEventsSnapshot
     ) -> [UInt64: AttoWorkspaceEditRequestRetryDescriptor] {
         var descriptors: [UInt64: AttoWorkspaceEditRequestRetryDescriptor] = [:]
-        let eventsBySequence = Dictionary(uniqueKeysWithValues: snapshot.events.map { ($0.sequence, $0) })
-        let persistedRecords = workspaceEditRequestOwnerStore.loadRecent(
+        let persistedRecords = workspaceEditRequestOwnerStore.loadReconciled(
             workspaceRootURL: workspaceRootURL,
+            workspaceRootURIs: workspaceEditRequestOwnerWorkspaceRootURIs(),
+            events: snapshot.events.map {
+                AttoWorkspaceEditRequestOwnerStore.ReconciliationEvent(
+                    transactionSequence: $0.sequence,
+                    workspaceEditJSON: $0.workspaceEditJSON
+                )
+            },
             limit: max(snapshot.events.count, 64)
         )
         for record in persistedRecords {
-            guard let event = eventsBySequence[record.transactionSequence],
-                  workspaceEditOwnerRecord(record, matches: event)
-            else {
-                continue
-            }
             descriptors[record.transactionSequence] = persistedUnavailableDescriptor(record.descriptor)
         }
 
@@ -299,12 +300,9 @@ extension AttoEditorAreaViewController {
         return workspaceEditRequestRetryDescriptorsBySequence(for: snapshot)[sequence]
     }
 
-    private func workspaceEditOwnerRecord(
-        _ record: AttoWorkspaceEditRequestOwnerRecord,
-        matches event: EcuWorkspaceEditTransactionEvent
-    ) -> Bool {
-        guard let recordWorkspaceEditJSON = record.workspaceEditJSON else { return true }
-        return recordWorkspaceEditJSON == event.workspaceEditJSON
+    private func workspaceEditRequestOwnerWorkspaceRootURIs() -> [String] {
+        guard let roots = try? coreDocuments?.snapshot().workspaceRoots else { return [] }
+        return roots
     }
 
     private func persistedUnavailableDescriptor(

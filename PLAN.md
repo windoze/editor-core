@@ -4,8 +4,8 @@
 
 ## TODO（未完成任务）
 
-- [进行中] 阶段 4：完成 WorkspaceEdit conflict 检测、解决语义和跨请求/project 重试归属。
-- [待办] 阶段 5：完成 tab、split、project、session 和 LSP ownership 向 core workspace 模型迁移。
+- [已完成] 阶段 4：完成 WorkspaceEdit conflict 检测、解决语义和跨请求/project 重试归属。
+- [进行中] 阶段 5：完成 tab、split、project、session 和 LSP ownership 向 core workspace 模型迁移。
 - [待办] 阶段 6：完成 core-owned project/LSP lifecycle schema、server ownership、恢复策略和 dashboard 产品化。
 - [待办] 阶段 7：完成跨 tab/project result panels、统一 dock/workbench 容器和刷新/过期策略。
 - [待办] 阶段 8：完成 Sublime-like command/keymap 行为矩阵、keymap 文件兼容和 snippets/macros/build systems 边界。
@@ -92,6 +92,15 @@
   - 验证：`cargo build -p editor-core-ui-ffi --release`
   - 验证：`cargo build -p editor-core-ui-ffi`
   - 验证：`swift test --package-path swift --filter AttoWorkspaceEditTransactionWrapperTests`
+  - 验证：`swift test --package-path swift --filter AttoWorkspaceEdit`
+  - 验证：`cargo test -p editor-core-ui-ffi`
+  - 验证：`cargo fmt --check`
+  - 验证：`git diff --check`
+- [x] 将 WorkspaceEdit owner store reconciliation 收敛为 project-level root / core history 边界，覆盖跨 app session restore、workspace root alias 和 history retention 后的归属匹配。
+  - 验证：`cargo build -p editor-core-ui-ffi -p editor-core-ffi`
+  - 验证：`cargo clean -p editor-core-ui-ffi && cargo build -p editor-core-ui-ffi`
+  - 验证：`swift test --package-path swift --filter AttoWorkspaceEditRequestOwnerStoreTests`
+  - 验证：`swift test --package-path swift --filter AttoWorkspaceEditRetryDescriptorTests`
   - 验证：`swift test --package-path swift --filter AttoWorkspaceEdit`
   - 验证：`cargo test -p editor-core-ui-ffi`
   - 验证：`cargo fmt --check`
