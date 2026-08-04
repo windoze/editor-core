@@ -2377,6 +2377,9 @@ private struct AttoVisualWorkspaceEditPreviewResourceOperation: Decodable, Equat
 private struct AttoVisualWorkspaceEditPreviewConflict: Decodable, Equatable {
     let fileName: String
     let kind: String
+    let severity: String?
+    let applyImpact: String?
+    let resolution: String?
     let reason: String
     let operation: String?
     let message: String
@@ -2385,6 +2388,9 @@ private struct AttoVisualWorkspaceEditPreviewConflict: Decodable, Equatable {
         AttoVisualWorkspaceEditTransactionConflictPayload(
             uri: AttoVisualWorkspaceEditPreview.fileURI(fileName, tempDir: tempDir),
             kind: kind,
+            severity: severity,
+            applyImpact: applyImpact,
+            resolution: resolution,
             reason: reason,
             operation: operation,
             message: message
@@ -2497,9 +2503,23 @@ private struct AttoVisualWorkspaceEditTransactionResourceOperationPayload: Encod
 private struct AttoVisualWorkspaceEditTransactionConflictPayload: Encodable {
     let uri: String
     let kind: String
+    let severity: String?
+    let applyImpact: String?
+    let resolution: String?
     let reason: String
     let operation: String?
     let message: String
+
+    private enum CodingKeys: String, CodingKey {
+        case uri
+        case kind
+        case severity
+        case applyImpact = "apply_impact"
+        case resolution
+        case reason
+        case operation
+        case message
+    }
 }
 
 private struct AttoVisualWorkspaceEditTransactionSkippedDetailPayload: Encodable {

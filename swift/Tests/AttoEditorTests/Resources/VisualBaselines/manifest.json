@@ -1187,6 +1187,166 @@
       "maxDifferentPixelRatio": 0.001
     },
     {
+      "id": "workspace-edit-secondary-rollback-preview-light-narrow",
+      "description": "Light narrow WorkspaceEdit preview panel with secondary filesystem rollback failure metadata.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/workspace-edit-secondary-rollback-preview-light-narrow.png",
+      "artifactName": "workspace-edit-secondary-rollback-preview-light-narrow",
+      "theme": "defaultLight",
+      "window": {
+        "width": 720,
+        "height": 500
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.WorkspaceEditPreview.Panel",
+        "width": 620,
+        "height": 420
+      },
+      "workspaceEditPreview": {
+        "mode": "apply",
+        "applyMode": "atomic",
+        "applied": false,
+        "documents": [
+          {
+            "fileName": "rollback-target.swift",
+            "editCount": 1,
+            "isOpen": false
+          }
+        ],
+        "skippedFiles": [
+          "rollback-target.swift"
+        ],
+        "conflicts": [
+          {
+            "fileName": "rollback-target.swift",
+            "kind": "secondary_rollback_failure",
+            "severity": "error",
+            "applyImpact": "blocks_atomic_apply",
+            "resolution": "manual_recovery",
+            "reason": "secondary_filesystem_rollback_failed",
+            "operation": "rollback",
+            "message": "filesystem rollback failed after atomic WorkspaceEdit apply failure: destination already exists"
+          }
+        ],
+        "sections": [
+          {
+            "fileName": "rollback-target.swift",
+            "title": "rollback-target.swift",
+            "subtitle": "secondary_rollback_failure: rollback: secondary_filesystem_rollback_failed",
+            "detailText": "Conflict\nKind: secondary_rollback_failure\nCategory: Secondary rollback failure\nSeverity: error\nApply impact: Blocks atomic apply\nSuggested action: Inspect the workspace and recover files or tabs manually before retrying.\nOperation: rollback\nReason: secondary_filesystem_rollback_failed\nMessage: filesystem rollback failed after atomic WorkspaceEdit apply failure: destination already exists"
+          }
+        ]
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
+      "id": "workspace-edit-mixed-conflicts-preview-dark-wide",
+      "description": "Dark wide WorkspaceEdit preview panel with dirty, version, and overlapping edit conflicts.",
+      "fixture": "VisualFixtures/floating-panels.swift",
+      "baseline": "VisualBaselines/workspace-edit-mixed-conflicts-preview-dark-wide.png",
+      "artifactName": "workspace-edit-mixed-conflicts-preview-dark-wide",
+      "theme": "demoRustLspDark",
+      "window": {
+        "width": 1020,
+        "height": 640
+      },
+      "scale": 1.0,
+      "captureTarget": {
+        "kind": "childWindow",
+        "identifier": "AttoEditor.WorkspaceEditPreview.Panel",
+        "width": 900,
+        "height": 520
+      },
+      "workspaceEditPreview": {
+        "mode": "preview",
+        "applyMode": "atomic",
+        "applied": false,
+        "documents": [
+          {
+            "fileName": "dirty.swift",
+            "editCount": 0,
+            "isOpen": true,
+            "isDirty": true
+          },
+          {
+            "fileName": "stale.swift",
+            "editCount": 1,
+            "versionMismatch": true
+          },
+          {
+            "fileName": "overlap.swift",
+            "editCount": 2,
+            "hasOverlappingEdits": true
+          }
+        ],
+        "dirtyFiles": [
+          "dirty.swift"
+        ],
+        "skippedFiles": [
+          "dirty.swift",
+          "stale.swift",
+          "overlap.swift"
+        ],
+        "conflicts": [
+          {
+            "fileName": "dirty.swift",
+            "kind": "dirty_document",
+            "severity": "error",
+            "applyImpact": "blocks_atomic_apply",
+            "resolution": "save_or_discard",
+            "reason": "resource_operation_dirty_target",
+            "operation": "delete",
+            "message": "open tab has unsaved changes"
+          },
+          {
+            "fileName": "stale.swift",
+            "kind": "version",
+            "severity": "error",
+            "applyImpact": "blocks_atomic_apply",
+            "resolution": "refresh_document",
+            "reason": "version_mismatch",
+            "operation": "text_edit",
+            "message": "document changed after the request was prepared"
+          },
+          {
+            "fileName": "overlap.swift",
+            "kind": "overlap",
+            "severity": "error",
+            "applyImpact": "blocks_atomic_apply",
+            "resolution": "recompute_edit",
+            "reason": "overlapping_text_edits",
+            "operation": "text_edit",
+            "message": "text edits for this URI overlap and cannot be applied safely"
+          }
+        ],
+        "sections": [
+          {
+            "fileName": "dirty.swift",
+            "title": "dirty.swift",
+            "subtitle": "Dirty document: delete: resource_operation_dirty_target",
+            "detailText": "Conflict\nKind: dirty_document\nSeverity: error\nApply impact: Blocks atomic apply\nSuggested action: Save or discard the dirty file, then retry.\nOperation: delete\nReason: resource_operation_dirty_target\nMessage: open tab has unsaved changes"
+          },
+          {
+            "fileName": "stale.swift",
+            "title": "stale.swift",
+            "subtitle": "version: text_edit: version_mismatch",
+            "detailText": "Conflict\nKind: version\nSeverity: error\nApply impact: Blocks atomic apply\nSuggested action: Refresh the source request or reload the document before applying.\nOperation: text_edit\nReason: version_mismatch\nMessage: document changed after the request was prepared"
+          },
+          {
+            "fileName": "overlap.swift",
+            "title": "overlap.swift",
+            "subtitle": "overlap: text_edit: overlapping_text_edits",
+            "detailText": "Conflict\nKind: overlap\nSeverity: error\nApply impact: Blocks atomic apply\nSuggested action: Recompute the WorkspaceEdit request with non-overlapping edits.\nOperation: text_edit\nReason: overlapping_text_edits\nMessage: text edits for this URI overlap and cannot be applied safely"
+          }
+        ]
+      },
+      "perChannelTolerance": 2,
+      "maxDifferentPixelRatio": 0.001
+    },
+    {
       "id": "workspace-edit-json-preview-panel-dark",
       "description": "Dark WorkspaceEdit preview panel generated through the App WorkspaceEdit JSON helper.",
       "fixture": "VisualFixtures/floating-panels.swift",

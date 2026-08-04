@@ -471,7 +471,13 @@
   - 验证：`baseline_png="$(find swift/Tests/AttoEditorTests/Resources/VisualBaselines -type f -name '*.png' -print -quit)"; test -n "$baseline_png"`
   - 验证：`swift/scripts/check-visual-baselines.sh`
   - 验证：`git diff --check`
-- [ ] 扩展 WorkspaceEdit rollback secondary failure、更多 conflict/failure 边界和跨 theme/window-size fixtures。
+- [x] 扩展 WorkspaceEdit rollback secondary failure、更多 conflict/failure 边界和跨 theme/window-size fixtures。
+  - [x] 新增 light+narrow 二次 rollback failure preview baseline，覆盖 `secondary_rollback_failure`、`blocks_atomic_apply` 和人工恢复建议元数据。
+  - [x] 新增 dark+wide 混合冲突 preview baseline，覆盖 dirty document、version mismatch 和 overlapping text edits 的 atomic apply 阻断路径。
+  - 验证：`swift test --package-path swift --filter AttoEditorVisualBaselineManifestTests`
+  - 验证：`swift/scripts/update-visual-baselines.sh`
+  - 验证：`swift/scripts/check-visual-baselines.sh`
+  - 验证：`git diff --check`
 - [ ] 扩展 opt-in `XCUIApplication` smoke tests：真实 LSP server、多文件 workspace、多 root/project session、server 错误/延迟/重启后的 panels。
 
 ## 阶段 14：Sublime-like UI 打磨
