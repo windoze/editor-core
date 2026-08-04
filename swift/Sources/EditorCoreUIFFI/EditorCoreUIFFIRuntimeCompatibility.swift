@@ -17,6 +17,7 @@ public struct EditorCoreUIFFIRuntimeCompatibilityReport: Equatable, Sendable {
     public let minimumABIVersion: UInt32
     public let missingRequiredFeatures: [EditorCoreUIFFIRuntimeFeature]
     public let missingOptionalFeatures: [EditorCoreUIFFIRuntimeFeature]
+    public let negotiatedFeatures: [EditorCoreUIFFIRuntimeFeatureNegotiation]
     public let loadError: String?
 
     public init(
@@ -24,12 +25,14 @@ public struct EditorCoreUIFFIRuntimeCompatibilityReport: Equatable, Sendable {
         minimumABIVersion: UInt32,
         missingRequiredFeatures: [EditorCoreUIFFIRuntimeFeature],
         missingOptionalFeatures: [EditorCoreUIFFIRuntimeFeature],
+        negotiatedFeatures: [EditorCoreUIFFIRuntimeFeatureNegotiation] = [],
         loadError: String?
     ) {
         self.runtimeInfo = runtimeInfo
         self.minimumABIVersion = minimumABIVersion
         self.missingRequiredFeatures = missingRequiredFeatures
         self.missingOptionalFeatures = missingOptionalFeatures
+        self.negotiatedFeatures = negotiatedFeatures
         self.loadError = loadError
     }
 
@@ -355,18 +358,25 @@ public enum EditorCoreUIFFIRuntimeCompatibility {
     ) -> EditorCoreUIFFIRuntimeCompatibilityReport {
         do {
             return evaluate(
-                runtimeInfo: try library.runtimeInfo(),
+                capabilitySnapshot: try library.runtimeCapabilitySnapshot(),
                 minimumABIVersion: minimumABIVersion,
                 requiredFeatures: requiredFeatures,
                 optionalFeatures: optionalFeatures
             )
         } catch {
+            let loadError = String(describing: error)
             return EditorCoreUIFFIRuntimeCompatibilityReport(
                 runtimeInfo: nil,
                 minimumABIVersion: minimumABIVersion,
                 missingRequiredFeatures: requiredFeatures,
                 missingOptionalFeatures: optionalFeatures,
-                loadError: String(describing: error)
+                negotiatedFeatures: negotiateUnavailableFeatures(
+                    loadError: loadError,
+                    minimumABIVersion: minimumABIVersion,
+                    requiredFeatures: requiredFeatures,
+                    optionalFeatures: optionalFeatures
+                ),
+                loadError: loadError
             )
         }
     }
@@ -379,11 +389,19 @@ public enum EditorCoreUIFFIRuntimeCompatibility {
     ) -> EditorCoreUIFFIRuntimeCompatibilityReport {
         let missingRequired = requiredFeatures.filter { runtimeInfo.supports($0.feature) == false }
         let missingOptional = optionalFeatures.filter { runtimeInfo.supports($0.feature) == false }
+        let negotiatedFeatures = negotiateFeatures(
+            runtimeInfo: runtimeInfo,
+            minimumABIVersion: minimumABIVersion,
+            requiredFeatures: requiredFeatures,
+            optionalFeatures: optionalFeatures,
+            descriptors: []
+        )
         return EditorCoreUIFFIRuntimeCompatibilityReport(
             runtimeInfo: runtimeInfo,
             minimumABIVersion: minimumABIVersion,
             missingRequiredFeatures: missingRequired,
             missingOptionalFeatures: missingOptional,
+            negotiatedFeatures: negotiatedFeatures,
             loadError: nil
         )
     }
@@ -394,11 +412,23 @@ public enum EditorCoreUIFFIRuntimeCompatibility {
         requiredFeatures: [EditorCoreUIFFIRuntimeFeature] = EditorCoreUIFFIRuntimeCompatibility.requiredFeatures,
         optionalFeatures: [EditorCoreUIFFIRuntimeFeature] = []
     ) -> EditorCoreUIFFIRuntimeCompatibilityReport {
-        evaluate(
-            runtimeInfo: capabilitySnapshot.runtimeInfo,
+        let runtimeInfo = capabilitySnapshot.runtimeInfo
+        let missingRequired = requiredFeatures.filter { runtimeInfo.supports($0.feature) == false }
+        let missingOptional = optionalFeatures.filter { runtimeInfo.supports($0.feature) == false }
+        let negotiatedFeatures = negotiateFeatures(
+            runtimeInfo: runtimeInfo,
             minimumABIVersion: minimumABIVersion,
             requiredFeatures: requiredFeatures,
-            optionalFeatures: optionalFeatures
+            optionalFeatures: optionalFeatures,
+            descriptors: capabilitySnapshot.features
+        )
+        return EditorCoreUIFFIRuntimeCompatibilityReport(
+            runtimeInfo: runtimeInfo,
+            minimumABIVersion: minimumABIVersion,
+            missingRequiredFeatures: missingRequired,
+            missingOptionalFeatures: missingOptional,
+            negotiatedFeatures: negotiatedFeatures,
+            loadError: nil
         )
     }
 }

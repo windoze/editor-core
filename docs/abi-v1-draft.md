@@ -453,6 +453,17 @@ ad-hoc check at each call site:
 6. Free every returned runtime-info, envelope, legacy JSON, and allocated error string exactly once
    with the matching layer's string free function.
 
+For each host-requested feature, availability is the combination of ABI version and the feature
+bit. A feature is `available` only when the runtime ABI is at least the host's minimum ABI and the
+runtime feature mask contains the requested bit. If the ABI is too old, report `version_mismatch`
+with the runtime version and ABI. If the ABI is compatible but the bit is missing, report
+`unsupported` with the missing flag and the host reason for needing that feature. If
+`*_runtime_info_json()` cannot be read, report `runtime_unavailable` and keep the load error as the
+unsupported reason. Swift wrappers expose this per-feature negotiation as
+`EditorCoreFFIRuntimeFeatureNegotiation` and `EditorCoreUIFFIRuntimeFeatureNegotiation`; each entry
+carries the requested feature flag, runtime feature mask, runtime version, minimum ABI, descriptor
+when present, availability state, and unsupported reason.
+
 When a host links statically, the headers and library archive must be produced by the same build
 that supplied the feature bit. Dynamic/plugin-style hosts may resolve optional symbols after
 feature probing, but still must not call a symbol that is absent from the loaded library.

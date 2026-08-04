@@ -57,6 +57,60 @@ final class EditorCoreUIFFIRuntimeCompatibilityTests: XCTestCase {
         XCTAssertNil(report.loadError)
     }
 
+    func testCapabilitySnapshotNegotiatesFeatureAvailabilityAndReasons() throws {
+        let required = try feature(.jsonCommandDispatch)
+        let optional = try feature(.lspSemanticTokensApplicationEnvelope)
+        let snapshot = EditorCoreUIFFIRuntimeCapabilitySnapshot(
+            kind: "editor-core-ui-ffi",
+            abiVersion: EditorCoreUIFFIRuntimeCompatibility.minimumABIVersion,
+            version: "test-runtime",
+            featureFlags: [.jsonCommandDispatch],
+            features: [
+                EditorCoreUIFFIRuntimeFeatureDescriptor(
+                    bit: 0,
+                    flag: EditorCoreUIFFIFeatures.jsonCommandDispatch.rawValue,
+                    name: "json_command_dispatch",
+                    description: "test descriptor"
+                ),
+            ]
+        )
+
+        let report = EditorCoreUIFFIRuntimeCompatibility.evaluate(
+            capabilitySnapshot: snapshot,
+            requiredFeatures: [required],
+            optionalFeatures: [optional]
+        )
+
+        let dispatch = try XCTUnwrap(
+            report.negotiatedFeatures.first { $0.feature == .jsonCommandDispatch }
+        )
+        XCTAssertTrue(dispatch.isRequired)
+        XCTAssertTrue(dispatch.isAvailable)
+        XCTAssertEqual(dispatch.availability, .available)
+        XCTAssertEqual(dispatch.featureFlag, EditorCoreUIFFIFeatures.jsonCommandDispatch.rawValue)
+        XCTAssertEqual(dispatch.runtimeFeatureFlags, snapshot.featureFlags.rawValue)
+        XCTAssertEqual(dispatch.runtimeABIVersion, snapshot.abiVersion)
+        XCTAssertEqual(dispatch.runtimeVersion, snapshot.version)
+        XCTAssertEqual(dispatch.descriptor?.name, "json_command_dispatch")
+        XCTAssertNil(dispatch.unsupportedReason)
+
+        let semanticTokens = try XCTUnwrap(
+            report.negotiatedFeatures.first { $0.feature == .lspSemanticTokensApplicationEnvelope }
+        )
+        XCTAssertFalse(semanticTokens.isRequired)
+        XCTAssertFalse(semanticTokens.isAvailable)
+        XCTAssertEqual(semanticTokens.availability, .unsupported)
+        XCTAssertEqual(
+            semanticTokens.featureFlag,
+            EditorCoreUIFFIFeatures.lspSemanticTokensApplicationEnvelope.rawValue
+        )
+        XCTAssertNil(semanticTokens.descriptor)
+        XCTAssertTrue(semanticTokens.unsupportedReason?.contains(optional.reason) ?? false)
+        XCTAssertTrue(
+            semanticTokens.unsupportedReason?.contains(semanticTokens.featureFlagHexForTest) ?? false
+        )
+    }
+
     func testRejectsOlderABI() throws {
         let report = EditorCoreUIFFIRuntimeCompatibility.evaluate(
             runtimeInfo: EditorCoreUIFFIRuntimeInfo(
@@ -70,6 +124,30 @@ final class EditorCoreUIFFIRuntimeCompatibilityTests: XCTestCase {
         XCTAssertTrue(report.missingRequiredFeatures.isEmpty)
         XCTAssertTrue(report.missingOptionalFeatures.isEmpty)
         XCTAssertTrue(report.diagnosticMessage.contains("older than required ABI"))
+    }
+
+    func testNegotiatesVersionMismatchReason() throws {
+        let required = try feature(.jsonCommandEnvelope)
+        let runtimeInfo = EditorCoreUIFFIRuntimeInfo(
+            abiVersion: 0,
+            version: "old-runtime",
+            features: allKnownFeatures()
+        )
+
+        let report = EditorCoreUIFFIRuntimeCompatibility.evaluate(
+            runtimeInfo: runtimeInfo,
+            requiredFeatures: [required]
+        )
+
+        let envelope = try XCTUnwrap(
+            report.negotiatedFeatures.first { $0.feature == .jsonCommandEnvelope }
+        )
+        XCTAssertFalse(envelope.isAvailable)
+        XCTAssertEqual(envelope.availability, .versionMismatch)
+        XCTAssertEqual(envelope.runtimeABIVersion, 0)
+        XCTAssertEqual(envelope.runtimeVersion, "old-runtime")
+        XCTAssertEqual(envelope.runtimeFeatureFlags, runtimeInfo.features.rawValue)
+        XCTAssertTrue(envelope.unsupportedReason?.contains("requires UI FFI ABI") ?? false)
     }
 
     func testReportsRuntimeInfoLoadFailure() {
@@ -221,5 +299,11 @@ final class EditorCoreUIFFIRuntimeCompatibilityTests: XCTestCase {
 
     private func feature(_ value: EditorCoreUIFFIFeatures) throws -> EditorCoreUIFFIRuntimeFeature {
         try XCTUnwrap(EditorCoreUIFFIRuntimeCompatibility.knownFeatures.first { $0.feature == value })
+    }
+}
+
+private extension EditorCoreUIFFIRuntimeFeatureNegotiation {
+    var featureFlagHexForTest: String {
+        "0x" + String(featureFlag, radix: 16, uppercase: false)
     }
 }

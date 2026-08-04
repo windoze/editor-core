@@ -57,6 +57,57 @@ final class EditorCoreFFIRuntimeCompatibilityTests: XCTestCase {
         XCTAssertNil(report.loadError)
     }
 
+    func testCapabilitySnapshotNegotiatesFeatureAvailabilityAndReasons() throws {
+        let required = try feature(.jsonCommandDispatch)
+        let optional = try feature(.processorResultEnvelope)
+        let snapshot = EditorCoreFFIRuntimeCapabilitySnapshot(
+            kind: "editor-core-ffi",
+            abiVersion: EditorCoreFFIRuntimeCompatibility.minimumABIVersion,
+            version: "test-runtime",
+            featureFlags: [.jsonCommandDispatch],
+            features: [
+                EditorCoreFFIRuntimeFeatureDescriptor(
+                    bit: 0,
+                    flag: EditorCoreFFIFeatures.jsonCommandDispatch.rawValue,
+                    name: "json_command_dispatch",
+                    description: "test descriptor"
+                ),
+            ]
+        )
+
+        let report = EditorCoreFFIRuntimeCompatibility.evaluate(
+            capabilitySnapshot: snapshot,
+            requiredFeatures: [required],
+            optionalFeatures: [optional]
+        )
+
+        let dispatch = try XCTUnwrap(
+            report.negotiatedFeatures.first { $0.feature == .jsonCommandDispatch }
+        )
+        XCTAssertTrue(dispatch.isRequired)
+        XCTAssertTrue(dispatch.isAvailable)
+        XCTAssertEqual(dispatch.availability, .available)
+        XCTAssertEqual(dispatch.featureFlag, EditorCoreFFIFeatures.jsonCommandDispatch.rawValue)
+        XCTAssertEqual(dispatch.runtimeFeatureFlags, snapshot.featureFlags.rawValue)
+        XCTAssertEqual(dispatch.runtimeABIVersion, snapshot.abiVersion)
+        XCTAssertEqual(dispatch.runtimeVersion, snapshot.version)
+        XCTAssertEqual(dispatch.descriptor?.name, "json_command_dispatch")
+        XCTAssertNil(dispatch.unsupportedReason)
+
+        let processor = try XCTUnwrap(
+            report.negotiatedFeatures.first { $0.feature == .processorResultEnvelope }
+        )
+        XCTAssertFalse(processor.isRequired)
+        XCTAssertFalse(processor.isAvailable)
+        XCTAssertEqual(processor.availability, .unsupported)
+        XCTAssertEqual(processor.featureFlag, EditorCoreFFIFeatures.processorResultEnvelope.rawValue)
+        XCTAssertNil(processor.descriptor)
+        XCTAssertTrue(processor.unsupportedReason?.contains(optional.reason) ?? false)
+        XCTAssertTrue(
+            processor.unsupportedReason?.contains(processor.featureFlagHexForTest) ?? false
+        )
+    }
+
     func testRejectsOlderABI() throws {
         let report = EditorCoreFFIRuntimeCompatibility.evaluate(
             runtimeInfo: EditorCoreFFIRuntimeInfo(
@@ -70,6 +121,30 @@ final class EditorCoreFFIRuntimeCompatibilityTests: XCTestCase {
         XCTAssertTrue(report.missingRequiredFeatures.isEmpty)
         XCTAssertTrue(report.missingOptionalFeatures.isEmpty)
         XCTAssertTrue(report.diagnosticMessage.contains("older than required ABI"))
+    }
+
+    func testNegotiatesVersionMismatchReason() throws {
+        let required = try feature(.jsonCommandEnvelope)
+        let runtimeInfo = EditorCoreFFIRuntimeInfo(
+            abiVersion: 0,
+            version: "old-runtime",
+            features: allKnownFeatures()
+        )
+
+        let report = EditorCoreFFIRuntimeCompatibility.evaluate(
+            runtimeInfo: runtimeInfo,
+            requiredFeatures: [required]
+        )
+
+        let envelope = try XCTUnwrap(
+            report.negotiatedFeatures.first { $0.feature == .jsonCommandEnvelope }
+        )
+        XCTAssertFalse(envelope.isAvailable)
+        XCTAssertEqual(envelope.availability, .versionMismatch)
+        XCTAssertEqual(envelope.runtimeABIVersion, 0)
+        XCTAssertEqual(envelope.runtimeVersion, "old-runtime")
+        XCTAssertEqual(envelope.runtimeFeatureFlags, runtimeInfo.features.rawValue)
+        XCTAssertTrue(envelope.unsupportedReason?.contains("requires core FFI ABI") ?? false)
     }
 
     func testReportsRuntimeInfoLoadFailure() {
@@ -190,5 +265,11 @@ final class EditorCoreFFIRuntimeCompatibilityTests: XCTestCase {
 
     private func feature(_ value: EditorCoreFFIFeatures) throws -> EditorCoreFFIRuntimeFeature {
         try XCTUnwrap(EditorCoreFFIRuntimeCompatibility.knownFeatures.first { $0.feature == value })
+    }
+}
+
+private extension EditorCoreFFIRuntimeFeatureNegotiation {
+    var featureFlagHexForTest: String {
+        "0x" + String(featureFlag, radix: 16, uppercase: false)
     }
 }

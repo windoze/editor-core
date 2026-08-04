@@ -29,7 +29,6 @@
 
 ## 阶段 10：Result Envelope、错误模型与 Host Capability
 
-- 建立 host capability negotiation：功能可用性、版本、降级、unsupported reason 和 runtime feature flag 应一致可查。
 - 清理或隔离过渡 raw JSON API，保留兼容路径但不作为完成标准。
 
 ## 阶段 11：Tree-sitter + LSP 语言体验

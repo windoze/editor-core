@@ -13,6 +13,7 @@ struct AttoRuntimeCompatibility {
         let minimumABIVersion: UInt32
         let missingFeatures: [RuntimeFeature]
         let missingOptionalFeatures: [RuntimeFeature]
+        let negotiatedFeatures: [EditorCoreUIFFIRuntimeFeatureNegotiation]
         let loadError: String?
 
         var isCompatible: Bool {
@@ -326,14 +327,21 @@ struct AttoRuntimeCompatibility {
 
     static func evaluate(library: EditorCoreUIFFILibrary) -> Report {
         do {
-            return evaluate(runtimeInfo: try library.runtimeInfo())
+            return evaluate(capabilitySnapshot: try library.runtimeCapabilitySnapshot())
         } catch {
+            let loadError = String(describing: error)
             return Report(
                 runtimeInfo: nil,
                 minimumABIVersion: minimumUIABIVersion,
                 missingFeatures: requiredFeatures,
                 missingOptionalFeatures: optionalFeatures,
-                loadError: String(describing: error)
+                negotiatedFeatures: EditorCoreUIFFIRuntimeCompatibility.negotiateUnavailable(
+                    loadError: loadError,
+                    minimumABIVersion: minimumUIABIVersion,
+                    requiredFeatures: requiredFeatures.map(\.runtimeFeature),
+                    optionalFeatures: optionalFeatures.map(\.runtimeFeature)
+                ),
+                loadError: loadError
             )
         }
     }
@@ -341,12 +349,57 @@ struct AttoRuntimeCompatibility {
     static func evaluate(runtimeInfo: EditorCoreUIFFIRuntimeInfo) -> Report {
         let missing = requiredFeatures.filter { runtimeInfo.supports($0.feature) == false }
         let missingOptional = optionalFeatures.filter { runtimeInfo.supports($0.feature) == false }
+        let negotiatedFeatures = EditorCoreUIFFIRuntimeCompatibility.negotiate(
+            runtimeInfo: runtimeInfo,
+            minimumABIVersion: minimumUIABIVersion,
+            requiredFeatures: requiredFeatures.map(\.runtimeFeature),
+            optionalFeatures: optionalFeatures.map(\.runtimeFeature)
+        )
+        return report(
+            runtimeInfo: runtimeInfo,
+            missingFeatures: missing,
+            missingOptionalFeatures: missingOptional,
+            negotiatedFeatures: negotiatedFeatures
+        )
+    }
+
+    static func evaluate(capabilitySnapshot: EditorCoreUIFFIRuntimeCapabilitySnapshot) -> Report {
+        let runtimeInfo = capabilitySnapshot.runtimeInfo
+        let missing = requiredFeatures.filter { runtimeInfo.supports($0.feature) == false }
+        let missingOptional = optionalFeatures.filter { runtimeInfo.supports($0.feature) == false }
+        let negotiatedFeatures = EditorCoreUIFFIRuntimeCompatibility.negotiate(
+            capabilitySnapshot: capabilitySnapshot,
+            minimumABIVersion: minimumUIABIVersion,
+            requiredFeatures: requiredFeatures.map(\.runtimeFeature),
+            optionalFeatures: optionalFeatures.map(\.runtimeFeature)
+        )
+        return report(
+            runtimeInfo: runtimeInfo,
+            missingFeatures: missing,
+            missingOptionalFeatures: missingOptional,
+            negotiatedFeatures: negotiatedFeatures
+        )
+    }
+
+    private static func report(
+        runtimeInfo: EditorCoreUIFFIRuntimeInfo,
+        missingFeatures: [RuntimeFeature],
+        missingOptionalFeatures: [RuntimeFeature],
+        negotiatedFeatures: [EditorCoreUIFFIRuntimeFeatureNegotiation]
+    ) -> Report {
         return Report(
             runtimeInfo: runtimeInfo,
             minimumABIVersion: minimumUIABIVersion,
-            missingFeatures: missing,
-            missingOptionalFeatures: missingOptional,
+            missingFeatures: missingFeatures,
+            missingOptionalFeatures: missingOptionalFeatures,
+            negotiatedFeatures: negotiatedFeatures,
             loadError: nil
         )
+    }
+}
+
+private extension AttoRuntimeCompatibility.RuntimeFeature {
+    var runtimeFeature: EditorCoreUIFFIRuntimeFeature {
+        EditorCoreUIFFIRuntimeFeature(feature: feature, name: name, reason: reason)
     }
 }

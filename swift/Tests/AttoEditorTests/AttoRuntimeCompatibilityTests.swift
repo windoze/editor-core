@@ -12,6 +12,8 @@ final class AttoRuntimeCompatibilityTests: XCTestCase {
         XCTAssertTrue(report.missingFeatures.isEmpty)
         XCTAssertTrue(report.missingOptionalFeatures.isEmpty)
         XCTAssertNil(report.loadError)
+        XCTAssertFalse(report.negotiatedFeatures.isEmpty)
+        XCTAssertTrue(report.negotiatedFeatures.allSatisfy(\.isAvailable))
     }
 
     func testRejectsOlderUIABI() throws {
@@ -96,6 +98,14 @@ final class AttoRuntimeCompatibilityTests: XCTestCase {
             $0.feature == .multiDocumentProjectLSPLifecycleEvents
         })
         XCTAssertTrue(report.diagnosticMessage.contains("Missing UI FFI features"))
+
+        let multiDocument = try XCTUnwrap(
+            report.negotiatedFeatures.first { $0.feature == .multiDocumentUI }
+        )
+        XCTAssertTrue(multiDocument.isRequired)
+        XCTAssertEqual(multiDocument.availability, .unsupported)
+        XCTAssertEqual(multiDocument.featureFlag, EditorCoreUIFFIFeatures.multiDocumentUI.rawValue)
+        XCTAssertTrue(multiDocument.unsupportedReason?.contains("Runtime feature flag") ?? false)
     }
 
     func testMissingOptionalFeaturesDoNotBlockLaunchCompatibility() throws {
@@ -164,6 +174,14 @@ final class AttoRuntimeCompatibilityTests: XCTestCase {
             ])
         )
         XCTAssertTrue(report.diagnosticMessage.contains("Unavailable optional UI FFI features"))
+
+        let lspRequests = try XCTUnwrap(
+            report.negotiatedFeatures.first { $0.feature == .lspInteractiveRequests }
+        )
+        XCTAssertFalse(lspRequests.isRequired)
+        XCTAssertEqual(lspRequests.availability, .unsupported)
+        XCTAssertEqual(lspRequests.runtimeFeatureFlags, allRequiredFeatures().rawValue)
+        XCTAssertTrue(lspRequests.unsupportedReason?.contains("Runtime feature flag") ?? false)
     }
 
     func testAppDelegateRecordsRuntimeCompatibilityReport() throws {

@@ -370,7 +370,11 @@
   - 验证：`cargo build -p editor-core-ui-ffi --release`
   - 验证：`swift test --package-path swift --filter EditorCoreFFIErrorModelTests`
   - 验证：`cargo test -p editor-core-ui-ffi --lib`
-- [ ] 建立 host capability negotiation：feature availability、version、unsupported reason、runtime feature flag。
+- [x] 建立 host capability negotiation：feature availability、version、unsupported reason、runtime feature flag。
+  - 交付：为 headless/UI Swift wrapper 增加 per-feature runtime negotiation 结果，统一 `available` / `unsupported` / `version_mismatch` / `runtime_unavailable` 状态；每个结果携带 runtime version、minimum ABI、runtime feature mask、请求 feature flag、descriptor 和 unsupported reason；Atto App 层 runtime report 接入同一 negotiation 模型；更新 ABI 文档。
+  - 验证：`cargo build -p editor-core-ui-ffi --release`
+  - 验证：`swift test --package-path swift --filter 'EditorCoreFFIRuntimeCompatibilityTests|EditorCoreUIFFIRuntimeCompatibilityTests'`
+  - 验证：`swift test --package-path swift --filter AttoRuntimeCompatibilityTests`
 - [ ] 清理或隔离过渡 raw JSON API。
 
 ## 阶段 11：Tree-sitter + LSP 语言体验
