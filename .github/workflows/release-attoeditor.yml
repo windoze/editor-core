@@ -27,7 +27,9 @@ permissions:
 jobs:
   release:
     name: Build, sign, notarize, publish
-    runs-on: macos-15
+    # macos-15 的 Swift 是 6.1.2，编不过 AttoEditor 现有源码（main actor 隔离推断
+    # 与类型检查耗时在 6.1 上更严格）。macos-26 带 Swift 6.2+，与本地开发环境一致。
+    runs-on: macos-26
     timeout-minutes: 90
 
     steps:
