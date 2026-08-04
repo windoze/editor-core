@@ -21,8 +21,8 @@ pub use lsp_request_events::{MultiDocumentLspRequestEvent, MultiDocumentLspReque
 pub use lsp_result_events::{MultiDocumentLspResultEvent, MultiDocumentLspResultEventsSnapshot};
 pub use project_file_index::{ProjectFileIndexQueryResult, ProjectFileIndexSnapshot};
 pub use project_lsp::{
-    ProjectLspRestartPlanEntry, ProjectLspServerConfig, ProjectLspStartPlanEntry,
-    ProjectLspStopPlanEntry, ProjectLspWorkspaceFolder,
+    ProjectLspRecoveryPolicy, ProjectLspRestartPlanEntry, ProjectLspServerConfig,
+    ProjectLspStartPlanEntry, ProjectLspStopPlanEntry, ProjectLspWorkspaceFolder,
 };
 pub use project_lsp_lifecycle::{
     ProjectLspLifecycleEvent, ProjectLspLifecycleEventsSnapshot, ProjectLspStartOutcome,

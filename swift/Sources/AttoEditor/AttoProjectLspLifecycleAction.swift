@@ -17,6 +17,7 @@ struct AttoProjectLspLifecycleAction {
     let args: [String]
     let workspaceRoots: [String]
     let workspaceFolders: [EcuProjectLspWorkspaceFolder]
+    let recoveryPolicy: EcuProjectLspRecoveryPolicy
 
     @MainActor
     static func start(
@@ -25,10 +26,12 @@ struct AttoProjectLspLifecycleAction {
         config: AttoLspServerLaunchConfig,
         trigger: String,
         planEntry: EcuProjectLspStartPlanEntry?,
-        fallbackWorkspaceRoots: [String]
+        fallbackWorkspaceRoots: [String],
+        fallbackRecoveryPolicy: EcuProjectLspRecoveryPolicy = EcuProjectLspRecoveryPolicy()
     ) -> AttoProjectLspLifecycleAction {
         let workspaceRoots = planEntry?.workspaceRoots ?? fallbackWorkspaceRoots
         let workspaceFolders = planEntry?.workspaceFolders ?? Self.workspaceFolders(from: workspaceRoots)
+        let recoveryPolicy = planEntry?.recoveryPolicy ?? fallbackRecoveryPolicy
         return AttoProjectLspLifecycleAction(
             coreTabID: tab.coreTabID,
             operation: planEntry?.operation ?? "start",
@@ -44,7 +47,8 @@ struct AttoProjectLspLifecycleAction {
             command: planEntry?.command ?? config.command,
             args: planEntry?.args ?? AttoEditorAreaViewController.projectLspServerConfigArgs(from: config.args),
             workspaceRoots: workspaceRoots,
-            workspaceFolders: workspaceFolders
+            workspaceFolders: workspaceFolders,
+            recoveryPolicy: recoveryPolicy
         )
     }
 
@@ -55,10 +59,12 @@ struct AttoProjectLspLifecycleAction {
         config: AttoLspServerLaunchConfig,
         trigger: String,
         planEntry: EcuProjectLspRestartPlanEntry?,
-        fallbackWorkspaceRoots: [String]
+        fallbackWorkspaceRoots: [String],
+        fallbackRecoveryPolicy: EcuProjectLspRecoveryPolicy = EcuProjectLspRecoveryPolicy()
     ) -> AttoProjectLspLifecycleAction {
         let workspaceRoots = planEntry?.workspaceRoots ?? fallbackWorkspaceRoots
         let workspaceFolders = planEntry?.workspaceFolders ?? Self.workspaceFolders(from: workspaceRoots)
+        let recoveryPolicy = planEntry?.recoveryPolicy ?? fallbackRecoveryPolicy
         return AttoProjectLspLifecycleAction(
             coreTabID: tab.coreTabID,
             operation: planEntry?.operation ?? "restart",
@@ -74,7 +80,8 @@ struct AttoProjectLspLifecycleAction {
             command: planEntry?.command ?? config.command,
             args: planEntry?.args ?? AttoEditorAreaViewController.projectLspServerConfigArgs(from: config.args),
             workspaceRoots: workspaceRoots,
-            workspaceFolders: workspaceFolders
+            workspaceFolders: workspaceFolders,
+            recoveryPolicy: recoveryPolicy
         )
     }
 
@@ -85,10 +92,12 @@ struct AttoProjectLspLifecycleAction {
         config: AttoLspServerLaunchConfig,
         trigger: String,
         planEntry: EcuProjectLspStopPlanEntry?,
-        fallbackWorkspaceRoots: [String]
+        fallbackWorkspaceRoots: [String],
+        fallbackRecoveryPolicy: EcuProjectLspRecoveryPolicy = EcuProjectLspRecoveryPolicy()
     ) -> AttoProjectLspLifecycleAction {
         let workspaceRoots = planEntry?.workspaceRoots ?? fallbackWorkspaceRoots
         let workspaceFolders = planEntry?.workspaceFolders ?? Self.workspaceFolders(from: workspaceRoots)
+        let recoveryPolicy = planEntry?.recoveryPolicy ?? fallbackRecoveryPolicy
         return AttoProjectLspLifecycleAction(
             coreTabID: tab.coreTabID,
             operation: planEntry?.operation ?? "stop",
@@ -104,7 +113,8 @@ struct AttoProjectLspLifecycleAction {
             command: planEntry?.command ?? config.command,
             args: planEntry?.args ?? AttoEditorAreaViewController.projectLspServerConfigArgs(from: config.args),
             workspaceRoots: workspaceRoots,
-            workspaceFolders: workspaceFolders
+            workspaceFolders: workspaceFolders,
+            recoveryPolicy: recoveryPolicy
         )
     }
 
@@ -128,6 +138,7 @@ struct AttoProjectLspLifecycleAction {
             args: args,
             workspaceRoots: workspaceRoots,
             workspaceFolders: workspaceFolders,
+            recoveryPolicy: recoveryPolicy,
             trigger: trigger,
             status: status,
             attemptId: attemptId ?? self.attemptId,

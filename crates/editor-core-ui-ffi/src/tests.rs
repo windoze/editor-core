@@ -1426,7 +1426,12 @@ fn ffi_project_lsp_servers_envelope_json_reports_success_and_errors() {
                         "root_alias": "main"
                     }
                 ],
-                "auto_start": true
+                "auto_start": true,
+                "recovery_policy": {
+                    "enabled": true,
+                    "max_attempts": 3,
+                    "base_delay_millis": 5000
+                }
             },
             {
                 "key": "swift",
@@ -1438,7 +1443,12 @@ fn ffi_project_lsp_servers_envelope_json_reports_success_and_errors() {
                 "shared_session": false,
                 "workspace_roots": [],
                 "workspace_folders": [],
-                "auto_start": false
+                "auto_start": false,
+                "recovery_policy": {
+                    "enabled": true,
+                    "max_attempts": 3,
+                    "base_delay_millis": 5000
+                }
             }
         ])
     );
@@ -1526,6 +1536,14 @@ fn ffi_project_lsp_lifecycle_envelope_json_reports_success_and_errors() {
         serde_json::json!({})
     );
     assert_eq!(start_envelope["value"][0]["shared_session"], true);
+    assert_eq!(
+        start_envelope["value"][0]["recovery_policy"],
+        serde_json::json!({
+            "enabled": true,
+            "max_attempts": 3,
+            "base_delay_millis": 5000
+        })
+    );
 
     let stop = CString::new("stop_plan").unwrap();
     let stop_json = take_owned_string(
@@ -1539,6 +1557,14 @@ fn ffi_project_lsp_lifecycle_envelope_json_reports_success_and_errors() {
     assert_eq!(stop_envelope["ok"], true);
     assert_eq!(stop_envelope["operation"], "stop_plan");
     assert_eq!(stop_envelope["value"][0]["server_key"], "rust");
+    assert_eq!(
+        stop_envelope["value"][0]["recovery_policy"],
+        serde_json::json!({
+            "enabled": true,
+            "max_attempts": 3,
+            "base_delay_millis": 5000
+        })
+    );
 
     let restart = CString::new("restart_plan").unwrap();
     let restart_json = take_owned_string(
@@ -1552,6 +1578,14 @@ fn ffi_project_lsp_lifecycle_envelope_json_reports_success_and_errors() {
     assert_eq!(restart_envelope["ok"], true);
     assert_eq!(restart_envelope["operation"], "restart_plan");
     assert_eq!(restart_envelope["value"][0]["server_key"], "rust");
+    assert_eq!(
+        restart_envelope["value"][0]["recovery_policy"],
+        serde_json::json!({
+            "enabled": true,
+            "max_attempts": 3,
+            "base_delay_millis": 5000
+        })
+    );
 
     let lifecycle_outcome = CString::new(
         serde_json::json!({
@@ -1605,6 +1639,14 @@ fn ffi_project_lsp_lifecycle_envelope_json_reports_success_and_errors() {
     assert_eq!(
         events_envelope["value"]["events"][0]["shared_session"],
         false
+    );
+    assert_eq!(
+        events_envelope["value"]["events"][0]["recovery_policy"],
+        serde_json::json!({
+            "enabled": true,
+            "max_attempts": 3,
+            "base_delay_millis": 5000
+        })
     );
 
     let unknown = CString::new("future_operation").unwrap();
@@ -2155,7 +2197,12 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                         "name": "other"
                     }
                 ],
-                "auto_start": true
+                "auto_start": true,
+                "recovery_policy": {
+                    "enabled": true,
+                    "max_attempts": 3,
+                    "base_delay_millis": 5000
+                }
             },
             {
                 "key": "swift",
@@ -2167,7 +2214,12 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                 "shared_session": false,
                 "workspace_roots": [],
                 "workspace_folders": [],
-                "auto_start": false
+                "auto_start": false,
+                "recovery_policy": {
+                    "enabled": true,
+                    "max_attempts": 3,
+                    "base_delay_millis": 5000
+                }
             }
         ])
     );
@@ -2209,7 +2261,12 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                         "uri": "file:///other",
                         "name": "other"
                     }
-                ]
+                ],
+                "recovery_policy": {
+                    "enabled": true,
+                    "max_attempts": 3,
+                    "base_delay_millis": 5000
+                }
             }
         ])
     );
@@ -2250,7 +2307,12 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                         "uri": "file:///other",
                         "name": "other"
                     }
-                ]
+                ],
+                "recovery_policy": {
+                    "enabled": true,
+                    "max_attempts": 3,
+                    "base_delay_millis": 5000
+                }
             },
             {
                 "operation": "stop",
@@ -2275,7 +2337,12 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                         "uri": "file:///other",
                         "name": "other"
                     }
-                ]
+                ],
+                "recovery_policy": {
+                    "enabled": true,
+                    "max_attempts": 3,
+                    "base_delay_millis": 5000
+                }
             }
         ])
     );
@@ -2318,7 +2385,12 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                         "uri": "file:///other",
                         "name": "other"
                     }
-                ]
+                ],
+                "recovery_policy": {
+                    "enabled": true,
+                    "max_attempts": 3,
+                    "base_delay_millis": 5000
+                }
             },
             {
                 "operation": "restart",
@@ -2343,7 +2415,12 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
                         "uri": "file:///other",
                         "name": "other"
                     }
-                ]
+                ],
+                "recovery_policy": {
+                    "enabled": true,
+                    "max_attempts": 3,
+                    "base_delay_millis": 5000
+                }
             }
         ])
     );
@@ -2398,6 +2475,14 @@ fn ffi_multi_document_exposes_tab_preview_split_and_search() {
     assert_eq!(
         lifecycle_events_value["events"][0]["document_uri"],
         "file:///project/main.rs"
+    );
+    assert_eq!(
+        lifecycle_events_value["events"][0]["recovery_policy"],
+        serde_json::json!({
+            "enabled": true,
+            "max_attempts": 3,
+            "base_delay_millis": 5000
+        })
     );
 
     let mut has_active: u8 = 0;

@@ -281,14 +281,18 @@ Project-level LSP launch metadata is also a JSON control-plane surface on `Multi
 const char* configs_json_utf8)` accepts a UTF-8 JSON array of server configs with `key`,
 `command`, optional `args`, `language_id`, optional `language_name`, optional
 `server_capabilities`, optional `shared_session`, optional `workspace_roots`, optional
-`workspace_folders`, and optional `auto_start`. `language_name` is normalized as display metadata
-and falls back to the normalized `language_id` when omitted. `server_capabilities` is a JSON object
-for host-provided server capability metadata; it defaults to `{}` and non-object values are
-rejected. `shared_session` defaults to `true` and declares whether the host expects a server
-configuration to be shared across matching documents. `workspace_folders` is a typed descriptor list
-with `uri`, `name`, and optional `root_alias`; when omitted, core derives folder descriptors from
-`workspace_roots`, and when roots are omitted, core derives roots from folder URIs. The legacy
-`workspace_roots` string list remains the compatibility surface for hosts that only need root URIs.
+`workspace_folders`, optional `auto_start`, and optional `recovery_policy`. `language_name` is
+normalized as display metadata and falls back to the normalized `language_id` when omitted.
+`server_capabilities` is a JSON object for host-provided server capability metadata; it defaults to
+`{}` and non-object values are rejected. `shared_session` defaults to `true` and declares whether
+the host expects a server configuration to be shared across matching documents. `workspace_folders`
+is a typed descriptor list with `uri`, `name`, and optional `root_alias`; when omitted, core derives
+folder descriptors from `workspace_roots`, and when roots are omitted, core derives roots from
+folder URIs. The legacy `workspace_roots` string list remains the compatibility surface for hosts
+that only need root URIs. `recovery_policy` is a typed object with `enabled`, `max_attempts`, and
+`base_delay_millis`; omitted policies default to `{ "enabled": true, "max_attempts": 3,
+"base_delay_millis": 5000 }`, and core normalizes host-provided values to at most 10 attempts and a
+3,600,000 ms base delay so the policy is directly interpretable by lifecycle executors.
 The companion `editor_core_ui_ffi_multi_document_project_lsp_servers_json(MultiDocumentEditorUi*
 multi)` returns the normalized list ordered by key, and
 `editor_core_ui_ffi_multi_document_snapshot_json` includes the same list as
@@ -298,9 +302,11 @@ through `editor_core_ui_ffi_multi_document_project_lsp_lifecycle_envelope_json(.
 `operation_utf8` values of `start_plan`, `stop_plan`, `restart_plan`, or `lifecycle_events`.
 Each plan entry carries an explicit `operation` string (`start`, `stop`, or `restart`) alongside
 the tab id, active view index, document URI, language id/name, server capabilities, shared-session
-flag, server key, command, args, workspace roots/folders, and optional proposed `attempt_id` so
-hosts can execute and record lifecycle outcomes from a single typed action descriptor instead of
-inferring ownership from the endpoint used to fetch the plan. Core derives the proposed
+flag, recovery policy, server key, command, args, workspace roots/folders, and optional proposed
+`attempt_id` so hosts can execute and record lifecycle outcomes from a single typed action
+descriptor instead of inferring ownership from the endpoint used to fetch the plan. Lifecycle
+outcomes and events carry the same `recovery_policy` object, which lets hosts audit the exact
+policy used for requested, started, stopped, failed, or skipped outcomes. Core derives the proposed
 `attempt_id` from the next lifecycle event sequence and expects hosts to echo it in requested,
 started, stopped, failed, or skipped outcomes for the same execution attempt; older outcome records
 without an explicit attempt id continue to use the recorded lifecycle sequence for requested

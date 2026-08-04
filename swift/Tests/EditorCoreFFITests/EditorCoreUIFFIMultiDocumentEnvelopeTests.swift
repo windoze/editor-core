@@ -237,6 +237,11 @@ extension EditorCoreUIFFITests {
             ]),
         ]))
         XCTAssertEqual(first["auto_start"], .bool(true))
+        XCTAssertEqual(first["recovery_policy"], .object([
+            "enabled": .bool(true),
+            "max_attempts": .number(3),
+            "base_delay_millis": .number(5_000),
+        ]))
         XCTAssertEqual(second["key"], .string("swift"))
         XCTAssertEqual(second["command"], .string("/bin/sourcekit-lsp"))
         XCTAssertEqual(second["args"], .array([]))
@@ -247,6 +252,11 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(second["workspace_roots"], .array([]))
         XCTAssertEqual(second["workspace_folders"], .array([]))
         XCTAssertEqual(second["auto_start"], .bool(false))
+        XCTAssertEqual(second["recovery_policy"], .object([
+            "enabled": .bool(true),
+            "max_attempts": .number(3),
+            "base_delay_millis": .number(5_000),
+        ]))
     }
 
     func testProjectLspServersEnvelopeDecodesFutureFieldsAndUnknownStatus() throws {
@@ -337,6 +347,11 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(firstStart["language_name"], .string("rust"))
         XCTAssertEqual(firstStart["server_capabilities"], .object([:]))
         XCTAssertEqual(firstStart["shared_session"], .bool(true))
+        XCTAssertEqual(firstStart["recovery_policy"], .object([
+            "enabled": .bool(true),
+            "max_attempts": .number(3),
+            "base_delay_millis": .number(5_000),
+        ]))
 
         let stop = try multi.projectLspStopPlanEnvelope()
         XCTAssertTrue(stop.ok)
@@ -352,6 +367,11 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(firstStop["language_name"], .string("rust"))
         XCTAssertEqual(firstStop["server_capabilities"], .object([:]))
         XCTAssertEqual(firstStop["shared_session"], .bool(true))
+        XCTAssertEqual(firstStop["recovery_policy"], .object([
+            "enabled": .bool(true),
+            "max_attempts": .number(3),
+            "base_delay_millis": .number(5_000),
+        ]))
 
         let restart = try multi.projectLspRestartPlanEnvelope()
         XCTAssertTrue(restart.ok)
@@ -367,6 +387,11 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(firstRestart["language_name"], .string("rust"))
         XCTAssertEqual(firstRestart["server_capabilities"], .object([:]))
         XCTAssertEqual(firstRestart["shared_session"], .bool(true))
+        XCTAssertEqual(firstRestart["recovery_policy"], .object([
+            "enabled": .bool(true),
+            "max_attempts": .number(3),
+            "base_delay_millis": .number(5_000),
+        ]))
 
         try multi.recordProjectLspStartOutcome(EcuProjectLspStartOutcome(
             tabId: tab,
@@ -396,6 +421,11 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(firstEvent["language_name"], .string("rust"))
         XCTAssertEqual(firstEvent["server_capabilities"], .object(["hover": .bool(true)]))
         XCTAssertEqual(firstEvent["shared_session"], .bool(false))
+        XCTAssertEqual(firstEvent["recovery_policy"], .object([
+            "enabled": .bool(true),
+            "max_attempts": .number(3),
+            "base_delay_millis": .number(5_000),
+        ]))
         XCTAssertEqual(firstEvent["status"], .string("started"))
 
         let failure = try multi.projectLspLifecycleEnvelope(operationRawValue: "future_operation")

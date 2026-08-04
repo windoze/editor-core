@@ -267,6 +267,7 @@ extension AttoEditorCommandTests {
         XCTAssertTrue(projectedRust.sharedSession)
         XCTAssertEqual(projectedRust.workspaceRoots, [rootURI])
         XCTAssertTrue(projectedRust.autoStart)
+        XCTAssertEqual(projectedRust.recoveryPolicy, EcuProjectLspRecoveryPolicy())
 
         vc.openFile(url: swiftURL, mode: .pinned)
         let swiftTab = try XCTUnwrap(vc.activeTab)
@@ -290,6 +291,7 @@ extension AttoEditorCommandTests {
         XCTAssertEqual(projectedSwift.serverCapabilities, .object([:]))
         XCTAssertTrue(projectedSwift.sharedSession)
         XCTAssertFalse(projectedSwift.autoStart)
+        XCTAssertEqual(projectedSwift.recoveryPolicy, EcuProjectLspRecoveryPolicy())
 
         vc.closeTab(id: rustTab.id)
         configsByKey = Dictionary(
@@ -1281,8 +1283,8 @@ extension AttoEditorCommandTests {
         let preferences = AttoPreferences(defaults: defaults, env: [:])
         preferences.setLspAutoRestartMaxAttempts(0)
         preferences.setLspAutoRestartBaseDelaySeconds(30)
-        preferences.setLspAutoRestartMaxAttempts(2, forServerName: "fake-lsp", serverCommand: nil)
-        preferences.setLspAutoRestartBaseDelaySeconds(1, forServerName: "fake-lsp", serverCommand: nil)
+        preferences.setLspAutoRestartMaxAttempts(2, forServerName: nil, serverCommand: scriptURL.path)
+        preferences.setLspAutoRestartBaseDelaySeconds(1, forServerName: nil, serverCommand: scriptURL.path)
 
         var now = Date(timeIntervalSince1970: 10_000)
         let vc = makeEditorArea(workspaceRootURL: tempDir, preferences: preferences)
@@ -1309,6 +1311,14 @@ extension AttoEditorCommandTests {
             at: captureURL,
             containing: #""method":"textDocument/didOpen""#
         )
+
+        vc.syncProjectLspServerConfigsToCore()
+        let projectedConfig = try XCTUnwrap(try vc._coreProjectLspServerConfigsForTesting().first)
+        XCTAssertEqual(projectedConfig.recoveryPolicy, EcuProjectLspRecoveryPolicy(
+            enabled: true,
+            maxAttempts: 2,
+            baseDelayMillis: 1_000
+        ))
 
         let failedStatus = EcuLspStatusSnapshot(
             availability: .failed,

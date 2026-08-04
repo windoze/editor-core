@@ -10,6 +10,22 @@ pub struct ProjectLspWorkspaceFolder {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectLspRecoveryPolicy {
+    #[serde(default = "default_project_lsp_recovery_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_project_lsp_recovery_max_attempts")]
+    pub max_attempts: u32,
+    #[serde(default = "default_project_lsp_recovery_base_delay_millis")]
+    pub base_delay_millis: u64,
+}
+
+impl Default for ProjectLspRecoveryPolicy {
+    fn default() -> Self {
+        default_project_lsp_recovery_policy()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ProjectLspServerConfig {
     #[serde(default)]
     pub key: String,
@@ -30,6 +46,8 @@ pub struct ProjectLspServerConfig {
     pub workspace_folders: Vec<ProjectLspWorkspaceFolder>,
     #[serde(default = "default_auto_start")]
     pub auto_start: bool,
+    #[serde(default = "default_project_lsp_recovery_policy")]
+    pub recovery_policy: ProjectLspRecoveryPolicy,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -54,6 +72,8 @@ pub struct ProjectLspStartPlanEntry {
     pub workspace_roots: Vec<String>,
     #[serde(default)]
     pub workspace_folders: Vec<ProjectLspWorkspaceFolder>,
+    #[serde(default = "default_project_lsp_recovery_policy")]
+    pub recovery_policy: ProjectLspRecoveryPolicy,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -78,6 +98,8 @@ pub struct ProjectLspStopPlanEntry {
     pub workspace_roots: Vec<String>,
     #[serde(default)]
     pub workspace_folders: Vec<ProjectLspWorkspaceFolder>,
+    #[serde(default = "default_project_lsp_recovery_policy")]
+    pub recovery_policy: ProjectLspRecoveryPolicy,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -102,6 +124,8 @@ pub struct ProjectLspRestartPlanEntry {
     pub workspace_roots: Vec<String>,
     #[serde(default)]
     pub workspace_folders: Vec<ProjectLspWorkspaceFolder>,
+    #[serde(default = "default_project_lsp_recovery_policy")]
+    pub recovery_policy: ProjectLspRecoveryPolicy,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -178,6 +202,7 @@ pub(crate) fn project_lsp_start_plan(
                 args: config.args.clone(),
                 workspace_roots,
                 workspace_folders,
+                recovery_policy: config.recovery_policy.clone(),
             });
         }
     }
@@ -234,6 +259,7 @@ pub(crate) fn project_lsp_stop_plan(
                 args: config.args.clone(),
                 workspace_roots,
                 workspace_folders,
+                recovery_policy: config.recovery_policy.clone(),
             });
         }
     }
@@ -290,6 +316,7 @@ pub(crate) fn project_lsp_restart_plan(
                 args: config.args.clone(),
                 workspace_roots,
                 workspace_folders,
+                recovery_policy: config.recovery_policy.clone(),
             });
         }
     }
@@ -311,6 +338,7 @@ fn normalize_project_lsp_server(
     let language_name = normalize_project_lsp_language_name(&config.language_name, &language_id);
     let server_capabilities =
         normalize_project_lsp_server_capabilities(config.server_capabilities)?;
+    let recovery_policy = normalize_project_lsp_recovery_policy(config.recovery_policy);
     let key = normalize_project_lsp_server_key(&config.key, &language_id, &command)?;
     let args = config
         .args
@@ -332,6 +360,7 @@ fn normalize_project_lsp_server(
         workspace_roots,
         workspace_folders,
         auto_start: config.auto_start,
+        recovery_policy,
     })
 }
 
@@ -363,6 +392,36 @@ pub(crate) fn default_project_lsp_server_capabilities() -> serde_json::Value {
 
 pub(crate) fn default_project_lsp_shared_session() -> bool {
     true
+}
+
+fn default_project_lsp_recovery_enabled() -> bool {
+    true
+}
+
+fn default_project_lsp_recovery_max_attempts() -> u32 {
+    3
+}
+
+fn default_project_lsp_recovery_base_delay_millis() -> u64 {
+    5_000
+}
+
+pub(crate) fn default_project_lsp_recovery_policy() -> ProjectLspRecoveryPolicy {
+    ProjectLspRecoveryPolicy {
+        enabled: default_project_lsp_recovery_enabled(),
+        max_attempts: default_project_lsp_recovery_max_attempts(),
+        base_delay_millis: default_project_lsp_recovery_base_delay_millis(),
+    }
+}
+
+pub(crate) fn normalize_project_lsp_recovery_policy(
+    policy: ProjectLspRecoveryPolicy,
+) -> ProjectLspRecoveryPolicy {
+    ProjectLspRecoveryPolicy {
+        enabled: policy.enabled,
+        max_attempts: policy.max_attempts.min(10),
+        base_delay_millis: policy.base_delay_millis.min(3_600_000),
+    }
 }
 
 pub(crate) fn normalize_project_lsp_server_capabilities(

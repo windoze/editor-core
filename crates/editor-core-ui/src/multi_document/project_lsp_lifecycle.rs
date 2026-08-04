@@ -1,6 +1,7 @@
 use super::project_lsp::{
-    ProjectLspWorkspaceFolder, default_project_lsp_server_capabilities,
-    default_project_lsp_shared_session, normalize_project_lsp_language_name,
+    ProjectLspRecoveryPolicy, ProjectLspWorkspaceFolder, default_project_lsp_recovery_policy,
+    default_project_lsp_server_capabilities, default_project_lsp_shared_session,
+    normalize_project_lsp_language_name, normalize_project_lsp_recovery_policy,
     normalize_project_lsp_server_capabilities, normalize_project_lsp_workspace_schema,
 };
 use crate::UiError;
@@ -34,6 +35,8 @@ pub struct ProjectLspStartOutcome {
     pub workspace_roots: Vec<String>,
     #[serde(default)]
     pub workspace_folders: Vec<ProjectLspWorkspaceFolder>,
+    #[serde(default = "default_project_lsp_recovery_policy")]
+    pub recovery_policy: ProjectLspRecoveryPolicy,
     #[serde(default = "default_project_lsp_lifecycle_trigger")]
     pub trigger: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -66,6 +69,8 @@ pub struct ProjectLspLifecycleEvent {
     pub workspace_roots: Vec<String>,
     #[serde(default)]
     pub workspace_folders: Vec<ProjectLspWorkspaceFolder>,
+    #[serde(default = "default_project_lsp_recovery_policy")]
+    pub recovery_policy: ProjectLspRecoveryPolicy,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attempt_id: Option<u64>,
     #[serde(default)]
@@ -105,6 +110,7 @@ impl ProjectLspLifecycleEventStore {
             normalize_project_lsp_language_name(&outcome.language_name, &language_id);
         let server_capabilities =
             normalize_project_lsp_server_capabilities(outcome.server_capabilities)?;
+        let recovery_policy = normalize_project_lsp_recovery_policy(outcome.recovery_policy);
         let attempt_id = outcome
             .attempt_id
             .or_else(|| (status == "requested").then_some(self.next_sequence));
@@ -126,6 +132,7 @@ impl ProjectLspLifecycleEventStore {
             args: normalize_non_empty_vec(outcome.args),
             workspace_roots,
             workspace_folders,
+            recovery_policy,
             attempt_id,
             error_message: outcome
                 .error_message

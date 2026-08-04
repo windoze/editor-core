@@ -128,6 +128,7 @@ extension EditorCoreUIFFITests {
             "semantic_tokens": .bool(true),
         ]))
         XCTAssertTrue(lspServers[0].sharedSession)
+        XCTAssertEqual(lspServers[0].recoveryPolicy, EcuProjectLspRecoveryPolicy())
         XCTAssertEqual(lspServers[0].workspaceRoots, ["file:///new", "file:///other"])
         XCTAssertEqual(lspServers[0].workspaceFolders, [
             EcuProjectLspWorkspaceFolder(
@@ -143,6 +144,7 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(lspServers[1].languageName, "swift")
         XCTAssertEqual(lspServers[1].serverCapabilities, .object([:]))
         XCTAssertFalse(lspServers[1].sharedSession)
+        XCTAssertEqual(lspServers[1].recoveryPolicy, EcuProjectLspRecoveryPolicy())
         XCTAssertFalse(lspServers[1].autoStart)
         XCTAssertEqual(try multi.snapshot().projectLspServers, lspServers)
         let startPlan = try multi.projectLspStartPlan()
@@ -156,6 +158,7 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(startPlan[0].languageName, "Rust Language")
         XCTAssertEqual(startPlan[0].serverCapabilities, lspServers[0].serverCapabilities)
         XCTAssertTrue(startPlan[0].sharedSession)
+        XCTAssertEqual(startPlan[0].recoveryPolicy, lspServers[0].recoveryPolicy)
         XCTAssertEqual(startPlan[0].serverKey, "rust")
         XCTAssertEqual(startPlan[0].command, "/bin/rust-analyzer")
         XCTAssertEqual(startPlan[0].args, ["--stdio"])
@@ -171,6 +174,7 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(stopPlan[0].languageName, "Rust Language")
         XCTAssertEqual(stopPlan[0].serverCapabilities, lspServers[0].serverCapabilities)
         XCTAssertTrue(stopPlan[0].sharedSession)
+        XCTAssertEqual(stopPlan[0].recoveryPolicy, lspServers[0].recoveryPolicy)
         XCTAssertEqual(stopPlan[0].workspaceRoots, ["file:///new", "file:///other"])
         XCTAssertEqual(stopPlan[0].workspaceFolders, lspServers[0].workspaceFolders)
         XCTAssertEqual(stopPlan[1].tabId, beta)
@@ -180,6 +184,7 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(stopPlan[1].languageName, "swift")
         XCTAssertEqual(stopPlan[1].serverCapabilities, .object([:]))
         XCTAssertFalse(stopPlan[1].sharedSession)
+        XCTAssertEqual(stopPlan[1].recoveryPolicy, lspServers[1].recoveryPolicy)
         XCTAssertEqual(stopPlan[1].workspaceRoots, ["file:///new", "file:///other"])
         XCTAssertEqual(stopPlan[1].workspaceFolders.map(\.name), ["new", "other"])
         let restartPlan = try multi.projectLspRestartPlan()
@@ -192,6 +197,7 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(restartPlan[0].languageName, "Rust Language")
         XCTAssertEqual(restartPlan[0].serverCapabilities, lspServers[0].serverCapabilities)
         XCTAssertTrue(restartPlan[0].sharedSession)
+        XCTAssertEqual(restartPlan[0].recoveryPolicy, lspServers[0].recoveryPolicy)
         XCTAssertEqual(restartPlan[0].workspaceRoots, ["file:///new", "file:///other"])
         XCTAssertEqual(restartPlan[0].workspaceFolders, lspServers[0].workspaceFolders)
         XCTAssertEqual(restartPlan[1].tabId, beta)
@@ -201,6 +207,7 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(restartPlan[1].languageName, "swift")
         XCTAssertEqual(restartPlan[1].serverCapabilities, .object([:]))
         XCTAssertFalse(restartPlan[1].sharedSession)
+        XCTAssertEqual(restartPlan[1].recoveryPolicy, lspServers[1].recoveryPolicy)
         XCTAssertEqual(restartPlan[1].workspaceRoots, ["file:///new", "file:///other"])
         XCTAssertEqual(restartPlan[1].workspaceFolders.map(\.name), ["new", "other"])
 
@@ -256,6 +263,7 @@ extension EditorCoreUIFFITests {
         XCTAssertEqual(lifecycleEvents.events[0].languageName, "Rust Language")
         XCTAssertEqual(lifecycleEvents.events[0].serverCapabilities, .object(["hover": .bool(true)]))
         XCTAssertFalse(lifecycleEvents.events[0].sharedSession)
+        XCTAssertEqual(lifecycleEvents.events[0].recoveryPolicy, EcuProjectLspRecoveryPolicy())
         XCTAssertEqual(lifecycleEvents.events[1].operation, "restart")
         XCTAssertEqual(lifecycleEvents.events[1].trigger, "manual_restart")
         XCTAssertEqual(lifecycleEvents.events[2].operation, "stop")

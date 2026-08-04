@@ -1,5 +1,34 @@
 import Foundation
 
+public struct EcuProjectLspRecoveryPolicy: Codable, Equatable, Sendable {
+    public let enabled: Bool
+    public let maxAttempts: UInt32
+    public let baseDelayMillis: UInt64
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled
+        case maxAttempts = "max_attempts"
+        case baseDelayMillis = "base_delay_millis"
+    }
+
+    public init(
+        enabled: Bool = true,
+        maxAttempts: UInt32 = 3,
+        baseDelayMillis: UInt64 = 5_000
+    ) {
+        self.enabled = enabled
+        self.maxAttempts = maxAttempts
+        self.baseDelayMillis = baseDelayMillis
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+        maxAttempts = try container.decodeIfPresent(UInt32.self, forKey: .maxAttempts) ?? 3
+        baseDelayMillis = try container.decodeIfPresent(UInt64.self, forKey: .baseDelayMillis) ?? 5_000
+    }
+}
+
 public struct EcuProjectLspServerConfig: Codable, Equatable, Sendable {
     public let key: String
     public let command: String
@@ -11,6 +40,7 @@ public struct EcuProjectLspServerConfig: Codable, Equatable, Sendable {
     public let workspaceRoots: [String]
     public let workspaceFolders: [EcuProjectLspWorkspaceFolder]
     public let autoStart: Bool
+    public let recoveryPolicy: EcuProjectLspRecoveryPolicy
 
     private enum CodingKeys: String, CodingKey {
         case key
@@ -23,6 +53,7 @@ public struct EcuProjectLspServerConfig: Codable, Equatable, Sendable {
         case workspaceRoots = "workspace_roots"
         case workspaceFolders = "workspace_folders"
         case autoStart = "auto_start"
+        case recoveryPolicy = "recovery_policy"
     }
 
     public init(
@@ -35,7 +66,8 @@ public struct EcuProjectLspServerConfig: Codable, Equatable, Sendable {
         sharedSession: Bool = true,
         workspaceRoots: [String] = [],
         workspaceFolders: [EcuProjectLspWorkspaceFolder] = [],
-        autoStart: Bool = true
+        autoStart: Bool = true,
+        recoveryPolicy: EcuProjectLspRecoveryPolicy = EcuProjectLspRecoveryPolicy()
     ) {
         self.key = key
         self.command = command
@@ -47,6 +79,7 @@ public struct EcuProjectLspServerConfig: Codable, Equatable, Sendable {
         self.workspaceRoots = workspaceRoots
         self.workspaceFolders = workspaceFolders
         self.autoStart = autoStart
+        self.recoveryPolicy = recoveryPolicy
     }
 
     public init(from decoder: Decoder) throws {
@@ -64,6 +97,10 @@ public struct EcuProjectLspServerConfig: Codable, Equatable, Sendable {
             forKey: .workspaceFolders
         ) ?? []
         autoStart = try container.decodeIfPresent(Bool.self, forKey: .autoStart) ?? true
+        recoveryPolicy = try container.decodeIfPresent(
+            EcuProjectLspRecoveryPolicy.self,
+            forKey: .recoveryPolicy
+        ) ?? EcuProjectLspRecoveryPolicy()
     }
 }
 
@@ -111,6 +148,7 @@ public struct EcuProjectLspStartPlanEntry: Decodable, Equatable, Sendable {
     public let args: [String]
     public let workspaceRoots: [String]
     public let workspaceFolders: [EcuProjectLspWorkspaceFolder]
+    public let recoveryPolicy: EcuProjectLspRecoveryPolicy
 
     private enum CodingKeys: String, CodingKey {
         case operation
@@ -127,6 +165,7 @@ public struct EcuProjectLspStartPlanEntry: Decodable, Equatable, Sendable {
         case args
         case workspaceRoots = "workspace_roots"
         case workspaceFolders = "workspace_folders"
+        case recoveryPolicy = "recovery_policy"
     }
 
     public init(from decoder: Decoder) throws {
@@ -148,6 +187,10 @@ public struct EcuProjectLspStartPlanEntry: Decodable, Equatable, Sendable {
             [EcuProjectLspWorkspaceFolder].self,
             forKey: .workspaceFolders
         ) ?? []
+        recoveryPolicy = try container.decodeIfPresent(
+            EcuProjectLspRecoveryPolicy.self,
+            forKey: .recoveryPolicy
+        ) ?? EcuProjectLspRecoveryPolicy()
     }
 }
 
@@ -166,6 +209,7 @@ public struct EcuProjectLspStopPlanEntry: Decodable, Equatable, Sendable {
     public let args: [String]
     public let workspaceRoots: [String]
     public let workspaceFolders: [EcuProjectLspWorkspaceFolder]
+    public let recoveryPolicy: EcuProjectLspRecoveryPolicy
 
     private enum CodingKeys: String, CodingKey {
         case operation
@@ -182,6 +226,7 @@ public struct EcuProjectLspStopPlanEntry: Decodable, Equatable, Sendable {
         case args
         case workspaceRoots = "workspace_roots"
         case workspaceFolders = "workspace_folders"
+        case recoveryPolicy = "recovery_policy"
     }
 
     public init(from decoder: Decoder) throws {
@@ -203,6 +248,10 @@ public struct EcuProjectLspStopPlanEntry: Decodable, Equatable, Sendable {
             [EcuProjectLspWorkspaceFolder].self,
             forKey: .workspaceFolders
         ) ?? []
+        recoveryPolicy = try container.decodeIfPresent(
+            EcuProjectLspRecoveryPolicy.self,
+            forKey: .recoveryPolicy
+        ) ?? EcuProjectLspRecoveryPolicy()
     }
 }
 
@@ -221,6 +270,7 @@ public struct EcuProjectLspRestartPlanEntry: Decodable, Equatable, Sendable {
     public let args: [String]
     public let workspaceRoots: [String]
     public let workspaceFolders: [EcuProjectLspWorkspaceFolder]
+    public let recoveryPolicy: EcuProjectLspRecoveryPolicy
 
     private enum CodingKeys: String, CodingKey {
         case operation
@@ -237,6 +287,7 @@ public struct EcuProjectLspRestartPlanEntry: Decodable, Equatable, Sendable {
         case args
         case workspaceRoots = "workspace_roots"
         case workspaceFolders = "workspace_folders"
+        case recoveryPolicy = "recovery_policy"
     }
 
     public init(from decoder: Decoder) throws {
@@ -258,6 +309,10 @@ public struct EcuProjectLspRestartPlanEntry: Decodable, Equatable, Sendable {
             [EcuProjectLspWorkspaceFolder].self,
             forKey: .workspaceFolders
         ) ?? []
+        recoveryPolicy = try container.decodeIfPresent(
+            EcuProjectLspRecoveryPolicy.self,
+            forKey: .recoveryPolicy
+        ) ?? EcuProjectLspRecoveryPolicy()
     }
 }
 
@@ -275,6 +330,7 @@ public struct EcuProjectLspStartOutcome: Encodable, Equatable, Sendable {
     public let args: [String]
     public let workspaceRoots: [String]
     public let workspaceFolders: [EcuProjectLspWorkspaceFolder]
+    public let recoveryPolicy: EcuProjectLspRecoveryPolicy
     public let trigger: String
     public let status: String
     public let attemptId: UInt64?
@@ -294,6 +350,7 @@ public struct EcuProjectLspStartOutcome: Encodable, Equatable, Sendable {
         case args
         case workspaceRoots = "workspace_roots"
         case workspaceFolders = "workspace_folders"
+        case recoveryPolicy = "recovery_policy"
         case trigger
         case status
         case attemptId = "attempt_id"
@@ -314,6 +371,7 @@ public struct EcuProjectLspStartOutcome: Encodable, Equatable, Sendable {
         args: [String] = [],
         workspaceRoots: [String] = [],
         workspaceFolders: [EcuProjectLspWorkspaceFolder] = [],
+        recoveryPolicy: EcuProjectLspRecoveryPolicy = EcuProjectLspRecoveryPolicy(),
         trigger: String = "auto_start",
         status: String,
         attemptId: UInt64? = nil,
@@ -332,6 +390,7 @@ public struct EcuProjectLspStartOutcome: Encodable, Equatable, Sendable {
         self.args = args
         self.workspaceRoots = workspaceRoots
         self.workspaceFolders = workspaceFolders
+        self.recoveryPolicy = recoveryPolicy
         self.trigger = trigger
         self.status = status
         self.attemptId = attemptId
@@ -356,6 +415,7 @@ public struct EcuProjectLspLifecycleEvent: Decodable, Equatable, Sendable {
     public let args: [String]
     public let workspaceRoots: [String]
     public let workspaceFolders: [EcuProjectLspWorkspaceFolder]
+    public let recoveryPolicy: EcuProjectLspRecoveryPolicy
     public let attemptId: UInt64?
     public let errorMessage: String?
 
@@ -376,6 +436,7 @@ public struct EcuProjectLspLifecycleEvent: Decodable, Equatable, Sendable {
         case args
         case workspaceRoots = "workspace_roots"
         case workspaceFolders = "workspace_folders"
+        case recoveryPolicy = "recovery_policy"
         case attemptId = "attempt_id"
         case errorMessage = "error_message"
     }
@@ -401,6 +462,10 @@ public struct EcuProjectLspLifecycleEvent: Decodable, Equatable, Sendable {
             [EcuProjectLspWorkspaceFolder].self,
             forKey: .workspaceFolders
         ) ?? []
+        recoveryPolicy = try container.decodeIfPresent(
+            EcuProjectLspRecoveryPolicy.self,
+            forKey: .recoveryPolicy
+        ) ?? EcuProjectLspRecoveryPolicy()
         attemptId = try container.decodeIfPresent(UInt64.self, forKey: .attemptId)
         errorMessage = try container.decodeIfPresent(String.self, forKey: .errorMessage)
     }

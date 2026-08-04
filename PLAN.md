@@ -198,7 +198,21 @@
   - [x] 将 Swift Project LSP 配置同步与 lifecycle 执行从 `Persistence.swift` 拆到 `ProjectLspConfig` / `ProjectLspLifecycle` extension，保留所有路径共用 core start/stop/restart plan entry、`AttoProjectLspLifecycleAction` 和 requested/terminal outcome 写回模型。
   - 验证：`swift test --package-path swift --filter AttoEditorCommandTests/testProjectLspLaunchConfigsSyncToCoreProjectStore`
   - 验证：`swift test --package-path swift --filter 'AttoEditorCommandTests/test(WorkspaceRootChangeAutoStartsConfiguredOpenTabLsp|ClosingConfiguredProjectLspTabRecordsStopOutcome|PlainTextSyntaxSwitchRecordsProjectLspStopOutcome|ProjectLspAutoRestartUsesCoreRestartPlanRoot|RestartLspServerInActiveTabUsesCoreRestartPlanRoot|RestartLspServerRestartsActiveTabSession|ShutdownLspServerStopsActiveSessionAndRecordsOutcome|ShutdownProjectLspServersStopsConfiguredOpenTabsAndRecordsOutcomes|RestartProjectLspServersRestartsConfiguredOpenTabs|ProjectLspProcessHealthAutoRestartsExitedConfiguredTab)'`
-- [ ] 将 recovery policy 变为 core 可解释、可执行或可校验的策略。
+- [x] 将 recovery policy 变为 core 可解释、可执行或可校验的策略。
+  - [x] 为 project LSP server config、start/stop/restart plan、lifecycle outcome/event 增加 typed `recovery_policy`（`enabled` / `max_attempts` / `base_delay_millis`），缺省保持现有 auto-restart 行为，并在 core 侧 clamp 到可执行范围。
+  - [x] Swift wrapper 新增 `EcuProjectLspRecoveryPolicy`，并让 AppKit lifecycle action descriptor、outcome 和 event projection 携带同一策略。
+  - [x] AttoEditor 将 auto-restart preferences 投影到 core project LSP config，并让 auto-restart 执行路径消费 core restart plan entry 上的 recovery policy；运行时 server-name override 仍作为更具体的用户覆盖。
+  - [x] 将自动恢复执行逻辑拆到 `AttoEditorAreaViewController+ProjectLspRecovery.swift`，避免继续扩张 `ProjectLspLifecycle.swift`。
+  - 验证：`cargo test -p editor-core-ui project_lsp`
+  - 验证：`cargo test -p editor-core-ui-ffi project_lsp`
+  - 验证：`cargo test -p editor-core-ui-ffi ffi_multi_document_exposes_tab_preview_split_and_search`
+  - 验证：`cargo build -p editor-core-ui-ffi --release`
+  - 验证：`swift test --package-path swift --filter EditorCoreUIFFITests/testMultiDocumentEditorUIWrapperExposesTabsSplitsPreviewAndSearch`
+  - 验证：`swift test --package-path swift --filter 'EditorCoreUIFFITests/testProjectLsp(ServersEnvelopeReportsSuccess|LifecycleEnvelopeReportsPlansEventsAndErrors|LifecycleEnvelopeDecodesFutureFieldsAndUnknownStatus)'`
+  - 验证：`swift test --package-path swift --filter 'AttoEditorCommandTests/test(ProjectLspLaunchConfigsSyncToCoreProjectStore|ProjectLspAutoRestartUsesServerSpecificBackoffPolicy|ProjectLspAutoRestartCanBeDisabledByPreferences|ProjectLspAutoRestartCanBeDisabledForServerByPreferences|ProjectLspAutoRestartUsesBackoffAndResetsAfterHealthyStatus|ProjectLspProcessHealthAutoRestartsExitedConfiguredTab|ProjectLspAutoRestartUsesCoreRestartPlanRoot)'`
+  - 验证：`swift test --package-path swift --filter 'AttoEditorCommandTests/test(WorkspaceRootChangeAutoStartsConfiguredOpenTabLsp|ClosingConfiguredProjectLspTabRecordsStopOutcome|PlainTextSyntaxSwitchRecordsProjectLspStopOutcome|ProjectLspAutoRestartUsesCoreRestartPlanRoot|RestartLspServerInActiveTabUsesCoreRestartPlanRoot|RestartLspServerRestartsActiveTabSession|ShutdownLspServerStopsActiveSessionAndRecordsOutcome|ShutdownProjectLspServersStopsConfiguredOpenTabsAndRecordsOutcomes|RestartProjectLspServersRestartsConfiguredOpenTabs|ProjectLspProcessHealthAutoRestartsExitedConfiguredTab)'`
+  - 验证：`swift test --package-path swift --filter AttoLspResultLifecycleStoreTests/testProjectLspLifecycleEventStoreBoundsAndFiltersBySequence`
+  - 验证：`cargo fmt --check`
 - [ ] 产品化 Project LSP Dashboard：server health、events、stderr tail、trend、recovery policy、manual actions、query/export/clear。
 - [ ] 明确跨独立 project session 的合并、隔离、去重和 shutdown 策略。
 

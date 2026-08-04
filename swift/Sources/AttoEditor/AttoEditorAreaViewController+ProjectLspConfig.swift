@@ -101,7 +101,8 @@ extension AttoEditorAreaViewController {
                     serverCapabilities: existing.serverCapabilities,
                     sharedSession: existing.sharedSession,
                     workspaceRoots: workspaceRoots,
-                    autoStart: existing.autoStart || autoStart
+                    autoStart: existing.autoStart || autoStart,
+                    recoveryPolicy: existing.recoveryPolicy
                 )
                 continue
             }
@@ -113,11 +114,41 @@ extension AttoEditorAreaViewController {
                 args: Self.projectLspServerConfigArgs(from: launchConfig.args),
                 languageId: launchConfig.languageId,
                 workspaceRoots: workspaceRootURIs,
-                autoStart: autoStart
+                autoStart: autoStart,
+                recoveryPolicy: projectLspRecoveryPolicy(for: launchConfig)
             )
         }
 
         return orderedKeys.compactMap { configsByKey[$0] }
+    }
+
+    func projectLspRecoveryPolicy(for config: AttoLspServerLaunchConfig) -> EcuProjectLspRecoveryPolicy {
+        projectLspRecoveryPolicy(serverName: nil, serverCommand: config.command)
+    }
+
+    func projectLspRecoveryPolicy(
+        serverName: String?,
+        serverCommand: String?
+    ) -> EcuProjectLspRecoveryPolicy {
+        let enabled = preferences.effectiveLspAutoRestartEnabled
+            && preferences.isLspAutoRestartDisabledForServer(
+                serverName: serverName,
+                serverCommand: serverCommand
+            ) == false
+
+        return EcuProjectLspRecoveryPolicy(
+            enabled: enabled,
+            maxAttempts: UInt32(clamping: preferences.effectiveLspAutoRestartMaxAttempts(
+                serverName: serverName,
+                serverCommand: serverCommand
+            )),
+            baseDelayMillis: Self.projectLspRecoveryBaseDelayMillis(
+                preferences.effectiveLspAutoRestartBaseDelaySeconds(
+                    serverName: serverName,
+                    serverCommand: serverCommand
+                )
+            )
+        )
     }
 
     func projectLspWorkspaceRootURIs() -> [String] {
@@ -155,6 +186,16 @@ extension AttoEditorAreaViewController {
     static func projectLspServerConfigArgs(from args: String?) -> [String] {
         guard let args else { return [] }
         return args.split { $0.isWhitespace }.map(String.init)
+    }
+
+    static func projectLspRecoveryBaseDelayMillis(_ seconds: TimeInterval) -> UInt64 {
+        guard seconds.isFinite else { return 5_000 }
+        let clamped = min(max(seconds, 0.0), 3_600.0)
+        return UInt64((clamped * 1_000.0).rounded())
+    }
+
+    static func projectLspRecoveryBaseDelaySeconds(_ millis: UInt64) -> TimeInterval {
+        Double(millis) / 1_000.0
     }
 
     @discardableResult

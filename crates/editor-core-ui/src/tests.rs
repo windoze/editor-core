@@ -1875,6 +1875,11 @@ fn multi_document_tracks_project_lsp_server_configs() {
                     root_alias: Some(" main ".to_string()),
                 }],
                 auto_start: true,
+                recovery_policy: ProjectLspRecoveryPolicy {
+                    enabled: false,
+                    max_attempts: 99,
+                    base_delay_millis: 9_999_999,
+                },
             },
             ProjectLspServerConfig {
                 key: "".to_string(),
@@ -1887,6 +1892,7 @@ fn multi_document_tracks_project_lsp_server_configs() {
                 workspace_roots: vec![],
                 workspace_folders: vec![],
                 auto_start: false,
+                recovery_policy: ProjectLspRecoveryPolicy::default(),
             },
         ])
         .unwrap();
@@ -1906,6 +1912,18 @@ fn multi_document_tracks_project_lsp_server_configs() {
     assert_eq!(configs[1].language_name, "swift");
     assert_eq!(configs[1].server_capabilities, serde_json::json!({}));
     assert!(!configs[1].shared_session);
+    assert_eq!(
+        configs[0].recovery_policy,
+        ProjectLspRecoveryPolicy {
+            enabled: false,
+            max_attempts: 10,
+            base_delay_millis: 3_600_000,
+        }
+    );
+    assert_eq!(
+        configs[1].recovery_policy,
+        ProjectLspRecoveryPolicy::default()
+    );
     assert_eq!(
         configs[0].workspace_roots,
         vec!["file:///other", "file:///workspace"]
@@ -1945,6 +1963,7 @@ fn multi_document_tracks_project_lsp_server_configs() {
                 workspace_roots: vec![],
                 workspace_folders: vec![],
                 auto_start: true,
+                recovery_policy: ProjectLspRecoveryPolicy::default(),
             }])
             .is_err()
     );
@@ -2179,6 +2198,7 @@ fn multi_document_builds_project_lsp_start_plan_from_open_tabs() {
                 workspace_roots: vec![],
                 workspace_folders: vec![],
                 auto_start: true,
+                recovery_policy: ProjectLspRecoveryPolicy::default(),
             },
             ProjectLspServerConfig {
                 key: "swift".to_string(),
@@ -2191,6 +2211,7 @@ fn multi_document_builds_project_lsp_start_plan_from_open_tabs() {
                 workspace_roots: vec!["file:///swift-root".to_string()],
                 workspace_folders: vec![],
                 auto_start: false,
+                recovery_policy: ProjectLspRecoveryPolicy::default(),
             },
         ])
         .unwrap();
@@ -2210,6 +2231,7 @@ fn multi_document_builds_project_lsp_start_plan_from_open_tabs() {
     assert_eq!(plan[0].command, "/bin/rust-analyzer");
     assert_eq!(plan[0].args, vec!["--stdio"]);
     assert_eq!(plan[0].workspace_roots, vec!["file:///workspace"]);
+    assert_eq!(plan[0].recovery_policy, ProjectLspRecoveryPolicy::default());
     assert_eq!(
         plan[0].workspace_folders,
         vec![ProjectLspWorkspaceFolder {
@@ -2225,6 +2247,14 @@ fn multi_document_builds_project_lsp_start_plan_from_open_tabs() {
     assert_eq!(json[0]["attempt_id"], 1);
     assert_eq!(json[0]["server_key"], "rust");
     assert_eq!(json[0]["server_capabilities"]["semantic_tokens"], true);
+    assert_eq!(
+        json[0]["recovery_policy"],
+        serde_json::json!({
+            "enabled": true,
+            "max_attempts": 3,
+            "base_delay_millis": 5_000
+        })
+    );
     assert_eq!(json[0]["workspace_folders"][0]["name"], "workspace");
 }
 
@@ -2264,6 +2294,7 @@ fn multi_document_builds_project_lsp_stop_plan_from_open_tabs() {
                 workspace_roots: vec![],
                 workspace_folders: vec![],
                 auto_start: true,
+                recovery_policy: ProjectLspRecoveryPolicy::default(),
             },
             ProjectLspServerConfig {
                 key: "swift".to_string(),
@@ -2282,6 +2313,11 @@ fn multi_document_builds_project_lsp_stop_plan_from_open_tabs() {
                     root_alias: Some(" app ".to_string()),
                 }],
                 auto_start: false,
+                recovery_policy: ProjectLspRecoveryPolicy {
+                    enabled: true,
+                    max_attempts: 2,
+                    base_delay_millis: 1_500,
+                },
             },
         ])
         .unwrap();
@@ -2305,6 +2341,14 @@ fn multi_document_builds_project_lsp_stop_plan_from_open_tabs() {
     assert!(!plan[1].shared_session);
     assert_eq!(plan[1].workspace_roots, vec!["file:///swift-root"]);
     assert_eq!(
+        plan[1].recovery_policy,
+        ProjectLspRecoveryPolicy {
+            enabled: true,
+            max_attempts: 2,
+            base_delay_millis: 1_500,
+        }
+    );
+    assert_eq!(
         plan[1].workspace_folders,
         vec![ProjectLspWorkspaceFolder {
             uri: "file:///swift-root".to_string(),
@@ -2319,6 +2363,14 @@ fn multi_document_builds_project_lsp_stop_plan_from_open_tabs() {
     assert_eq!(json[1]["attempt_id"], 2);
     assert_eq!(json[1]["command"], "/bin/sourcekit-lsp");
     assert_eq!(json[1]["server_capabilities"]["workspace_symbols"], true);
+    assert_eq!(
+        json[1]["recovery_policy"],
+        serde_json::json!({
+            "enabled": true,
+            "max_attempts": 2,
+            "base_delay_millis": 1_500
+        })
+    );
     assert_eq!(json[1]["workspace_folders"][0]["root_alias"], "app");
 }
 
@@ -2358,6 +2410,7 @@ fn multi_document_builds_project_lsp_restart_plan_from_open_tabs() {
                 workspace_roots: vec![],
                 workspace_folders: vec![],
                 auto_start: true,
+                recovery_policy: ProjectLspRecoveryPolicy::default(),
             },
             ProjectLspServerConfig {
                 key: "swift".to_string(),
@@ -2372,6 +2425,11 @@ fn multi_document_builds_project_lsp_restart_plan_from_open_tabs() {
                 workspace_roots: vec!["file:///swift-root".to_string()],
                 workspace_folders: vec![],
                 auto_start: false,
+                recovery_policy: ProjectLspRecoveryPolicy {
+                    enabled: false,
+                    max_attempts: 0,
+                    base_delay_millis: 0,
+                },
             },
         ])
         .unwrap();
@@ -2394,6 +2452,14 @@ fn multi_document_builds_project_lsp_restart_plan_from_open_tabs() {
     assert_eq!(plan[1].server_capabilities["diagnostics"], true);
     assert!(!plan[1].shared_session);
     assert_eq!(plan[1].workspace_roots, vec!["file:///swift-root"]);
+    assert_eq!(
+        plan[1].recovery_policy,
+        ProjectLspRecoveryPolicy {
+            enabled: false,
+            max_attempts: 0,
+            base_delay_millis: 0,
+        }
+    );
     assert_eq!(plan[1].workspace_folders[0].name, "swift-root");
 
     let json: serde_json::Value =
@@ -2402,6 +2468,14 @@ fn multi_document_builds_project_lsp_restart_plan_from_open_tabs() {
     assert_eq!(json[1]["attempt_id"], 2);
     assert_eq!(json[1]["command"], "/bin/sourcekit-lsp");
     assert_eq!(json[1]["server_capabilities"]["diagnostics"], true);
+    assert_eq!(
+        json[1]["recovery_policy"],
+        serde_json::json!({
+            "enabled": false,
+            "max_attempts": 0,
+            "base_delay_millis": 0
+        })
+    );
     assert_eq!(json[1]["workspace_folders"][0]["uri"], "file:///swift-root");
 }
 
@@ -2437,6 +2511,11 @@ fn multi_document_records_project_lsp_start_outcomes() {
                 name: " Workspace ".to_string(),
                 root_alias: Some(" main ".to_string()),
             }],
+            recovery_policy: ProjectLspRecoveryPolicy {
+                enabled: true,
+                max_attempts: 99,
+                base_delay_millis: 9_999_999,
+            },
             trigger: " auto_start ".to_string(),
             attempt_id: None,
             status: " started ".to_string(),
@@ -2450,6 +2529,14 @@ fn multi_document_records_project_lsp_start_outcomes() {
     assert_eq!(started.language_name, "Rust");
     assert_eq!(started.server_capabilities["hover"], true);
     assert!(!started.shared_session);
+    assert_eq!(
+        started.recovery_policy,
+        ProjectLspRecoveryPolicy {
+            enabled: true,
+            max_attempts: 10,
+            base_delay_millis: 3_600_000,
+        }
+    );
     assert_eq!(
         started.workspace_folders,
         vec![ProjectLspWorkspaceFolder {
@@ -2474,6 +2561,7 @@ fn multi_document_records_project_lsp_start_outcomes() {
             args: vec![],
             workspace_roots: vec![],
             workspace_folders: vec![],
+            recovery_policy: ProjectLspRecoveryPolicy::default(),
             trigger: "manual_restart".to_string(),
             attempt_id: None,
             status: "started".to_string(),
@@ -2501,6 +2589,7 @@ fn multi_document_records_project_lsp_start_outcomes() {
             args: vec![],
             workspace_roots: vec![],
             workspace_folders: vec![],
+            recovery_policy: ProjectLspRecoveryPolicy::default(),
             trigger: "tab_close".to_string(),
             attempt_id: None,
             status: " stopped ".to_string(),
@@ -2527,6 +2616,7 @@ fn multi_document_records_project_lsp_start_outcomes() {
             args: vec![],
             workspace_roots: vec!["file:///workspace".to_string()],
             workspace_folders: vec![],
+            recovery_policy: ProjectLspRecoveryPolicy::default(),
             trigger: "manual_restart".to_string(),
             attempt_id: None,
             status: " requested ".to_string(),
@@ -2555,6 +2645,7 @@ fn multi_document_records_project_lsp_start_outcomes() {
             args: vec![],
             workspace_roots: vec!["file:///workspace".to_string()],
             workspace_folders: vec![],
+            recovery_policy: ProjectLspRecoveryPolicy::default(),
             trigger: "manual_restart".to_string(),
             attempt_id: requested.attempt_id,
             status: "started".to_string(),
@@ -2582,6 +2673,7 @@ fn multi_document_records_project_lsp_start_outcomes() {
             args: vec![],
             workspace_roots: vec![],
             workspace_folders: vec![],
+            recovery_policy: ProjectLspRecoveryPolicy::default(),
             trigger: "manual_restart".to_string(),
             attempt_id: None,
             status: " skipped ".to_string(),
@@ -2612,6 +2704,14 @@ fn multi_document_records_project_lsp_start_outcomes() {
     assert_eq!(json["events"][0]["server_capabilities"]["hover"], true);
     assert_eq!(json["events"][0]["shared_session"], false);
     assert_eq!(
+        json["events"][0]["recovery_policy"],
+        serde_json::json!({
+            "enabled": true,
+            "max_attempts": 10,
+            "base_delay_millis": 3_600_000
+        })
+    );
+    assert_eq!(
         json["events"][0]["workspace_folders"][0]["root_alias"],
         "main"
     );
@@ -2640,6 +2740,7 @@ fn multi_document_records_project_lsp_start_outcomes() {
             args: vec![],
             workspace_roots: vec!["file:///workspace".to_string()],
             workspace_folders: vec![],
+            recovery_policy: ProjectLspRecoveryPolicy::default(),
             trigger: "manual_shutdown".to_string(),
             attempt_id: None,
             status: "skipped".to_string(),
@@ -2669,6 +2770,7 @@ fn multi_document_records_project_lsp_start_outcomes() {
                 args: vec![],
                 workspace_roots: vec![],
                 workspace_folders: vec![],
+                recovery_policy: ProjectLspRecoveryPolicy::default(),
                 trigger: "auto_start".to_string(),
                 attempt_id: None,
                 status: "started".to_string(),
