@@ -93,6 +93,46 @@ pub extern "C" fn editor_core_ui_ffi_editor_ui_set_font_ligatures_enabled(
     }
 }
 
+/// Configure per-family OpenType feature strings used when ligatures are enabled.
+///
+/// `entries_utf8` is a UTF-8 string with one record per line:
+/// `<font family>\t<feature string>` (e.g. `Monaspace Neon\t-calt +liga +ss01`).
+/// Empty lines are ignored; calling with an empty string clears the map.
+#[unsafe(no_mangle)]
+pub extern "C" fn editor_core_ui_ffi_editor_ui_set_font_feature_map(
+    ui: *mut EditorUi,
+    entries_utf8: *const c_char,
+) -> c_int {
+    match ffi_catch(|| {
+        let ui = require_mut(ui, "ui")?;
+        let entries_str = require_cstr(entries_utf8, "entries_utf8")?
+            .to_str()
+            .map_err(|_| "entries_utf8 is not valid UTF-8".to_string())?;
+        let mut entries: Vec<(String, String)> = Vec::new();
+        for (line_index, line) in entries_str.lines().enumerate() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let Some((family, spec)) = line.split_once('\t') else {
+                return Err(format!(
+                    "font feature map line {} is missing a TAB separator",
+                    line_index + 1
+                ));
+            };
+            entries.push((family.trim().to_string(), spec.trim().to_string()));
+        }
+        ui.set_font_feature_map(entries);
+        Ok(ECU_OK)
+    }) {
+        Ok(code) => {
+            clear_last_error();
+            code
+        }
+        Err(err) => status_from_error(err),
+    }
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_core_ui_ffi_editor_ui_set_caret_width_px(
     ui: *mut EditorUi,

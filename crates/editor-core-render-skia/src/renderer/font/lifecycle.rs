@@ -45,6 +45,7 @@ impl SkiaRenderer {
             fonts_italic,
             fonts_bold_italic,
             font_families: families,
+            font_feature_map: std::collections::HashMap::new(),
             font_size,
             shaper: Shaper::new(None),
             shaped_run_cache: ShapedRunCache::new(4096),
@@ -98,6 +99,31 @@ impl SkiaRenderer {
         ));
 
         // Typeface chain changed; cached shaping results are no longer reliable.
+        self.shaped_run_cache.clear();
+    }
+
+    /// Configure per-family OpenType feature strings applied during shaping when
+    /// ligatures are enabled (see `RenderConfig::enable_ligatures`).
+    ///
+    /// - Keys are font family names; they are normalized like `set_font_families` input and
+    ///   matched against the resolved typeface family name of the font that renders a run.
+    /// - Values use HarfBuzz feature syntax, e.g. `-calt +liga +ss01 +ss02`; malformed
+    ///   tokens are skipped silently.
+    /// - Calling this replaces the whole map; fonts absent from the map use the default
+    ///   ligature features (`liga`, `calt`, `clig`).
+    pub fn set_font_feature_map(&mut self, entries: Vec<(String, String)>) {
+        self.font_feature_map = entries
+            .into_iter()
+            .filter_map(|(name, spec)| {
+                let name = normalize_font_family_name(name.as_str());
+                if name.is_empty() {
+                    return None;
+                }
+                Some((name, parse_shaper_features(spec.as_str())))
+            })
+            .collect();
+
+        // Feature sets changed; cached shaping results are no longer reliable.
         self.shaped_run_cache.clear();
     }
 

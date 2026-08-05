@@ -85,6 +85,10 @@ final class AttoWindowContext: NSObject, NSWindowDelegate {
         win.title = "AttoEditor"
         // AttoEditor uses an in-app tab strip; disallow macOS window tabbing UI.
         win.tabbingMode = .disallowed
+        // window 的生命周期由 AttoWindowContext（经 AttoAppDelegate.windows）管理。
+        // 若交给 AppKit 在 close 时释放，window 可能在 AppKit 自己的 close 流程中提前 dealloc，
+        // 而 AppKit 内部（动画/KVO/autoreleasepool）仍持有未保留引用，导致 use-after-free。
+        win.isReleasedWhenClosed = false
         win.contentViewController = splitVC
         win.contentMinSize = AttoWindowSizing.minimumContentSize
         win.setContentSize(contentSize)

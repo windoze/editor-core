@@ -65,6 +65,12 @@ extension AttoEditorAreaViewController {
         }
 
         do {
+            try editCore.editor.setFontFeatureMap(configuredFontFeatureMapForApplying(snapshot))
+        } catch {
+            NSLog("AttoEditor: setFontFeatureMap failed: %@", String(describing: error))
+        }
+
+        do {
             try editCore.editor.setAutoPairsEnabled(configuredAutoPairsEnabledForApplying(snapshot))
         } catch {
             NSLog("AttoEditor: setAutoPairsEnabled failed: %@", String(describing: error))
@@ -130,6 +136,10 @@ extension AttoEditorAreaViewController {
 
     func configuredLigaturesEnabledForApplying(_ snapshot: AttoConfigurationSnapshot? = nil) -> Bool {
         (snapshot ?? configurationSnapshot).rendering.fontLigaturesEnabled
+    }
+
+    func configuredFontFeatureMapForApplying(_ snapshot: AttoConfigurationSnapshot? = nil) -> [String: String] {
+        (snapshot ?? configurationSnapshot).rendering.fontFeatureMap
     }
 
     func configuredAutoPairsEnabledForApplying(_ snapshot: AttoConfigurationSnapshot? = nil) -> Bool {

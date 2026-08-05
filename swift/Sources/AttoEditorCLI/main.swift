@@ -78,6 +78,12 @@ private enum AttoEditorCLIMain {
     static func run() -> Never {
         AttoIPC.ignoreSIGPIPE()
 
+        let parsed = AttoCommandLine.parse(arguments: ProcessInfo.processInfo.arguments)
+        if parsed.helpRequested {
+            print(AttoCommandLine.usageText)
+            exit(0)
+        }
+
         guard let serverExe = resolveServerExecutablePath() else {
             fputs("atto: 找不到 AttoEditor 可执行文件（用于启动 GUI/server）。\\n", stderr)
             fputs("提示：如果你是通过 symlink 使用，请确保 symlink 指向 AttoEditor.app 内的 `atto`。\\n", stderr)
@@ -85,7 +91,6 @@ private enum AttoEditorCLIMain {
             exit(1)
         }
 
-        let parsed = AttoCommandLine.parse(arguments: ProcessInfo.processInfo.arguments)
         let requestID = UUID().uuidString
 
         let req = AttoIpcOpenRequest(

@@ -3612,6 +3612,14 @@ final class AttoAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidati
 
             // 再保存一次“移除该窗口后的 session”（如果没有窗口则跳过写盘）。
             self.scheduleSessionSave(reason: "window_closed")
+
+            // `windows` 通常是 ctx（进而 window）的最后一个强引用。
+            // windowWillClose 运行在 AppKit 的 close 流程内部；若 ctx 在此析构，
+            // window 会随 AppKit 尚未完成的 close/动画/布局一起被 dealloc（use-after-free）。
+            // 这里把最终释放推迟到 close 完成后的下一轮 main queue。
+            DispatchQueue.main.async {
+                _ = ctx
+            }
         }
 
         ctx.onSessionStateChanged = { [weak self] in

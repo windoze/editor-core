@@ -125,6 +125,59 @@ final class AttoConfigurationSettingsTests: XCTestCase {
         XCTAssertEqual(resolution.snapshot.editor.fontSizePoints, 18)
     }
 
+    func testFontFeatureMapDefaultsToMonaspaceFamilies() {
+        let snapshot = baseSnapshot()
+
+        XCTAssertEqual(snapshot.rendering.fontFeatureMap.count, 10)
+        let expectedFeatures = "-calt +liga +clig +ss01 +ss02 +ss03 +ss04 +ss05 +ss06 +ss07 +ss08 +ss09 +ss10"
+        for family in [
+            "Monaspace Neon",
+            "Monaspace Xenon",
+            "Monaspace Argon",
+            "Monaspace Krypton",
+            "Monaspace Radon",
+            "MonaspiceNe Nerd Font",
+            "MonaspiceXe Nerd Font",
+            "MonaspiceAr Nerd Font",
+            "MonaspiceKr Nerd Font",
+            "MonaspiceRn Nerd Font",
+        ] {
+            XCTAssertEqual(snapshot.rendering.fontFeatureMap[family], expectedFeatures)
+        }
+    }
+
+    func testFontFeatureMapMergesPerKeyAcrossScopes() {
+        let base = baseSnapshot()
+
+        let user = AttoConfigurationSettings(
+            rendering: AttoRenderingPreferenceSettings(
+                fontFeatureMap: [
+                    "Monaspace Neon": "+ss01",
+                    "Fira Code": "+calt",
+                ]
+            )
+        )
+        let workspace = AttoConfigurationSettings(
+            rendering: AttoRenderingPreferenceSettings(
+                fontFeatureMap: [
+                    "Monaspace Neon": "",
+                ]
+            )
+        )
+
+        let snapshot = base.resolvingSettings(user: user, workspace: workspace).snapshot
+
+        // Workspace wins on conflicts; an empty value means "no features for this font" (not deletion).
+        XCTAssertEqual(snapshot.rendering.fontFeatureMap["Monaspace Neon"], "")
+        // User-only keys survive.
+        XCTAssertEqual(snapshot.rendering.fontFeatureMap["Fira Code"], "+calt")
+        // Untouched defaults survive.
+        XCTAssertEqual(
+            snapshot.rendering.fontFeatureMap["Monaspace Xenon"],
+            AttoRenderingPreferenceSnapshot.defaultFontFeatureMap["Monaspace Xenon"]
+        )
+    }
+
     func testSettingsResolutionAppliesMatchingScopedSettings() {
         let base = baseSnapshot()
         let user = AttoConfigurationSettings(

@@ -18,6 +18,31 @@ impl SkiaRenderer {
         ]
     }
 
+    /// Resolve the shaper features for the font that will render a run.
+    ///
+    /// - Ligatures disabled: the default ligature features are explicitly turned off.
+    /// - Enabled + the font's resolved family has an entry in `font_feature_map`: the parsed
+    ///   feature list from the map is used as-is (the string is the full specification).
+    /// - Enabled + no map entry: the default ligature features are turned on.
+    pub(crate) fn shaping_features_for_font(
+        &self,
+        font: &skia_safe::Font,
+        enable_ligatures: bool,
+    ) -> Vec<Feature> {
+        if !enable_ligatures {
+            return Self::ligature_features(false).to_vec();
+        }
+        if !self.font_feature_map.is_empty() {
+            let family = super::super::font_loading::normalize_font_family_name(
+                font.typeface().family_name().as_str(),
+            );
+            if let Some(features) = self.font_feature_map.get(family.as_str()) {
+                return features.clone();
+            }
+        }
+        Self::ligature_features(true).to_vec()
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(in crate::renderer) fn draw_shaped_run_cached(
         &mut self,
@@ -57,7 +82,7 @@ impl SkiaRenderer {
         }
 
         let width = 1_000_000.0;
-        let features = Self::ligature_features(enable_ligatures);
+        let features = self.shaping_features_for_font(font, enable_ligatures);
         let utf8_len = run_text.len();
 
         let mut font_it = Shaper::new_trivial_font_run_iterator(font, utf8_len);

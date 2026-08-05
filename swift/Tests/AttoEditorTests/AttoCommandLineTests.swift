@@ -79,4 +79,30 @@ final class AttoCommandLineTests: XCTestCase {
         XCTAssertFalse(parsed.wait)
         XCTAssertEqual(parsed.files.map(\.url), [file.standardizedFileURL])
     }
+
+    func testParseHelpFlags() throws {
+        for flag in ["-h", "--help"] {
+            let parsed = AttoCommandLine.parse(arguments: ["/usr/bin/atto", flag])
+            XCTAssertTrue(parsed.helpRequested, "flag=\(flag)")
+            XCTAssertFalse(parsed.newWindow)
+            XCTAssertFalse(parsed.wait)
+            XCTAssertEqual(parsed.directories, [])
+            XCTAssertEqual(parsed.files, [])
+        }
+    }
+
+    func testParseDoesNotTreatHelpAsPathAfterDoubleDash() throws {
+        let parsed = AttoCommandLine.parse(arguments: ["/usr/bin/atto", "--", "--help"])
+        XCTAssertFalse(parsed.helpRequested)
+        XCTAssertEqual(parsed.files.count, 1)
+        XCTAssertTrue(parsed.files[0].url.lastPathComponent == "--help")
+    }
+
+    func testUsageTextDocumentsSupportedFlags() {
+        let usage = AttoCommandLine.usageText
+        XCTAssertTrue(usage.contains("-h") || usage.contains("--help"))
+        XCTAssertTrue(usage.contains("--new-window"))
+        XCTAssertTrue(usage.contains("--wait"))
+        XCTAssertTrue(usage.contains("--"))
+    }
 }

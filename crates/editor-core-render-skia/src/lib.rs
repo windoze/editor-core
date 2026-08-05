@@ -236,6 +236,9 @@ pub struct RenderConfig {
     /// Notes:
     /// - The editor still uses a monospace "cell grid" model; ligature shaping is purely visual.
     /// - Cursor/selection hit-testing remains cell-based.
+    /// - When enabled, shaping uses `liga`/`calt`/`clig` by default; per-family OpenType
+    ///   feature strings (e.g. Monaspace's `ss01`-`ss10` ligatures) can be configured via
+    ///   `SkiaRenderer::set_font_feature_map`.
     pub enable_ligatures: bool,
 
     /// Caret width in pixels.

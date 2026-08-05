@@ -105,7 +105,7 @@ AttoEditor 的长期事实源优先落在 core / `editor-core-ui`，Swift/AppKit
 
 ### CLI（`atto`）
 
-AttoEditor 额外提供一个独立 CLI：`atto`，用于终端里打开文件/目录并通过 IPC 发送到主实例（支持 `-n/--new-window`、`-w/--wait`、`file:line:column`）。
+AttoEditor 额外提供一个独立 CLI：`atto`，用于终端里打开文件/目录并通过 IPC 发送到主实例（支持 `-n/--new-window`、`-w/--wait`、`-h/--help`、`file:line:column`）。
 
 开发态运行：
 

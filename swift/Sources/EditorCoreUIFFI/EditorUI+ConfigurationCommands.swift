@@ -35,6 +35,24 @@ extension EditorUI {
         try library.ensureStatus(status, context: "editor_ui_set_font_ligatures_enabled")
     }
 
+    /// Configure per-font-family OpenType feature strings for the Skia renderer.
+    ///
+    /// Keys are font family names; values use HarfBuzz feature syntax (e.g. `"-calt +liga +ss01"`).
+    ///
+    /// Notes:
+    /// - This replaces the whole map; an empty value means "no features for this font" (not deletion).
+    /// - Only consulted when ligatures are enabled (see `setFontLigaturesEnabled`).
+    public func setFontFeatureMap(_ entries: [String: String]) throws {
+        let serialized = entries
+            .map { "\($0.key)\t\($0.value)" }
+            .sorted()
+            .joined(separator: "\n")
+        let status = serialized.withCString { cstr in
+            editor_core_ui_ffi_editor_ui_set_font_feature_map(handle, cstr)
+        }
+        try library.ensureStatus(status, context: "editor_ui_set_font_feature_map")
+    }
+
     /// Set caret width in pixels (minimum 1px when visible).
     ///
     /// Notes:

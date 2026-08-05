@@ -103,6 +103,7 @@ enum AttoConfigurationSettingsSchema {
             ),
             .init(keyPath: "rendering.theme_name", title: "Theme", valueKind: .string),
             .init(keyPath: "rendering.font_ligatures_enabled", title: "Font Ligatures", valueKind: .boolean),
+            .init(keyPath: "rendering.font_feature_map", title: "Font Feature Map", valueKind: .stringDictionary),
             .init(
                 keyPath: "language.comment_configurations",
                 title: "Comment Configurations",

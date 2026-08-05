@@ -69,6 +69,10 @@ private enum AttoEditorMain {
 
     private static func runCLI() -> Never {
         let parsed = AttoCommandLine.parse(arguments: ProcessInfo.processInfo.arguments)
+        if parsed.helpRequested {
+            print(AttoCommandLine.usageText)
+            exit(0)
+        }
         let requestID = UUID().uuidString
 
         let req = AttoIpcOpenRequest(

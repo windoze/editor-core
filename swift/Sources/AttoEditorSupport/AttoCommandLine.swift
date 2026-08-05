@@ -5,9 +5,28 @@ import Foundation
 /// 约定：
 /// - 支持 `-n/--new-window`：文件参数总是在新窗口打开（目录参数本来就总是新窗口）。
 /// - 支持 `-w/--wait`：当通过命令行打开的文件全部关闭后，应用自动退出。
+/// - 支持 `-h/--help`：打印用法说明并退出。
 /// - 支持 `--`：之后的参数一律按路径处理（不再解析成 option）。
 /// - 支持文件定位：`/path/to/file:<line>[:<column>]`（line/column 为 1-based）。
 package enum AttoCommandLine {
+    /// `atto -h/--help` 输出的用法说明。
+    package static let usageText = """
+    Usage: atto [options] [file[:line[:column]] | directory ...]
+
+    Options:
+      -n, --new-window   文件总是在新窗口打开（目录参数本来就会打开新窗口）
+      -w, --wait         等待：当本次打开的文件全部关闭后退出（退出码反映打开结果）
+      -h, --help         显示本说明并退出
+      --                 之后的参数一律按路径处理（不再解析成 option）
+
+    Examples:
+      atto file.txt
+      atto file.txt:10:5
+      atto -n a.txt b.txt
+      atto -w note.md
+      atto -- -name-starting-with-dash.txt
+    """
+
     package struct FileLocation: Equatable {
         package let line1: Int
         package let column1: Int?
@@ -31,17 +50,20 @@ package enum AttoCommandLine {
     package struct Parsed: Equatable {
         package var newWindow: Bool = false
         package var wait: Bool = false
+        package var helpRequested: Bool = false
         package var directories: [URL] = []
         package var files: [FileOpenRequest] = []
 
         package init(
             newWindow: Bool = false,
             wait: Bool = false,
+            helpRequested: Bool = false,
             directories: [URL] = [],
             files: [FileOpenRequest] = []
         ) {
             self.newWindow = newWindow
             self.wait = wait
+            self.helpRequested = helpRequested
             self.directories = directories
             self.files = files
         }
@@ -70,6 +92,10 @@ package enum AttoCommandLine {
                 }
                 if raw == "-w" || raw == "--wait" {
                     out.wait = true
+                    continue
+                }
+                if raw == "-h" || raw == "--help" {
+                    out.helpRequested = true
                     continue
                 }
             }

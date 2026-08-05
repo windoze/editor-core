@@ -95,12 +95,51 @@ struct AttoEditorPreferenceSnapshot: Codable, Equatable {
 }
 
 struct AttoRenderingPreferenceSnapshot: Codable, Equatable {
+    /// Built-in per-font-family OpenType feature strings (HarfBuzz syntax).
+    ///
+    /// Conservative default: Monaspace families keep their coding ligatures in `ss01`-`ss10`,
+    /// so we enable the full set plus the standard `liga`/`calt`/`clig` features.
+    static let defaultFontFeatureMap: [String: String] = [
+        "Monaspace Neon": "-calt +liga +clig +ss01 +ss02 +ss03 +ss04 +ss05 +ss06 +ss07 +ss08 +ss09 +ss10",
+        "Monaspace Xenon": "-calt +liga +clig +ss01 +ss02 +ss03 +ss04 +ss05 +ss06 +ss07 +ss08 +ss09 +ss10",
+        "Monaspace Argon": "-calt +liga +clig +ss01 +ss02 +ss03 +ss04 +ss05 +ss06 +ss07 +ss08 +ss09 +ss10",
+        "Monaspace Krypton": "-calt +liga +clig +ss01 +ss02 +ss03 +ss04 +ss05 +ss06 +ss07 +ss08 +ss09 +ss10",
+        "Monaspace Radon": "-calt +liga +clig +ss01 +ss02 +ss03 +ss04 +ss05 +ss06 +ss07 +ss08 +ss09 +ss10",
+        "MonaspiceNe Nerd Font": "-calt +liga +clig +ss01 +ss02 +ss03 +ss04 +ss05 +ss06 +ss07 +ss08 +ss09 +ss10",
+        "MonaspiceXe Nerd Font": "-calt +liga +clig +ss01 +ss02 +ss03 +ss04 +ss05 +ss06 +ss07 +ss08 +ss09 +ss10",
+        "MonaspiceAr Nerd Font": "-calt +liga +clig +ss01 +ss02 +ss03 +ss04 +ss05 +ss06 +ss07 +ss08 +ss09 +ss10",
+        "MonaspiceKr Nerd Font": "-calt +liga +clig +ss01 +ss02 +ss03 +ss04 +ss05 +ss06 +ss07 +ss08 +ss09 +ss10",
+        "MonaspiceRn Nerd Font": "-calt +liga +clig +ss01 +ss02 +ss03 +ss04 +ss05 +ss06 +ss07 +ss08 +ss09 +ss10",
+    ]
+
     var themeName: String
     var fontLigaturesEnabled: Bool
+    var fontFeatureMap: [String: String]
+
+    init(
+        themeName: String,
+        fontLigaturesEnabled: Bool,
+        fontFeatureMap: [String: String] = Self.defaultFontFeatureMap
+    ) {
+        self.themeName = themeName
+        self.fontLigaturesEnabled = fontLigaturesEnabled
+        self.fontFeatureMap = fontFeatureMap
+    }
 
     private enum CodingKeys: String, CodingKey {
         case themeName = "theme_name"
         case fontLigaturesEnabled = "font_ligatures_enabled"
+        case fontFeatureMap = "font_feature_map"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            themeName: try container.decode(String.self, forKey: .themeName),
+            fontLigaturesEnabled: try container.decode(Bool.self, forKey: .fontLigaturesEnabled),
+            fontFeatureMap: try container.decodeIfPresent([String: String].self, forKey: .fontFeatureMap)
+                ?? Self.defaultFontFeatureMap
+        )
     }
 }
 

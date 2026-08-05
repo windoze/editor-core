@@ -1491,3 +1491,94 @@ fn render_with_ligatures_enabled_smoke() {
         .render_rgba(&grid, &[], &[], &[], cfg, &RenderTheme::default())
         .unwrap();
 }
+
+fn shape_glyph_ids(
+    shaper: &Shaper,
+    text: &str,
+    font: &Font,
+    features: &[skia_safe::shaper::Feature],
+) -> Vec<u16> {
+    let width = 1_000_000.0;
+    let utf8_len = text.len();
+
+    let mut font_it = Shaper::new_trivial_font_run_iterator(font, utf8_len);
+    let mut bidi_it = skia_safe::shapers::primitive::trivial_bidi_run_iterator(0, utf8_len);
+    let mut script_it = skia_safe::shapers::primitive::trivial_script_run_iterator(0, utf8_len);
+    let mut lang_it = Shaper::new_trivial_language_run_iterator("en", utf8_len);
+
+    let mut builder = TextBlobBuilderRunHandler::new(text, Point::new(0.0, 0.0));
+    shaper.shape_with_iterators_and_features(
+        text,
+        &mut font_it,
+        &mut bidi_it,
+        &mut script_it,
+        &mut lang_it,
+        features,
+        width,
+        &mut builder,
+    );
+
+    let Some(blob) = builder.make_blob() else {
+        return Vec::new();
+    };
+
+    let mut ids: Vec<u16> = TextBlobIter::new(&blob)
+        .flat_map(|run| run.glyph_indices.to_vec())
+        .collect();
+    ids.sort_unstable();
+    ids
+}
+
+#[test]
+fn font_feature_map_enables_monaspace_stylistic_set_ligatures() {
+    let mgr = FontMgr::new();
+    let Some(tf) = mgr.match_family_style("Monaspace Neon", FontStyle::normal()) else {
+        // The font is not part of CI base images; skip gracefully when absent.
+        eprintln!("Monaspace Neon not installed; skipping font_feature_map shaping test");
+        return;
+    };
+    let font = make_configured_font(Some(tf), 32.0);
+    let shaper = Shaper::new(None);
+
+    let mut renderer = SkiaRenderer::new();
+
+    // Default ligature features (liga/calt/clig) do not produce Monaspace coding ligatures.
+    let default_features = renderer.shaping_features_for_font(&font, true);
+    let default_ids = shape_glyph_ids(&shaper, "->", &font, default_features.as_slice());
+    assert!(!default_ids.is_empty());
+
+    // Monaspace keeps coding ligatures in stylistic sets ss01-ss10; wiring them through the
+    // map must change the shaped glyph set (`->` becomes the `hyphen_greater` ligature).
+    renderer.set_font_feature_map(vec![(
+        "Monaspace Neon".to_string(),
+        "-calt +liga +clig +ss01 +ss02 +ss03 +ss04 +ss05 +ss06 +ss07 +ss08 +ss09 +ss10".to_string(),
+    )]);
+    let mapped_features = renderer.shaping_features_for_font(&font, true);
+    let mapped_ids = shape_glyph_ids(&shaper, "->", &font, mapped_features.as_slice());
+    assert_ne!(
+        default_ids, mapped_ids,
+        "expected the ss01-ss10 feature map to change the shaped glyphs for `->`"
+    );
+
+    // With ligatures disabled the map is ignored entirely.
+    let off_features = renderer.shaping_features_for_font(&font, false);
+    let off_ids = shape_glyph_ids(&shaper, "->", &font, off_features.as_slice());
+    assert_eq!(default_ids, off_ids);
+}
+
+#[test]
+fn font_feature_map_falls_back_to_default_features_for_unlisted_families() {
+    let mut renderer = SkiaRenderer::new();
+    renderer.set_font_feature_map(vec![("SomeUnlistedFont".to_string(), "-liga".to_string())]);
+
+    // Any font whose family is not in the map gets the default ligature features.
+    let tf = FontMgr::new().legacy_make_typeface(None, FontStyle::normal());
+    let font = make_configured_font(tf, 16.0);
+    let features = renderer.shaping_features_for_font(&font, true);
+    assert!(
+        features
+            .iter()
+            .any(|f| f.tag == u32::from_be_bytes(*b"liga") && f.value == 1),
+        "expected default liga=1 for a family absent from the feature map"
+    );
+}

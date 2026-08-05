@@ -50,6 +50,16 @@ impl EditorUi {
         self.render_config.enable_ligatures = enabled;
     }
 
+    /// Configure per-family OpenType feature strings used while shaping when ligatures
+    /// are enabled (visual-only).
+    ///
+    /// Keys are font family names; values use HarfBuzz feature syntax
+    /// (e.g. `-calt +liga +ss01 +ss02`). Fonts absent from the map use the default
+    /// ligature features (`liga`, `calt`, `clig`). Calling this replaces the whole map.
+    pub fn set_font_feature_map(&mut self, entries: Vec<(String, String)>) {
+        self.renderer.set_font_feature_map(entries);
+    }
+
     /// Set caret width in pixels (minimum 1px when visible).
     pub fn set_caret_width_px(&mut self, width_px: f32) {
         if width_px.is_finite() {

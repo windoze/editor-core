@@ -64,6 +64,7 @@ extension AttoEditorAreaViewController {
         try editCore.editor.setIndentGuidesEnabled(true)
         try editCore.editor.setFontFamiliesCSV(configuredFontFamiliesCSVForApplying(snapshot))
         try editCore.editor.setFontLigaturesEnabled(configuredLigaturesEnabledForApplying(snapshot))
+        try editCore.editor.setFontFeatureMap(configuredFontFeatureMapForApplying(snapshot))
         editCore.editorView.fontSizePoints = CGFloat(configuredFontSizePointsForApplying(snapshot))
         try editCore.applyTheme(configuredThemeForApplying(snapshot))
         _ = try editCore.editor.setWrapMode(configuredWrapModeForApplying(snapshot))

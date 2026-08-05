@@ -297,18 +297,22 @@ struct AttoEditorPreferenceSettings: Codable, Equatable {
 struct AttoRenderingPreferenceSettings: Codable, Equatable {
     var themeName: String?
     var fontLigaturesEnabled: Bool?
+    var fontFeatureMap: [String: String]?
 
     init(
         themeName: String? = nil,
-        fontLigaturesEnabled: Bool? = nil
+        fontLigaturesEnabled: Bool? = nil,
+        fontFeatureMap: [String: String]? = nil
     ) {
         self.themeName = themeName
         self.fontLigaturesEnabled = fontLigaturesEnabled
+        self.fontFeatureMap = fontFeatureMap
     }
 
     private enum CodingKeys: String, CodingKey {
         case themeName = "theme_name"
         case fontLigaturesEnabled = "font_ligatures_enabled"
+        case fontFeatureMap = "font_feature_map"
     }
 
     private enum LegacyCodingKeys: String, CodingKey {
@@ -321,7 +325,8 @@ struct AttoRenderingPreferenceSettings: Codable, Equatable {
         self.init(
             themeName: try container.decodeIfPresent(String.self, forKey: .themeName)
                 ?? legacy.decodeIfPresent(String.self, forKey: .theme),
-            fontLigaturesEnabled: try container.decodeIfPresent(Bool.self, forKey: .fontLigaturesEnabled)
+            fontLigaturesEnabled: try container.decodeIfPresent(Bool.self, forKey: .fontLigaturesEnabled),
+            fontFeatureMap: try container.decodeIfPresent([String: String].self, forKey: .fontFeatureMap)
         )
     }
 }
@@ -793,6 +798,9 @@ extension AttoConfigurationSnapshot {
         }
         if let fontLigaturesEnabled = settings.fontLigaturesEnabled {
             rendering.fontLigaturesEnabled = fontLigaturesEnabled
+        }
+        if let fontFeatureMap = settings.fontFeatureMap {
+            rendering.fontFeatureMap.merge(fontFeatureMap) { _, new in new }
         }
     }
 

@@ -1008,6 +1008,10 @@ int32_t editor_core_ui_ffi_editor_ui_set_text_vertical_align(EditorUi* ui,
 int32_t editor_core_ui_ffi_editor_ui_set_font_families_csv(EditorUi* ui,
                                                            const char* families_utf8);
 int32_t editor_core_ui_ffi_editor_ui_set_font_ligatures_enabled(EditorUi* ui, uint8_t enabled);
+// entries_utf8: one record per line, "<font family>\t<feature string>"
+// (e.g. "Monaspace Neon\t-calt +liga +ss01"). Empty string clears the map.
+int32_t editor_core_ui_ffi_editor_ui_set_font_feature_map(EditorUi* ui,
+                                                          const char* entries_utf8);
 int32_t editor_core_ui_ffi_editor_ui_set_caret_width_px(EditorUi* ui, float width_px);
 int32_t editor_core_ui_ffi_editor_ui_set_caret_visible(EditorUi* ui, uint8_t visible);
 int32_t editor_core_ui_ffi_editor_ui_set_indent_guides_enabled(EditorUi* ui, uint8_t enabled);
